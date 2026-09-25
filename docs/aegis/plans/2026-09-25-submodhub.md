@@ -12,6 +12,8 @@
 
 **Compatibility Boundary:** Accept existing ZIP package shapes without an embedded manifest; preserve MAS's path and registration conventions; do not modify MAS saves or silently delete/overwrite externally changed files. Windows and Android clients both remain Wails v3.
 
+**Joint Release Requirement:** The first official release ships PC (Windows) and Android together. Both clients must pass the same feature checklist: catalog, MAS directory selection, installation, priority conflict resolution, update, uninstall, and recovery. A platform-specific milestone cannot be described as the finished product.
+
 **Verification:** `go test ./...`, API integration tests against disposable PostgreSQL/MinIO, `wails3 build` for Windows and Android, and an Android real-device SAF/file-operation smoke run. Each slice below has narrower acceptance checks.
 
 ---
@@ -27,7 +29,7 @@
 | M4 | Wails client functions on both platforms | Main user journey passes on Windows and device |
 | M5 | WebUI functions and release operations | Author and reviewer journeys pass; deployment rehearsal passes |
 
-M0 is a genuine stop/go gate for Android publication. If Wails v3 cannot supply SAF stream operations and a persistent document-tree grant, record evidence and revise the approved design with the user before developing the Android installer. Do not silently substitute a second Android framework.
+M0 is a genuine stop/go gate for the joint PC/Android first release. If Wails v3 cannot supply SAF stream operations and a persistent document-tree grant, record evidence and revise the approved design with the user before developing the Android installer. Do not silently substitute a second Android framework or release PC alone as the completed project.
 
 ## Proposed file ownership
 
@@ -215,7 +217,7 @@ These paths are proposed owners for the new repository, not claims that code alr
 - [ ] Fault-inject network loss, disk full, grant revocation, game running, process termination, and manual file modification.
 - [ ] Record supported Windows/Android and MAS versions, known package patterns, and remaining unsafe/unmanaged cases.
 
-**Verification:** CI `go test ./...` and API integration suite; manually signed Android device report and Windows smoke report. Do not publish Android as complete without M0 and this device report.
+**Verification:** CI `go test ./...` and API integration suite; manually signed Android device report and Windows smoke report. Do not declare the first release complete without both platform reports and M0.
 
 ### Task 5.2: Deployment and maintenance
 
@@ -230,7 +232,7 @@ These paths are proposed owners for the new repository, not claims that code alr
 
 ## Risks, rollback, and decisions still needed during execution
 
-- **Android Wails/SAF:** M0 may reveal missing native API support. The only approved immediate response is to pause Android release and present measured evidence plus a revised design option to the user.
+- **Android Wails/SAF:** M0 may reveal missing native API support. The only approved immediate response is to pause the joint first release and present measured evidence plus a revised design option to the user.
 - **Legacy packages:** root heuristics cannot safely infer every arbitrary ZIP. Unsupported paths produce a report; they are not copied or deleted. New supported shapes require a fixture and mapping rule.
 - **Unmanaged existing mods:** scan can show them but cannot safely erase them. Adoption requires an explicit backup-and-hash process.
 - **MAS in-game installer coexistence:** if MAS or another tool changes files later, hash drift blocks automatic modifications; the user may repair/rebaseline after reviewing differences.
@@ -239,4 +241,4 @@ These paths are proposed owners for the new repository, not claims that code alr
 
 ## Completion definition
 
-The project is releasable when M0–M5 gates pass, the two supported clients can complete the main journey on disposable installations, published artifacts are immutable and hash-verified, and recovery evidence shows interrupted operations cannot silently destroy unrelated files. This plan grants no authority to claim completion without the recorded checks.
+The first release is releasable only when M0–M5 gates pass, both Windows and Android clients complete the full feature checklist and main journey on disposable installations, published artifacts are immutable and hash-verified, and recovery evidence shows interrupted operations cannot silently destroy unrelated files. This plan grants no authority to claim completion without the recorded checks.

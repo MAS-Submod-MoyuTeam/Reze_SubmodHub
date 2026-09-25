@@ -10,6 +10,8 @@ Provide a public catalog for Monika After Story (MAS) submods and sprite packs. 
 
 The first release accepts legacy ZIPs without requiring an embedded manifest. The WebUI provides listing, author submission, and review functions; visual design and frontend implementation are assigned to another agent. There is no browser code editor or visual ZIP packager in this scope. The store does not alter MAS saves or execute uploaded scripts while scanning.
 
+The first official release must include both PC (Windows) and Android Wails v3 clients. Both clients must support catalog browsing, MAS directory selection, install, priority conflict handling, update, uninstall, and recovery. A working service or a working client on only one platform is an intermediate milestone, not completion of the requested product. If either platform fails its release gate, the joint first release is blocked until the design is revised with the user.
+
 ## Observed MAS conventions
 
 MAS has `game/Submods`, `game/mod_assets`, and `game/python-packages`. `zz_submods.rpy` registers `Submod(name, version, dependencies, ...)`; duplicate registered names raise an error. The built-in ZIP installer maps several top-level directories into the MAS tree and accepts loose `.rpy`/`.rpym` files under `Submods/UnGroupScripts`. It may create `.gift` files from sprite JSON `giftname` values under `AvailableGift`. Its current copy/delete flow does not provide durable per-file ownership. The MAICA sample spans `game/Submods/MAICA_ServerSubmod` and `game/python-packages`, so directory-only ownership is insufficient.
@@ -76,11 +78,11 @@ Versioned JSON API under `/api/v1`. Public endpoints cover catalog, mod detail, 
 
 ## Verification and release gates
 
-1. **Android feasibility gate:** on a real Android device, a Wails v3 app builds and launches, selects a MAS tree via SAF, persists permission, reads a ZIP, writes and removes test files inside a disposable test tree, and survives relaunch. Failure blocks Android release and triggers a design review; no alternative framework is silently substituted.
+1. **Android feasibility gate:** on a real Android device, a Wails v3 app builds and launches, selects a MAS tree via SAF, persists permission, reads a ZIP, writes and removes test files inside a disposable test tree, and survives relaunch. Failure blocks the joint first release and triggers a design review; no alternative framework is silently substituted.
 2. **Package compatibility:** fixture ZIPs cover MAICA's `Submods` plus `python-packages`, loose scripts, simple submods, sprite JSON/assets, nested roots, and invalid archives.
 3. **Installer safety:** tests cover path traversal, ZIP bombs, case and Unicode collisions, external files, priority reorder, semantic sprite conflicts, interrupted writes, manual edits, upgrade, uninstall, and backup recovery.
 4. **Service security:** tests cover both login providers, identity linking, role refresh, upload limits, review transitions, immutable publication, and download hashes.
-5. **Main journeys:** author submits and reviewer publishes; Windows and Android users locate MAS, install, reorder, update, uninstall, and recover. Windows can be automated; Android requires device-level evidence.
+5. **Main journeys:** author submits and reviewer publishes; Windows and Android users each locate MAS, install, reorder, update, uninstall, and recover. Windows can be automated; Android requires device-level evidence. Both platform reports are required for the first release.
 
 ## Known risks and non-goals
 

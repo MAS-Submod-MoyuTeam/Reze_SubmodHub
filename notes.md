@@ -27,6 +27,7 @@
 - `MAS_UniSync` reference: Flarum integration posts credentials to `/api/token`, fetches `/api/users/{id}` with the returned token, maps configurable group IDs/names to local roles, and creates a local session. It is credential-backed Flarum API login rather than standard OAuth.
 - Flarum authentication choice: reuse this server-side `/api/token` flow; do not require a Flarum OAuth extension in v1. GitHub OAuth remains an optional second provider using authorization code flow.
 - Architecture A approved: Go monolith and shared installer core; Wails v3 on both Windows and Android; separate WebUI over same API.
+- User clarified that the first official release must include both PC (Windows) and Android with the full installer feature set; one-platform delivery is only an intermediate milestone.
 - Wails v3 official search result indicates Android support is experimental; a device-level SAF and file I/O proof of concept must be the first technical gate. Playwright page navigation was unavailable (transport closed), so the search result is provisional evidence.
 - Installer design approved by user, with a needed implementation refinement: Android SAF does not promise atomic file replacement, so use a durable operation journal plus per-file backup and recovery rather than claiming filesystem-level atomicity.
 
