@@ -12,9 +12,9 @@
 
 **Compatibility Boundary:** Accept existing ZIP package shapes without an embedded manifest; preserve MAS's path and registration conventions; do not modify MAS saves or silently delete/overwrite externally changed files. Windows and Android clients both remain Wails v3.
 
-**Joint Release Requirement:** The first official release ships PC (Windows) and Android together. Both clients must pass the same feature checklist: catalog, MAS directory selection, installation, priority conflict resolution, update, uninstall, and recovery. A platform-specific milestone cannot be described as the finished product.
+**Joint Release Requirement:** The first official release ships PC (Windows) and Android together. Both clients must pass the same feature checklist: catalog, MAS installation validation (Windows directory selection; Android fixed-root validation), installation, priority conflict resolution, update, uninstall, and recovery. A platform-specific milestone cannot be described as the finished product.
 
-**Verification:** `go test ./...`, API integration tests against disposable PostgreSQL/MinIO, `wails3 build` for Windows and Android, and an Android real-device SAF/file-operation smoke run. Each slice below has narrower acceptance checks.
+**Verification:** `go test ./...`, API integration tests against disposable PostgreSQL/MinIO, `wails3 build` for Windows and Android, and an Android real-device All files access/file-operation smoke run. Each slice below has narrower acceptance checks.
 
 ---
 
@@ -22,14 +22,14 @@
 
 | Milestone | Deliverable | Release gate |
 |---|---|---|
-| M0 | Wails v3 Android SAF proof of concept | Real-device read/write/delete and persisted grant work |
+| M0 | Wails v3 Android All files access proof of concept | Real-device grant, read/write/delete, relaunch, and revocation work |
 | M1 | Pure Go archive scanner and install planner | Legacy fixtures and adversarial ZIP tests pass |
 | M2 | Local journaled installer for Windows and Android | Install/reorder/update/uninstall/recovery pass |
 | M3 | Go API, identity, storage, review | End-to-end publish/download API passes |
 | M4 | Wails client functions on both platforms | Main user journey passes on Windows and device |
 | M5 | WebUI functions and release operations | Author and reviewer journeys pass; deployment rehearsal passes |
 
-M0 is a genuine stop/go gate for the joint PC/Android first release. If Wails v3 cannot supply SAF stream operations and a persistent document-tree grant, record evidence and revise the approved design with the user before developing the Android installer. Do not silently substitute a second Android framework or release PC alone as the completed project.
+M0 is a genuine stop/go gate for the joint PC/Android first release. If the Wails v3 Android host cannot expose the All files access settings/status flow and safely operate on the fixed shared-storage MAS root, record evidence and revise the approved design with the user before developing the Android installer. Do not silently substitute SAF, a second Android framework, or release PC alone as the completed project.
 
 ## Proposed file ownership
 
@@ -39,7 +39,7 @@ M0 is a genuine stop/go gate for the joint PC/Android first release. If Wails v3
 | `internal/maspath/` | MAS installation detection and normalized target-path mapping |
 | `internal/solver/` | Dependencies, semantic conflicts, priority stacks, and operation previews |
 | `internal/install/` | Durable journal, backup store, application, update, uninstall, and recovery |
-| `internal/platform/` | Platform-neutral tree/stream interface; Windows filesystem and Android SAF adapters |
+| `internal/platform/` | Platform-neutral tree interface; Windows filesystem and Android grant-gated filesystem adapters |
 | `internal/catalog/` | Catalog, version, submission, review, and GitHub source business rules |
 | `internal/auth/` | Flarum API login, GitHub OAuth, sessions, identities, roles |
 | `internal/storage/` | PostgreSQL repositories and S3-compatible archive objects |
@@ -59,17 +59,18 @@ These paths are proposed owners for the new repository, not claims that code alr
 
 **Files:** create `go.mod`, `cmd/client/main.go`, `internal/platform/tree.go`, `internal/platform/android/`, `internal/platform/windows/`, `docs/android-smoke.md`.
 
-**Why:** The requested all-Wails architecture depends on Android SAF access. Establish versioned toolchains and a minimal tree interface before the install engine is built.
+**Why:** The requested all-Wails architecture depends on Android special-access permission and safe access to the fixed MAS root. Establish versioned toolchains and a minimal tree interface before the install engine is built.
 
-**Contract:** `Tree` provides `List`, `OpenRead`, `CreateOrReplace`, `Delete`, `Stat`, and `Close` on root-relative logical paths. Android stores document URIs, not raw filesystem paths. The smoke app only operates on a disposable directory selected by the user.
+**Contract:** `Tree` provides `List`, `OpenRead`, `CreateOrReplace`, `Delete`, `Stat`, and `Close` on root-relative logical paths. Android declares `MANAGE_EXTERNAL_STORAGE`; its native host reports `Environment.isExternalStorageManager()` and opens `ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION` with an app-specific URI, falling back to the general All files access settings page only if that intent is unavailable. The Go adapter checks the grant and confines paths under its validated root; production fixes this root to `/storage/emulated/0/MAS/`, while the smoke harness explicitly uses a disposable root. No production MAS write is part of M0.
 
 - [ ] Pin the Wails v3 and Go versions used by the smoke app; record Android SDK/Gradle versions in `docs/android-smoke.md`.
-- [ ] Use the pinned Wails v3 CLI's documented Android build task to build and launch the app on a real device; record the exact command and resulting APK path in the smoke log.
-- [ ] Select a disposable tree with SAF, persist grant, create/read/replace/delete a test file, relaunch, and read it again.
-- [ ] Test grant revocation and show a recoverable `permission_lost` state without writing outside the selected tree.
+- [ ] Generate a project-local Wails Android host, declare the special permission in its manifest, and expose `GetAndroidStorageAccess`/`RequestAndroidStorageAccess` through the native bridge. Recheck on return from settings and before file operations; support Android 11+ only for this flow.
+- [ ] Use the pinned Wails v3 CLI's documented Android build task to build and launch a sideloaded APK on a real device; record the exact command and resulting APK path in the smoke log.
+- [ ] On a disposable shared-storage tree, deny then grant access, create/read/replace/delete a test file, relaunch, and read it again without a second request.
+- [ ] Revoke the grant in system settings; show recoverable `permission_lost` and reject subsequent writes, even when the fixed path still exists.
 - [ ] Record device model, Android version, Wails commit/version, outcomes, and failing API limitations. Gate M0 on successful evidence.
 
-**Verification:** `go test ./internal/platform/...`; Android device smoke steps above; no MAS production tree is modified.
+**Verification:** `go test ./internal/platform/...`; Android device smoke steps above; no MAS production tree is modified. The Android APK/device result is required before M0 can pass.
 
 ### Task 0.2: Windows directory adapter and MAS detection
 
@@ -232,7 +233,7 @@ These paths are proposed owners for the new repository, not claims that code alr
 
 ## Risks, rollback, and decisions still needed during execution
 
-- **Android Wails/SAF:** M0 may reveal missing native API support. The only approved immediate response is to pause the joint first release and present measured evidence plus a revised design option to the user.
+- **Android Wails/All files access:** M0 may reveal missing native bridge support, denied special access, or incompatible device behavior. The only approved immediate response is to pause the joint first release and present measured evidence plus a revised design option to the user.
 - **Legacy packages:** root heuristics cannot safely infer every arbitrary ZIP. Unsupported paths produce a report; they are not copied or deleted. New supported shapes require a fixture and mapping rule.
 - **Unmanaged existing mods:** scan can show them but cannot safely erase them. Adoption requires an explicit backup-and-hash process.
 - **MAS in-game installer coexistence:** if MAS or another tool changes files later, hash drift blocks automatic modifications; the user may repair/rebaseline after reviewing differences.

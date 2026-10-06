@@ -1,0 +1,176 @@
+openapi: 3.1.0
+info:
+  title: Reze SubmodHub API
+  version: 0.1.0
+  description: Target REST contract for the WebUI and Wails clients.
+servers:
+  - url: /api/v1
+paths:
+  /mods:
+    get:
+      operationId: listMods
+      parameters:
+        - {name: q, in: query, schema: {type: string}}
+        - {name: category, in: query, schema: {type: string, enum: [submod, spritepack]}}
+        - {name: platform, in: query, schema: {type: string, enum: [windows, android]}}
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses: {'200': {$ref: '#/components/responses/ModPage'}, 'default': {$ref: '#/components/responses/Error}}
+  /mods/{mod_id}:
+    get:
+      operationId: getMod
+      parameters: [{name: mod_id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {$ref: '#/components/responses/Mod'}, 'default': {$ref: '#/components/responses/Error}}
+  /mods/{mod_id}/versions/{version_id}:
+    get:
+      operationId: getVersion
+      parameters:
+        - {name: mod_id, in: path, required: true, schema: {type: string}}
+        - {name: version_id, in: path, required: true, schema: {type: string}}
+      responses: {'200': {$ref: '#/components/responses/Version'}, 'default': {$ref: '#/components/responses/Error}}
+  /versions/{version_id}/download:
+    get:
+      operationId: getDownloadDescriptor
+      parameters: [{name: version_id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {$ref: '#/components/responses/Download'}, 'default': {$ref: '#/components/responses/Error}}
+  /session:
+    get:
+      operationId: getSession
+      responses: {'200': {$ref: '#/components/responses/Session'}}
+  /auth/flarum/login:
+    post:
+      operationId: loginFlarum
+      description: HTTPS only. Credentials are verified by the configured Flarum server and are not stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identification, password]
+              properties:
+                identification: {type: string}
+                password: {type: string, format: password}
+      responses: {'200': {$ref: '#/components/responses/Session'}, 'default': {$ref: '#/components/responses/Error'}}
+  /auth/logout:
+    post:
+      operationId: logout
+      parameters: [{name: X-CSRF-Token, in: header, required: true, schema: {type: string}}]
+      responses: {'204': {description: Session invalidated}, 'default': {$ref: '#/components/responses/Error'}}
+  /admin/users/{user_id}/roles:
+    get:
+      operationId: getFlarumUserRoles
+      description: Admin-only lookup of explicit author/reviewer grants for a Flarum numeric user ID.
+      parameters:
+        - {name: user_id, in: path, required: true, schema: {type: string, pattern: '^flarum:[1-9][0-9]*$'}}
+      responses: {'200': {description: Current role grant}, 'default': {$ref: '#/components/responses/Error'}}
+    post:
+      operationId: setFlarumUserRoles
+      description: Admin-only explicit author/reviewer grant for a Flarum numeric user ID. The admin role is never granted by this endpoint.
+      parameters:
+        - {name: user_id, in: path, required: true, schema: {type: string, pattern: '^flarum:[1-9][0-9]*$'}}
+        - {name: X-CSRF-Token, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roles]
+              properties:
+                roles: {type: array, uniqueItems: true, items: {type: string, enum: [author, reviewer]}}
+      responses: {'200': {description: Updated role grant}, 'default': {$ref: '#/components/responses/Error'}}
+  /author/mods:
+    post:
+      operationId: createAuthorMod
+      responses: {'201': {description: Draft mod}, 'default': {$ref: '#/components/responses/Error'}}
+  /author/mods/{mod_id}/versions:
+    post:
+      operationId: createAuthorVersion
+      parameters: [{name: mod_id, in: path, required: true, schema: {type: string}}]
+      responses: {'201': {description: Draft version}, 'default': {$ref: '#/components/responses/Error'}}
+  /author/versions/{version_id}/archive:
+    post:
+      operationId: uploadAuthorArchive
+      parameters: [{name: version_id, in: path, required: true, schema: {type: string}}]
+      requestBody: {required: true, content: {multipart/form-data: {schema: {type: object, required: [archive], properties: {archive: {type: string, format: binary}}}}}}
+      responses: {'201': {description: Scan result}, 'default': {$ref: '#/components/responses/Error'}}
+  /author/versions/{version_id}/submit:
+    post:
+      operationId: submitAuthorVersion
+      parameters: [{name: version_id, in: path, required: true, schema: {type: string}}]
+      responses: {'201': {description: Submission}, 'default': {$ref: '#/components/responses/Error'}}
+  /review/submissions:
+    get:
+      operationId: listReviewSubmissions
+      responses: {'200': {description: Submission page}, 'default': {$ref: '#/components/responses/Error'}}
+  /review/submissions/{submission_id}/{action}:
+    post:
+      operationId: reviewSubmissionAction
+      parameters:
+        - {name: submission_id, in: path, required: true, schema: {type: string}}
+        - {name: action, in: path, required: true, schema: {type: string, enum: [decision, publish]}}
+      responses: {'200': {description: Updated submission}, 'default': {$ref: '#/components/responses/Error'}}
+components:
+  schemas:
+    Mod:
+      type: object
+      required: [id, title, category, supported_platforms]
+      properties:
+        id: {type: string}
+        title: {type: string}
+        summary: {type: string}
+        category: {type: string, enum: [submod, spritepack]}
+        tags: {type: array, items: {type: string}}
+        supported_platforms: {type: array, items: {type: string, enum: [windows, android]}}
+        mas_version_range: {type: string}
+        recommended_priority: {type: integer}
+        latest_version_id: {type: string}
+    Version:
+      type: object
+      required: [id, mod_id, version, state, size_bytes, sha256]
+      properties:
+        id: {type: string}
+        mod_id: {type: string}
+        version: {type: string}
+        state: {type: string, enum: [published, unpublished]}
+        size_bytes: {type: integer, format: int64}
+        sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        release_notes: {type: string}
+        dependencies: {type: array, items: {type: object}}
+        scan_report_id: {type: string}
+    Page:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Mod'}}
+        next_cursor: {type: [string, 'null']}
+    Download:
+      type: object
+      required: [url, expires_at, sha256, size_bytes]
+      properties:
+        url: {type: string, format: uri}
+        expires_at: {type: string, format: date-time}
+        sha256: {type: string}
+        size_bytes: {type: integer, format: int64}
+    Session:
+      type: object
+      required: [roles, csrf_token]
+      properties:
+        user: {type: [object, 'null']}
+        roles: {type: array, items: {type: string, enum: [user, author, reviewer, admin]}}
+        csrf_token: {type: string}
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: {type: string}
+        message: {type: string}
+        details: {type: object}
+  responses:
+    ModPage: {description: Catalog page, content: {application/json: {schema: {$ref: '#/components/schemas/Page'}}}}
+    Mod: {description: Mod detail, content: {application/json: {schema: {$ref: '#/components/schemas/Mod'}}}}
+    Version: {description: Published version, content: {application/json: {schema: {$ref: '#/components/schemas/Version'}}}}
+    Download: {description: Immutable archive descriptor, content: {application/json: {schema: {$ref: '#/components/schemas/Download'}}}}
+    Session: {description: Session state, content: {application/json: {schema: {$ref: '#/components/schemas/Session'}}}}
+    Error: {description: Stable error, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}

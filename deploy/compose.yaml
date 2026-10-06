@@ -1,0 +1,66 @@
+name: submodhub
+services:
+  web:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "100.72.137.92:${SUBMODHUB_WEB_PORT:-18083}:80"
+    volumes:
+      - ../web/dist:/usr/share/nginx/html:ro
+      - ./web.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      SUBMODHUB_ADDR: ":8080"
+      SUBMODHUB_DATA_DIR: /data
+      POSTGRES_DSN: postgres://submodhub:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/submodhub?sslmode=disable
+      FLARUM_URL: ${FLARUM_URL:-}
+      ADMIN_FLARUM_GROUP_IDS: ${ADMIN_FLARUM_GROUP_IDS:-}
+      SUBMODHUB_ALLOW_INSECURE_AUTH: ${SUBMODHUB_ALLOW_INSECURE_AUTH:-true}
+      SUBMODHUB_AUTO_PUBLISH: ${SUBMODHUB_AUTO_PUBLISH:-false}
+      SUBMODHUB_TEST_MODE: ${SUBMODHUB_TEST_MODE:-false}
+      SUBMODHUB_TEST_USERNAME: ${SUBMODHUB_TEST_USERNAME:-submodhub-test}
+      SUBMODHUB_TEST_PASSWORD: ${SUBMODHUB_TEST_PASSWORD:-submodhub-test}
+    ports:
+      - "100.72.137.92:${SUBMODHUB_PORT:-18082}:8080"
+    volumes:
+      - ./data:/data
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/submodhub", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: submodhub
+      POSTGRES_USER: submodhub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U submodhub -d submodhub"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  postgres-data:

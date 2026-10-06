@@ -30,3 +30,14 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Local browser automation evidence
+.playwright-mcp/
+
+# Frontend dependencies and build output
+node_modules/
+dist/
+.design-preview/
+deploy/data/
+deploy/build/
+submodhub-deploy.tar

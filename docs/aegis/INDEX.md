@@ -2,6 +2,8 @@
 
 - [SubmodHub design](specs/2026-09-25-submodhub-design.md)
 - [SubmodHub implementation plan](plans/2026-09-25-submodhub.md)
+- [Frontend function and API contract](../frontend-contract.md)
+- [Android All files access feasibility gate](../android-smoke.md)
 
 Local reference projects used during design:
 

@@ -1,0 +1,6 @@
+{
+  "name": "SubmodHub",
+  "description": "SubmodHub 前端设计稿与功能演示平台：面向 Monika After Story (MAS) 的模组目录、作者工作台、静态扫描报告、审核与审计管理系统。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

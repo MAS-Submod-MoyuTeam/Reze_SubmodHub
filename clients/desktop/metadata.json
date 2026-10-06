@@ -1,0 +1,6 @@
+{
+  "name": "SubmodHub Desktop Client",
+  "description": "High-fidelity PC client for SubmodHub MAS mod management, installation planning, dependency resolution, and atomic recovery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

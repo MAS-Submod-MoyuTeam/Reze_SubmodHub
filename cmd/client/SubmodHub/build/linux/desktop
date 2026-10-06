@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=SubmodHub
+Comment=MAS submod manager
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/submodhub.exe %u
+Terminal=false
+Type=Application
+Icon=submodhub.exe
+Categories=Utility;
+StartupWMClass=submodhub.exe
+
+ 

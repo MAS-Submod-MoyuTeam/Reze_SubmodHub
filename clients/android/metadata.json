@@ -1,0 +1,6 @@
+{
+  "name": "SubmodHub Android UI Draft",
+  "description": "SubmodHub Android客户端UI交互草稿与设计规范原型系统，涵盖SAF授权、模组发现、安装计划预览、未托管收养与异常恢复流。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
