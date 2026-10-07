@@ -202,6 +202,13 @@ export const AuthorWorkbench: React.FC = () => {
     }
   };
 
+  const handleSpritepackUpload = async (file: File) => {
+    if (!activeMod) return;
+    const candidate = activeModVersions.find((version) => ['draft', 'uploaded', 'rejected', 'scanning'].includes(version.state));
+    const versionId = candidate?.id || await createCandidateVersion(activeMod.id, 'current', '');
+    if (versionId) await handleUploadArchive(versionId, file);
+  };
+
   const handleGithubImport = (e: React.FormEvent) => {
     e.preventDefault();
     if (!githubReleaseUrl.trim()) return;
@@ -249,7 +256,8 @@ export const AuthorWorkbench: React.FC = () => {
           const file = event.target.files?.[0];
           event.target.value = '';
           const versionId = uploadVersionIdRef.current;
-          if (file && versionId) void handleUploadArchive(versionId, file);
+          if (file && versionId === 'spritepack:new') void handleSpritepackUpload(file);
+          else if (file && versionId) void handleUploadArchive(versionId, file);
         }}
       />
       {/* Top Banner & Stats */}
@@ -350,7 +358,7 @@ export const AuthorWorkbench: React.FC = () => {
                         <span className="font-semibold text-neutral-900 text-xs">
                           {sub.mod_title}
                         </span>
-                        <span className="font-mono text-xs text-neutral-600">v{sub.version_str}</span>
+                        <span className="font-mono text-xs text-neutral-600">{sub.category === 'spritepack' ? '精灵包' : `v${sub.version_str}`}</span>
                         <span
                           className={`text-[11px] font-mono px-2 py-0.5 rounded ${
                             isPublished
@@ -508,17 +516,68 @@ export const AuthorWorkbench: React.FC = () => {
                       <Pencil className="w-3.5 h-3.5" />
                       编辑模组
                     </button>
-                    <button
-                      onClick={() => openVersionForm()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      + 创建候选版本
-                    </button>
+                    {activeMod.category !== 'spritepack' && (
+                      <button
+                        onClick={() => openVersionForm()}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        + 创建候选版本
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {/* Versions List for this Mod */}
+                {activeMod.category === 'spritepack' ? (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h3 className="text-xs font-bold text-neutral-900 uppercase">当前精灵包</h3>
+                      <button
+                        type="button"
+                        disabled={isUploading || activeModVersions.some((version) => version.state === 'ready_for_review')}
+                        onClick={() => {
+                          uploadVersionIdRef.current = 'spritepack:new';
+                          if (archiveInputRef.current) archiveInputRef.current.value = '';
+                          archiveInputRef.current?.click();
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded disabled:opacity-40"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        {activeModVersions.some((version) => version.state === 'published') ? '上传替换包' : '上传精灵包 ZIP'}
+                      </button>
+                    </div>
+                    {activeModVersions.some((version) => version.state === 'published') && <p className="text-xs text-neutral-600">已有公开精灵包。替换包审核通过后将成为唯一可下载的包。</p>}
+                    {!activeModVersions.length && <p className="text-xs text-neutral-500">尚未上传精灵包。</p>}
+                    {activeModVersions.filter((version) => version.state !== 'published' && version.state !== 'unpublished').map((version) => {
+                      const report = version.scan_report_id ? scanReports[version.scan_report_id] : null;
+                      return (
+                        <div key={version.id} className="border border-neutral-200 rounded-md p-4 space-y-3 text-xs">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="font-semibold text-neutral-800">待发布包 · {version.state}</span>
+                            {version.state !== 'ready_for_review' && <button onClick={() => { if (window.confirm('确认删除此草稿包？')) void deleteVersion(version.id); }} className="text-rose-700">删除草稿</button>}
+                          </div>
+                          {report?.sprite_sets && (
+                            <div className="space-y-2">
+                              <div className="font-medium text-neutral-700">识别到 {report.sprite_sets.length} 套 · {report.sprite_sets.reduce((count, set) => count + set.items.length, 0)} 个 JSON 项目</div>
+                              <div className="max-h-48 overflow-y-auto border border-neutral-200 rounded p-2 space-y-1">
+                                {report.sprite_sets.map((set) => <div key={set.id}><span className="font-medium">{set.name}</span><span className="text-neutral-500"> · {set.items.map((item) => item.display_name).join('、')}</span></div>)}
+                              </div>
+                            </div>
+                          )}
+                          {report?.blockers?.length ? <p className="text-rose-700">扫描阻断：{report.blockers.join('；')}</p> : null}
+                          {version.state === 'uploaded' && report && (
+                            <button disabled={Boolean(report.blockers?.length) || submittingVersionId === version.id} onClick={async () => {
+                              setSubmittingVersionId(version.id);
+                              try { await submitVersionForReview(version.id, true); } finally { setSubmittingVersionId(null); }
+                            }} className="px-3 py-1.5 bg-emerald-700 text-white rounded disabled:opacity-40 flex items-center gap-1.5">
+                              <Send className="w-3.5 h-3.5" />提交审核
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
@@ -752,6 +811,7 @@ export const AuthorWorkbench: React.FC = () => {
                     </div>
                   )}
                 </div>
+                )}
               </>
             ) : (
               <div className="py-12 text-center text-neutral-400 text-xs">

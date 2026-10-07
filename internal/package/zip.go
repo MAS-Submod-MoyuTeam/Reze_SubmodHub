@@ -28,13 +28,13 @@ type File struct {
 }
 
 type Registration struct {
-	Source              string              `json:"source"`
-	Author              string              `json:"author"`
-	Name                string              `json:"name"`
-	Version             string              `json:"version"`
-	Unknown             bool                `json:"unknown"`
+	Source              string             `json:"source"`
+	Author              string             `json:"author"`
+	Name                string             `json:"name"`
+	Version             string             `json:"version"`
+	Unknown             bool               `json:"unknown"`
 	Dependencies        []SubmodDependency `json:"dependencies,omitempty"`
-	DependenciesUnknown bool                `json:"dependencies_unknown,omitempty"`
+	DependenciesUnknown bool               `json:"dependencies_unknown,omitempty"`
 }
 type SubmodDependency struct {
 	Name    string `json:"name"`
@@ -49,6 +49,8 @@ type Derived struct{ Source, Target string }
 type Conflict struct{ Kind, Value, First, Second string }
 type Report struct {
 	Files       []File         `json:"files"`
+	SpriteIndexVersion int `json:"sprite_index_version,omitempty"`
+	SpriteSets  []SpriteSet    `json:"sprite_sets,omitempty"`
 	Unsupported []string       `json:"unsupported"`
 	Warnings    []string       `json:"warnings"`
 	Submods     []Registration `json:"submods"`

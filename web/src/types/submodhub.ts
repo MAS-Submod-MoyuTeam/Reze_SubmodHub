@@ -126,6 +126,7 @@ export interface ScanReport {
   unsupported_paths: string[];
   registrations: SubmodRegistration[];
   sprite_identities: SpriteIdentity[];
+  sprite_sets?: Array<{ id: string; name: string; items: Array<{ display_name: string; preview_source?: string }> }>;
   derived_gifts: string[];
   blockers: string[];
   warnings: string[];

@@ -1,7 +1,43 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { fetchDownloadDescriptor, fetchPublishedCatalog, fetchVerifiedArchive } from './catalog-api';
+import { fetchDownloadDescriptor, fetchPublishedCatalog, fetchSpriteSets, fetchVerifiedArchive, fetchVerifiedSpriteSelection } from './catalog-api';
+
+test('loads sprite sets and verifies a selected ZIP hash', async () => {
+  const bytes = new TextEncoder().encode('selected sprite ZIP');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const requests: string[] = [];
+  const fetcher = async (input: RequestInfo | URL) => {
+    requests.push(String(input));
+    if (String(input).endsWith('/spritepacks/m1')) return Response.json({ sets: [{ id: 'set_a', name: 'Set A', items: [{ display_name: '和服', preview_url: '/api/v1/spritepacks/m1/preview?set=set_a&item=0' }] }] });
+    return new Response(bytes, { headers: { 'X-Archive-SHA256': hash, 'Content-Length': String(bytes.length) } });
+  };
+  const sets = await fetchSpriteSets('m1', '/api/v1', fetcher as typeof fetch);
+  assert.equal(sets[0].items[0].display_name, '和服');
+  const result = await fetchVerifiedSpriteSelection('m1', ['set_a'], '/api/v1', fetcher as typeof fetch);
+  assert.deepEqual(new Uint8Array(await result.blob.arrayBuffer()), bytes);
+  assert.equal(requests[1], 'http://localhost/api/v1/spritepacks/m1/download?sets=set_a');
+});
+
+test('rejects a sprite selection with an invalid server hash', async () => {
+  const fetcher = async () => new Response('bytes', { headers: { 'X-Archive-SHA256': '0'.repeat(64), 'Content-Length': '5' } });
+  await assert.rejects(fetchVerifiedSpriteSelection('m1', ['set_a'], '/api/v1', fetcher as typeof fetch), /download_hash_mismatch/);
+});
+
+test('verifies a sprite ZIP when insecure HTTP disables Web Crypto', async () => {
+  const bytes = new TextEncoder().encode('HTTP sprite ZIP');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: {} });
+  try {
+    const fetcher = async () => new Response(bytes, { headers: { 'X-Archive-SHA256': hash, 'Content-Length': String(bytes.length) } });
+    const result = await fetchVerifiedSpriteSelection('m1', ['set_a'], '/api/v1', fetcher as typeof fetch);
+    assert.equal(result.sha256, hash);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'crypto', original);
+    else delete (globalThis as { crypto?: Crypto }).crypto;
+  }
+});
 
 test('loads the published catalog and its latest versions', async () => {
   const paths: string[] = [];

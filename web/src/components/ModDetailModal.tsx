@@ -4,6 +4,7 @@ import { ModVersion, DownloadDescriptor } from '../types/submodhub';
 import { fetchVerifiedArchive } from '../../../ui/catalog-api';
 import { MarkdownText } from './MarkdownText';
 import { DeprecationNotice } from './DeprecationNotice';
+import { SpritepackSets } from './SpritepackSets';
 import {
   X,
   Download,
@@ -61,13 +62,13 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
   const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
-    if (!downloadVersionId) return;
+    if (!downloadVersionId || currentMod?.category === 'spritepack') return;
     let active = true;
     getDownloadDescriptor(downloadVersionId)
       .then((descriptor) => { if (active) setDownloadDescriptor(descriptor); })
       .catch((error) => { if (active) showToast('error', `无法取得下载信息：${error.message}`); });
     return () => { active = false; };
-  }, [downloadVersionId, getDownloadDescriptor, showToast]);
+  }, [downloadVersionId, currentMod?.category, getDownloadDescriptor, showToast]);
 
   const [copiedHash, setCopiedHash] = useState(false);
 
@@ -157,6 +158,10 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
             <MarkdownText value={currentMod.description || currentMod.summary} className="text-neutral-600 bg-neutral-50 p-3 rounded border border-neutral-100" />
           </div>
 
+          {currentMod.category === 'spritepack' ? (
+            <SpritepackSets modID={currentMod.id} showToast={showToast} />
+          ) : (
+          <>
           {/* Versions Bar & Switcher */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -414,6 +419,8 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                 </button>
               </div>
             </div>
+          )}
+          </>
           )}
         </div>
 

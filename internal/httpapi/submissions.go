@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	packagezip "github.com/reze/submodhub/internal/package"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -23,6 +24,46 @@ func latestPublishedVersionID(c Catalog, modID string) string {
 		return ""
 	}
 	return ids[0]
+}
+
+// The reviewed replacement is already published in memory. Preserve old
+// submission snapshots before removing obsolete spritepack versions.
+func (s *Store) retireSpritepackVersionsLocked(modID, currentID string) []string {
+	var spritepack bool
+	for _, mod := range s.Catalog.Mods {
+		if mod.ID == modID {
+			spritepack = mod.Category == "spritepack"
+			break
+		}
+	}
+	if !spritepack {
+		return nil
+	}
+	var paths []string
+	for id, old := range s.Catalog.Versions {
+		if id == currentID || old.ModID != modID || (old.State != "published" && old.State != "unpublished") {
+			continue
+		}
+		for i := range s.Catalog.Submissions {
+			sub := &s.Catalog.Submissions[i]
+			if sub.VersionID != id || sub.VersionSnapshot != nil {
+				continue
+			}
+			snapshot := old
+			snapshot.ArchivePath = ""
+			sub.VersionSnapshot = &snapshot
+			if report, ok := s.Catalog.ScanReports[old.ScanReportID]; ok {
+				copy := report
+				sub.ScanReportSnapshot = &copy
+			}
+		}
+		if old.ArchivePath != "" {
+			paths = append(paths, old.ArchivePath)
+		}
+		delete(s.Catalog.ScanReports, old.ScanReportID)
+		delete(s.Catalog.Versions, id)
+	}
+	return paths
 }
 
 func (s *Store) versionLifecycle(w http.ResponseWriter, r *http.Request) {
@@ -251,7 +292,10 @@ func (s *Store) reviewSubmissionResource(w http.ResponseWriter, r *http.Request)
 					report = &item
 				}
 			}
-			if sub.State == "rejected" && sub.VersionSnapshot != nil {
+			if sub.VersionSnapshot != nil && version.ID == "" {
+				version = *sub.VersionSnapshot
+				report = sub.ScanReportSnapshot
+			} else if sub.State == "rejected" && sub.VersionSnapshot != nil {
 				version = *sub.VersionSnapshot
 				report = sub.ScanReportSnapshot
 			}
@@ -283,6 +327,7 @@ func (s *Store) reviewSubmissionResource(w http.ResponseWriter, r *http.Request)
 			writeError(w, 409, "invalid_state", "submission is not approved")
 			return
 		}
+		before, _ := json.Marshal(s.Catalog)
 		v := s.Catalog.Versions[found.VersionID]
 		v.State = "published"
 		s.Catalog.Versions[v.ID] = v
@@ -295,9 +340,14 @@ func (s *Store) reviewSubmissionResource(w http.ResponseWriter, r *http.Request)
 		found.State = "published"
 		found.PublishedAt = &now
 		s.Catalog.ReviewAudit = append(s.Catalog.ReviewAudit, ReviewAuditEvent{ID: reviewAuditID(), Timestamp: now, ActorID: session.User.ID, ActorName: session.User.DisplayName, ActorRole: "admin", Action: "version_publish", TargetType: "version", TargetID: found.VersionID, TargetLabel: found.ID, Reason: "published"})
+		oldPaths := s.retireSpritepackVersionsLocked(found.ModID, v.ID)
 		if err := s.saveLocked(); err != nil {
+			_ = json.Unmarshal(before, &s.Catalog)
 			writeError(w, 500, "storage_error", "publication was not saved")
 			return
+		}
+		for _, oldPath := range oldPaths {
+			_ = os.Remove(oldPath)
 		}
 		writeJSON(w, 200, *found)
 		return
@@ -329,6 +379,7 @@ func (s *Store) reviewSubmissionResource(w http.ResponseWriter, r *http.Request)
 		writeError(w, 409, "invalid_state", "submission is not awaiting review")
 		return
 	}
+	before, _ := json.Marshal(s.Catalog)
 	now := time.Now().UTC()
 	found.ReviewerID = session.User.ID
 	found.Reason = strings.TrimSpace(req.Reason)
@@ -358,11 +409,19 @@ func (s *Store) reviewSubmissionResource(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	s.Catalog.Versions[v.ID] = v
+	var oldPaths []string
+	if req.Decision == "approve" {
+		oldPaths = s.retireSpritepackVersionsLocked(found.ModID, v.ID)
+	}
 	action := "submission_" + req.Decision
 	s.Catalog.ReviewAudit = append(s.Catalog.ReviewAudit, ReviewAuditEvent{ID: reviewAuditID(), Timestamp: now, ActorID: session.User.ID, ActorName: session.User.DisplayName, ActorRole: "admin", Action: action, TargetType: "submission", TargetID: found.ID, TargetLabel: found.ID, Reason: found.Reason})
 	if err := s.saveLocked(); err != nil {
+		_ = json.Unmarshal(before, &s.Catalog)
 		writeError(w, 500, "storage_error", "decision was not saved")
 		return
+	}
+	for _, oldPath := range oldPaths {
+		_ = os.Remove(oldPath)
 	}
 	writeJSON(w, 200, *found)
 }

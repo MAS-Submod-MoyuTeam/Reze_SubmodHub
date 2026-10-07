@@ -42,7 +42,7 @@ export const ReviewerWorkbench: React.FC = () => {
 
   // Active submission for deep inspection
   const [selectedSubId, setSelectedSubId] = useState<string>(() => submissions[0]?.id || '');
-  const [reviewDetail, setReviewDetail] = useState<{ mod?: { title?: string; summary?: string; tags?: string[]; supported_platforms?: string[] }; version?: { release_notes?: string; version?: string; size_bytes?: number; sha256?: string; dependencies?: Array<{ mod_id?: string; mod_title?: string; version_range?: string; required?: boolean }> }; scan_report?: { files?: Array<{ source?: string; target?: string; size?: number; sha256?: string; class?: string }>; unsupported?: string[]; warnings?: string[]; conflicts?: unknown[] } } | null>(null);
+  const [reviewDetail, setReviewDetail] = useState<{ mod?: { title?: string; summary?: string; tags?: string[]; supported_platforms?: string[] }; version?: { release_notes?: string; version?: string; size_bytes?: number; sha256?: string; dependencies?: Array<{ mod_id?: string; mod_title?: string; version_range?: string; required?: boolean }> }; scan_report?: { files?: Array<{ source?: string; target?: string; size?: number; sha256?: string; class?: string }>; unsupported?: string[]; warnings?: string[]; conflicts?: unknown[]; sprite_sets?: Array<{ id: string; name: string; items: Array<{ display_name: string }> }> } } | null>(null);
 
   React.useEffect(() => {
     if (!selectedSubId) return;
@@ -261,7 +261,7 @@ export const ReviewerWorkbench: React.FC = () => {
                       <span className="font-semibold text-neutral-900 truncate max-w-[160px]">
                         {sub.mod_title}
                       </span>
-                      <span className="font-mono text-[11px] text-neutral-600">v{sub.version_str}</span>
+                      <span className="font-mono text-[11px] text-neutral-600">{sub.category === 'spritepack' ? '精灵包' : `v${sub.version_str}`}</span>
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-neutral-500">
@@ -316,7 +316,7 @@ export const ReviewerWorkbench: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <h2 className="text-base font-bold text-neutral-900">
-                        {activeSubmission.mod_title} (v{activeSubmission.version_str})
+                        {activeSubmission.mod_title} {activeSubmission.category === 'spritepack' ? '(精灵包)' : `(v${activeSubmission.version_str})`}
                       </h2>
                       <span
                         className={`text-xs font-mono px-2 py-0.5 rounded font-semibold ${
@@ -377,6 +377,7 @@ export const ReviewerWorkbench: React.FC = () => {
                       <span className="font-mono">SHA-256：{reviewDetail.version?.sha256 || '-'}</span>
                     </div>
                     <div><span className="font-semibold">文件变化：</span>{reviewDetail.scan_report?.files?.length || 0} 个文件；不支持路径 {reviewDetail.scan_report?.unsupported?.length || 0} 个；冲突 {reviewDetail.scan_report?.conflicts?.length || 0} 个</div>
+                    {reviewDetail.scan_report?.sprite_sets && <div className="space-y-1"><span className="font-semibold">精灵包套件：</span>{reviewDetail.scan_report.sprite_sets.length} 套<div className="max-h-36 overflow-auto border border-sky-200 bg-white rounded p-2">{reviewDetail.scan_report.sprite_sets.map((set) => <div key={set.id}>{set.name}：{set.items.map((item) => item.display_name).join('、')}</div>)}</div></div>}
                     {reviewDetail.scan_report?.files && reviewDetail.scan_report.files.length > 0 && (
                       <div className="max-h-40 overflow-auto border border-sky-200 bg-white rounded">
                         {reviewDetail.scan_report.files.map((file, index) => <div key={index} className="px-2 py-1 font-mono text-[10px] border-b border-neutral-100 last:border-0">{file.source || '-'} → {file.target || '-'} ({file.class || 'file'}, {file.size || 0} bytes)</div>)}

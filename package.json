@@ -1,0 +1,8 @@
+{
+  "name": "submodhub-shared-ui",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@noble/hashes": "^2.0.1"
+  }
+}

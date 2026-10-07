@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
@@ -196,6 +197,7 @@ func NewStoreHandler(s *Store) http.Handler {
 	mux.HandleFunc("/api/v1/review/audit", s.reviewAudit)
 	mux.HandleFunc("/api/v1/review/submissions/", s.reviewSubmissionResource)
 	mux.HandleFunc("/api/v1/mods/", s.modResource)
+	mux.HandleFunc("/api/v1/spritepacks/", s.spritepackResource)
 	mux.HandleFunc("/api/v1/versions/", s.downloadDescriptor)
 	mux.HandleFunc("/api/v1/archives/", s.downloadArchive)
 	return withCORS(mux)
@@ -773,11 +775,9 @@ func (s *Store) downloadDescriptor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"url": "/api/v1/archives/" + v.ID, "expires_at": time.Now().Add(15 * time.Minute).UTC().Format(time.RFC3339), "sha256": v.SHA256, "size_bytes": v.SizeBytes})
 }
 func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
-	authorized := s.UploadToken != "" && r.Header.Get("Authorization") == "Bearer "+s.UploadToken
-	if !authorized {
-		_, authorized = s.readSession(r)
-	}
-	if !authorized {
+	usingUploadToken := s.UploadToken != "" && r.Header.Get("Authorization") == "Bearer "+s.UploadToken
+	session, hasSession := s.readSession(r)
+	if !usingUploadToken && !hasSession {
 		writeError(w, http.StatusUnauthorized, "unauthenticated", "login is required")
 		return
 	}
@@ -798,6 +798,21 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "version was not found")
 		return
 	}
+	if !usingUploadToken {
+		owned := false
+		s.mu.RLock()
+		for _, mod := range s.Catalog.Mods {
+			if mod.ID == version.ModID && mod.Author.ID == session.User.ID {
+				owned = true
+				break
+			}
+		}
+		s.mu.RUnlock()
+		if !owned && !containsRole(s.effectiveRoles(session), "admin") {
+			writeError(w, http.StatusForbidden, "forbidden", "author permission required")
+			return
+		}
+	}
 	if version.State == "published" || version.State == "approved" || version.State == "ready_for_review" {
 		writeError(w, http.StatusConflict, "immutable_version", "version archive cannot be replaced")
 		return
@@ -817,7 +832,16 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid_archive", "archive must be a ZIP file")
 		return
 	}
-	archivePath, size, hash, report, err := s.persistArchive(versionID, file)
+	isSpritepack := false
+	s.mu.RLock()
+	for _, mod := range s.Catalog.Mods {
+		if mod.ID == version.ModID {
+			isSpritepack = mod.Category == "spritepack"
+			break
+		}
+	}
+	s.mu.RUnlock()
+	archivePath, size, hash, report, err := s.persistArchive(versionID, file, isSpritepack)
 	if err != nil {
 		writeError(w, 400, "invalid_archive", err.Error())
 		return
@@ -828,6 +852,12 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		_ = os.Remove(archivePath)
 		writeError(w, 404, "not_found", "version was not found")
+		return
+	}
+	if v.ModID != version.ModID || v.State == "published" || v.State == "approved" || v.State == "ready_for_review" {
+		s.mu.Unlock()
+		_ = os.Remove(archivePath)
+		writeError(w, http.StatusConflict, "immutable_version", "version changed during upload")
 		return
 	}
 	if v.State == "rejected" {
@@ -910,7 +940,7 @@ func dependencyRange(minimum, maximum string) string {
 		return "*"
 	}
 }
-func (s *Store) persistArchive(versionID string, src io.Reader) (string, int64, string, packagezip.Report, error) {
+func (s *Store) persistArchive(versionID string, src io.Reader, isSpritepack bool) (string, int64, string, packagezip.Report, error) {
 	if strings.ContainsAny(versionID, "/\\") || versionID == "." || versionID == ".." {
 		return "", 0, "", packagezip.Report{}, errors.New("invalid version id")
 	}
@@ -935,7 +965,12 @@ func (s *Store) persistArchive(versionID string, src io.Reader) (string, int64, 
 		_ = os.Remove(tmp)
 		return "", 0, "", packagezip.Report{}, err
 	}
-	report, err := packagezip.Scan(strings.NewReader(string(b)), int64(len(b)), packagezip.Limits{})
+	var report packagezip.Report
+	if isSpritepack {
+		report, err = packagezip.ScanSpriteArchive(bytes.NewReader(b), int64(len(b)), packagezip.Limits{})
+	} else {
+		report, err = packagezip.Scan(bytes.NewReader(b), int64(len(b)), packagezip.Limits{})
+	}
 	if err != nil {
 		_ = os.Remove(tmp)
 		return "", 0, "", packagezip.Report{}, err

@@ -1,3 +1,6 @@
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
 export interface CatalogMod {
   id: string;
   title: string;
@@ -40,6 +43,51 @@ export interface ArchiveDescriptor {
   expires_at: string;
   sha256: string;
   size_bytes: number;
+}
+
+export interface SpriteSet {
+  id: string;
+  name: string;
+  items: Array<{ display_name: string; preview_url?: string }>;
+}
+
+export async function fetchSpriteSets(modID: string, base = '/api/v1', fetcher: typeof fetch = fetch): Promise<SpriteSet[]> {
+  const path = `${base.replace(/\/$/, '')}/spritepacks/${encodeURIComponent(modID)}`;
+  const result = await readJSON(await fetcher(path)) as { sets?: SpriteSet[] };
+  if (!Array.isArray(result.sets) || result.sets.some((set) => !set.id || !Array.isArray(set.items))) throw new Error('invalid_spritepack_response');
+  return result.sets;
+}
+
+export async function fetchVerifiedSpriteSelection(modID: string, setIDs: string[], base = '/api/v1', fetcher: typeof fetch = fetch): Promise<{ blob: Blob; sha256: string; size_bytes: number }> {
+  if (setIDs.length === 0) throw new Error('empty_sprite_selection');
+  const serviceURL = new URL(base, typeof window === 'undefined' ? 'http://localhost/' : window.location.href);
+  const url = new URL(`${serviceURL.pathname.replace(/\/$/, '')}/spritepacks/${encodeURIComponent(modID)}/download`, serviceURL);
+  url.searchParams.set('sets', setIDs.join(','));
+  const response = await fetcher(url.href);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { code?: string } | null;
+    throw new Error(body?.code || `http_${response.status}`);
+  }
+  const expectedHash = response.headers.get('X-Archive-SHA256') || '';
+  const expectedSize = Number(response.headers.get('Content-Length'));
+  if (!/^[0-9a-f]{64}$/.test(expectedHash) || !Number.isSafeInteger(expectedSize) || expectedSize < 1 || expectedSize > 64 * 1024 * 1024 || !response.body) throw new Error('invalid_download_response');
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > expectedSize) { await reader.cancel(); throw new Error('download_size_mismatch'); }
+    chunks.push(value);
+  }
+  if (size !== expectedSize) throw new Error('download_size_mismatch');
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  const hash = bytesToHex(sha256(bytes));
+  if (hash !== expectedHash) throw new Error('download_hash_mismatch');
+  return { blob: new Blob([bytes], { type: 'application/zip' }), sha256: hash, size_bytes: size };
 }
 
 async function readJSON(response: Response): Promise<unknown> {
@@ -103,7 +151,6 @@ export async function fetchVerifiedArchive(versionID: string, base = '/api/v1', 
   }
   const expiry = Date.parse(descriptor.expires_at);
   if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new Error('download_expired');
-  if (!globalThis.crypto?.subtle) throw new Error('crypto_unavailable');
   const serviceURL = new URL(base, typeof window === 'undefined' ? 'http://localhost/' : window.location.href);
   const archiveURL = new URL(descriptor.url, serviceURL);
   const response = await fetcher(archiveURL.href);
@@ -129,8 +176,7 @@ export async function fetchVerifiedArchive(versionID: string, base = '/api/v1', 
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
-  const hash = Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const hash = bytesToHex(sha256(bytes));
   if (hash !== descriptor.sha256) throw new Error('download_hash_mismatch');
   return { blob: new Blob([bytes], { type: 'application/zip' }), sha256: hash, size_bytes: size };
 }

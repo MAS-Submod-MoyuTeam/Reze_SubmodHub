@@ -6,6 +6,7 @@ export interface ServerScanReport {
   warnings?: string[];
   submods?: { source?: string; author?: string; name?: string; version?: string; unknown?: boolean; Source?: string; Author?: string; Name?: string; Version?: string; Unknown?: boolean }[];
   sprites?: { source?: string; identity?: string; giftName?: string; giftGroup?: string; unknown?: boolean; Source?: string; Identity?: string; GiftName?: string; GiftGroup?: string; Unknown?: boolean }[];
+  sprite_sets?: Array<{ id: string; name: string; items: Array<{ display_name: string; preview_source?: string }> }>;
   derived?: { source?: string; target?: string; Source?: string; Target?: string }[];
   conflicts?: { kind?: string; value?: string; first?: string; second?: string; Kind?: string; Value?: string; First?: string; Second?: string }[];
 }
@@ -32,6 +33,7 @@ export function mapServerScanReport(versionId: string, source: ServerScanReport)
       return { submod_id: name || sourcePath, source_path: sourcePath, name: name || sourcePath, version: item.version || item.Version || '', author: item.author || item.Author || '', confidence: (item.unknown ?? item.Unknown) ? 'unknown' : 'known' };
     }),
     sprite_identities: (source.sprites || []).map((item) => ({ category: item.giftGroup || item.GiftGroup || '', name: item.identity || item.Identity || item.source || item.Source || '', giftname: item.giftName || item.GiftName || '', poses: [] })),
+    sprite_sets: source.sprite_sets || [],
     derived_gifts: (source.derived || []).map((item) => item.target || item.Target || ''),
     blockers: conflicts.map((item) => `${item.kind || item.Kind || '冲突'}: ${item.value || item.Value || ''} (${item.first || item.First || ''}, ${item.second || item.Second || ''})`),
     warnings: source.warnings || [],
