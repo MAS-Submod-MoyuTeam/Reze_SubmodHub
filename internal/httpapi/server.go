@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/reze/submodhub/internal/auth"
+	"github.com/reze/submodhub/internal/github"
 	packagezip "github.com/reze/submodhub/internal/package"
 )
 
@@ -49,6 +50,9 @@ type Version struct {
 	ArchivePath       string       `json:"archive_path,omitempty"`
 	Deprecated        bool         `json:"deprecated,omitempty"`
 	DeprecationReason string       `json:"deprecation_reason,omitempty"`
+	SourceType        string       `json:"source_type,omitempty"`
+	GitHubReleaseID   int64        `json:"github_release_id,omitempty"`
+	GitHubAssetID     int64        `json:"github_asset_id,omitempty"`
 }
 type Mod struct {
 	ID                  string   `json:"id"`
@@ -75,6 +79,7 @@ type Mod struct {
 	GitHubLastSyncAt    *time.Time `json:"github_last_sync_at,omitempty"`
 	GitHubLastSyncError string     `json:"github_last_sync_error,omitempty"`
 	GitHubLastReleaseID int64      `json:"github_last_release_id,omitempty"`
+	GitHubETag          string     `json:"github_etag,omitempty"`
 }
 
 func (m Mod) GetSourceType() string {
@@ -184,7 +189,12 @@ type Store struct {
 	DB            *sql.DB
 	Flarum        *auth.FlarumClient
 	AdminGroupIDs map[string]bool
-	sessions      map[string]authSession
+	sessions           map[string]authSession
+	GitHubClient       *github.Client
+	GitHubSyncInterval time.Duration
+	syncStopChan       chan struct{}
+	syncDoneChan       chan struct{}
+	syncCloseOnce      sync.Once
 }
 
 func NewStore(dataDir string, initial Catalog) (*Store, error) {
