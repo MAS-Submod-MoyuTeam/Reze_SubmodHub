@@ -143,6 +143,40 @@ func TestGitHubSyncSuccessAndIdempotency(t *testing.T) {
 	}
 }
 
+func TestGitHubSyncPersistsETagWhenReleaseImportFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/octocat/partial/releases" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("ETag", `"partial-v1"`)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `[{"id":301,"tag_name":"v1.0.0","draft":false,"assets":[]}]`)
+	}))
+	defer server.Close()
+
+	store, err := NewStore(t.TempDir(), Catalog{Mods: []Mod{{
+		ID: "partial", Author: Author{ID: "author"}, Category: "submod",
+		SourceType: "github_releases", GitHubOwner: "octocat", GitHubRepo: "partial",
+		GitHubAssetRegex: `.*\\.zip`,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.GitHubClient = github.NewClient(github.WithBaseURL(server.URL), github.WithHTTPClient(server.Client()))
+
+	summary, err := store.SyncMod(context.Background(), "partial")
+	if err != nil || summary.Failed != 1 {
+		t.Fatalf("expected one failed release import, summary=%+v err=%v", summary, err)
+	}
+	store.mu.RLock()
+	etag := store.Catalog.Mods[0].GitHubETag
+	store.mu.RUnlock()
+	if etag != `"partial-v1"` {
+		t.Fatalf("expected ETag to persist after partial failure, got %q", etag)
+	}
+}
+
 func TestGitHubSyncPublishedVersionNotOverwritten(t *testing.T) {
 	zipData := createTestZip(t, "init python:\n    pass\n")
 	var ghServer *httptest.Server
@@ -288,7 +322,6 @@ func TestGitHubSyncDownloadFailureCleansUp(t *testing.T) {
 		t.Fatal("expected GitHubLastSyncError to be recorded")
 	}
 }
-
 
 func TestGitHubSyncTickerLifecycle(t *testing.T) {
 	store, err := NewStore(t.TempDir(), Catalog{})

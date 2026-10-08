@@ -460,6 +460,12 @@ func (s *Store) SyncMod(ctx context.Context, modID string) (*SyncSummary, error)
 			if s.Catalog.Mods[i].ID == modID {
 				s.Catalog.Mods[i].GitHubLastSyncAt = &now
 				s.Catalog.Mods[i].GitHubLastSyncError = lastErrMsg
+				// The release list was fetched successfully even when one or
+				// more individual releases failed to import. Persist its ETag so
+				// the next poll can use a conditional request.
+				if newETag != "" {
+					s.Catalog.Mods[i].GitHubETag = newETag
+				}
 				_ = s.saveLocked()
 				break
 			}
