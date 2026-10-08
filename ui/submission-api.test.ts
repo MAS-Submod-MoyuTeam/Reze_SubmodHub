@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, reorderModImages, uploadModImages } from './submission-api';
+import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, createAuthorMod, reorderModImages, uploadModImages } from './submission-api';
 
 test('loads the authenticated author workspace', async () => {
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -58,4 +58,43 @@ test('appends detail images without replacing existing images', async () => {
   const result = await uploadModImages('/api/v1', 'mod_1', [new File(['new'], 'new.png')], true, fetcher);
   assert.equal(result.count, 2);
   assert.equal(result.items?.[1].url, '/api/v1/images/mod_1/new.png');
+});
+
+test('creates a mod with github source configuration', async () => {
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), '/api/v1/author/mods');
+    assert.equal(init?.method, 'POST');
+    assert.equal(init?.credentials, 'same-origin');
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.source_type, 'github_releases');
+    assert.equal(body.github_owner, 'octocat');
+    assert.equal(body.github_repo, 'hello-world');
+    assert.equal(body.github_asset_regex, '^MyMod.*\\.zip$');
+    assert.equal(body.github_source_code, true);
+    return new Response(JSON.stringify({
+      id: 'mod_gh',
+      title: 'GH Mod',
+      summary: 'Summary',
+      category: 'submod',
+      author: { id: 'u1', display_name: 'Author' },
+      source_type: 'github_releases',
+      github_owner: 'octocat',
+      github_repo: 'hello-world',
+      github_asset_regex: '^MyMod.*\\.zip$',
+      github_source_code: true,
+    }), { status: 201 });
+  }) as typeof fetch;
+  const result = await createAuthorMod('/api/v1', {
+    title: 'GH Mod',
+    summary: 'Summary',
+    category: 'submod',
+    source_type: 'github_releases',
+    github_owner: 'octocat',
+    github_repo: 'hello-world',
+    github_asset_regex: '^MyMod.*\\.zip$',
+    github_source_code: true,
+  }, fetcher);
+  assert.equal(result.source_type, 'github_releases');
+  assert.equal(result.github_owner, 'octocat');
+  assert.equal(result.github_repo, 'hello-world');
 });

@@ -19,6 +19,8 @@ export interface User {
 
 export type ModCategory = 'submod' | 'spritepack';
 
+export type ModSourceType = 'local' | 'github_releases';
+
 export type Platform = 'windows' | 'android' | 'linux' | 'macos';
 
 export interface ModSummary {
@@ -44,6 +46,14 @@ export interface ModSummary {
   thumbnail?: string;
   detail_images?: string[];
   is_published: boolean;
+  source_type?: ModSourceType;
+  github_owner?: string;
+  github_repo?: string;
+  github_asset_regex?: string;
+  github_source_code?: boolean;
+  github_last_sync_at?: string;
+  github_last_sync_error?: string;
+  github_last_release_id?: number;
 }
 
 export type VersionState =

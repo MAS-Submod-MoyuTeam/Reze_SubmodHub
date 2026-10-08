@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -64,8 +65,65 @@ type Mod struct {
 	LatestVersion       string   `json:"latest_version"`
 	SizeBytes           int64    `json:"size_bytes"`
 	SHA256              string   `json:"sha256"`
-	ImagePaths          []string `json:"image_paths,omitempty"`
-	Unpublished         bool     `json:"unpublished,omitempty"`
+	ImagePaths          []string   `json:"image_paths,omitempty"`
+	Unpublished         bool       `json:"unpublished,omitempty"`
+	SourceType          string     `json:"source_type,omitempty"`
+	GitHubOwner         string     `json:"github_owner,omitempty"`
+	GitHubRepo          string     `json:"github_repo,omitempty"`
+	GitHubAssetRegex    string     `json:"github_asset_regex,omitempty"`
+	GitHubSourceCode    bool       `json:"github_source_code,omitempty"`
+	GitHubLastSyncAt    *time.Time `json:"github_last_sync_at,omitempty"`
+	GitHubLastSyncError string     `json:"github_last_sync_error,omitempty"`
+	GitHubLastReleaseID int64      `json:"github_last_release_id,omitempty"`
+}
+
+func (m Mod) GetSourceType() string {
+	if m.SourceType == "" {
+		return "local"
+	}
+	return m.SourceType
+}
+
+var githubOwnerRegex = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$`)
+var githubRepoRegex = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
+
+func validateSourceConfig(sourceType, owner, repo, assetRegex string, sourceCode bool) error {
+	switch sourceType {
+	case "", "local":
+		return nil
+	case "github_releases":
+		owner = strings.TrimSpace(owner)
+		repo = strings.TrimSpace(repo)
+		if owner == "" || repo == "" {
+			return errors.New("github_owner and github_repo are required for github_releases source")
+		}
+		if !githubOwnerRegex.MatchString(owner) {
+			return errors.New("invalid github_owner format")
+		}
+		if !githubRepoRegex.MatchString(repo) {
+			return errors.New("invalid github_repo format")
+		}
+		assetRegex = strings.TrimSpace(assetRegex)
+		if assetRegex == "" && !sourceCode {
+			return errors.New("github_releases source requires either github_asset_regex or github_source_code to be enabled")
+		}
+		if assetRegex != "" {
+			if _, err := regexp.Compile(assetRegex); err != nil {
+				return fmt.Errorf("invalid github_asset_regex: %w", err)
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported source_type: %s", sourceType)
+	}
+}
+
+func cleanPublicMod(m Mod) Mod {
+	cp := m
+	cp.GitHubLastSyncAt = nil
+	cp.GitHubLastSyncError = ""
+	cp.GitHubLastReleaseID = 0
+	return cp
 }
 type Catalog struct {
 	Mods        []Mod                        `json:"mods"`
@@ -283,11 +341,20 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		SupportedPlatforms  []string `json:"supported_platforms"`
 		MASVersionRange     string   `json:"mas_version_range"`
 		RecommendedPriority int      `json:"recommended_priority"`
+		SourceType          string   `json:"source_type"`
+		GitHubOwner         string   `json:"github_owner"`
+		GitHubRepo          string   `json:"github_repo"`
+		GitHubAssetRegex    string   `json:"github_asset_regex"`
+		GitHubSourceCode    bool     `json:"github_source_code"`
 	}
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if dec.Decode(&req) != nil || strings.TrimSpace(req.Title) == "" || (req.Category != "submod" && req.Category != "spritepack") {
 		writeError(w, 400, "validation_failed", "title and category are required")
+		return
+	}
+	if err := validateSourceConfig(req.SourceType, req.GitHubOwner, req.GitHubRepo, req.GitHubAssetRegex, req.GitHubSourceCode); err != nil {
+		writeError(w, 400, "validation_failed", err.Error())
 		return
 	}
 	id, err := randomToken()
@@ -300,7 +367,27 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 	if authorDisplayName == "" {
 		authorDisplayName = session.User.DisplayName
 	}
-	mod := Mod{ID: id, Title: strings.TrimSpace(req.Title), Summary: req.Summary, Description: req.Description, Author: Author{ID: session.User.ID, DisplayName: authorDisplayName}, Category: req.Category, Tags: req.Tags, SupportedPlatforms: req.SupportedPlatforms, MASVersionRange: req.MASVersionRange, RecommendedPriority: req.RecommendedPriority}
+	srcType := req.SourceType
+	if srcType == "" {
+		srcType = "local"
+	}
+	mod := Mod{
+		ID:                  id,
+		Title:               strings.TrimSpace(req.Title),
+		Summary:             req.Summary,
+		Description:         req.Description,
+		Author:              Author{ID: session.User.ID, DisplayName: authorDisplayName},
+		Category:            req.Category,
+		Tags:                req.Tags,
+		SupportedPlatforms:  req.SupportedPlatforms,
+		MASVersionRange:     req.MASVersionRange,
+		RecommendedPriority: req.RecommendedPriority,
+		SourceType:          srcType,
+		GitHubOwner:         strings.TrimSpace(req.GitHubOwner),
+		GitHubRepo:          strings.TrimSpace(req.GitHubRepo),
+		GitHubAssetRegex:    strings.TrimSpace(req.GitHubAssetRegex),
+		GitHubSourceCode:    req.GitHubSourceCode,
+	}
 	s.mu.Lock()
 	s.Catalog.Mods = append(s.Catalog.Mods, mod)
 	if err := s.saveLocked(); err != nil {
@@ -628,6 +715,11 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			SupportedPlatforms  []string `json:"supported_platforms"`
 			MASVersionRange     string   `json:"mas_version_range"`
 			RecommendedPriority int      `json:"recommended_priority"`
+			SourceType          *string  `json:"source_type"`
+			GitHubOwner         *string  `json:"github_owner"`
+			GitHubRepo          *string  `json:"github_repo"`
+			GitHubAssetRegex    *string  `json:"github_asset_regex"`
+			GitHubSourceCode    *bool    `json:"github_source_code"`
 		}
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
@@ -666,6 +758,38 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		mod.SupportedPlatforms = req.SupportedPlatforms
 		mod.MASVersionRange = req.MASVersionRange
 		mod.RecommendedPriority = req.RecommendedPriority
+		if req.SourceType != nil || req.GitHubOwner != nil || req.GitHubRepo != nil || req.GitHubAssetRegex != nil || req.GitHubSourceCode != nil {
+			newSourceType := mod.GetSourceType()
+			if req.SourceType != nil {
+				newSourceType = *req.SourceType
+			}
+			newOwner := mod.GitHubOwner
+			if req.GitHubOwner != nil {
+				newOwner = *req.GitHubOwner
+			}
+			newRepo := mod.GitHubRepo
+			if req.GitHubRepo != nil {
+				newRepo = *req.GitHubRepo
+			}
+			newRegex := mod.GitHubAssetRegex
+			if req.GitHubAssetRegex != nil {
+				newRegex = *req.GitHubAssetRegex
+			}
+			newSourceCode := mod.GitHubSourceCode
+			if req.GitHubSourceCode != nil {
+				newSourceCode = *req.GitHubSourceCode
+			}
+			if err := validateSourceConfig(newSourceType, newOwner, newRepo, newRegex, newSourceCode); err != nil {
+				s.mu.Unlock()
+				writeError(w, 400, "validation_failed", err.Error())
+				return
+			}
+			mod.SourceType = newSourceType
+			mod.GitHubOwner = strings.TrimSpace(newOwner)
+			mod.GitHubRepo = strings.TrimSpace(newRepo)
+			mod.GitHubAssetRegex = strings.TrimSpace(newRegex)
+			mod.GitHubSourceCode = newSourceCode
+		}
 		if err := s.saveLocked(); err != nil {
 			s.mu.Unlock()
 			writeError(w, 500, "storage_error", "mod was not saved")
@@ -992,7 +1116,7 @@ func (s *Store) listMods(w http.ResponseWriter, r *http.Request) {
 		if tag != "" && !slices.Contains(m.Tags, tag) {
 			continue
 		}
-		items = append(items, m)
+		items = append(items, cleanPublicMod(m))
 	}
 	slices.SortFunc(items, func(a, b Mod) int { return strings.Compare(a.ID, b.ID) })
 	if offset > len(items) {
@@ -1053,7 +1177,7 @@ func (s *Store) modResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 1 {
-		writeJSON(w, 200, mod)
+		writeJSON(w, 200, cleanPublicMod(*mod))
 		return
 	}
 	if len(parts) == 2 && parts[1] == "versions" && r.Method == http.MethodGet {
