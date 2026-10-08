@@ -90,7 +90,10 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 		}, nil
 	}
 
-	client := s.getGitHubClient()
+	s.mu.RLock()
+	proxyTemplate := s.Catalog.Settings.GitHubProxyTemplate
+	s.mu.RUnlock()
+	client := s.getGitHubClientWithProxy(proxyTemplate)
 	etag := targetMod.GitHubETag
 	// A failed import must not be mistaken for an unchanged, fully imported
 	// release list.
@@ -250,7 +253,15 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 		}
 
 		// Download to temp file
-		tmpPath, _, _, dlErr := client.DownloadToTemp(ctx, selected.DownloadURL, maxArchiveSize)
+		var tmpPath string
+		var dlErr error
+		select {
+		case s.downloadSem <- struct{}{}:
+			tmpPath, _, _, dlErr = client.DownloadToTemp(ctx, selected.DownloadURL, maxArchiveSize)
+			<-s.downloadSem
+		case <-ctx.Done():
+			dlErr = ctx.Err()
+		}
 		if dlErr != nil {
 			if github.IsRateLimited(dlErr) {
 				deadline := now.Add(15 * time.Minute)
@@ -355,6 +366,14 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 			SourceType:      "github_releases",
 			GitHubReleaseID: rel.ID,
 			GitHubAssetID:   selected.AssetID,
+			GitHubSource: &VersionSourceLocation{
+				Owner:       targetMod.GitHubOwner,
+				Repo:        targetMod.GitHubRepo,
+				ReleaseID:   rel.ID,
+				AssetID:     selected.AssetID,
+				FileName:    selected.AssetName,
+				DownloadURL: selected.DownloadURL,
+			},
 		}
 
 		// Extract dependencies

@@ -299,7 +299,7 @@ func (s *Store) reviewSubmissionResource(w http.ResponseWriter, r *http.Request)
 				version = *sub.VersionSnapshot
 				report = sub.ScanReportSnapshot
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"submission": sub, "mod": mod, "version": version, "scan_report": report})
+			writeJSON(w, http.StatusOK, map[string]any{"submission": sub.SanitizeForClient(), "mod": mod, "version": version.SanitizeForClient(), "scan_report": report})
 			return
 		}
 		writeError(w, 404, "not_found", "submission was not found")

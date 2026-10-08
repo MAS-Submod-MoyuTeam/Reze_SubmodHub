@@ -50,9 +50,33 @@ type Version struct {
 	ArchivePath       string       `json:"archive_path,omitempty"`
 	Deprecated        bool         `json:"deprecated,omitempty"`
 	DeprecationReason string       `json:"deprecation_reason,omitempty"`
-	SourceType        string       `json:"source_type,omitempty"`
-	GitHubReleaseID   int64        `json:"github_release_id,omitempty"`
-	GitHubAssetID     int64        `json:"github_asset_id,omitempty"`
+	SourceType        string                 `json:"source_type,omitempty"`
+	GitHubReleaseID   int64                  `json:"github_release_id,omitempty"`
+	GitHubAssetID     int64                  `json:"github_asset_id,omitempty"`
+	GitHubSource      *VersionSourceLocation `json:"github_source,omitempty"`
+}
+
+func (v Version) SanitizeForClient() Version {
+	v.GitHubSource = nil
+	v.ArchivePath = ""
+	return v
+}
+
+func (s Submission) SanitizeForClient() Submission {
+	if s.VersionSnapshot != nil {
+		san := s.VersionSnapshot.SanitizeForClient()
+		s.VersionSnapshot = &san
+	}
+	return s
+}
+
+type VersionSourceLocation struct {
+	Owner       string `json:"owner"`
+	Repo        string `json:"repo"`
+	ReleaseID   int64  `json:"release_id"`
+	AssetID     int64  `json:"asset_id"`
+	FileName    string `json:"file_name"`
+	DownloadURL string `json:"download_url"`
 }
 type Mod struct {
 	ID                  string   `json:"id"`
@@ -214,6 +238,7 @@ type Store struct {
 	syncStopChan       chan struct{}
 	syncDoneChan       chan struct{}
 	syncCloseOnce      sync.Once
+	downloadSem        chan struct{}
 }
 
 func NewStore(dataDir string, initial Catalog) (*Store, error) {
@@ -231,7 +256,7 @@ func newStore(dataDir string, initial Catalog, loadLocalCatalog bool) (*Store, e
 	if err := os.MkdirAll(filepath.Join(dataDir, "archives"), 0o750); err != nil {
 		return nil, err
 	}
-	s := &Store{Catalog: initial, DataDir: dataDir, sessions: map[string]authSession{}}
+	s := &Store{Catalog: initial, DataDir: dataDir, sessions: map[string]authSession{}, downloadSem: make(chan struct{}, 2)}
 	if loadLocalCatalog {
 		if b, err := os.ReadFile(filepath.Join(dataDir, "catalog.json")); err == nil {
 			if json.Unmarshal(b, &s.Catalog) != nil {
@@ -1342,7 +1367,7 @@ func (s *Store) modResource(w http.ResponseWriter, r *http.Request) {
 		for _, candidate := range s.Catalog.Versions {
 			if candidate.ModID == mod.ID && candidate.State == "published" {
 				candidate.ArchivePath = ""
-				items = append(items, resolveVersionDependencies(s.Catalog, candidate))
+				items = append(items, resolveVersionDependencies(s.Catalog, candidate.SanitizeForClient()))
 			}
 		}
 		slices.SortFunc(items, func(a, b Version) int { return strings.Compare(b.Version, a.Version) })
@@ -1655,7 +1680,24 @@ func (s *Store) downloadArchive(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	v, ok := s.Catalog.Versions[id]
 	s.mu.RUnlock()
-	if !ok || v.ArchivePath == "" || v.State != "published" {
+	if !ok || v.State != "published" {
+		writeError(w, 404, "not_found", "archive was not found")
+		return
+	}
+
+	if r.Method == http.MethodHead {
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Length", fmt.Sprint(v.SizeBytes))
+		w.Header().Set("X-Archive-SHA256", v.SHA256)
+		return
+	}
+
+	if v.GitHubSource != nil && v.GitHubSource.DownloadURL != "" {
+		s.relayDownloadArchive(w, r, v)
+		return
+	}
+
+	if v.ArchivePath == "" {
 		writeError(w, 404, "not_found", "archive was not found")
 		return
 	}
