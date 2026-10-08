@@ -22,7 +22,7 @@ import {
 } from '../data/mockData';
 import { fetchDownloadDescriptor, fetchPublishedCatalog, fetchPublishedVersions } from '../../../ui/catalog-api';
 import { loginFlarum as loginFlarumRequest, logout as logoutRequest, readSession, Session } from '../../../ui/auth-api';
-import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, listAuthorSubmissions, listAuthorWorkspace, listReviewAudit, listReviewSubmissions, markPublishedVersionLatest, publishReview, submitAuthorVersion, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive } from '../../../ui/submission-api';
+import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, listAuthorSubmissions, listAuthorWorkspace, listReviewAudit, listReviewSubmissions, markPublishedVersionLatest, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages } from '../../../ui/submission-api';
 import { mapServerScanReport } from './scanReport';
 
 export type NavTab =
@@ -90,6 +90,7 @@ interface AppContextType {
   updateModDraft: (modId: string, data: Partial<ModSummary>) => Promise<boolean>;
   createCandidateVersion: (modId: string, version: string, releaseNotes: string, dependencies?: ModVersion['dependencies']) => Promise<string>;
   uploadArchiveAndScan: (versionId: string, file: File | { name: string; size: number }) => Promise<string>;
+  uploadDetailImages: (modId: string, files: File[]) => Promise<boolean>;
   submitVersionForReview: (versionId: string, markLatest: boolean) => Promise<boolean>;
   setLatestPublishedVersion: (versionId: string) => Promise<void>;
 
@@ -104,6 +105,8 @@ interface AppContextType {
   markVersionDeprecated: (versionId: string, reason: string) => Promise<void>;
   clearVersionDeprecation: (versionId: string) => Promise<void>;
   deleteVersion: (versionId: string) => Promise<void>;
+  unpublishMod: (modId: string) => Promise<void>;
+  deleteModDraft: (modId: string) => Promise<void>;
   editVersion: (versionId: string, version: string, releaseNotes: string, dependencies?: ModVersion['dependencies']) => Promise<boolean>;
 
   // Client Simulation (Section 4)
@@ -393,7 +396,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
       try {
-        const remote = await createAuthorMod(base, { title: newMod.title, summary: newMod.summary, description: newMod.description, category: newMod.category, tags: newMod.tags, supported_platforms: newMod.supported_platforms, mas_version_range: newMod.mas_version_range, recommended_priority: newMod.recommended_priority });
+        const remote = await createAuthorMod(base, { title: newMod.title, summary: newMod.summary, description: newMod.description, author_display_name: data.author_display_name || '', category: newMod.category, tags: newMod.tags, supported_platforms: newMod.supported_platforms, mas_version_range: newMod.mas_version_range, recommended_priority: newMod.recommended_priority });
         const persisted = { ...newMod, id: remote.id, author: remote.author, title: remote.title, summary: remote.summary, category: remote.category };
         setMods((prev) => [persisted, ...prev]);
         showToast('success', `成功创建模组草稿 [${newMod.title}]`);
@@ -416,6 +419,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           title: data.title ?? existing.title,
           summary: data.summary ?? existing.summary,
           description: data.description ?? existing.description,
+          author_display_name: data.author_display_name || '',
           category: data.category ?? existing.category,
           tags: data.tags ?? existing.tags,
           supported_platforms: data.supported_platforms ?? existing.supported_platforms,
@@ -576,6 +580,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     },
     [currentUser, showToast]
   );
+
+  const uploadDetailImages = useCallback(async (modId: string, files: File[]): Promise<boolean> => {
+    try {
+      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+      await uploadModImages(base, modId, files);
+      showToast('success', `已上传 ${files.length} 张详情图。`);
+      return true;
+    } catch (error) {
+      showToast('error', `详情图上传失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+      return false;
+    }
+  }, [showToast]);
 
   const submitVersionForReview = useCallback(
     async (versionId: string, markLatest: boolean): Promise<boolean> => {
@@ -891,6 +907,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     catch (error) { showToast('error', `删除版本失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
   }, [showToast]);
 
+  const unpublishMod = useCallback(async (modId: string): Promise<void> => {
+    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    try { await unpublishAuthorModRequest(base, modId); setMods((prev) => prev.map((mod) => mod.id === modId ? { ...mod, is_published: false } : mod)); showToast('success', '模组已从公开目录下架；版本、归档和详情图均已保留。'); }
+    catch (error) { showToast('error', `模组下架失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
+  }, [showToast]);
+
+  const deleteModDraft = useCallback(async (modId: string): Promise<void> => {
+    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    try { await deleteAuthorModRequest(base, modId); setMods((prev) => prev.filter((mod) => mod.id !== modId)); setVersions((prev) => prev.filter((version) => version.mod_id !== modId)); setSubmissions((prev) => prev.filter((submission) => submission.mod_id !== modId)); showToast('success', '草稿模组及其候选内容已删除。'); }
+    catch (error) { showToast('error', `删除草稿模组失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
+  }, [showToast]);
+
   const markVersionDeprecated = useCallback(async (versionId: string, reason: string): Promise<void> => {
     const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
     try {
@@ -1168,6 +1196,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateModDraft,
       createCandidateVersion,
       uploadArchiveAndScan,
+      uploadDetailImages,
       submitVersionForReview,
       setLatestPublishedVersion,
       approveSubmission,
@@ -1178,6 +1207,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       markVersionDeprecated,
       clearVersionDeprecation,
       deleteVersion,
+      unpublishMod,
+      deleteModDraft,
       editVersion,
       installations,
       activeInstallationId,
@@ -1221,6 +1252,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateModDraft,
       createCandidateVersion,
       uploadArchiveAndScan,
+      uploadDetailImages,
       submitVersionForReview,
       setLatestPublishedVersion,
       approveSubmission,
@@ -1231,6 +1263,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       markVersionDeprecated,
       clearVersionDeprecation,
       deleteVersion,
+      unpublishMod,
+      deleteModDraft,
       editVersion,
       installations,
       activeInstallationId,

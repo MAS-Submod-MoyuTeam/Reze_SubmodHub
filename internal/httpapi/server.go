@@ -64,6 +64,8 @@ type Mod struct {
 	LatestVersion       string   `json:"latest_version"`
 	SizeBytes           int64    `json:"size_bytes"`
 	SHA256              string   `json:"sha256"`
+	ImagePaths          []string `json:"image_paths,omitempty"`
+	Unpublished         bool     `json:"unpublished,omitempty"`
 }
 type Catalog struct {
 	Mods        []Mod                        `json:"mods"`
@@ -74,6 +76,10 @@ type Catalog struct {
 	RoleGrants  map[string][]string          `json:"role_grants,omitempty"`
 	RoleAudit   []RoleAuditEvent             `json:"role_audit,omitempty"`
 }
+
+const maxModImageSize = 10 << 20
+const maxArchiveSize = 128 << 20
+
 type ReviewAuditEvent struct {
 	ID          string         `json:"id"`
 	Timestamp   time.Time      `json:"timestamp"`
@@ -200,6 +206,7 @@ func NewStoreHandler(s *Store) http.Handler {
 	mux.HandleFunc("/api/v1/spritepacks/", s.spritepackResource)
 	mux.HandleFunc("/api/v1/versions/", s.downloadDescriptor)
 	mux.HandleFunc("/api/v1/archives/", s.downloadArchive)
+	mux.HandleFunc("/api/v1/images/", s.downloadImage)
 	return withCORS(mux)
 }
 
@@ -270,6 +277,7 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		Title               string   `json:"title"`
 		Summary             string   `json:"summary"`
 		Description         string   `json:"description"`
+		AuthorDisplayName   string   `json:"author_display_name"`
 		Category            string   `json:"category"`
 		Tags                []string `json:"tags"`
 		SupportedPlatforms  []string `json:"supported_platforms"`
@@ -288,7 +296,11 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id = "mod_" + id[:12]
-	mod := Mod{ID: id, Title: strings.TrimSpace(req.Title), Summary: req.Summary, Description: req.Description, Author: Author{ID: session.User.ID, DisplayName: session.User.DisplayName}, Category: req.Category, Tags: req.Tags, SupportedPlatforms: req.SupportedPlatforms, MASVersionRange: req.MASVersionRange, RecommendedPriority: req.RecommendedPriority}
+	authorDisplayName := strings.TrimSpace(req.AuthorDisplayName)
+	if authorDisplayName == "" {
+		authorDisplayName = session.User.DisplayName
+	}
+	mod := Mod{ID: id, Title: strings.TrimSpace(req.Title), Summary: req.Summary, Description: req.Description, Author: Author{ID: session.User.ID, DisplayName: authorDisplayName}, Category: req.Category, Tags: req.Tags, SupportedPlatforms: req.SupportedPlatforms, MASVersionRange: req.MASVersionRange, RecommendedPriority: req.RecommendedPriority}
 	s.mu.Lock()
 	s.Catalog.Mods = append(s.Catalog.Mods, mod)
 	if err := s.saveLocked(); err != nil {
@@ -301,7 +313,7 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Store) authorVersionResource(w http.ResponseWriter, r *http.Request) {
-	if strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/archive") {
+	if strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/archive") || strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/images") {
 		s.uploadArchive(w, r)
 		return
 	}
@@ -523,6 +535,86 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/author/mods/"), "/"), "/")
+	if len(parts) == 2 && parts[1] == "images" {
+		switch r.Method {
+		case http.MethodDelete:
+			s.clearModImages(w, r)
+		case http.MethodPatch:
+			s.reorderModImages(w, r)
+		case http.MethodPost:
+			s.uploadModImages(w, r)
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not supported")
+		}
+		return
+	}
+	if len(parts) == 2 && parts[1] == "unpublish" && r.Method == http.MethodPost {
+		modID := parts[0]
+		isAdmin := containsRole(s.effectiveRoles(session), "admin")
+		s.mu.Lock()
+		for i := range s.Catalog.Mods {
+			if s.Catalog.Mods[i].ID == modID && (s.Catalog.Mods[i].Author.ID == session.User.ID || isAdmin) {
+				s.Catalog.Mods[i].Unpublished = true
+				err := s.saveLocked()
+				s.mu.Unlock()
+				if err != nil {
+					writeError(w, 500, "storage_error", "mod was not saved")
+					return
+				}
+				writeJSON(w, 200, s.Catalog.Mods[i])
+				return
+			}
+		}
+		s.mu.Unlock()
+		writeError(w, 404, "not_found", "mod was not found")
+		return
+	}
+	if len(parts) == 1 && parts[0] != "" && r.Method == http.MethodDelete {
+		modID := parts[0]
+		isAdmin := containsRole(s.effectiveRoles(session), "admin")
+		s.mu.Lock()
+		for i := range s.Catalog.Mods {
+			if s.Catalog.Mods[i].ID == modID && (s.Catalog.Mods[i].Author.ID == session.User.ID || isAdmin) {
+				published := false
+				for _, candidate := range s.Catalog.Versions {
+					if candidate.ModID == modID && (candidate.State == "published" || candidate.State == "unpublished") {
+						published = true
+						break
+					}
+				}
+				if published {
+					s.mu.Unlock()
+					writeError(w, 409, "mod_not_deletable", "published mod cannot be deleted")
+					return
+				}
+				for _, v := range s.Catalog.Versions {
+					if v.ModID == modID {
+						if v.ArchivePath != "" {
+							_ = os.Remove(v.ArchivePath)
+						}
+						delete(s.Catalog.Versions, v.ID)
+					}
+				}
+				if s.Catalog.Mods[i].ImagePaths != nil {
+					for _, p := range s.Catalog.Mods[i].ImagePaths {
+						_ = os.Remove(p)
+					}
+				}
+				s.Catalog.Mods = append(s.Catalog.Mods[:i], s.Catalog.Mods[i+1:]...)
+				if err := s.saveLocked(); err != nil {
+					s.mu.Unlock()
+					writeError(w, 500, "storage_error", "mod was not deleted")
+					return
+				}
+				s.mu.Unlock()
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		s.mu.Unlock()
+		writeError(w, 409, "mod_not_deletable", "published mod cannot be deleted")
+		return
+	}
 	if len(parts) == 1 && parts[0] != "" && r.Method == http.MethodPatch {
 		modID := parts[0]
 		r.Body = http.MaxBytesReader(w, r.Body, 16384)
@@ -530,6 +622,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			Title               string   `json:"title"`
 			Summary             string   `json:"summary"`
 			Description         string   `json:"description"`
+			AuthorDisplayName   string   `json:"author_display_name"`
 			Category            string   `json:"category"`
 			Tags                []string `json:"tags"`
 			SupportedPlatforms  []string `json:"supported_platforms"`
@@ -565,6 +658,9 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		mod.Title = strings.TrimSpace(req.Title)
 		mod.Summary = req.Summary
 		mod.Description = req.Description
+		if strings.TrimSpace(req.AuthorDisplayName) != "" {
+			mod.Author.DisplayName = strings.TrimSpace(req.AuthorDisplayName)
+		}
 		mod.Category = req.Category
 		mod.Tags = req.Tags
 		mod.SupportedPlatforms = req.SupportedPlatforms
@@ -627,6 +723,219 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 201, v)
 }
+
+func (s *Store) clearModImages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		writeError(w, 405, "method_not_allowed", "method is not supported")
+		return
+	}
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/author/mods/"), "/"), "/")
+	if len(parts) != 2 || parts[1] != "images" {
+		writeError(w, 404, "not_found", "image endpoint was not found")
+		return
+	}
+	modID := parts[0]
+	sess, ok := s.readSession(r)
+	if !ok {
+		writeError(w, 401, "unauthenticated", "login is required")
+		return
+	}
+	isAdmin := containsRole(s.effectiveRoles(sess), "admin")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.Catalog.Mods {
+		if s.Catalog.Mods[i].ID == modID && (s.Catalog.Mods[i].Author.ID == sess.User.ID || isAdmin) {
+			for _, p := range s.Catalog.Mods[i].ImagePaths {
+				_ = os.Remove(p)
+			}
+			s.Catalog.Mods[i].ImagePaths = nil
+			if err := s.saveLocked(); err != nil {
+				writeError(w, 500, "storage_error", "images were not saved")
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+	}
+	writeError(w, 404, "not_found", "mod was not found")
+}
+
+func (s *Store) reorderModImages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not supported")
+		return
+	}
+	sess, ok := s.readSession(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "login is required")
+		return
+	}
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/author/mods/"), "/"), "/")
+	if len(parts) != 2 || parts[1] != "images" {
+		writeError(w, http.StatusNotFound, "not_found", "image endpoint was not found")
+		return
+	}
+	var req struct {
+		Filenames []string `json:"filenames"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16384)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", "invalid image order")
+		return
+	}
+	modID := parts[0]
+	isAdmin := containsRole(s.effectiveRoles(sess), "admin")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.Catalog.Mods {
+		mod := &s.Catalog.Mods[i]
+		if mod.ID != modID {
+			continue
+		}
+		if mod.Author.ID != sess.User.ID && !isAdmin {
+			writeError(w, http.StatusForbidden, "forbidden", "administrator or author permission required")
+			return
+		}
+		byName := make(map[string]string, len(mod.ImagePaths))
+		for _, path := range mod.ImagePaths {
+			byName[filepath.Base(path)] = path
+		}
+		ordered := make([]string, 0, len(req.Filenames))
+		seen := make(map[string]bool, len(req.Filenames))
+		for _, filename := range req.Filenames {
+			if filename == "" || filepath.Base(filename) != filename || seen[filename] {
+				writeError(w, http.StatusBadRequest, "validation_failed", "image order contains an invalid or duplicate filename")
+				return
+			}
+			path, exists := byName[filename]
+			if !exists {
+				writeError(w, http.StatusBadRequest, "validation_failed", "image order must reference existing images")
+				return
+			}
+			seen[filename] = true
+			ordered = append(ordered, path)
+		}
+		for _, path := range mod.ImagePaths {
+			if !seen[filepath.Base(path)] {
+				_ = os.Remove(path)
+			}
+		}
+		mod.ImagePaths = ordered
+		if err := s.saveLocked(); err != nil {
+			writeError(w, http.StatusInternalServerError, "storage_error", "image order was not saved")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"mod_id": modID, "count": len(ordered)})
+		return
+	}
+	writeError(w, http.StatusNotFound, "not_found", "mod was not found")
+}
+
+func (s *Store) uploadModImages(w http.ResponseWriter, r *http.Request) {
+	session, ok := s.requireSession(w, r)
+	if !ok {
+		return
+	}
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/author/mods/"), "/"), "/")
+	if len(parts) != 2 || parts[1] != "images" || r.Method != http.MethodPost {
+		writeError(w, 404, "not_found", "image endpoint was not found")
+		return
+	}
+	modID := parts[0]
+	s.mu.RLock()
+	var mod Mod
+	for _, candidate := range s.Catalog.Mods {
+		if candidate.ID == modID {
+			mod = candidate
+			break
+		}
+	}
+	allowed := mod.ID != "" && (mod.Author.ID == session.User.ID || containsRole(s.effectiveRoles(session), "admin"))
+	s.mu.RUnlock()
+	if !allowed {
+		writeError(w, 404, "not_found", "mod was not found")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 8*maxModImageSize+1024)
+	if err := r.ParseMultipartForm(8 * maxModImageSize); err != nil {
+		writeError(w, 400, "invalid_upload", "invalid image upload")
+		return
+	}
+	files := r.MultipartForm.File["images"]
+	if len(files) == 0 || len(files) > 8 {
+		writeError(w, 400, "invalid_upload", "upload one to eight images")
+		return
+	}
+	appendImages := r.URL.Query().Get("append") == "true"
+	if appendImages && len(mod.ImagePaths)+len(files) > 8 {
+		writeError(w, http.StatusBadRequest, "invalid_upload", "a mod can have at most eight images")
+		return
+	}
+	dir := filepath.Join(s.DataDir, "images", modID)
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		writeError(w, 500, "storage_error", "image directory was not created")
+		return
+	}
+	paths := make([]string, 0, len(files))
+	startIndex := 0
+	if appendImages {
+		startIndex = len(mod.ImagePaths)
+	}
+	for i, header := range files {
+		if header.Size <= 0 || header.Size > maxModImageSize {
+			writeError(w, 413, "image_too_large", "each image must be at most 10 MiB")
+			return
+		}
+		file, err := header.Open()
+		if err != nil {
+			writeError(w, 400, "invalid_upload", "image could not be opened")
+			return
+		}
+		data, err := io.ReadAll(io.LimitReader(file, maxModImageSize+1))
+		_ = file.Close()
+		if err != nil || len(data) > maxModImageSize {
+			writeError(w, 413, "image_too_large", "each image must be at most 10 MiB")
+			return
+		}
+		ext := map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}[http.DetectContentType(data)]
+		if ext == "" {
+			writeError(w, 400, "invalid_image", "only PNG, JPEG, WebP, and GIF images are supported")
+			return
+		}
+		path := filepath.Join(dir, fmt.Sprintf("%02d%s", startIndex+i, ext))
+		if err := os.WriteFile(path, data, 0640); err != nil {
+			writeError(w, 500, "storage_error", "image was not saved")
+			return
+		}
+		paths = append(paths, path)
+	}
+	s.mu.Lock()
+	for i := range s.Catalog.Mods {
+		if s.Catalog.Mods[i].ID == modID {
+			if appendImages {
+				s.Catalog.Mods[i].ImagePaths = append(s.Catalog.Mods[i].ImagePaths, paths...)
+			} else {
+				for _, old := range s.Catalog.Mods[i].ImagePaths {
+					_ = os.Remove(old)
+				}
+				s.Catalog.Mods[i].ImagePaths = paths
+			}
+		}
+	}
+	err := s.saveLocked()
+	s.mu.Unlock()
+	if err != nil {
+		writeError(w, 500, "storage_error", "images were not saved")
+		return
+	}
+	items := make([]map[string]string, 0, len(paths))
+	for _, path := range paths {
+		items = append(items, map[string]string{"url": "/api/v1/images/" + modID + "/" + filepath.Base(path)})
+	}
+	writeJSON(w, 200, map[string]any{"mod_id": modID, "count": len(paths), "items": items})
+}
 func (s *Store) listMods(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, 405, "method_not_allowed", "method is not supported")
@@ -664,6 +973,9 @@ func (s *Store) listMods(w http.ResponseWriter, r *http.Request) {
 	tag := query.Get("tag")
 	items := make([]Mod, 0, len(s.Catalog.Mods))
 	for _, m := range s.Catalog.Mods {
+		if m.Unpublished {
+			continue
+		}
 		latest, ok := s.Catalog.Versions[m.LatestVersionID]
 		if !ok || latest.ModID != m.ID || latest.State != "published" {
 			continue
@@ -711,6 +1023,27 @@ func (s *Store) modResource(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if mod == nil {
+		writeError(w, 404, "not_found", "mod was not found")
+		return
+	}
+	if len(parts) == 2 && parts[1] == "images" && r.Method == http.MethodGet {
+		latest, published := s.Catalog.Versions[mod.LatestVersionID]
+		public := !mod.Unpublished && published && latest.ModID == mod.ID && latest.State == "published"
+		if !public {
+			sess, logged := s.readSession(r)
+			if !logged || (sess.User.ID != mod.Author.ID && !containsRole(s.effectiveRoles(sess), "admin")) {
+				writeError(w, 404, "not_found", "mod was not found")
+				return
+			}
+		}
+		items := make([]map[string]string, 0, len(mod.ImagePaths))
+		for _, image := range mod.ImagePaths {
+			items = append(items, map[string]string{"url": "/api/v1/images/" + mod.ID + "/" + filepath.Base(image)})
+		}
+		writeJSON(w, 200, map[string]any{"items": items})
+		return
+	}
+	if mod.Unpublished {
 		writeError(w, 404, "not_found", "mod was not found")
 		return
 	}
@@ -775,6 +1108,11 @@ func (s *Store) downloadDescriptor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"url": "/api/v1/archives/" + v.ID, "expires_at": time.Now().Add(15 * time.Minute).UTC().Format(time.RFC3339), "sha256": v.SHA256, "size_bytes": v.SizeBytes})
 }
 func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/author/versions/"), "/"), "/")
+	if len(parts) == 2 && parts[1] == "images" {
+		s.uploadModImages(w, r)
+		return
+	}
 	usingUploadToken := s.UploadToken != "" && r.Header.Get("Authorization") == "Bearer "+s.UploadToken
 	session, hasSession := s.readSession(r)
 	if !usingUploadToken && !hasSession {
@@ -785,7 +1123,6 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 405, "method_not_allowed", "method is not supported")
 		return
 	}
-	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/author/versions/"), "/"), "/")
 	if len(parts) != 2 || parts[1] != "archive" {
 		writeError(w, 404, "not_found", "upload endpoint was not found")
 		return
@@ -817,8 +1154,8 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "immutable_version", "version archive cannot be replaced")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 66<<20)
-	if err := r.ParseMultipartForm(64 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, maxArchiveSize+(2<<20))
+	if err := r.ParseMultipartForm(maxArchiveSize); err != nil {
 		writeError(w, 400, "invalid_upload", err.Error())
 		return
 	}
@@ -928,6 +1265,47 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, map[string]any{"version_id": versionID, "version": v.Version, "size_bytes": size, "sha256": hash, "state": v.State, "dependencies": v.Dependencies, "scan_report": report})
 }
 
+func (s *Store) downloadImage(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/images/"), "/"), "/")
+	if len(parts) != 2 {
+		writeError(w, 404, "not_found", "image was not found")
+		return
+	}
+	s.mu.RLock()
+	modID := parts[0]
+	var mod Mod
+	for _, candidate := range s.Catalog.Mods {
+		if candidate.ID == modID {
+			mod = candidate
+			break
+		}
+	}
+	allowed := mod.ID != ""
+	var target string
+	if allowed {
+		latest, published := s.Catalog.Versions[mod.LatestVersionID]
+		public := !mod.Unpublished && published && latest.ModID == mod.ID && latest.State == "published"
+		if !public {
+			sess, logged := s.readSession(r)
+			allowed = logged && (sess.User.ID == mod.Author.ID || containsRole(s.effectiveRoles(sess), "admin"))
+		}
+	}
+	if allowed {
+		for _, p := range mod.ImagePaths {
+			if filepath.Base(p) == parts[1] {
+				target = p
+				break
+			}
+		}
+	}
+	s.mu.RUnlock()
+	if target == "" {
+		writeError(w, 404, "not_found", "image was not found")
+		return
+	}
+	http.ServeFile(w, r, target)
+}
+
 func dependencyRange(minimum, maximum string) string {
 	switch {
 	case minimum != "" && maximum != "":
@@ -950,15 +1328,15 @@ func (s *Store) persistArchive(versionID string, src io.Reader, isSpritepack boo
 		return "", 0, "", packagezip.Report{}, err
 	}
 	h := sha256.New()
-	n, copyErr := io.Copy(io.MultiWriter(f, h), io.LimitReader(src, (64<<20)+1))
+	n, copyErr := io.Copy(io.MultiWriter(f, h), io.LimitReader(src, maxArchiveSize+1))
 	closeErr := f.Close()
 	if copyErr != nil || closeErr != nil {
 		_ = os.Remove(tmp)
 		return "", 0, "", packagezip.Report{}, errors.New("archive write failed")
 	}
-	if n > 64<<20 {
+	if n > maxArchiveSize {
 		_ = os.Remove(tmp)
-		return "", 0, "", packagezip.Report{}, errors.New("archive exceeds 64 MiB limit")
+		return "", 0, "", packagezip.Report{}, errors.New("archive exceeds 128 MiB limit")
 	}
 	b, err := os.ReadFile(tmp)
 	if err != nil {

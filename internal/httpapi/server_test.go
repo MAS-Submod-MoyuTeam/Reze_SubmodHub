@@ -10,7 +10,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestCatalogAndDownloadContract(t *testing.T) {
@@ -130,6 +133,207 @@ func TestPublicVersionHidesDraftAndArchivePath(t *testing.T) {
 	b, _ := io.ReadAll(res.Body)
 	if bytes.Contains(b, []byte("archive_path")) || bytes.Contains(b, []byte(dir)) {
 		t.Fatalf("public response leaks storage path: %s", b)
+	}
+}
+
+func TestModImagesUploadAndPublicListingIndependentOfVersion(t *testing.T) {
+	dir := t.TempDir()
+	mod := Mod{ID: "m1", Title: "Images", Author: Author{ID: "author"}, Category: "submod", LatestVersionID: "v1"}
+	store, err := NewStore(dir, Catalog{Mods: []Mod{mod}, Versions: map[string]Version{"v1": {ID: "v1", ModID: "m1", Version: "1.0.0", State: "uploaded"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.sessions = map[string]authSession{"session": {User: authUser{ID: "author"}, Expires: time.Now().Add(time.Hour)}}
+	ts := httptest.NewServer(NewStoreHandler(store))
+	defer ts.Close()
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("images", "one.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = part.Write([]byte("\x89PNG\r\n\x1a\n"))
+	_ = mw.Close()
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/author/mods/m1/images", &body)
+	req.Header.Set("Cookie", "submodhub_session="+strings.Repeat("a", 64))
+	store.sessions[sessionKey(strings.Repeat("a", 64))] = store.sessions["session"]
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("upload status %d", res.StatusCode)
+	}
+	res.Body.Close()
+	res, err = ts.Client().Get(ts.URL + "/api/v1/mods/m1/images")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("unpublished images status %d", res.StatusCode)
+	}
+	store.Catalog.Mods[0].ImagePaths = []string{filepath.Join(dir, "images", "m1", "00.png")}
+	if err := os.MkdirAll(filepath.Dir(store.Catalog.Mods[0].ImagePaths[0]), 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.Catalog.Mods[0].ImagePaths[0], []byte("\x89PNG\r\n\x1a\n"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	store.Catalog.Versions["v1"] = Version{ID: "v1", ModID: "m1", Version: "1.0.0", State: "published"}
+	store.Catalog.Mods[0].LatestVersionID = "v1"
+	if err := store.saveLocked(); err != nil {
+		t.Fatal(err)
+	}
+	res, err = ts.Client().Get(ts.URL + "/api/v1/mods/m1/images")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("public images status %d", res.StatusCode)
+	}
+	var payload struct {
+		Items []struct {
+			URL string `json:"url"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Items) != 1 || payload.Items[0].URL == "" {
+		t.Fatalf("images payload %+v", payload)
+	}
+	store.Catalog.Versions["v1"] = Version{ID: "v1", ModID: "m1", Version: "2.0.0", State: "published"}
+	store.Catalog.Mods[0].LatestVersion = "2.0.0"
+	store.Catalog.Mods[0].LatestVersionID = "v1"
+	res, err = ts.Client().Get(ts.URL + "/api/v1/mods/m1/images")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("images after version update status %d", res.StatusCode)
+	}
+}
+
+func TestAuthorCanReorderExistingModImages(t *testing.T) {
+	dir := t.TempDir()
+	imageDir := filepath.Join(dir, "images", "m1")
+	if err := os.MkdirAll(imageDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{filepath.Join(imageDir, "00.png"), filepath.Join(imageDir, "01.jpg"), filepath.Join(imageDir, "02.webp")}
+	for _, path := range paths {
+		if err := os.WriteFile(path, []byte("image"), 0640); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store, err := NewStore(dir, Catalog{Mods: []Mod{{ID: "m1", Title: "Images", Author: Author{ID: "author"}, ImagePaths: paths}}, Versions: map[string]Version{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("r", 64)
+	store.sessions = map[string]authSession{sessionKey(token): {User: authUser{ID: "author"}, Expires: time.Now().Add(time.Hour)}}
+	ts := httptest.NewServer(NewStoreHandler(store))
+	defer ts.Close()
+	body := bytes.NewBufferString(`{"filenames":["02.webp","00.png","01.jpg"]}`)
+	req, _ := http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/author/mods/m1/images", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("reorder status %d", res.StatusCode)
+	}
+	if got := store.Catalog.Mods[0].ImagePaths; !reflect.DeepEqual(got, []string{paths[2], paths[0], paths[1]}) {
+		t.Fatalf("image order = %#v", got)
+	}
+}
+
+func TestAuthorCanDeleteAnExistingModImageBySavingRemainingOrder(t *testing.T) {
+	dir := t.TempDir()
+	imageDir := filepath.Join(dir, "images", "m1")
+	if err := os.MkdirAll(imageDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{filepath.Join(imageDir, "00.png"), filepath.Join(imageDir, "01.jpg")}
+	for _, path := range paths {
+		if err := os.WriteFile(path, []byte("image"), 0640); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store, err := NewStore(dir, Catalog{Mods: []Mod{{ID: "m1", Author: Author{ID: "author"}, ImagePaths: paths}}, Versions: map[string]Version{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("d", 64)
+	store.sessions = map[string]authSession{sessionKey(token): {User: authUser{ID: "author"}, Expires: time.Now().Add(time.Hour)}}
+	ts := httptest.NewServer(NewStoreHandler(store))
+	defer ts.Close()
+	req, _ := http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/author/mods/m1/images", strings.NewReader(`{"filenames":["00.png"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("delete image status %d", res.StatusCode)
+	}
+	if _, err := os.Stat(paths[1]); !os.IsNotExist(err) {
+		t.Fatalf("deleted image remains: %v", err)
+	}
+	if !reflect.DeepEqual(store.Catalog.Mods[0].ImagePaths, []string{paths[0]}) {
+		t.Fatalf("remaining images = %#v", store.Catalog.Mods[0].ImagePaths)
+	}
+}
+
+func TestAuthorCanUnpublishModAndDeleteDraftMod(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir, Catalog{Mods: []Mod{{ID: "pub", Title: "Published", Author: Author{ID: "author"}, Category: "submod", LatestVersionID: "v1"}, {ID: "draft", Title: "Draft", Author: Author{ID: "author"}, Category: "submod"}}, Versions: map[string]Version{"v1": {ID: "v1", ModID: "pub", State: "published"}, "dv": {ID: "dv", ModID: "draft", State: "draft"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.sessions = map[string]authSession{"session": {User: authUser{ID: "author"}, Expires: time.Now().Add(time.Hour)}}
+	key := strings.Repeat("b", 64)
+	store.sessions[sessionKey(key)] = store.sessions["session"]
+	ts := httptest.NewServer(NewStoreHandler(store))
+	defer ts.Close()
+	request := func(method, path string) *http.Response {
+		req, _ := http.NewRequest(method, ts.URL+path, nil)
+		req.Header.Set("Cookie", "submodhub_session="+key)
+		res, _ := ts.Client().Do(req)
+		return res
+	}
+	res := request(http.MethodPost, "/api/v1/author/mods/pub/unpublish")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("unpublish status %d", res.StatusCode)
+	}
+	res.Body.Close()
+	res = request(http.MethodGet, "/api/v1/mods/pub")
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("hidden mod status %d", res.StatusCode)
+	}
+	res.Body.Close()
+	res = request(http.MethodDelete, "/api/v1/author/mods/draft")
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete draft status %d", res.StatusCode)
+	}
+	res.Body.Close()
+	if _, ok := store.Catalog.Mods[0], true; !ok {
+		t.Fatal("test")
+	}
+	for _, mod := range store.Catalog.Mods {
+		if mod.ID == "draft" {
+			t.Fatal("draft mod remains")
+		}
+	}
+	res = request(http.MethodDelete, "/api/v1/author/mods/pub")
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("published mod delete status %d", res.StatusCode)
 	}
 }
 

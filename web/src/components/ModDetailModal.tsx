@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { ModVersion, DownloadDescriptor } from '../types/submodhub';
-import { fetchVerifiedArchive } from '../../../ui/catalog-api';
+import { fetchModImages, fetchVerifiedArchive } from '../../../ui/catalog-api';
 import { MarkdownText } from './MarkdownText';
 import { DeprecationNotice } from './DeprecationNotice';
 import { SpritepackSets } from './SpritepackSets';
@@ -60,6 +60,15 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
 
   const [downloadDescriptor, setDownloadDescriptor] = useState<DownloadDescriptor | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [detailImages, setDetailImages] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!currentMod || currentMod.category === 'spritepack') { setDetailImages([]); return; }
+    let active = true;
+    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    fetchModImages(currentMod.id, base).then((images) => { if (active) setDetailImages(images.map((url) => new URL(url, window.location.origin).href)); }).catch(() => { if (active) setDetailImages([]); });
+    return () => { active = false; };
+  }, [currentMod?.id, currentMod?.category]);
 
   useEffect(() => {
     if (!downloadVersionId || currentMod?.category === 'spritepack') return;
@@ -157,6 +166,8 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
             </h4>
             <MarkdownText value={currentMod.description || currentMod.summary} className="text-neutral-600 bg-neutral-50 p-3 rounded border border-neutral-100" />
           </div>
+
+          {detailImages.length > 0 && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{detailImages.map((url, index) => <img key={url} src={url} alt={`${currentMod.title} 详情图 ${index + 1}`} loading="lazy" className="w-full max-h-80 object-contain rounded border border-neutral-200 bg-neutral-50" />)}</div>}
 
           {currentMod.category === 'spritepack' ? (
             <SpritepackSets modID={currentMod.id} showToast={showToast} />

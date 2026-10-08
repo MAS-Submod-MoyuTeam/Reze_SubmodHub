@@ -16,6 +16,12 @@ export interface CatalogMod {
   latest_version?: string;
   size_bytes?: number;
   sha256?: string;
+  detail_images?: string[];
+}
+
+export async function fetchModImages(modID: string, base = '/api/v1', fetcher: typeof fetch = fetch): Promise<string[]> {
+  const result = await readJSON(await fetcher(`${base.replace(/\/$/, '')}/mods/${encodeURIComponent(modID)}/images`)) as { items?: Array<{ url?: string }> };
+  return (result.items || []).flatMap((item) => typeof item.url === 'string' ? [item.url] : []);
 }
 
 export interface CatalogVersion {
@@ -70,7 +76,7 @@ export async function fetchVerifiedSpriteSelection(modID: string, setIDs: string
   }
   const expectedHash = response.headers.get('X-Archive-SHA256') || '';
   const expectedSize = Number(response.headers.get('Content-Length'));
-  if (!/^[0-9a-f]{64}$/.test(expectedHash) || !Number.isSafeInteger(expectedSize) || expectedSize < 1 || expectedSize > 64 * 1024 * 1024 || !response.body) throw new Error('invalid_download_response');
+  if (!/^[0-9a-f]{64}$/.test(expectedHash) || !Number.isSafeInteger(expectedSize) || expectedSize < 1 || expectedSize > 128 * 1024 * 1024 || !response.body) throw new Error('invalid_download_response');
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -145,7 +151,7 @@ export async function fetchDownloadDescriptor(versionID: string, base = '/api/v1
 
 export async function fetchVerifiedArchive(versionID: string, base = '/api/v1', fetcher: typeof fetch = fetch): Promise<{ blob: Blob; sha256: string; size_bytes: number }> {
   const descriptor = await fetchDownloadDescriptor(versionID, base, fetcher);
-  if (descriptor.size_bytes < 1 || descriptor.size_bytes > 64 * 1024 * 1024) throw new Error('download_too_large');
+  if (descriptor.size_bytes < 1 || descriptor.size_bytes > 128 * 1024 * 1024) throw new Error('download_too_large');
   if (descriptor.url.startsWith('//') || (!descriptor.url.startsWith('/') && !descriptor.url.startsWith('https://'))) {
     throw new Error('invalid_download_response');
   }

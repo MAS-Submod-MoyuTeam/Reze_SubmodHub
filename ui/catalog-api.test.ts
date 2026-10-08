@@ -125,7 +125,7 @@ test('resolves archive paths against the configured API origin', async () => {
 test('rejects protocol-relative archive URLs and oversized browser downloads', async () => {
   for (const descriptor of [
     { url: '//other.example.test/zip', size_bytes: 1 },
-    { url: '/api/v1/archives/v1', size_bytes: 65 * 1024 * 1024 },
+    { url: '/api/v1/archives/v1', size_bytes: 129 * 1024 * 1024 },
   ]) {
     let archiveRequested = false;
     const fetcher = async (input: RequestInfo | URL) => {

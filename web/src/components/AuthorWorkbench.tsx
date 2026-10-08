@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { ModCategory, Platform, ModSummary, ModDependency, ModVersion, ScannedFile } from '../types/submodhub';
 import { formatVersionCreatedAt } from './versionDate';
@@ -6,6 +6,7 @@ import { DeprecationNotice } from './DeprecationNotice';
 import { mapDependencyInput, mapDependencyRangeInput, mapDependencySelection } from './dependencyMapping';
 import { DependencyNamePicker } from './DependencyNamePicker';
 import { canEditVersion, versionFormState } from './versionFormState';
+import { clearModImages, fetchModImages, reorderModImages, uploadModImages } from '../../../ui/submission-api';
 import {
   Plus,
   Upload,
@@ -39,12 +40,15 @@ export const AuthorWorkbench: React.FC = () => {
     updateModDraft,
     createCandidateVersion,
     uploadArchiveAndScan,
+    uploadDetailImages,
     submitVersionForReview,
     setLatestPublishedVersion,
     unpublishVersion,
     markVersionDeprecated,
     clearVersionDeprecation,
     deleteVersion,
+    unpublishMod,
+    deleteModDraft,
     editVersion,
     showToast,
   } = useApp();
@@ -63,12 +67,20 @@ export const AuthorWorkbench: React.FC = () => {
   const [editingModId, setEditingModId] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newSummary, setNewSummary] = useState('');
+  const [newAuthorDisplayName, setNewAuthorDisplayName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newCategory, setNewCategory] = useState<ModCategory>('submod');
   const [newMasRange, setNewMasRange] = useState('>=0.12.14');
   const [newPriority, setNewPriority] = useState(20);
-  const [newTagsStr, setNewTagsStr] = useState('dialogue, dates');
+  const [newTagsStr, setNewTagsStr] = useState('');
   const [newPlatforms, setNewPlatforms] = useState<Platform[]>(['windows', 'android']);
+  const [pendingDetailImages, setPendingDetailImages] = useState<File[]>([]);
+  const [pendingDetailImageKeys, setPendingDetailImageKeys] = useState<string[]>([]);
+  const [existingDetailImages, setExistingDetailImages] = useState<string[]>([]);
+  const [detailImageOrder, setDetailImageOrder] = useState<string[]>([]);
+  const [clearExistingDetailImages, setClearExistingDetailImages] = useState(false);
+  const [draggedDetailImage, setDraggedDetailImage] = useState<number | null>(null);
+  const [detailImageOrderDirty, setDetailImageOrderDirty] = useState(false);
 
   // Version Draft Creation Dialog
   const [versionFormTarget, setVersionFormTarget] = useState<'new' | string | null>(null);
@@ -101,6 +113,9 @@ export const AuthorWorkbench: React.FC = () => {
   const authorSubmissions = submissions.filter(
     (s) => s.author_id === currentUser?.id || currentUser?.roles.includes('author')
   );
+  const pendingDetailPreviewUrls = useMemo(() => new Map(pendingDetailImages.map((file, index) => [pendingDetailImageKeys[index], URL.createObjectURL(file)])), [pendingDetailImages, pendingDetailImageKeys]);
+  useEffect(() => () => { pendingDetailPreviewUrls.forEach((url) => URL.revokeObjectURL(url)); }, [pendingDetailPreviewUrls]);
+  const detailImageItems = detailImageOrder.map((key) => ({ key, url: key.startsWith('new:') ? pendingDetailPreviewUrls.get(key) : key, pending: key.startsWith('new:') }));
 
   const openVersionForm = (version?: ModVersion) => {
     const initial = versionFormState(version);
@@ -123,6 +138,7 @@ export const AuthorWorkbench: React.FC = () => {
       const saved = await updateModDraft(editingModId, {
         title: newTitle.trim(),
         summary: newSummary,
+        author_display_name: newAuthorDisplayName,
         description: newDescription,
         category: newCategory,
         mas_version_range: newMasRange,
@@ -131,8 +147,39 @@ export const AuthorWorkbench: React.FC = () => {
         supported_platforms: newPlatforms,
       });
       if (saved) {
+        const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+        if (pendingDetailImages.length > 0) {
+          const pendingByKey = new Map(pendingDetailImageKeys.map((key, index) => [key, pendingDetailImages[index]]));
+          const orderedFiles = detailImageOrder.filter((key) => key.startsWith('new:')).map((key) => pendingByKey.get(key)).filter((file): file is File => Boolean(file));
+          const uploaded = await uploadModImages(base, editingModId, orderedFiles, true);
+          const uploadedItems = uploaded.items || [];
+          const newUrls = new Map(pendingDetailImageKeys.map((key, index) => [key, uploadedItems[index]?.url || '']));
+          const current = await fetchModImages(base, editingModId);
+          const currentByFilename = new Map(current.map((item) => [decodeURIComponent(item.url.split('/').pop() || ''), item.url]));
+          const orderedFilenames = detailImageOrder.map((key) => {
+            const url = key.startsWith('new:') ? newUrls.get(key) : key;
+            return decodeURIComponent(url?.split('/').pop() || '');
+          }).filter((filename) => currentByFilename.has(filename));
+          if (orderedFilenames.length === current.length) await reorderModImages(base, editingModId, orderedFilenames);
+          showToast('success', `已追加 ${orderedFiles.length} 张详情图。`);
+        }
+        else if (clearExistingDetailImages) {
+          try { await clearModImages(base, editingModId); showToast('success', '模组详情图已清空。'); } catch (error) { showToast('error', `清空详情图失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
+        } else if (detailImageOrderDirty) {
+          try {
+            const filenames = detailImageOrder.map((url) => decodeURIComponent(url.split('/').pop() || ''));
+            await reorderModImages(base, editingModId, filenames);
+            showToast('success', '模组详情图顺序已保存。');
+          } catch (error) { showToast('error', `详情图排序保存失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
+        }
         setIsNewModModalOpen(false);
         setEditingModId(null);
+        setPendingDetailImages([]);
+        setPendingDetailImageKeys([]);
+        setExistingDetailImages([]);
+        setDetailImageOrder([]);
+        setClearExistingDetailImages(false);
+        setDetailImageOrderDirty(false);
       }
       return;
     }
@@ -140,6 +187,7 @@ export const AuthorWorkbench: React.FC = () => {
     const createdId = await createModDraft({
       title: newTitle,
       summary: newSummary,
+      author_display_name: newAuthorDisplayName,
       description: newDescription,
       category: newCategory,
       mas_version_range: newMasRange,
@@ -149,12 +197,19 @@ export const AuthorWorkbench: React.FC = () => {
     });
 
     if (createdId) {
+      if (pendingDetailImages.length > 0) await uploadDetailImages(createdId, pendingDetailImages);
       setSelectedModId(createdId);
       setIsNewModModalOpen(false);
       setNewTitle('');
       setNewSummary('');
       setNewDescription('');
       setEditingModId(null);
+      setPendingDetailImages([]);
+      setPendingDetailImageKeys([]);
+      setExistingDetailImages([]);
+      setDetailImageOrder([]);
+      setClearExistingDetailImages(false);
+      setDetailImageOrderDirty(false);
     }
   };
 
@@ -162,14 +217,74 @@ export const AuthorWorkbench: React.FC = () => {
     setEditingModId(mod.id);
     setNewTitle(mod.title);
     setNewSummary(mod.summary);
+    setNewAuthorDisplayName(mod.author.display_name || '');
     setNewDescription(mod.description || '');
     setNewCategory(mod.category);
     setNewMasRange(mod.mas_version_range);
     setNewPriority(mod.recommended_priority);
     setNewTagsStr(mod.tags.join(', '));
     setNewPlatforms(mod.supported_platforms);
+    setPendingDetailImages([]);
+    setPendingDetailImageKeys([]);
+    setClearExistingDetailImages(false);
+    setExistingDetailImages([]);
+    setDetailImageOrder([]);
+    setDetailImageOrderDirty(false);
+    setDraggedDetailImage(null);
     setIsNewModModalOpen(true);
   };
+
+  const openNewModEditor = () => {
+    setEditingModId(null);
+    setNewTitle('');
+    setNewSummary('');
+    setNewAuthorDisplayName('');
+    setNewDescription('');
+    setNewCategory('submod');
+    setNewMasRange('>=0.12.14');
+    setNewPriority(20);
+    setNewTagsStr('');
+    setNewPlatforms(['windows', 'android']);
+    setPendingDetailImages([]);
+    setPendingDetailImageKeys([]);
+    setExistingDetailImages([]);
+    setDetailImageOrder([]);
+    setClearExistingDetailImages(false);
+    setDetailImageOrderDirty(false);
+    setDraggedDetailImage(null);
+    setIsNewModModalOpen(true);
+  };
+
+  const moveDetailImage = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= detailImageOrder.length || to >= detailImageOrder.length) return;
+    setDetailImageOrder((images) => {
+      const next = [...images];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+    setDetailImageOrderDirty(true);
+  };
+
+  const removeDetailImage = (key: string) => {
+    setDetailImageOrder((items) => items.filter((item) => item !== key));
+    if (key.startsWith('new:')) {
+      const index = pendingDetailImageKeys.indexOf(key);
+      if (index >= 0) {
+        setPendingDetailImageKeys((keys) => keys.filter((item) => item !== key));
+        setPendingDetailImages((files) => files.filter((_, fileIndex) => fileIndex !== index));
+      }
+    } else {
+      setDetailImageOrderDirty(true);
+      setExistingDetailImages((items) => items.filter((item) => item !== key));
+    }
+  };
+
+  useEffect(() => {
+    if (!editingModId) return;
+    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    fetchModImages(base, editingModId).then((items) => { const urls = items.map((item) => item.url); setExistingDetailImages(urls); setDetailImageOrder(urls); }).catch(() => { setExistingDetailImages([]); setDetailImageOrder([]); });
+  }, [editingModId]);
 
   const handleCreateVersionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -201,6 +316,7 @@ export const AuthorWorkbench: React.FC = () => {
       setSelectedVersionForUpload('');
     }
   };
+
 
   const handleSpritepackUpload = async (file: File) => {
     if (!activeMod) return;
@@ -247,7 +363,7 @@ export const AuthorWorkbench: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-      <input
+        <input
         ref={archiveInputRef}
         type="file"
         accept=".zip,application/zip"
@@ -259,7 +375,7 @@ export const AuthorWorkbench: React.FC = () => {
           if (file && versionId === 'spritepack:new') void handleSpritepackUpload(file);
           else if (file && versionId) void handleUploadArchive(versionId, file);
         }}
-      />
+        />
       {/* Top Banner & Stats */}
       <div className="bg-white border border-neutral-200 rounded-lg p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -308,18 +424,7 @@ export const AuthorWorkbench: React.FC = () => {
           </button>
 
                   <button
-                    onClick={() => {
-                      setEditingModId(null);
-                      setNewTitle('');
-                      setNewSummary('');
-                      setNewDescription('');
-                      setNewCategory('submod');
-                      setNewMasRange('>=0.12.14');
-                      setNewPriority(20);
-                      setNewTagsStr('dialogue, dates');
-                      setNewPlatforms(['windows', 'android']);
-                      setIsNewModModalOpen(true);
-                    }}
+                    onClick={openNewModEditor}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded transition-colors shadow-xs"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -451,7 +556,7 @@ export const AuthorWorkbench: React.FC = () => {
                 我的模组列表 ({userMods.length})
               </h2>
               <button
-                onClick={() => setIsNewModModalOpen(true)}
+                onClick={openNewModEditor}
                 className="text-xs text-emerald-700 hover:underline font-medium"
               >
                 + 新建草稿
@@ -516,6 +621,7 @@ export const AuthorWorkbench: React.FC = () => {
                       <Pencil className="w-3.5 h-3.5" />
                       编辑模组
                     </button>
+                    {activeMod.is_published ? <button type="button" onClick={() => { if (window.confirm('确认下架这个模组？版本、归档和详情图会保留。')) void unpublishMod(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors">下架模组</button> : activeModVersions.every((version) => version.state !== 'published') && <button type="button" onClick={() => { if (window.confirm('确认删除草稿模组？候选版本、扫描记录和详情图会一并删除。')) void deleteModDraft(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-700 border border-rose-200 hover:bg-rose-50 rounded transition-colors">删除草稿模组</button>}
                     {activeMod.category !== 'spritepack' && (
                       <button
                         onClick={() => openVersionForm()}
@@ -1101,6 +1207,43 @@ export const AuthorWorkbench: React.FC = () => {
                 </p>
               </div>
 
+              <div>
+                <label className="block font-medium text-neutral-700 mb-1">作者显示名（可选）</label>
+                <input
+                  type="text"
+                  value={newAuthorDisplayName}
+                  onChange={(e) => setNewAuthorDisplayName(e.target.value)}
+                  placeholder="留空则使用上传者账号名称"
+                  className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600"
+                />
+                <p className="mt-1 text-[11px] text-neutral-400">仅修改目录中的作者显示，不改变上传者权限。</p>
+              </div>
+
+              <div className="rounded border border-neutral-200 bg-neutral-50 p-3 space-y-2">
+                <label className="block font-medium text-neutral-700">模组详情图（可选，最多 8 张）</label>
+                {detailImageItems.length > 0 && !clearExistingDetailImages && <div className="grid grid-cols-4 gap-2">{detailImageItems.map((item, index) => <div key={item.key} draggable onDragStart={() => setDraggedDetailImage(index)} onDragEnd={() => setDraggedDetailImage(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (draggedDetailImage !== null) moveDetailImage(draggedDetailImage, index); setDraggedDetailImage(null); }} className={`cursor-grab rounded border bg-white p-1 active:cursor-grabbing ${draggedDetailImage === index ? 'border-emerald-500 opacity-60' : item.pending ? 'border-amber-300' : 'border-neutral-200'}`} title="拖动以调整顺序"><div className="relative"><img src={item.url} alt={`${item.pending ? '待上传' : '已有'}详情图 ${index + 1}`} className="h-16 w-full rounded object-cover" /><button type="button" aria-label={`删除详情图 ${index + 1}`} onClick={(event) => { event.stopPropagation(); removeDetailImage(item.key); }} className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-xs text-white hover:bg-rose-600">×</button></div><span className="block text-center text-[10px] text-neutral-400">#{index + 1}{item.pending ? ' · 待上传' : ''}</span></div>)}</div>}
+                {detailImageItems.length > 1 && !clearExistingDetailImages && <p className="text-[11px] text-neutral-500">拖动图片调整展示顺序，保存模组后生效。</p>}
+                {editingModId && existingDetailImages.length > 0 && <button type="button" onClick={() => setClearExistingDetailImages((value) => !value)} className="text-[11px] text-rose-700 hover:underline">{clearExistingDetailImages ? '保留现有详情图' : '清空现有详情图'}</button>}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  multiple
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files || []);
+                    const available = Math.max(0, 8 - detailImageOrder.length);
+                    const additions = files.slice(0, available);
+                    const keys = additions.map((_, index) => `new:${Date.now()}:${index}`);
+                    setPendingDetailImages((current) => [...current, ...additions]);
+                    setPendingDetailImageKeys((current) => [...current, ...keys]);
+                    setDetailImageOrder((current) => [...current, ...keys]);
+                    setClearExistingDetailImages(false);
+                  }}
+                  className="block w-full text-xs text-neutral-600 file:mr-2 file:rounded file:border-0 file:bg-neutral-900 file:px-2.5 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-neutral-800"
+                />
+                <p className="text-[11px] text-neutral-500">支持 PNG、JPEG、WebP、GIF；单张最多 10 MB。选择新图片会追加到现有详情图，最多 8 张。</p>
+                {pendingDetailImages.length > 0 && <p className="text-[11px] text-emerald-700">已追加 {pendingDetailImages.length} 张待上传图片，可先拖动调整完整顺序。</p>}
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-medium text-neutral-700 mb-1">分类 (Category)</label>
@@ -1149,7 +1292,7 @@ export const AuthorWorkbench: React.FC = () => {
                     type="text"
                     value={newTagsStr}
                     onChange={(e) => setNewTagsStr(e.target.value)}
-                    placeholder="dialogue, cozy, dates"
+                    placeholder="例如：dialogue, cozy, dates"
                     className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600"
                   />
                 </div>

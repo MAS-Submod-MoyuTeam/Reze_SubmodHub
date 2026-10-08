@@ -31,6 +31,7 @@ export interface ModSummary {
     display_name: string;
     avatar?: string;
   };
+  author_display_name?: string;
   category: ModCategory;
   tags: string[];
   supported_platforms: Platform[];
@@ -41,6 +42,7 @@ export interface ModSummary {
   updated_at: string;
   created_at: string;
   thumbnail?: string;
+  detail_images?: string[];
   is_published: boolean;
 }
 

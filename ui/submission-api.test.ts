@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod } from './submission-api';
+import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, reorderModImages, uploadModImages } from './submission-api';
 
 test('loads the authenticated author workspace', async () => {
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -33,4 +33,29 @@ test('updates mod metadata through the authenticated author endpoint', async () 
   }) as typeof fetch;
   const result = await updateAuthorMod('/api/v1', 'mod_1', { title: 'Updated', summary: 'Short', description: '## Details', category: 'submod', tags: ['dialogue'], supported_platforms: ['windows'], mas_version_range: '>=0.12.14', recommended_priority: 20 }, fetcher);
   assert.equal(result.description, '## Details');
+});
+
+test('persists the author-selected detail image order', async () => {
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), '/api/v1/author/mods/mod_1/images');
+    assert.equal(init?.method, 'PATCH');
+    assert.equal(init?.credentials, 'same-origin');
+    assert.deepEqual(JSON.parse(String(init?.body)), { filenames: ['02.jpg', '00.png', '01.webp'] });
+    return new Response(JSON.stringify({ mod_id: 'mod_1', count: 3 }), { status: 200 });
+  }) as typeof fetch;
+  const result = await reorderModImages('/api/v1', 'mod_1', ['02.jpg', '00.png', '01.webp'], fetcher);
+  assert.equal(result.count, 3);
+});
+
+test('appends detail images without replacing existing images', async () => {
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), '/api/v1/author/mods/mod_1/images?append=true');
+    assert.equal(init?.method, 'POST');
+    assert.equal(init?.credentials, 'same-origin');
+    assert.ok(init?.body instanceof FormData);
+    return new Response(JSON.stringify({ mod_id: 'mod_1', count: 2, items: [{ url: '/api/v1/images/mod_1/old.png' }, { url: '/api/v1/images/mod_1/new.png' }] }), { status: 200 });
+  }) as typeof fetch;
+  const result = await uploadModImages('/api/v1', 'mod_1', [new File(['new'], 'new.png')], true, fetcher);
+  assert.equal(result.count, 2);
+  assert.equal(result.items?.[1].url, '/api/v1/images/mod_1/new.png');
 });
