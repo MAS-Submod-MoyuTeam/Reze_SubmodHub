@@ -71,6 +71,7 @@ export interface ModDependency {
   mod_id: string;
   mod_title?: string;
   linked_mod_id?: string;
+  linked_mod_ids?: string[];
   version_range: string;
   required: boolean;
 }

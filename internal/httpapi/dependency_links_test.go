@@ -31,7 +31,43 @@ func TestResolveDependencyLinkOnlyForUniquePublishedRegistration(t *testing.T) {
 	}
 	catalog.ScanReports["scan2"] = packagezip.Report{Submods: []packagezip.Registration{{Name: "Core"}}}
 	if got := resolveDependencyLink(catalog, "Core"); got != "" {
-		t.Fatalf("ambiguous link=%q", got)
+		t.Fatalf("ambiguous single-link=%q", got)
+	}
+	if got := resolveDependencyLinks(catalog, "Core"); len(got) != 2 || got[0] != "one" || got[1] != "two" {
+		t.Fatalf("ambiguous links=%q", got)
+	}
+}
+
+func TestResolveDependencyLinksPrefersModsWithOneRegistration(t *testing.T) {
+	catalog := Catalog{
+		Versions: map[string]Version{
+			"single": {ID: "single-v1", ModID: "single", State: "published", ScanReportID: "single-scan"},
+			"multi":  {ID: "multi-v1", ModID: "multi", State: "published", ScanReportID: "multi-scan"},
+		},
+		ScanReports: map[string]packagezip.Report{
+			"single-scan": {Submods: []packagezip.Registration{{Name: "Core"}}},
+			"multi-scan":  {Submods: []packagezip.Registration{{Name: "Core"}, {Name: "Other"}}},
+		},
+	}
+	if got := resolveDependencyLinks(catalog, "Core"); len(got) != 1 || got[0] != "single" {
+		t.Fatalf("preferred links=%q", got)
+	}
+}
+
+func TestResolveVersionDependenciesExposesMultipleCandidates(t *testing.T) {
+	catalog := Catalog{
+		Versions: map[string]Version{
+			"v1": {ID: "v1", ModID: "one", State: "published", ScanReportID: "s1"},
+			"v2": {ID: "v2", ModID: "two", State: "published", ScanReportID: "s2"},
+		},
+		ScanReports: map[string]packagezip.Report{
+			"s1": {Submods: []packagezip.Registration{{Name: "Core"}}},
+			"s2": {Submods: []packagezip.Registration{{Name: "Core"}}},
+		},
+	}
+	got := resolveVersionDependencies(catalog, Version{Dependencies: []Dependency{{ModID: "Core", ModTitle: "Core"}}})
+	if got.Dependencies[0].LinkedModID != "" || len(got.Dependencies[0].LinkedModIDs) != 2 {
+		t.Fatalf("dependency candidates=%+v", got.Dependencies[0])
 	}
 }
 

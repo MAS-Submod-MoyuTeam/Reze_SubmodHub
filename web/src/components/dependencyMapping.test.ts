@@ -51,6 +51,12 @@ test('explicit catalog selection links the selected mod even when titles are dup
   assert.equal(typed.linked_mod_id, undefined);
 });
 
+test('manual selection clears automatically discovered candidates', () => {
+  const result = mapDependencySelection({ mod_id: 'Core', mod_title: 'Core', linked_mod_ids: ['first', 'second'], version_range: '', required: true }, { id: 'second', title: 'Core' } as any);
+  assert.equal(result.linked_mod_id, 'second');
+  assert.equal(result.linked_mod_ids, undefined);
+});
+
 test('new dependency selection uses the full catalog name after a partial search', () => {
   const result = mapDependencySelection({ mod_id: 'Uni', mod_title: 'Uni', version_range: '', required: true }, { id: 'mod_unisync', title: 'Unisync' } as any, false);
   assert.equal(result.mod_id, 'Unisync');

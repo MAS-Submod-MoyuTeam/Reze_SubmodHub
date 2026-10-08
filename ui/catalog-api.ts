@@ -33,7 +33,7 @@ export interface CatalogVersion {
   size_bytes: number;
   sha256: string;
   release_notes?: string;
-  dependencies?: Array<{ mod_id: string; mod_title?: string; linked_mod_id?: string; version_range: string; required: boolean }>;
+  dependencies?: Array<{ mod_id: string; mod_title?: string; linked_mod_id?: string; linked_mod_ids?: string[]; version_range: string; required: boolean }>;
   scan_report_id?: string;
   deprecated?: boolean;
   deprecation_reason?: string;

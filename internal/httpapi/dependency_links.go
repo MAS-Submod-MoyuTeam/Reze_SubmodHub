@@ -1,10 +1,22 @@
 package httpapi
 
+import "sort"
+
 func resolveDependencyLink(c Catalog, name string) string {
-	if name == "" {
+	matches := resolveDependencyLinks(c, name)
+	if len(matches) != 1 {
 		return ""
 	}
-	matches := map[string]bool{}
+	return matches[0]
+}
+
+func resolveDependencyLinks(c Catalog, name string) []string {
+	if name == "" {
+		return nil
+	}
+	// Lower scores are preferred: a scan with exactly one registration is a
+	// stronger identity signal than a package that registers several submods.
+	scores := map[string]int{}
 	for _, version := range c.Versions {
 		if version.State != "published" {
 			continue
@@ -15,17 +27,30 @@ func resolveDependencyLink(c Catalog, name string) string {
 		}
 		for _, registration := range report.Submods {
 			if !registration.Unknown && registration.Name == name {
-				matches[version.ModID] = true
+				score := 1
+				if len(report.Submods) == 1 {
+					score = 0
+				}
+				if previous, ok := scores[version.ModID]; !ok || score < previous {
+					scores[version.ModID] = score
+				}
 			}
 		}
 	}
-	if len(matches) != 1 {
-		return ""
+	bestScore := 2
+	for _, score := range scores {
+		if score < bestScore {
+			bestScore = score
+		}
 	}
-	for id := range matches {
-		return id
+	matches := make([]string, 0, len(scores))
+	for id, score := range scores {
+		if score == bestScore {
+			matches = append(matches, id)
+		}
 	}
-	return ""
+	sort.Strings(matches)
+	return matches
 }
 
 func resolveVersionDependencies(c Catalog, version Version) Version {
@@ -37,7 +62,10 @@ func resolveVersionDependencies(c Catalog, version Version) Version {
 			if name == "" {
 				name = dep.ModID
 			}
-			dep.LinkedModID = resolveDependencyLink(c, name)
+			dep.LinkedModIDs = resolveDependencyLinks(c, name)
+			if len(dep.LinkedModIDs) == 1 {
+				dep.LinkedModID = dep.LinkedModIDs[0]
+			}
 		}
 	}
 	return version

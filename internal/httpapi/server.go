@@ -12,8 +12,8 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"regexp"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -30,26 +30,27 @@ type Author struct {
 	DisplayName string `json:"display_name"`
 }
 type Dependency struct {
-	ModID        string `json:"mod_id"`
-	ModTitle     string `json:"mod_title,omitempty"`
-	LinkedModID  string `json:"linked_mod_id,omitempty"`
-	VersionRange string `json:"version_range"`
-	Required     bool   `json:"required"`
+	ModID        string   `json:"mod_id"`
+	ModTitle     string   `json:"mod_title,omitempty"`
+	LinkedModID  string   `json:"linked_mod_id,omitempty"`
+	LinkedModIDs []string `json:"linked_mod_ids,omitempty"`
+	VersionRange string   `json:"version_range"`
+	Required     bool     `json:"required"`
 }
 type Version struct {
-	ID                string       `json:"id"`
-	ModID             string       `json:"mod_id"`
-	Version           string       `json:"version"`
-	CreatedAt         *time.Time   `json:"created_at,omitempty"`
-	State             string       `json:"state"`
-	SizeBytes         int64        `json:"size_bytes"`
-	SHA256            string       `json:"sha256"`
-	ReleaseNotes      string       `json:"release_notes"`
-	Dependencies      []Dependency `json:"dependencies"`
-	ScanReportID      string       `json:"scan_report_id,omitempty"`
-	ArchivePath       string       `json:"archive_path,omitempty"`
-	Deprecated        bool         `json:"deprecated,omitempty"`
-	DeprecationReason string       `json:"deprecation_reason,omitempty"`
+	ID                string                 `json:"id"`
+	ModID             string                 `json:"mod_id"`
+	Version           string                 `json:"version"`
+	CreatedAt         *time.Time             `json:"created_at,omitempty"`
+	State             string                 `json:"state"`
+	SizeBytes         int64                  `json:"size_bytes"`
+	SHA256            string                 `json:"sha256"`
+	ReleaseNotes      string                 `json:"release_notes"`
+	Dependencies      []Dependency           `json:"dependencies"`
+	ScanReportID      string                 `json:"scan_report_id,omitempty"`
+	ArchivePath       string                 `json:"archive_path,omitempty"`
+	Deprecated        bool                   `json:"deprecated,omitempty"`
+	DeprecationReason string                 `json:"deprecation_reason,omitempty"`
 	SourceType        string                 `json:"source_type,omitempty"`
 	GitHubReleaseID   int64                  `json:"github_release_id,omitempty"`
 	GitHubAssetID     int64                  `json:"github_asset_id,omitempty"`
@@ -79,20 +80,20 @@ type VersionSourceLocation struct {
 	DownloadURL string `json:"download_url"`
 }
 type Mod struct {
-	ID                  string   `json:"id"`
-	Title               string   `json:"title"`
-	Summary             string   `json:"summary"`
-	Description         string   `json:"description,omitempty"`
-	Author              Author   `json:"author"`
-	Category            string   `json:"category"`
-	Tags                []string `json:"tags"`
-	SupportedPlatforms  []string `json:"supported_platforms"`
-	MASVersionRange     string   `json:"mas_version_range"`
-	RecommendedPriority int      `json:"recommended_priority"`
-	LatestVersionID     string   `json:"latest_version_id"`
-	LatestVersion       string   `json:"latest_version"`
-	SizeBytes           int64    `json:"size_bytes"`
-	SHA256              string   `json:"sha256"`
+	ID                  string     `json:"id"`
+	Title               string     `json:"title"`
+	Summary             string     `json:"summary"`
+	Description         string     `json:"description,omitempty"`
+	Author              Author     `json:"author"`
+	Category            string     `json:"category"`
+	Tags                []string   `json:"tags"`
+	SupportedPlatforms  []string   `json:"supported_platforms"`
+	MASVersionRange     string     `json:"mas_version_range"`
+	RecommendedPriority int        `json:"recommended_priority"`
+	LatestVersionID     string     `json:"latest_version_id"`
+	LatestVersion       string     `json:"latest_version"`
+	SizeBytes           int64      `json:"size_bytes"`
+	SHA256              string     `json:"sha256"`
 	ImagePaths          []string   `json:"image_paths,omitempty"`
 	Unpublished         bool       `json:"unpublished,omitempty"`
 	SourceType          string     `json:"source_type,omitempty"`
@@ -157,6 +158,7 @@ func cleanPublicMod(m Mod) Mod {
 	cp.GitHubETag = ""
 	return cp
 }
+
 type SiteSettings struct {
 	GitHubProxyTemplate string `json:"github_proxy_template"`
 	Revision            uint64 `json:"revision"`
@@ -220,17 +222,17 @@ type RoleAuditEvent struct {
 	At       time.Time `json:"at"`
 }
 type Store struct {
-	mu            sync.RWMutex
-	Catalog       Catalog
-	DataDir       string
-	UploadToken   string
-	AutoPublish   bool
-	TestMode      bool
-	TestUsername  string
-	TestPassword  string
-	DB            *sql.DB
-	Flarum        *auth.FlarumClient
-	AdminGroupIDs map[string]bool
+	mu                 sync.RWMutex
+	Catalog            Catalog
+	DataDir            string
+	UploadToken        string
+	AutoPublish        bool
+	TestMode           bool
+	TestUsername       string
+	TestPassword       string
+	DB                 *sql.DB
+	Flarum             *auth.FlarumClient
+	AdminGroupIDs      map[string]bool
 	sessions           map[string]authSession
 	GitHubClient       *github.Client
 	GitHubSyncInterval time.Duration

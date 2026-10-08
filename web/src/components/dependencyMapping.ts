@@ -19,6 +19,7 @@ export function mapDependencyInput(
     mod_id: value,
     mod_title: value,
     linked_mod_id: linked?.id,
+    linked_mod_ids: undefined,
   };
 }
 
@@ -32,5 +33,6 @@ export function mapDependencySelection(dependency: ModDependency, mod: Pick<ModS
     mod_id: preserveName ? dependency.mod_id || mod.title : mod.title,
     mod_title: preserveName ? dependency.mod_title || dependency.mod_id || mod.title : mod.title,
     linked_mod_id: mod.id,
+    linked_mod_ids: undefined,
   };
 }

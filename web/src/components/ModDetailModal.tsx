@@ -269,9 +269,17 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                           key={dep.mod_id}
                           className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded border border-neutral-200 text-xs"
                         >
-                          {dep.linked_mod_id && mods.some((candidate) => candidate.id === dep.linked_mod_id && candidate.is_published)
-                            ? <button type="button" onClick={() => setDetailModalModId(dep.linked_mod_id!)} className="font-mono text-emerald-700 hover:underline text-left">{mods.find((candidate) => candidate.id === dep.linked_mod_id)?.title || dep.mod_title || dep.mod_id}</button>
-                            : <span className="font-mono text-neutral-800">{dep.mod_title || dep.mod_id}</span>}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {(dep.linked_mod_ids?.length ? dep.linked_mod_ids : dep.linked_mod_id ? [dep.linked_mod_id] : [])
+                              .map((linkedId) => mods.find((candidate) => candidate.id === linkedId && candidate.is_published))
+                              .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
+                              .map((candidate) => (
+                                <button key={candidate.id} type="button" onClick={() => setDetailModalModId(candidate.id)} className="font-mono text-emerald-700 hover:underline text-left">
+                                  {candidate.title}
+                                </button>
+                              ))}
+                            {!(dep.linked_mod_ids?.length || dep.linked_mod_id) && <span className="font-mono text-neutral-800">{dep.mod_title || dep.mod_id}</span>}
+                          </div>
                           <span className="font-mono text-neutral-500">
                             {dep.version_range} {dep.required ? '(必需)' : '(可选建议)'}
                           </span>
