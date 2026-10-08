@@ -218,6 +218,14 @@ func (c *Client) ProxyTemplate() string {
 	return c.proxyTemplate
 }
 
+func (c *Client) BaseURL() string {
+	return c.baseURL
+}
+
+func (c *Client) AllowInsecureTestHosts() bool {
+	return c.allowInsecureTestHosts
+}
+
 func NewClient(opts ...Option) *Client {
 	c := &Client{
 		baseURL:   "https://api.github.com",

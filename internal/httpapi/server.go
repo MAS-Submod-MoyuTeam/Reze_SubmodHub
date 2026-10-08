@@ -133,14 +133,29 @@ func cleanPublicMod(m Mod) Mod {
 	cp.GitHubETag = ""
 	return cp
 }
+type SiteSettings struct {
+	GitHubProxyTemplate string `json:"github_proxy_template"`
+	Revision            uint64 `json:"revision"`
+}
+
+type SettingsAuditEvent struct {
+	ActorID          string    `json:"actor_id"`
+	At               time.Time `json:"at"`
+	PreviousTemplate string    `json:"previous_template"`
+	NewTemplate      string    `json:"new_template"`
+	Revision         uint64    `json:"revision"`
+}
+
 type Catalog struct {
-	Mods        []Mod                        `json:"mods"`
-	Versions    map[string]Version           `json:"versions"`
-	Submissions []Submission                 `json:"submissions,omitempty"`
-	ReviewAudit []ReviewAuditEvent           `json:"review_audit,omitempty"`
-	ScanReports map[string]packagezip.Report `json:"scan_reports,omitempty"`
-	RoleGrants  map[string][]string          `json:"role_grants,omitempty"`
-	RoleAudit   []RoleAuditEvent             `json:"role_audit,omitempty"`
+	Mods          []Mod                        `json:"mods"`
+	Versions      map[string]Version           `json:"versions"`
+	Submissions   []Submission                 `json:"submissions,omitempty"`
+	ReviewAudit   []ReviewAuditEvent           `json:"review_audit,omitempty"`
+	ScanReports   map[string]packagezip.Report `json:"scan_reports,omitempty"`
+	RoleGrants    map[string][]string          `json:"role_grants,omitempty"`
+	RoleAudit     []RoleAuditEvent             `json:"role_audit,omitempty"`
+	Settings      SiteSettings                 `json:"settings"`
+	SettingsAudit []SettingsAuditEvent         `json:"settings_audit,omitempty"`
 }
 
 const maxModImageSize = 10 << 20
@@ -273,6 +288,8 @@ func NewStoreHandler(s *Store) http.Handler {
 	mux.HandleFunc("/api/v1/auth/flarum/login", s.loginFlarum)
 	mux.HandleFunc("/api/v1/auth/logout", s.logout)
 	mux.HandleFunc("/api/v1/admin/users/", s.updateUserRoles)
+	mux.HandleFunc("/api/v1/admin/settings", s.handleAdminSettings)
+	mux.HandleFunc("/api/v1/admin/settings/github-proxy/test", s.handleAdminSettingsTestGitHubProxy)
 	mux.HandleFunc("/api/v1/author/mods", s.authorMods)
 	mux.HandleFunc("/api/v1/author/mods/", s.authorModResource)
 	mux.HandleFunc("/api/v1/author/versions/", s.authorVersionResource)
