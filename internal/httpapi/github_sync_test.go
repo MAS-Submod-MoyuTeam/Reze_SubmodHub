@@ -74,7 +74,7 @@ func TestGitHubSourceZipRootReadmeDoesNotBlockPublishing(t *testing.T) {
 		name, extra, wantState string
 	}{
 		{"root readme", "repo-abc123/README.md", "published"},
-		{"nested readme", "repo-abc123/docs/README.md", "scanning"},
+		{"nested readme with auto publish", "repo-abc123/docs/README.md", "published"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
@@ -124,8 +124,11 @@ func TestGitHubSourceZipRootReadmeDoesNotBlockPublishing(t *testing.T) {
 				t.Fatalf("state = %q, want %q; report = %+v", v.State, tc.wantState, store.Catalog.ScanReports[v.ScanReportID])
 			}
 			report := store.Catalog.ScanReports[v.ScanReportID]
-			if tc.wantState == "published" && (len(report.Unsupported) != 0 || len(report.Warnings) == 0 || len(report.Files) != 1) {
+			if tc.wantState == "published" && len(report.Files) != 1 {
 				t.Fatalf("unexpected report: %+v", report)
+			}
+			if tc.name == "nested readme with auto publish" && len(report.Unsupported) != 1 {
+				t.Fatalf("auto-published version must retain unsupported-file findings: %+v", report)
 			}
 		})
 	}
@@ -277,6 +280,47 @@ func TestGitHubSyncSkipsReleaseWithoutMatchingAsset(t *testing.T) {
 	}
 	if store.Catalog.Mods[0].GitHubLastSyncError != "" {
 		t.Fatalf("expected no sync error for skipped release, got %q", store.Catalog.Mods[0].GitHubLastSyncError)
+	}
+}
+
+func TestGitHubSyncAutoPublishPromotesPreviouslyBlockedVersion(t *testing.T) {
+	zipData := createTestZip(t, "init python:\n    pass\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/octocat/reconcile/releases" {
+			fmt.Fprint(w, `[{"id":901,"tag_name":"v1.0.0","assets":[{"id":1,"name":"mod.zip","browser_download_url":"`+"PLACEHOLDER"+`"}]}]`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	// Use the test server URL in the release payload without changing the
+	// production client behavior.
+	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/octocat/reconcile/releases" {
+			fmt.Fprintf(w, `[{"id":901,"tag_name":"v1.0.0","assets":[{"id":1,"name":"mod.zip","browser_download_url":"%s/archive"}]}]`, server.URL)
+			return
+		}
+		if r.URL.Path == "/archive" {
+			_, _ = w.Write(zipData)
+			return
+		}
+		http.NotFound(w, r)
+	})
+	store, err := NewStore(t.TempDir(), Catalog{
+		Mods:     []Mod{{ID: "reconcile", Category: "submod", SourceType: "github_releases", GitHubOwner: "octocat", GitHubRepo: "reconcile"}},
+		Versions: map[string]Version{"old": {ID: "old", ModID: "reconcile", Version: "v1.0.0", State: "scanning", GitHubReleaseID: 901}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.AutoPublish = true
+	store.GitHubClient = github.NewClient(github.WithBaseURL(server.URL), github.WithHTTPClient(server.Client()))
+	summary, err := store.SyncMod(context.Background(), "reconcile")
+	if err != nil || summary.Skipped != 1 {
+		t.Fatalf("sync = %+v, err = %v", summary, err)
+	}
+	if got := store.Catalog.Versions["old"].State; got != "published" {
+		t.Fatalf("existing blocked version state = %q, want published", got)
 	}
 }
 

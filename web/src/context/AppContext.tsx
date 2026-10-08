@@ -24,6 +24,7 @@ import { fetchDownloadDescriptor, fetchPublishedCatalog, fetchPublishedVersions 
 import { loginFlarum as loginFlarumRequest, logout as logoutRequest, readSession, Session } from '../../../ui/auth-api';
 import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, listAuthorSubmissions, listAuthorWorkspace, listReviewAudit, listReviewSubmissions, markPublishedVersionLatest, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages, syncAuthorModGitHub, type SyncSummary } from '../../../ui/submission-api';
 import { mapServerScanReport } from './scanReport';
+import { isAuthorModPublished } from '../../../ui/submission-api';
 
 export type NavTab =
   | 'catalog'
@@ -222,7 +223,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         supported_platforms: (mod.supported_platforms || []) as ModSummary['supported_platforms'],
         mas_version_range: mod.mas_version_range || '', recommended_priority: mod.recommended_priority || 0,
         latest_version_id: mod.latest_version_id || '', downloads_count: 0, created_at: '', updated_at: '',
-        is_published: ownVersions.some((version) => version.id === mod.latest_version_id && version.state === 'published'),
+        is_published: isAuthorModPublished(mod, ownVersions),
         source_type: mod.source_type || 'local',
         github_owner: mod.github_owner || '',
         github_repo: mod.github_repo || '',
@@ -1224,7 +1225,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           supported_platforms: (mod.supported_platforms || []) as ModSummary['supported_platforms'],
           mas_version_range: mod.mas_version_range || '', recommended_priority: mod.recommended_priority || 0,
           latest_version_id: mod.latest_version_id || '', downloads_count: 0, created_at: '', updated_at: '',
-          is_published: ownVersions.some((version) => version.id === mod.latest_version_id && version.state === 'published'),
+          is_published: isAuthorModPublished(mod, ownVersions),
           source_type: mod.source_type || 'local',
           github_owner: mod.github_owner || '',
           github_repo: mod.github_repo || '',

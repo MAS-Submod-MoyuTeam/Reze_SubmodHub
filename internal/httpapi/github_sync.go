@@ -227,6 +227,9 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 		s.mu.RUnlock()
 
 		if alreadySynced {
+			if s.AutoPublish {
+				s.promoteGitHubVersion(modID, rel.ID, now)
+			}
 			summary.Skipped++
 			summary.Items = append(summary.Items, SyncItemResult{
 				ReleaseID: rel.ID,
@@ -362,10 +365,13 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 		// Determine version state
 		state := "ready_for_review"
 		hasBlockers := len(report.Unsupported) > 0
-		if hasBlockers || len(report.Conflicts) > 0 {
-			state = "scanning"
-		} else if s.AutoPublish {
+		if s.AutoPublish {
+			// Auto-publish explicitly disables the review gate. Keep the complete
+			// scan report and sync error metadata so administrators can still audit
+			// unsupported files or conflicts after publication.
 			state = "published"
+		} else if hasBlockers || len(report.Conflicts) > 0 {
+			state = "scanning"
 		}
 
 		releaseNotes := rel.Body
@@ -467,7 +473,7 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 				s.Catalog.Mods[idx].GitHubLastReleaseID = rel.ID
 				s.Catalog.Mods[idx].GitHubLastSyncAt = &now
 				s.Catalog.Mods[idx].GitHubBackoffUntil = nil
-				if hasBlockers {
+				if hasBlockers && !s.AutoPublish {
 					s.Catalog.Mods[idx].GitHubLastSyncError = fmt.Sprintf("scan blocked on %s: %s", tag, strings.Join(report.Unsupported, "; "))
 				} else {
 					s.Catalog.Mods[idx].GitHubLastSyncError = ""
@@ -536,6 +542,43 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 	}
 
 	return summary, nil
+}
+
+// promoteGitHubVersion reconciles versions imported before auto-publish was
+// enabled. The archive and scan report remain unchanged; only the review gate
+// is bypassed, matching newly imported releases.
+func (s *Store) promoteGitHubVersion(modID string, releaseID int64, now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for versionID, version := range s.Catalog.Versions {
+		if version.ModID != modID || version.GitHubReleaseID != releaseID || version.State != "scanning" {
+			continue
+		}
+		version.State = "published"
+		s.Catalog.Versions[versionID] = version
+		found := false
+		for i := range s.Catalog.Submissions {
+			if s.Catalog.Submissions[i].VersionID == versionID {
+				s.Catalog.Submissions[i].State = "published"
+				if s.Catalog.Submissions[i].PublishedAt == nil {
+					s.Catalog.Submissions[i].PublishedAt = &now
+				}
+				found = true
+			}
+		}
+		if !found {
+			token, err := randomToken()
+			if err == nil {
+				s.Catalog.Submissions = append(s.Catalog.Submissions, Submission{ID: "sub_" + token[:12], ModID: modID, VersionID: versionID, AuthorID: "", State: "published", CreatedAt: now, PublishedAt: &now})
+			}
+		}
+		for i := range s.Catalog.Mods {
+			if s.Catalog.Mods[i].ID == modID && s.Catalog.Mods[i].LatestVersionID == "" {
+				s.Catalog.Mods[i].LatestVersionID = versionID
+			}
+		}
+		_ = s.saveLocked()
+	}
 }
 
 func (s *Store) followGitHubLatest(modID string, releaseID int64) {

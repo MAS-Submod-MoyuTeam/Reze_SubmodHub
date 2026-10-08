@@ -350,19 +350,10 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                     {/* Registrations with Confidence requirement */}
                     {scanReport.registrations.length > 0 && (
                       <div className="text-[11px] bg-white p-2.5 rounded border border-neutral-200 space-y-1">
-                        <div className="text-neutral-500 font-medium">Submod 注册标识与签名可信度:</div>
+                        <div className="text-neutral-500 font-medium">Submod 注册标识:</div>
                         {scanReport.registrations.map((reg) => (
-                          <div key={reg.submod_id} className="flex items-center justify-between">
-                            <span className="font-mono text-neutral-800">{reg.name} [{reg.submod_id}]</span>
-                            <span
-                              className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${
-                                reg.confidence === 'known'
-                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                  : 'bg-rose-50 text-rose-800 border border-rose-200'
-                              }`}
-                            >
-                              可信度: {reg.confidence} (规范禁止将未知结果显示为安全)
-                            </span>
+                          <div key={reg.submod_id} className="font-mono text-neutral-800">
+                            {reg.name} [{reg.submod_id}]
                           </div>
                         ))}
                       </div>

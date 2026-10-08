@@ -1,6 +1,14 @@
 import type { ServerScanReport } from '../web/src/context/scanReport';
 
-export interface ApiMod { id: string; title: string; summary: string; description?: string; category: 'submod' | 'spritepack'; author: { id: string; display_name: string }; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; latest_version_id?: string; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean; github_last_sync_at?: string; github_last_sync_error?: string; github_last_release_id?: number; github_backoff_until?: string }
+export function isAuthorModPublished(
+  mod: { id: string; latest_version_id?: string; unpublished?: boolean },
+  versions: Array<{ id: string; mod_id: string; state: string }>,
+): boolean {
+  return !mod.unpublished && versions.some((version) =>
+    version.id === mod.latest_version_id && version.mod_id === mod.id && version.state === 'published');
+}
+
+export interface ApiMod { id: string; title: string; summary: string; description?: string; category: 'submod' | 'spritepack'; author: { id: string; display_name: string }; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; latest_version_id?: string; unpublished?: boolean; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean; github_last_sync_at?: string; github_last_sync_error?: string; github_last_release_id?: number; github_backoff_until?: string }
 export interface ApiVersion { id: string; mod_id: string; version: string; state: string; release_notes: string; size_bytes: number; sha256: string; dependencies: unknown[]; created_at?: string; scan_report_id?: string; deprecated?: boolean; deprecation_reason?: string; image_paths?: string[] }
 export interface ApiSubmission { id: string; mod_id: string; version_id: string; author_id: string; state: string; mark_latest?: boolean; reason?: string; reviewer_id?: string; created_at?: string; decided_at?: string; published_at?: string; version_snapshot?: ApiVersion; scan_report_snapshot?: ServerScanReport }
 export interface ApiReviewAudit { id: string; timestamp: string; actor_id: string; actor_name: string; actor_role: string; action: string; target_type: string; target_id: string; target_label: string; reason: string; details?: Record<string, unknown> }
