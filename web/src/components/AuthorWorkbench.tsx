@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { ModCategory, Platform, ModSummary, ModDependency, ModVersion, ScannedFile } from '../types/submodhub';
+import { ModCategory, Platform, ModSummary, ModDependency, ModVersion, ScannedFile, ModSourceType } from '../types/submodhub';
+import { validateGitHubSourceInput, formatLastSyncTime, getGitHubRepoUrl } from './sourceConfig';
 import { formatVersionCreatedAt } from './versionDate';
 import { DeprecationNotice } from './DeprecationNotice';
 import { mapDependencyInput, mapDependencyRangeInput, mapDependencySelection } from './dependencyMapping';
@@ -26,6 +27,7 @@ import {
   ChevronDown,
   X,
   Pencil,
+  RefreshCw,
 } from 'lucide-react';
 
 export const AuthorWorkbench: React.FC = () => {
@@ -50,6 +52,7 @@ export const AuthorWorkbench: React.FC = () => {
     unpublishMod,
     deleteModDraft,
     editVersion,
+    syncModReleases,
     showToast,
   } = useApp();
 
@@ -81,6 +84,12 @@ export const AuthorWorkbench: React.FC = () => {
   const [clearExistingDetailImages, setClearExistingDetailImages] = useState(false);
   const [draggedDetailImage, setDraggedDetailImage] = useState<number | null>(null);
   const [detailImageOrderDirty, setDetailImageOrderDirty] = useState(false);
+  const [newSourceType, setNewSourceType] = useState<ModSourceType>('local');
+  const [newGitHubOwner, setNewGitHubOwner] = useState('');
+  const [newGitHubRepo, setNewGitHubRepo] = useState('');
+  const [newGitHubAssetRegex, setNewGitHubAssetRegex] = useState('');
+  const [newGitHubSourceCode, setNewGitHubSourceCode] = useState(false);
+  const [isSyncingReleases, setIsSyncingReleases] = useState(false);
 
   // Version Draft Creation Dialog
   const [versionFormTarget, setVersionFormTarget] = useState<'new' | string | null>(null);
@@ -129,6 +138,19 @@ export const AuthorWorkbench: React.FC = () => {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
+    if (newSourceType === 'github_releases') {
+      const sourceValidation = validateGitHubSourceInput({
+        owner: newGitHubOwner,
+        repo: newGitHubRepo,
+        assetRegex: newGitHubAssetRegex,
+        sourceCode: newGitHubSourceCode,
+      });
+      if (!sourceValidation.valid) {
+        showToast('error', sourceValidation.error || 'GitHub 源配置不合法');
+        return;
+      }
+    }
+
     const tags = newTagsStr
       .split(',')
       .map((t) => t.trim())
@@ -145,6 +167,11 @@ export const AuthorWorkbench: React.FC = () => {
         recommended_priority: Number(newPriority),
         tags,
         supported_platforms: newPlatforms,
+        source_type: newSourceType,
+        github_owner: newGitHubOwner.trim(),
+        github_repo: newGitHubRepo.trim(),
+        github_asset_regex: newGitHubAssetRegex.trim(),
+        github_source_code: newGitHubSourceCode,
       });
       if (saved) {
         const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
@@ -194,6 +221,11 @@ export const AuthorWorkbench: React.FC = () => {
       recommended_priority: Number(newPriority),
       tags,
       supported_platforms: newPlatforms,
+      source_type: newSourceType,
+      github_owner: newGitHubOwner.trim(),
+      github_repo: newGitHubRepo.trim(),
+      github_asset_regex: newGitHubAssetRegex.trim(),
+      github_source_code: newGitHubSourceCode,
     });
 
     if (createdId) {
@@ -224,6 +256,11 @@ export const AuthorWorkbench: React.FC = () => {
     setNewPriority(mod.recommended_priority);
     setNewTagsStr(mod.tags.join(', '));
     setNewPlatforms(mod.supported_platforms);
+    setNewSourceType(mod.source_type || 'local');
+    setNewGitHubOwner(mod.github_owner || '');
+    setNewGitHubRepo(mod.github_repo || '');
+    setNewGitHubAssetRegex(mod.github_asset_regex || '');
+    setNewGitHubSourceCode(Boolean(mod.github_source_code));
     setPendingDetailImages([]);
     setPendingDetailImageKeys([]);
     setClearExistingDetailImages(false);
@@ -245,6 +282,11 @@ export const AuthorWorkbench: React.FC = () => {
     setNewPriority(20);
     setNewTagsStr('');
     setNewPlatforms(['windows', 'android']);
+    setNewSourceType('local');
+    setNewGitHubOwner('');
+    setNewGitHubRepo('');
+    setNewGitHubAssetRegex('');
+    setNewGitHubSourceCode(false);
     setPendingDetailImages([]);
     setPendingDetailImageKeys([]);
     setExistingDetailImages([]);
@@ -611,6 +653,33 @@ export const AuthorWorkbench: React.FC = () => {
                     </div>
                     <h2 className="text-base font-bold text-neutral-900">{activeMod.title}</h2>
                     <p className="text-xs text-neutral-600 mt-1">{activeMod.summary}</p>
+                    {activeMod.source_type === 'github_releases' && (
+                      <div className="mt-2.5 p-2.5 bg-neutral-50 border border-neutral-200 rounded text-xs space-y-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-neutral-500 flex items-center gap-1">
+                            <Github className="w-3.5 h-3.5" />
+                            GitHub 源:
+                          </span>
+                          <a
+                            href={getGitHubRepoUrl(activeMod.github_owner, activeMod.github_repo)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-emerald-700 hover:underline font-mono"
+                          >
+                            {activeMod.github_owner}/{activeMod.github_repo}
+                          </a>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-600">
+                          <span>正则: <code className="text-neutral-800">{activeMod.github_asset_regex || '无（仅源码包）'}</code></span>
+                          <span>最近同步: {formatLastSyncTime(activeMod.github_last_sync_at)}</span>
+                        </div>
+                        {activeMod.github_last_sync_error && (
+                          <div className="text-[11px] text-rose-600 bg-rose-50 p-1.5 rounded border border-rose-200 mt-1">
+                            同步状态: {activeMod.github_last_sync_error}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
@@ -622,14 +691,33 @@ export const AuthorWorkbench: React.FC = () => {
                       编辑模组
                     </button>
                     {activeMod.is_published ? <button type="button" onClick={() => { if (window.confirm('确认下架这个模组？版本、归档和详情图会保留。')) void unpublishMod(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors">下架模组</button> : activeModVersions.every((version) => version.state !== 'published') && <button type="button" onClick={() => { if (window.confirm('确认删除草稿模组？候选版本、扫描记录和详情图会一并删除。')) void deleteModDraft(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-700 border border-rose-200 hover:bg-rose-50 rounded transition-colors">删除草稿模组</button>}
-                    {activeMod.category !== 'spritepack' && (
+                    {activeMod.source_type === 'github_releases' ? (
                       <button
-                        onClick={() => openVersionForm()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded transition-colors"
+                        type="button"
+                        disabled={isSyncingReleases}
+                        onClick={async () => {
+                          setIsSyncingReleases(true);
+                          try {
+                            await syncModReleases(activeMod.id);
+                          } finally {
+                            setIsSyncingReleases(false);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 rounded transition-colors"
                       >
-                        <Plus className="w-3.5 h-3.5" />
-                        + 创建候选版本
+                        <RefreshCw className={`w-3.5 h-3.5 ${isSyncingReleases ? 'animate-spin' : ''}`} />
+                        {isSyncingReleases ? '正在同步...' : '立即同步 Releases'}
                       </button>
+                    ) : (
+                      activeMod.category !== 'spritepack' && (
+                        <button
+                          onClick={() => openVersionForm()}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          + 创建候选版本
+                        </button>
+                      )
                     )}
                   </div>
                 </div>
@@ -1165,6 +1253,93 @@ export const AuthorWorkbench: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateDraftSubmit} className="p-5 space-y-4 text-xs">
+              <div>
+                <label className="block font-medium text-neutral-700 mb-1">内容与版本来源 (Source)</label>
+                <div className="grid grid-cols-2 gap-2 p-1 bg-neutral-100 rounded border border-neutral-200">
+                  <button
+                    type="button"
+                    onClick={() => setNewSourceType('local')}
+                    className={`py-1.5 text-xs font-medium rounded transition-colors ${
+                      newSourceType === 'local'
+                        ? 'bg-white text-neutral-900 shadow-xs border border-neutral-200/60'
+                        : 'text-neutral-500 hover:text-neutral-800'
+                    }`}
+                  >
+                    本站上传 (本地候选版本)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewSourceType('github_releases')}
+                    className={`py-1.5 text-xs font-medium rounded transition-colors ${
+                      newSourceType === 'github_releases'
+                        ? 'bg-white text-neutral-900 shadow-xs border border-neutral-200/60'
+                        : 'text-neutral-500 hover:text-neutral-800'
+                    }`}
+                  >
+                    GitHub Releases
+                  </button>
+                </div>
+              </div>
+
+              {newSourceType === 'github_releases' && (
+                <div className="rounded border border-emerald-200 bg-emerald-50/40 p-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-medium text-neutral-700 mb-1">GitHub 组织/用户 (Owner) *</label>
+                      <input
+                        type="text"
+                        required={newSourceType === 'github_releases'}
+                        placeholder="例如: Monika-After-Story"
+                        value={newGitHubOwner}
+                        onChange={(e) => setNewGitHubOwner(e.target.value)}
+                        className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600 bg-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-medium text-neutral-700 mb-1">GitHub 仓库名 (Repo) *</label>
+                      <input
+                        type="text"
+                        required={newSourceType === 'github_releases'}
+                        placeholder="例如: MonikaModDev"
+                        value={newGitHubRepo}
+                        onChange={(e) => setNewGitHubRepo(e.target.value)}
+                        className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600 bg-white font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-neutral-700 mb-1">Release 资产文件名正则 (RE2)</label>
+                    <input
+                      type="text"
+                      placeholder="例如: ^MyMod[-_]v?\d+\.\d+\.\d+.*\.zip$"
+                      value={newGitHubAssetRegex}
+                      onChange={(e) => setNewGitHubAssetRegex(e.target.value)}
+                      className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600 bg-white font-mono"
+                    />
+                    <p className="mt-1 text-[11px] text-neutral-500">
+                      匹配 Release 资产文件名，仅匹配 .zip 文件才允许下载。示例: <code className="bg-neutral-100 px-1 py-0.5 rounded">^MyMod.*\.zip$</code>
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="gh_source_code_fallback"
+                      checked={newGitHubSourceCode}
+                      onChange={(e) => setNewGitHubSourceCode(e.target.checked)}
+                      className="mt-0.5 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <label htmlFor="gh_source_code_fallback" className="text-xs text-neutral-700 cursor-pointer">
+                      无匹配时使用 Release source code ZIP
+                      <span className="block text-[11px] text-neutral-500">
+                        若资产正则未匹配到任何 .zip 资产，自动回退使用 GitHub Release 的源码包 (zipball)。
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block font-medium text-neutral-700 mb-1">模组标题 (Title)</label>
                 <input

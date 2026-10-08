@@ -22,7 +22,7 @@ import {
 } from '../data/mockData';
 import { fetchDownloadDescriptor, fetchPublishedCatalog, fetchPublishedVersions } from '../../../ui/catalog-api';
 import { loginFlarum as loginFlarumRequest, logout as logoutRequest, readSession, Session } from '../../../ui/auth-api';
-import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, listAuthorSubmissions, listAuthorWorkspace, listReviewAudit, listReviewSubmissions, markPublishedVersionLatest, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages } from '../../../ui/submission-api';
+import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, listAuthorSubmissions, listAuthorWorkspace, listReviewAudit, listReviewSubmissions, markPublishedVersionLatest, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages, syncAuthorModGitHub, type SyncSummary } from '../../../ui/submission-api';
 import { mapServerScanReport } from './scanReport';
 
 export type NavTab =
@@ -102,6 +102,7 @@ interface AppContextType {
   // Admin Actions
   updateUserRoles: (userId: string, newRoles: UserRole[], reason: string) => void;
   unpublishVersion: (versionId: string, reason: string) => Promise<void>;
+  syncModReleases: (modId: string) => Promise<SyncSummary | null>;
   markVersionDeprecated: (versionId: string, reason: string) => Promise<void>;
   clearVersionDeprecation: (versionId: string) => Promise<void>;
   deleteVersion: (versionId: string) => Promise<void>;
@@ -222,6 +223,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         mas_version_range: mod.mas_version_range || '', recommended_priority: mod.recommended_priority || 0,
         latest_version_id: mod.latest_version_id || '', downloads_count: 0, created_at: '', updated_at: '',
         is_published: ownVersions.some((version) => version.id === mod.latest_version_id && version.state === 'published'),
+        source_type: mod.source_type || 'local',
+        github_owner: mod.github_owner || '',
+        github_repo: mod.github_repo || '',
+        github_asset_regex: mod.github_asset_regex || '',
+        github_source_code: Boolean(mod.github_source_code),
+        github_last_sync_at: mod.github_last_sync_at,
+        github_last_sync_error: mod.github_last_sync_error,
+        github_last_release_id: mod.github_last_release_id,
       }));
       const ownVersions: ModVersion[] = items.flatMap(({ versions: entries }) => entries.map((version) => ({
         id: version.id, mod_id: version.mod_id, version: version.version, state: version.state as ModVersion['state'],
@@ -392,12 +401,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         is_published: false,
+        source_type: data.source_type || 'local',
+        github_owner: data.github_owner || '',
+        github_repo: data.github_repo || '',
+        github_asset_regex: data.github_asset_regex || '',
+        github_source_code: Boolean(data.github_source_code),
       };
 
       const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
       try {
-        const remote = await createAuthorMod(base, { title: newMod.title, summary: newMod.summary, description: newMod.description, author_display_name: data.author_display_name || '', category: newMod.category, tags: newMod.tags, supported_platforms: newMod.supported_platforms, mas_version_range: newMod.mas_version_range, recommended_priority: newMod.recommended_priority });
-        const persisted = { ...newMod, id: remote.id, author: remote.author, title: remote.title, summary: remote.summary, category: remote.category };
+        const remote = await createAuthorMod(base, {
+          title: newMod.title,
+          summary: newMod.summary,
+          description: newMod.description,
+          author_display_name: data.author_display_name || '',
+          category: newMod.category,
+          tags: newMod.tags,
+          supported_platforms: newMod.supported_platforms,
+          mas_version_range: newMod.mas_version_range,
+          recommended_priority: newMod.recommended_priority,
+          source_type: newMod.source_type,
+          github_owner: newMod.github_owner,
+          github_repo: newMod.github_repo,
+          github_asset_regex: newMod.github_asset_regex,
+          github_source_code: newMod.github_source_code,
+        });
+        const persisted = {
+          ...newMod,
+          id: remote.id,
+          author: remote.author,
+          title: remote.title,
+          summary: remote.summary,
+          category: remote.category,
+          source_type: remote.source_type,
+          github_owner: remote.github_owner,
+          github_repo: remote.github_repo,
+          github_asset_regex: remote.github_asset_regex,
+          github_source_code: remote.github_source_code,
+        };
         setMods((prev) => [persisted, ...prev]);
         showToast('success', `成功创建模组草稿 [${newMod.title}]`);
         return remote.id;
@@ -425,6 +466,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           supported_platforms: data.supported_platforms ?? existing.supported_platforms,
           mas_version_range: data.mas_version_range ?? existing.mas_version_range,
           recommended_priority: data.recommended_priority ?? existing.recommended_priority,
+          source_type: data.source_type ?? existing.source_type,
+          github_owner: data.github_owner ?? existing.github_owner,
+          github_repo: data.github_repo ?? existing.github_repo,
+          github_asset_regex: data.github_asset_regex ?? existing.github_asset_regex,
+          github_source_code: data.github_source_code ?? existing.github_source_code,
         });
         setMods((prev) => prev.map((mod) => mod.id === modId ? {
           ...mod,
@@ -1160,6 +1206,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentPlan(null);
   }, []);
 
+  const syncModReleases = useCallback(
+    async (modId: string): Promise<SyncSummary | null> => {
+      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+      try {
+        const summary = await syncAuthorModGitHub(base, modId);
+        // Refresh author workspace
+        const items = await listAuthorWorkspace(base);
+        const restoredReports = Object.fromEntries(items.flatMap(({ versions: entries, scan_reports: reports }) => entries.flatMap((version) => {
+          const report = version.scan_report_id && reports?.[version.scan_report_id];
+          return report ? [[version.scan_report_id!, mapServerScanReport(version.id, report)] as const] : [];
+        })));
+        const ownMods: ModSummary[] = items.map(({ mod, versions: ownVersions }) => ({
+          id: mod.id, title: mod.title, summary: mod.summary || '', description: mod.description || mod.summary || '',
+          author: mod.author, category: mod.category, tags: mod.tags || [],
+          supported_platforms: (mod.supported_platforms || []) as ModSummary['supported_platforms'],
+          mas_version_range: mod.mas_version_range || '', recommended_priority: mod.recommended_priority || 0,
+          latest_version_id: mod.latest_version_id || '', downloads_count: 0, created_at: '', updated_at: '',
+          is_published: ownVersions.some((version) => version.id === mod.latest_version_id && version.state === 'published'),
+          source_type: mod.source_type || 'local',
+          github_owner: mod.github_owner || '',
+          github_repo: mod.github_repo || '',
+          github_asset_regex: mod.github_asset_regex || '',
+          github_source_code: Boolean(mod.github_source_code),
+          github_last_sync_at: mod.github_last_sync_at,
+          github_last_sync_error: mod.github_last_sync_error,
+          github_last_release_id: mod.github_last_release_id,
+        }));
+        const ownVersions: ModVersion[] = items.flatMap(({ versions: entries }) => entries.map((version) => ({
+          id: version.id, mod_id: version.mod_id, version: version.version, state: version.state as ModVersion['state'],
+          size_bytes: version.size_bytes, sha256: version.sha256, release_notes: version.release_notes || '',
+          dependencies: (version.dependencies || []) as ModVersion['dependencies'], scan_report_id: version.scan_report_id,
+          deprecated: version.deprecated, deprecation_reason: version.deprecation_reason,
+          created_at: version.created_at || '', is_immutable: version.state === 'published' || version.state === 'approved',
+        })));
+        setMods((prev) => [...ownMods, ...prev.filter((mod) => !ownMods.some((owned) => owned.id === mod.id))]);
+        setVersions((prev) => [...ownVersions, ...prev.filter((version) => !ownVersions.some((owned) => owned.id === version.id))]);
+        setScanReports((prev) => ({ ...prev, ...restoredReports }));
+
+        if (summary.failed > 0 && summary.created === 0) {
+          showToast('error', `GitHub 同步失败: ${summary.last_error || '未知错误'}`);
+        } else if (summary.created > 0) {
+          showToast('success', `GitHub Releases 同步成功，新增 ${summary.created} 个版本`);
+        } else {
+          showToast('info', 'GitHub Releases 同步完成，无新版本');
+        }
+        return summary;
+      } catch (err) {
+        showToast('error', `GitHub 同步异常: ${err instanceof Error ? err.message : '未知错误'}`);
+        return null;
+      }
+    },
+    [showToast]
+  );
+
   const value = useMemo(
     () => ({
       activeTab,
@@ -1194,6 +1294,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       getDownloadDescriptor,
       createModDraft,
       updateModDraft,
+      syncModReleases,
       createCandidateVersion,
       uploadArchiveAndScan,
       uploadDetailImages,
@@ -1250,6 +1351,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       getDownloadDescriptor,
       createModDraft,
       updateModDraft,
+      syncModReleases,
       createCandidateVersion,
       uploadArchiveAndScan,
       uploadDetailImages,
