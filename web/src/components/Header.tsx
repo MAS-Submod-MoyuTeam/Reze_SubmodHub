@@ -24,7 +24,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal }) => {
     ...(currentUser?.roles.includes('admin')
       ? [
           { id: 'reviewer' as NavTab, label: '审核' },
-          { id: 'admin' as NavTab, label: '用户角色' },
+          { id: 'admin' as NavTab, label: '设置' },
         ]
       : []),
   ];
