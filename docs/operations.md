@@ -57,3 +57,19 @@ curl http://100.72.137.92:18082/healthz
   - `last_sync_at`：最近一次执行同步的时间戳
   - `last_sync_error`：最近一次同步发生的非致命错误描述（如 GitHub API 限流）
 - 故障隔离与退避：外部 GitHub API 网络波动或限流错误仅记录至诊断字段与对应模组的 `github_last_sync_error`，绝不会将 API 容器或数据库判定为不健康状态。当遭遇 HTTP 403/429 速率限制时，系统自动提取 `X-Ratelimit-Reset` 与 `Retry-After` 进入自动退避期，退避期内自动暂停向 GitHub 轮询以保护 IP 配额。
+
+## 管理员设置与 GitHub 代理
+
+管理员可在前端导航“设置”页面动态配置 GitHub 全链路代理：
+
+- **模板语法**：必须且仅包含单一 `{url}` 或 `{url_encoded}` 占位符。
+  - 例如：`https://gh-proxy.com/{url}` 或 `https://proxy.example/fetch?url={url_encoded}`
+  - 必须使用 `https://` 协议，不得包含凭证或锚点。留空并保存表示清空并恢复直连。
+- **持久化机制**：设置保存在 PostgreSQL `catalog_snapshot`（或本地 JSON 快照）中，API 重启不丢失。
+- **容量与并发**：API 容器 `/tmp` tmpfs 挂载大小为 320 MiB，系统通过全局信号量限制同时进行的临时下载（同步与中转下载合计并发上限为 2），单个下载上限为 128 MiB 与 5 分钟超时，防止耗尽容器 tmpfs。
+- **排障错误码**：
+  - `502 github_upstream_failed`：代理服务器不可达或 GitHub 报告 404/网络错误。
+  - `504 github_upstream_timeout`：代理或上游下载超时。
+  - `502 upstream_archive_changed`：上游 ZIP 哈希或大小与发布时快照不符。
+  - `503 github_upstream_rate_limited`：上游触发频率限制（含 `Retry-After`）。
+  - `503 relay_busy`：服务端并发下载中转槽位占满，需稍后重试。
