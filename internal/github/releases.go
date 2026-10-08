@@ -172,9 +172,11 @@ type Release struct {
 }
 
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
-	userAgent  string
+	baseURL                string
+	httpClient             *http.Client
+	userAgent              string
+	proxyTemplate          string
+	allowInsecureTestHosts bool
 }
 
 type Option func(*Client)
@@ -182,6 +184,9 @@ type Option func(*Client)
 func WithBaseURL(baseURL string) Option {
 	return func(c *Client) {
 		c.baseURL = strings.TrimRight(baseURL, "/")
+		if c.baseURL != "" && c.baseURL != "https://api.github.com" {
+			c.allowInsecureTestHosts = true
+		}
 	}
 }
 
@@ -197,35 +202,124 @@ func WithUserAgent(userAgent string) Option {
 	}
 }
 
+func WithProxyTemplate(proxyTemplate string) Option {
+	return func(c *Client) {
+		c.proxyTemplate = strings.TrimSpace(proxyTemplate)
+	}
+}
+
+func WithAllowInsecureTestHosts(allow bool) Option {
+	return func(c *Client) {
+		c.allowInsecureTestHosts = allow
+	}
+}
+
+func (c *Client) ProxyTemplate() string {
+	return c.proxyTemplate
+}
+
 func NewClient(opts ...Option) *Client {
 	c := &Client{
-		baseURL: "https://api.github.com",
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-		},
+		baseURL:   "https://api.github.com",
 		userAgent: "SubmodHub-ReleaseSync/1.0",
 	}
 	for _, opt := range opts {
 		opt(c)
 	}
+
+	if c.httpClient == nil {
+		c.httpClient = &http.Client{
+			Timeout:   60 * time.Second,
+			Transport: NewSafeHTTPTransport(c.allowInsecureTestHosts),
+		}
+	} else if c.httpClient.Transport == nil {
+		c.httpClient.Transport = NewSafeHTTPTransport(c.allowInsecureTestHosts)
+	}
+
 	return c
+}
+
+// executeRequest executes an HTTP GET with proxy rewriting and explicit redirect handling,
+// ensuring redirects and pagination URLs go through the proxy when configured.
+func isRedirectStatus(status int) bool {
+	return status == http.StatusMovedPermanently ||
+		status == http.StatusFound ||
+		status == http.StatusSeeOther ||
+		status == http.StatusTemporaryRedirect ||
+		status == http.StatusPermanentRedirect
+}
+
+func (c *Client) executeRequest(ctx context.Context, targetURL string, headers map[string]string) (*http.Response, error) {
+	currURL := targetURL
+
+	clientCopy := *c.httpClient
+	clientCopy.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	const maxRedirectAttempts = 10
+	for redirectCount := 0; redirectCount <= maxRedirectAttempts; redirectCount++ {
+		effectiveURL, err := RewriteGitHubURL(c.proxyTemplate, currURL, c.allowInsecureTestHosts)
+		if err != nil {
+			return nil, err
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, effectiveURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("create request failed: %w", err)
+		}
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+
+		res, err := clientCopy.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("http request failed: %w", err)
+		}
+
+		if isRedirectStatus(res.StatusCode) {
+			loc := res.Header.Get("Location")
+			_ = res.Body.Close()
+			if loc == "" {
+				return nil, fmt.Errorf("redirect with empty Location header (status %d)", res.StatusCode)
+			}
+			if redirectCount == maxRedirectAttempts {
+				return nil, ErrTooManyRedirects
+			}
+
+			baseParsed, err := url.Parse(currURL)
+			if err != nil {
+				return nil, fmt.Errorf("parse base url %q failed: %w", currURL, err)
+			}
+			relParsed, err := url.Parse(loc)
+			if err != nil {
+				return nil, fmt.Errorf("parse redirect url %q failed: %w", loc, err)
+			}
+			nextURL := baseParsed.ResolveReference(relParsed).String()
+			currURL = nextURL
+			continue
+		}
+
+		return res, nil
+	}
+
+	return nil, ErrTooManyRedirects
 }
 
 func (c *Client) ListReleases(ctx context.Context, owner, repo, etag string) ([]Release, string, bool, error) {
 	relURL := fmt.Sprintf("%s/repos/%s/%s/releases?per_page=100", c.baseURL, url.PathEscape(owner), url.PathEscape(repo))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, relURL, nil)
-	if err != nil {
-		return nil, "", false, fmt.Errorf("create request failed: %w", err)
+
+	headers := map[string]string{
+		"Accept":     "application/vnd.github+json",
+		"User-Agent": c.userAgent,
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", c.userAgent)
 	if strings.TrimSpace(etag) != "" {
-		req.Header.Set("If-None-Match", strings.TrimSpace(etag))
+		headers["If-None-Match"] = strings.TrimSpace(etag)
 	}
 
-	res, err := c.httpClient.Do(req)
+	res, err := c.executeRequest(ctx, relURL, headers)
 	if err != nil {
-		return nil, "", false, fmt.Errorf("http request failed: %w", err)
+		return nil, "", false, err
 	}
 
 	if res.StatusCode == http.StatusNotModified {
@@ -264,14 +358,10 @@ func (c *Client) ListReleases(ctx context.Context, owner, repo, etag string) ([]
 		if strings.HasPrefix(nextURL, "/") {
 			nextURL = c.baseURL + nextURL
 		}
-		nextReq, err := http.NewRequestWithContext(ctx, http.MethodGet, nextURL, nil)
-		if err != nil {
-			return nil, "", false, fmt.Errorf("create next page request failed: %w", err)
-		}
-		nextReq.Header.Set("Accept", "application/vnd.github+json")
-		nextReq.Header.Set("User-Agent", c.userAgent)
-
-		nextRes, err := c.httpClient.Do(nextReq)
+		nextRes, err := c.executeRequest(ctx, nextURL, map[string]string{
+			"Accept":     "application/vnd.github+json",
+			"User-Agent": c.userAgent,
+		})
 		if err != nil {
 			return nil, "", false, fmt.Errorf("next page request failed: %w", err)
 		}
@@ -309,6 +399,19 @@ func (c *Client) ListReleases(ctx context.Context, owner, repo, etag string) ([]
 }
 
 func (c *Client) DownloadToTemp(ctx context.Context, downloadURL string, maxSizeBytes int64) (string, string, int64, error) {
+	const defaultMaxDownloadTime = 5 * time.Minute
+	const defaultMaxArchiveSize = 128 * 1024 * 1024 // 128 MiB
+
+	if maxSizeBytes <= 0 || maxSizeBytes > defaultMaxArchiveSize {
+		maxSizeBytes = defaultMaxArchiveSize
+	}
+
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, defaultMaxDownloadTime)
+		defer cancel()
+	}
+
 	tmpFile, err := os.CreateTemp("", "submodhub-gh-*.zip")
 	if err != nil {
 		return "", "", 0, fmt.Errorf("create temp file failed: %w", err)
@@ -320,15 +423,12 @@ func (c *Client) DownloadToTemp(ctx context.Context, downloadURL string, maxSize
 		_ = os.Remove(tmpPath)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
-	if err != nil {
-		cleanup()
-		return "", "", 0, fmt.Errorf("create download request failed: %w", err)
+	headers := map[string]string{
+		"Accept":     "application/octet-stream",
+		"User-Agent": c.userAgent,
 	}
-	req.Header.Set("Accept", "application/octet-stream")
-	req.Header.Set("User-Agent", c.userAgent)
 
-	res, err := c.httpClient.Do(req)
+	res, err := c.executeRequest(ctx, downloadURL, headers)
 	if err != nil {
 		cleanup()
 		return "", "", 0, fmt.Errorf("download request failed: %w", err)
