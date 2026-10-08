@@ -29,6 +29,68 @@ func createTestZip(t *testing.T, submodCode string) []byte {
 	return buf.Bytes()
 }
 
+func TestGitHubSourceZipRootReadmeDoesNotBlockPublishing(t *testing.T) {
+	for _, tc := range []struct {
+		name, extra, wantState string
+	}{
+		{"root readme", "repo-abc123/README.md", "published"},
+		{"nested readme", "repo-abc123/docs/README.md", "scanning"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			zw := zip.NewWriter(&buf)
+			for name, body := range map[string]string{
+				"repo-abc123/game/Submods/demo/main.rpy": "init python:\n    pass\n",
+				tc.extra:                                 "documentation",
+			} {
+				entry, err := zw.Create(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := entry.Write([]byte(body)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := zw.Close(); err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/repos/octocat/hello/releases" {
+					fmt.Fprintf(w, `[{"id":101,"tag_name":"v1.0.0","zipball_url":"http://%s/zipball"}]`, r.Host)
+					return
+				}
+				if r.URL.Path == "/zipball" {
+					_, _ = w.Write(buf.Bytes())
+					return
+				}
+				http.NotFound(w, r)
+			}))
+			defer server.Close()
+			store, err := NewStore(t.TempDir(), Catalog{Mods: []Mod{{
+				ID: "mod_1", Category: "submod", SourceType: "github_releases",
+				GitHubOwner: "octocat", GitHubRepo: "hello", GitHubSourceCode: true,
+			}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			store.AutoPublish = true
+			store.GitHubClient = github.NewClient(github.WithBaseURL(server.URL), github.WithHTTPClient(server.Client()))
+			summary, err := store.SyncMod(context.Background(), "mod_1")
+			if err != nil || summary.Created != 1 {
+				t.Fatalf("sync: %+v, %v", summary, err)
+			}
+			v := store.Catalog.Versions[summary.Items[0].VersionID]
+			if v.State != tc.wantState {
+				t.Fatalf("state = %q, want %q; report = %+v", v.State, tc.wantState, store.Catalog.ScanReports[v.ScanReportID])
+			}
+			report := store.Catalog.ScanReports[v.ScanReportID]
+			if tc.wantState == "published" && (len(report.Unsupported) != 0 || len(report.Warnings) == 0 || len(report.Files) != 1) {
+				t.Fatalf("unexpected report: %+v", report)
+			}
+		})
+	}
+}
+
 func TestGitHubSyncSuccessAndIdempotency(t *testing.T) {
 	zipData := createTestZip(t, "init python:\n    pass\n")
 

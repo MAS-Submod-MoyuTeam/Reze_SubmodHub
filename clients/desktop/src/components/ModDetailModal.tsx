@@ -80,7 +80,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-neutral-100">{mod.title}</h2>
               <span className="text-xs font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/80">
-                v{versionData.version}
+                {versionData.version}
               </span>
               <span className="text-[11px] text-neutral-400 font-mono">
                 发布归档已锁定 (不可变版本)
@@ -365,11 +365,11 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
             {isInstalled ? (
               hasUpdate ? (
                 <span className="text-amber-400 font-mono">
-                  当前已安装 v{installedVersion}，检测到可升级为 v{versionData.version}
+                  当前已安装 {installedVersion}，检测到可升级为 {versionData.version}
                 </span>
               ) : (
                 <span className="text-emerald-400 font-mono">
-                  已安装最新版本 (v{installedVersion})
+                  已安装最新版本 ({installedVersion})
                 </span>
               )
             ) : (

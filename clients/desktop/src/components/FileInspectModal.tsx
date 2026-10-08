@@ -59,7 +59,7 @@ export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClos
               </span>
             </div>
             <div className="text-xs text-neutral-400 mt-0.5 font-mono">
-              安装版本: v{item.installed_version} · 记录散列: {item.sha256.substring(0, 16)}...
+              安装版本: {item.installed_version} · 记录散列: {item.sha256.substring(0, 16)}...
             </div>
           </div>
           <button onClick={onClose} className="text-neutral-400 hover:text-white">

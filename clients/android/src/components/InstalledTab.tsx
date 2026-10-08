@@ -153,7 +153,7 @@ export const InstalledTab: React.FC<InstalledTabProps> = ({
                       <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-1 flex-wrap">
                         <span>{mod.author_name}</span>
                         <span aria-hidden="true" className="text-slate-600">·</span>
-                        <span className="font-mono text-slate-300">v{mod.current_version}</span>
+                        <span className="font-mono text-slate-300">{mod.current_version}</span>
                         <span aria-hidden="true" className="text-slate-600">·</span>
                         <span>{mod.file_count} 个托管文件</span>
                       </div>
@@ -165,7 +165,7 @@ export const InstalledTab: React.FC<InstalledTabProps> = ({
                     <div className="p-2.5 rounded-2xl bg-rose-950/40 border border-rose-800/60 flex items-center justify-between text-xs">
                       <div className="flex items-center gap-1.5 text-rose-300">
                         <Sparkles className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                        <span>发现新版本: v{mod.latest_available_version}</span>
+                        <span>发现新版本: {mod.latest_available_version}</span>
                       </div>
                       <button
                         onClick={() => onRequestUpdatePlan(mod.mod_id)}

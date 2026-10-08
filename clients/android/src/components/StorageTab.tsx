@@ -155,7 +155,7 @@ export const StorageTab: React.FC<StorageTabProps> = ({
                       {inst.path_hint}
                     </div>
                     <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-1">
-                      <span>MAS v{inst.mas_version}</span>
+                      <span>MAS {inst.mas_version}</span>
                       <span>·</span>
                       <span>已装 {inst.installed_mods_count} 模组</span>
                       <span>·</span>

@@ -196,8 +196,8 @@ func (s *Store) handleAdminSettingsTestGitHubProxy(w http.ResponseWriter, r *htt
 	res := ProxyTestResponse{}
 
 	// Fixed public repo for connection testing
-	const testOwner = "octocat"
-	const testRepo = "Hello-World"
+	const testOwner = "Mon1-innovation"
+	const testRepo = "MAS_UniSync"
 
 	startAPI := time.Now()
 	releases, _, _, apiErr := testClient.ListReleases(r.Context(), testOwner, testRepo, "")

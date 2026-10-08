@@ -145,7 +145,7 @@ export const CatalogTab: React.FC<CatalogTabProps> = ({
       <div className="p-4 space-y-3 flex-1">
         <div className="flex items-center justify-between text-xs text-slate-400 px-1">
           <span>共找到 {filteredMods.length} 个模组包</span>
-          <span className="font-mono text-[11px]">当前 MAS: v{currentInstallation.mas_version}</span>
+          <span className="font-mono text-[11px]">当前 MAS: {currentInstallation.mas_version}</span>
         </div>
 
         {filteredMods.length === 0 ? (
@@ -189,7 +189,7 @@ export const CatalogTab: React.FC<CatalogTabProps> = ({
                       <span aria-hidden="true" className="text-slate-600">·</span>
                       <span className="capitalize">{mod.category}</span>
                       <span aria-hidden="true" className="text-slate-600">·</span>
-                      <span className="font-mono text-slate-300">v{mod.latest_version}</span>
+                      <span className="font-mono text-slate-300">{mod.latest_version}</span>
                       <span aria-hidden="true" className="text-slate-600">·</span>
                       <span>{formatBytes(mod.size_bytes)}</span>
                     </div>

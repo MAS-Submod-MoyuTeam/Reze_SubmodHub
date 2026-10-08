@@ -303,7 +303,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                           <span aria-hidden="true">·</span>
                           <span>{mod.category === 'submod' ? '功能模组' : '外观礼包'}</span>
                           <span aria-hidden="true">·</span>
-                          <span className="font-mono tabular-nums">v{mod.latest_version}</span>
+                          <span className="font-mono tabular-nums">{mod.latest_version}</span>
                         </div>
                       </div>
 
@@ -311,7 +311,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                       {installed ? (
                         hasUpdate ? (
                           <span className="text-[11px] text-amber-400 font-medium shrink-0 font-mono">
-                            可更新 (v{installed.installed_version})
+                            可更新 ({installed.installed_version})
                           </span>
                         ) : (
                           <span className="text-[11px] text-emerald-400 font-medium shrink-0 flex items-center gap-1 font-mono">
@@ -367,7 +367,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                           className="px-3 py-1.5 text-xs font-semibold text-neutral-900 bg-amber-400 hover:bg-amber-300 rounded-md transition-colors flex items-center gap-1.5 shadow-xs"
                         >
                           <RefreshCw className="w-3.5 h-3.5" />
-                          <span>更新至 v{mod.latest_version}</span>
+                          <span>更新至 {mod.latest_version}</span>
                         </button>
                       ) : (
                         <button

@@ -62,7 +62,8 @@ curl http://100.72.137.92:18082/healthz
 
 管理员可在前端导航“设置”页面动态配置 GitHub 全链路代理：
 
-- **模板语法**：必须且仅包含单一 `{url}` 或 `{url_encoded}` 占位符。
+- **HTTP 代理**：填写 `host:port` 或 `http://host:port`，例如 `100.106.239.85:7890`。HTTPS GitHub 请求通过 HTTP CONNECT 隧道传输；代理地址可为 Tailnet 私网地址，但只由管理员配置。
+- **URL 重写代理**：必须且仅包含单一 `{url}` 或 `{url_encoded}` 占位符。
   - 例如：`https://gh-proxy.com/{url}` 或 `https://proxy.example/fetch?url={url_encoded}`
   - 必须使用 `https://` 协议，不得包含凭证或锚点。留空并保存表示清空并恢复直连。
 - **持久化机制**：设置保存在 PostgreSQL `catalog_snapshot`（或本地 JSON 快照）中，API 重启不丢失。

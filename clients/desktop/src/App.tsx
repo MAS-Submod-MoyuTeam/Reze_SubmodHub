@@ -443,7 +443,7 @@ export default function App() {
             return [...prev, newInstalled];
           }
         });
-        showToast(`${plan.mod_title} v${plan.version_str} 安装完成并成功登记！`);
+        showToast(`${plan.mod_title} ${plan.version_str} 安装完成并成功登记！`);
       }
     }, 1500);
   };

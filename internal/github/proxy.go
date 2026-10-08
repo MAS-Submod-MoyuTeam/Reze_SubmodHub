@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -31,11 +32,37 @@ var AllowedGitHubHosts = map[string]bool{
 
 var placeholderRegex = regexp.MustCompile(`\{[^\}]+\}`)
 
+func httpProxyURL(value string) (*url.URL, bool, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.Contains(value, "{") {
+		return nil, false, nil
+	}
+	if !strings.Contains(value, "://") {
+		value = "http://" + value
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, true, fmt.Errorf("%w: HTTP proxy must be host:port or http://host:port", ErrInvalidProxyTemplate)
+	}
+	host, port, err := net.SplitHostPort(parsed.Host)
+	if err != nil || host == "" {
+		return nil, true, fmt.Errorf("%w: HTTP proxy requires host and port", ErrInvalidProxyTemplate)
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return nil, true, fmt.Errorf("%w: invalid HTTP proxy port", ErrInvalidProxyTemplate)
+	}
+	return parsed, true, nil
+}
+
 // ValidateProxyTemplate validates the proxy template format.
 func ValidateProxyTemplate(tpl string) error {
 	trimmed := strings.TrimSpace(tpl)
 	if trimmed == "" {
 		return nil
+	}
+	if _, isHTTPProxy, err := httpProxyURL(trimmed); isHTTPProxy {
+		return err
 	}
 
 	matches := placeholderRegex.FindAllString(trimmed, -1)
@@ -118,6 +145,12 @@ func RewriteGitHubURL(tpl string, targetURL string, allowInsecureTestHosts bool)
 		}
 		return targetURL, nil
 	}
+	if _, isHTTPProxy, err := httpProxyURL(trimmedTpl); isHTTPProxy {
+		if err != nil {
+			return "", err
+		}
+		return RewriteGitHubURL("", targetURL, allowInsecureTestHosts)
+	}
 
 	// If already rewritten according to the template, return as is
 	if IsProxiedURL(trimmedTpl, targetURL) {
@@ -149,6 +182,16 @@ func RewriteGitHubURL(tpl string, targetURL string, allowInsecureTestHosts bool)
 	}
 
 	return "", fmt.Errorf("%w: missing {url} or {url_encoded} placeholder", ErrInvalidProxyTemplate)
+}
+
+func NewHTTPProxyTransport(proxyURL *url.URL) http.RoundTripper {
+	return &http.Transport{
+		Proxy:                 http.ProxyURL(proxyURL),
+		DialContext:           (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+		ForceAttemptHTTP2:     true,
+	}
 }
 
 func isPrivateOrLocalIP(ip net.IP) bool {
@@ -192,7 +235,7 @@ func NewSafeHTTPTransport(allowInsecureTestHosts bool) http.RoundTripper {
 	}
 
 	return &http.Transport{
-		Proxy:                 nil,
+		Proxy: nil,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(addr)
 			if err != nil {

@@ -28,6 +28,11 @@ func TestValidateProxyTemplate(t *testing.T) {
 		{name: "valid standard url placeholder", tpl: "https://proxy.example/{url}", wantErr: false},
 		{name: "valid url_encoded placeholder", tpl: "https://proxy.example/fetch?url={url_encoded}", wantErr: false},
 		{name: "valid path and query", tpl: "https://gh-proxy.com/v1/{url}", wantErr: false},
+		{name: "http proxy host port", tpl: "100.106.239.85:7890", wantErr: false},
+		{name: "http proxy url", tpl: "http://100.106.239.85:7890", wantErr: false},
+		{name: "http proxy missing port", tpl: "http://100.106.239.85", wantErr: true},
+		{name: "http proxy with path", tpl: "http://100.106.239.85:7890/unsafe", wantErr: true},
+		{name: "http proxy with credentials", tpl: "http://admin:secret@100.106.239.85:7890", wantErr: true},
 		{name: "non-https http scheme", tpl: "http://proxy.example/{url}", wantErr: true},
 		{name: "missing placeholder", tpl: "https://proxy.example/relay", wantErr: true},
 		{name: "multiple url placeholders", tpl: "https://proxy.example/{url}/{url}", wantErr: true},
@@ -70,6 +75,12 @@ func TestRewriteGitHubURL(t *testing.T) {
 			targetURL: "https://api.github.com/repos/owner/repo/releases",
 			wantURL:   "https://proxy.example/https://api.github.com/repos/owner/repo/releases",
 			wantErr:   false,
+		},
+		{
+			name:      "http proxy keeps GitHub URL unchanged",
+			tpl:       "100.106.239.85:7890",
+			targetURL: "https://api.github.com/repos/owner/repo/releases",
+			wantURL:   "https://api.github.com/repos/owner/repo/releases",
 		},
 		{
 			name:      "url_encoded placeholder rewrite",
@@ -256,6 +267,56 @@ func TestFakeGitHubAndFakeProxyIntegration(t *testing.T) {
 	}
 }
 
+func TestHTTPForwardProxyUsedForAPIAndArchive(t *testing.T) {
+	var proxyHits, directHits int32
+	var upstream *httptest.Server
+	upstream = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Via-HTTP-Proxy") != "true" {
+			atomic.AddInt32(&directHits, 1)
+		}
+		if strings.HasSuffix(r.URL.Path, "/releases") {
+			fmt.Fprintf(w, `[{"id":1,"tag_name":"v1.0.0","assets":[{"id":2,"name":"mod.zip","browser_download_url":%q}]}]`, upstream.URL+"/mod.zip")
+			return
+		}
+		_, _ = w.Write([]byte("zip bytes"))
+	}))
+	defer upstream.Close()
+
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&proxyHits, 1)
+		if !r.URL.IsAbs() {
+			t.Errorf("proxy did not receive absolute URL: %s", r.URL)
+		}
+		req := r.Clone(r.Context())
+		req.RequestURI = ""
+		req.Header.Set("X-Via-HTTP-Proxy", "true")
+		res, err := http.DefaultTransport.RoundTrip(req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer res.Body.Close()
+		w.WriteHeader(res.StatusCode)
+		_, _ = io.Copy(w, res.Body)
+	}))
+	defer proxy.Close()
+
+	proxyAddress := strings.TrimPrefix(proxy.URL, "http://")
+	client := NewClient(WithBaseURL(upstream.URL), WithProxyTemplate(proxyAddress), WithAllowInsecureTestHosts(true))
+	releases, _, _, err := client.ListReleases(context.Background(), "owner", "repo", "")
+	if err != nil || len(releases) != 1 {
+		t.Fatalf("release API via proxy: releases=%d err=%v", len(releases), err)
+	}
+	path, _, _, err := client.DownloadToTemp(context.Background(), releases[0].Assets[0].BrowserDownloadURL, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(path)
+	if proxyHits != 2 || directHits != 0 {
+		t.Fatalf("proxy hits=%d, direct hits=%d", proxyHits, directHits)
+	}
+}
+
 func TestProxyErrorScenarios(t *testing.T) {
 	// 1. Test RateLimit through proxy
 	proxy429 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -267,7 +328,7 @@ func TestProxyErrorScenarios(t *testing.T) {
 	defer proxy429.Close()
 
 	client429 := NewClient(
-		WithProxyTemplate(proxy429.URL + "/{url}"),
+		WithProxyTemplate(proxy429.URL+"/{url}"),
 		WithAllowInsecureTestHosts(true),
 	)
 	_, _, _, err429 := client429.ListReleases(context.Background(), "owner", "repo", "")
@@ -286,7 +347,7 @@ func TestProxyErrorScenarios(t *testing.T) {
 	defer cancel()
 
 	clientTimeout := NewClient(
-		WithProxyTemplate(proxyTimeout.URL + "/{url}"),
+		WithProxyTemplate(proxyTimeout.URL+"/{url}"),
 		WithAllowInsecureTestHosts(true),
 	)
 	_, _, _, errTimeout := clientTimeout.ListReleases(ctxTimeout, "owner", "repo", "")

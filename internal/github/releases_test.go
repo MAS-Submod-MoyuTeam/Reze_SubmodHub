@@ -249,6 +249,38 @@ func TestClientListReleasesErrorClassification(t *testing.T) {
 	}
 }
 
+func TestSourceCodeZipballDownloadAcceptsZip(t *testing.T) {
+	zipData := []byte("PK\x03\x04test")
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/owner/repo/zipball/v1.0.0" {
+			if r.Header.Get("Accept") == "application/octet-stream" {
+				w.WriteHeader(http.StatusUnsupportedMediaType)
+				return
+			}
+			http.Redirect(w, r, server.URL+"/archive.zip", http.StatusFound)
+			return
+		}
+		if r.URL.Path == "/archive.zip" {
+			_, _ = w.Write(zipData)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := NewClient(WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	path, _, _, err := client.DownloadToTemp(context.Background(), server.URL+"/repos/owner/repo/zipball/v1.0.0", 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(path)
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != string(zipData) {
+		t.Fatalf("zipball download mismatch: %q, %v", got, err)
+	}
+}
+
 func TestClientDownloadToTemp(t *testing.T) {
 	data := []byte("this is simulated zip file content")
 	hash := sha256.Sum256(data)

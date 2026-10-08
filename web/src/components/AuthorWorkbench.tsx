@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { ModCategory, Platform, ModSummary, ModDependency, ModVersion, ScannedFile, ModSourceType } from '../types/submodhub';
 import { validateGitHubSourceInput, formatLastSyncTime, getGitHubRepoUrl } from './sourceConfig';
 import { formatVersionCreatedAt } from './versionDate';
+import { formatVersionLabel } from './versionHistory';
 import { DeprecationNotice } from './DeprecationNotice';
 import { MarkdownText } from './MarkdownText';
 import { mapDependencyInput, mapDependencyRangeInput, mapDependencySelection } from './dependencyMapping';
@@ -377,7 +378,7 @@ export const AuthorWorkbench: React.FC = () => {
     setTimeout(async () => {
       const newModId = await createModDraft({
         title: 'GitHub Imported Submod',
-        summary: `导入自 ${githubReleaseUrl}，自动转换至候选版本并触发 Aegis 扫描。`,
+        summary: `导入自 ${githubReleaseUrl}，自动转换至候选版本并触发扫描。`,
         category: 'submod',
         tags: ['github-imported', 'dialogue'],
       });
@@ -431,7 +432,7 @@ export const AuthorWorkbench: React.FC = () => {
             模组创作、ZIP 上传与扫描报告管理
           </h1>
           <p className="text-xs text-neutral-500 mt-1">
-            支持旧式 ZIP 静态解构、Aegis 安全与冲突检测、不可变版本发布提交
+            支持旧式 ZIP 静态解构、安全与冲突检测、不可变版本发布提交
           </p>
         </div>
 
@@ -506,7 +507,7 @@ export const AuthorWorkbench: React.FC = () => {
                         <span className="font-semibold text-neutral-900 text-xs">
                           {sub.mod_title}
                         </span>
-                        <span className="font-mono text-xs text-neutral-600">{sub.category === 'spritepack' ? '精灵包' : `v${sub.version_str}`}</span>
+                        <span className="font-mono text-xs text-neutral-600">{sub.category === 'spritepack' ? '精灵包' : formatVersionLabel(sub.version_str)}</span>
                         <span
                           className={`text-[11px] font-mono px-2 py-0.5 rounded ${
                             isPublished
@@ -546,7 +547,7 @@ export const AuthorWorkbench: React.FC = () => {
                             {isRejected ? '审核员驳回理由与修改意见:' : '审核员审批通过记录:'}
                           </span>
                           <span className="text-[11px] text-neutral-500 font-normal">
-                            审核人: {sub.reviewer_name || 'Aegis 核心审核组'}
+                            审核人: {sub.reviewer_name || '核心审核组'}
                           </span>
                         </div>
                         <p>{sub.decision_reason}</p>
@@ -579,7 +580,7 @@ export const AuthorWorkbench: React.FC = () => {
                           className="text-emerald-700 hover:underline flex items-center gap-1 font-medium"
                         >
                           <FileCheck className="w-3.5 h-3.5" />
-                          查看关联的 Aegis 静态扫描报告
+                          查看关联的静态扫描报告
                         </button>
                       </div>
                     )}
@@ -811,7 +812,7 @@ export const AuthorWorkbench: React.FC = () => {
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-sm text-neutral-900 font-mono">
-                                  {v.version ? `v${v.version}` : '版本待识别'}
+                                  {v.version ? formatVersionLabel(v.version) : '版本待识别'}
                                 </span>
                                 <span
                                   className={`text-[11px] font-mono px-2 py-0.5 rounded ${
@@ -1606,7 +1607,7 @@ export const AuthorWorkbench: React.FC = () => {
             <form onSubmit={handleGithubImport} className="p-5 space-y-4 text-xs">
               <p className="text-neutral-600 leading-relaxed">
                 按照契约要求（Section 3），系统支持将 GitHub Release URL
-                或资产直接导入为草稿，并走完全相同的 Aegis 静态安全扫描与规范审核流程。
+                或资产直接导入为草稿，并走完全相同的静态安全扫描与规范审核流程。
               </p>
 
               <div>

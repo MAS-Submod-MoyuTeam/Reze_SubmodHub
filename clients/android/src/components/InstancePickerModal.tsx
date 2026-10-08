@@ -75,7 +75,7 @@ export const InstancePickerModal: React.FC<InstancePickerModalProps> = ({
                       {inst.path_hint}
                     </p>
                     <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-1">
-                      <span>MAS v{inst.mas_version}</span>
+                      <span>MAS {inst.mas_version}</span>
                       <span>·</span>
                       <span>{formatBytes(inst.free_space_bytes)} 可用</span>
                     </div>

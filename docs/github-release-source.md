@@ -93,7 +93,7 @@ SubmodHub 仅允许下载 `.zip` 格式的 Release 资产文件，非 `.zip` 文
 
 ## 5. GitHub 全链路代理与服务端按需中转
 
-SubmodHub 支持管理员在系统设置中配置全局 GitHub 代理模板：
+SubmodHub 支持管理员在系统设置中配置全局 GitHub 代理。HTTP 代理可填写 `host:port`（例如 `100.106.239.85:7890`）或 `http://host:port`，HTTPS GitHub 请求通过 HTTP CONNECT 隧道传输；原有 `https://proxy.example/{url}` URL 重写模板仍受支持：
 
 1. **代理覆盖范围**：
    - GitHub API 请求（仓库信息、Releases 列表、Link 分页）；

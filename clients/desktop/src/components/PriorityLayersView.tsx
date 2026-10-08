@@ -153,7 +153,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                           {item.title}
                         </span>
                         <span className="text-[10px] text-neutral-400 font-mono">
-                          v{item.installed_version}
+                          {item.installed_version}
                         </span>
                       </div>
                       <div className="text-[11px] text-neutral-400 mt-0.5 truncate">

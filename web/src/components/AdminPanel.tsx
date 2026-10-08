@@ -180,7 +180,7 @@ export const AdminPanel: React.FC = () => {
           ) : (
             <div className="space-y-4">
               <label className="block space-y-1.5 text-xs font-medium text-neutral-700">
-                <span>代理模板 URL</span>
+                <span>GitHub 代理地址</span>
                 <input
                   type="text"
                   value={proxyTemplate}
@@ -188,11 +188,11 @@ export const AdminPanel: React.FC = () => {
                     setProxyTemplate(e.target.value);
                     setTestResult(null);
                   }}
-                  placeholder="https://proxy.example/{url}"
+                  placeholder="100.106.239.85:7890"
                   className="w-full rounded border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:border-emerald-600 font-mono"
                 />
                 <span className="block text-xs text-neutral-400">
-                  支持单一占位符：&#123;url&#125;（原始地址）或 &#123;url_encoded&#125;（编码地址）。例如：https://gh.proxy.site/&#123;url&#125;
+                  HTTP 代理填写 host:port 或 http://host:port；URL 重写代理仍支持 https://proxy.example/&#123;url&#125; 或 &#123;url_encoded&#125;。
                 </span>
               </label>
 

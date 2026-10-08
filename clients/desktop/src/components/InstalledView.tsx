@@ -142,20 +142,20 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
 
                         {/* Installed Version */}
                         <td className="py-3 px-3 font-mono text-neutral-200">
-                          v{item.installed_version}
+                          {item.installed_version}
                         </td>
 
                         {/* Latest Version */}
                         <td className="py-3 px-3 font-mono">
                           {item.has_update ? (
                             <span className="text-amber-400 font-semibold flex items-center gap-1">
-                              <span>v{item.latest_version}</span>
+                              <span>{item.latest_version}</span>
                               <span className="text-[10px] px-1 py-0.2 bg-amber-950 border border-amber-800 rounded">
                                 可更新
                               </span>
                             </span>
                           ) : (
-                            <span className="text-neutral-400">v{item.latest_version}</span>
+                            <span className="text-neutral-400">{item.latest_version}</span>
                           )}
                         </td>
 

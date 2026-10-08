@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { MarkdownText } from './MarkdownText';
+import { formatVersionLabel } from './versionHistory';
 import { getReviewSubmission } from '../../../ui/submission-api';
 import { Submission, ScanReport, ScannedFile } from '../types/submodhub';
 import {
@@ -115,7 +116,7 @@ export const ReviewerWorkbench: React.FC = () => {
           <div className="flex items-center gap-2 text-xs text-neutral-500">
             <span className="font-semibold text-neutral-900">{currentUser?.display_name}</span>
             <span>·</span>
-            <span>Aegis 安全与规范审核组</span>
+            <span>安全与规范审核组</span>
           </div>
           <h1 className="text-lg font-bold text-neutral-900 tracking-tight mt-0.5">
             模组待审队列、代码安全检测与发布管理
@@ -262,7 +263,7 @@ export const ReviewerWorkbench: React.FC = () => {
                       <span className="font-semibold text-neutral-900 truncate max-w-[160px]">
                         {sub.mod_title}
                       </span>
-                      <span className="font-mono text-[11px] text-neutral-600">{sub.category === 'spritepack' ? '精灵包' : `v${sub.version_str}`}</span>
+                      <span className="font-mono text-[11px] text-neutral-600">{sub.category === 'spritepack' ? '精灵包' : formatVersionLabel(sub.version_str)}</span>
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-neutral-500">
@@ -317,7 +318,7 @@ export const ReviewerWorkbench: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <h2 className="text-base font-bold text-neutral-900">
-                        {activeSubmission.mod_title} {activeSubmission.category === 'spritepack' ? '(精灵包)' : `(v${activeSubmission.version_str})`}
+                        {activeSubmission.mod_title} {activeSubmission.category === 'spritepack' ? '(精灵包)' : `(${formatVersionLabel(activeSubmission.version_str)})`}
                       </h2>
                       <span
                         className={`text-xs font-mono px-2 py-0.5 rounded font-semibold ${
@@ -402,7 +403,7 @@ export const ReviewerWorkbench: React.FC = () => {
                 {activeReport && (
                   <div className="space-y-4">
                     <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
-                      Aegis 深度静态分析结果 (Static Security Inspection)
+                      深度静态分析结果 (Static Security Inspection)
                     </h3>
 
                     {/* Blockers */}

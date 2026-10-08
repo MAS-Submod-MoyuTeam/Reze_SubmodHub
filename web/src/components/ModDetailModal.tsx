@@ -5,6 +5,7 @@ import { fetchModImages, fetchVerifiedArchive } from '../../../ui/catalog-api';
 import { MarkdownText } from './MarkdownText';
 import { DeprecationNotice } from './DeprecationNotice';
 import { SpritepackSets } from './SpritepackSets';
+import { formatVersionLabel, sortVersionHistory } from './versionHistory';
 import {
   X,
   Download,
@@ -42,8 +43,10 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
     modId || versions.find((v) => v.id === downloadVersionId)?.mod_id || null;
 
   const currentMod = mods.find((m) => m.id === effectiveModId);
-  const modVersions = versions.filter(
-    (v) => v.mod_id === effectiveModId && (v.state === 'published' || v.id === downloadVersionId)
+  const modVersions = sortVersionHistory(
+    versions.filter((v) => v.mod_id === effectiveModId && (v.state === 'published' || v.id === downloadVersionId)),
+    currentMod?.source_type === 'github_releases',
+    currentMod?.latest_version_id,
   );
 
   const [selectedVersionId, setSelectedVersionId] = useState<string>(() => {
@@ -200,7 +203,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                         : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200/70'
                     }`}
                   >
-                    <span>v{v.version}</span>
+                    <span>{formatVersionLabel(v.version)}</span>
                     {v.deprecated && <AlertTriangle className="h-3 w-3 text-amber-500" aria-label="不推荐使用" />}
                   </button>
                 );
@@ -298,13 +301,13 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                   </div>
                 </div>
 
-                {/* Aegis Scan Summary */}
+                {/* Scan Summary */}
                 {scanReport && (
                   <div className="space-y-2 pt-2 border-t border-neutral-200/80">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 font-medium text-neutral-800">
                         <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                        Aegis 静态扫描摘要 (Scan Report ID: {scanReport.id})
+                        静态扫描摘要 (Scan Report ID: {scanReport.id})
                       </div>
                       <span className="text-[11px] font-mono text-neutral-400">
                         {new Date(scanReport.scanned_at).toLocaleDateString()}

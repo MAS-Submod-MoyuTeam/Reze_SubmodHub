@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Installation, InstallationPlan } from '../types/submodhub';
+import { formatVersionLabel } from './versionHistory';
 import {
   Laptop,
   Smartphone,
@@ -175,7 +176,7 @@ export const ClientCompanion: React.FC = () => {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-neutral-900">{mod.title}</span>
-                    <span className="font-mono text-neutral-500">v{mod.version}</span>
+                    <span className="font-mono text-neutral-500">{formatVersionLabel(mod.version)}</span>
                     {mod.is_managed ? (
                       <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
                         SubmodHub 托管
@@ -419,7 +420,7 @@ export const ClientCompanion: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-neutral-900">{op.mod_title}</span>
-                        <span className="font-mono text-neutral-500">v{op.version}</span>
+                        <span className="font-mono text-neutral-500">{formatVersionLabel(op.version)}</span>
                         <span
                           className={`font-mono text-[10px] px-2 py-0.5 rounded font-semibold ${
                             isCommitted

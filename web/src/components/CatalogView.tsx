@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { ModSummary, Platform } from '../types/submodhub';
 import { DeprecationNotice } from './DeprecationNotice';
+import { formatVersionLabel } from './versionHistory';
 import {
   Search,
   Download,
@@ -131,7 +132,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               Monika After Story 模组与服饰目录
             </h1>
             <p className="text-xs text-neutral-500 mt-1">
-              汇集经过 Aegis 静态安全扫描与规范审核的 MAS Submod 与 Spritepack 资源
+              汇集经过静态安全扫描与规范审核的 MAS Submod 与 Spritepack 资源
             </p>
           </div>
 
@@ -347,7 +348,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   {/* Card Footer */}
                   <div className="pt-4 mt-4 border-t border-neutral-100 flex items-center justify-between text-xs">
                     <div className="text-[11px] text-neutral-500 flex items-center gap-1 font-mono">
-                      {!isSpritepack && <><span>v{latestVer?.version || '1.0.0'}</span><span className="text-neutral-300">/</span></>}
+                      {!isSpritepack && latestVer?.version && <><span>{formatVersionLabel(latestVer.version)}</span><span className="text-neutral-300">/</span></>}
                       <span className="tabular-nums">{mod.downloads_count.toLocaleString()} 次下载</span>
                     </div>
 

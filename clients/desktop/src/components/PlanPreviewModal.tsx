@@ -118,7 +118,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                   : '修复计划预览'}
               </span>
               <h2 className="text-base font-bold text-neutral-100">
-                {plan.mod_title} <span className="font-mono text-emerald-400">v{plan.version_str}</span>
+                {plan.mod_title} <span className="font-mono text-emerald-400">{plan.version_str}</span>
               </h2>
             </div>
             <div className="flex items-center gap-2 text-xs text-neutral-400 mt-1 font-mono">

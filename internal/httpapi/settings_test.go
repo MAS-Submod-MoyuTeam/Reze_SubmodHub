@@ -154,9 +154,17 @@ func TestAdminSettingsAuthAndPermissions(t *testing.T) {
 	if res.StatusCode != 409 {
 		t.Fatalf("expected 409 for revision conflict, got %d", res.StatusCode)
 	}
+	res, _ = patchSettings(adminCookie, adminCSRF, "", `{"github_proxy_template":"100.106.239.85:7890","revision":0}`)
+	if res.StatusCode != 200 {
+		t.Fatalf("expected 200 for HTTP proxy host:port, got %d", res.StatusCode)
+	}
+	res, _ = patchSettings(adminCookie, adminCSRF, "", `{"github_proxy_template":"","revision":1}`)
+	if res.StatusCode != 200 {
+		t.Fatalf("expected 200 clearing HTTP proxy, got %d", res.StatusCode)
+	}
 
-	// 11. PATCH admin valid -> 200, revision incremented to 1
-	res, _ = patchSettings(adminCookie, adminCSRF, "", `{"github_proxy_template":"https://proxy.example/{url}","revision":0}`)
+	// 11. PATCH admin valid -> 200, revision incremented to 3
+	res, _ = patchSettings(adminCookie, adminCSRF, "", `{"github_proxy_template":"https://proxy.example/{url}","revision":2}`)
 	if res.StatusCode != 200 {
 		t.Fatalf("expected 200 for valid PATCH, got %d", res.StatusCode)
 	}
@@ -167,19 +175,19 @@ func TestAdminSettingsAuthAndPermissions(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&patchResp); err != nil {
 		t.Fatal(err)
 	}
-	if patchResp.GitHubProxyTemplate != "https://proxy.example/{url}" || patchResp.Revision != 1 {
+	if patchResp.GitHubProxyTemplate != "https://proxy.example/{url}" || patchResp.Revision != 3 {
 		t.Fatalf("unexpected patch response: %+v", patchResp)
 	}
 
-	// 12. PATCH admin clear template -> 200, revision incremented to 2
-	res, _ = patchSettings(adminCookie, adminCSRF, "", `{"github_proxy_template":"","revision":1}`)
+	// 12. PATCH admin clear template -> 200, revision incremented to 4
+	res, _ = patchSettings(adminCookie, adminCSRF, "", `{"github_proxy_template":"","revision":3}`)
 	if res.StatusCode != 200 {
 		t.Fatalf("expected 200 for clearing template, got %d", res.StatusCode)
 	}
 	if err := json.NewDecoder(res.Body).Decode(&patchResp); err != nil {
 		t.Fatal(err)
 	}
-	if patchResp.GitHubProxyTemplate != "" || patchResp.Revision != 2 {
+	if patchResp.GitHubProxyTemplate != "" || patchResp.Revision != 4 {
 		t.Fatalf("unexpected patch response after clear: %+v", patchResp)
 	}
 }

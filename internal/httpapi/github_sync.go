@@ -337,6 +337,9 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 			})
 			continue
 		}
+		if selected.Kind == github.SourceKindSourceCode {
+			allowSourceRootReadme(&report)
+		}
 
 		// Determine version state
 		state := "ready_for_review"
@@ -520,6 +523,30 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 	}
 
 	return summary, nil
+}
+
+func allowSourceRootReadme(report *packagezip.Report) {
+	if len(report.Files) == 0 {
+		return
+	}
+	root, _, ok := strings.Cut(report.Files[0].Source, "/")
+	if !ok || root == "" {
+		return
+	}
+	for _, file := range report.Files[1:] {
+		if !strings.HasPrefix(file.Source, root+"/") {
+			return
+		}
+	}
+	kept := report.Unsupported[:0]
+	for _, name := range report.Unsupported {
+		if strings.EqualFold(name, root+"/README.md") {
+			report.Warnings = append(report.Warnings, "source archive documentation not installed: "+name)
+			continue
+		}
+		kept = append(kept, name)
+	}
+	report.Unsupported = kept
 }
 
 func (s *Store) SyncAllGitHubMods(ctx context.Context) map[string]*SyncSummary {

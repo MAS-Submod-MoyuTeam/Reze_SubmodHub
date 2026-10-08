@@ -236,9 +236,13 @@ func NewClient(opts ...Option) *Client {
 	}
 
 	if c.httpClient == nil {
+		transport := NewSafeHTTPTransport(c.allowInsecureTestHosts)
+		if proxyURL, isHTTPProxy, err := httpProxyURL(c.proxyTemplate); isHTTPProxy && err == nil {
+			transport = NewHTTPProxyTransport(proxyURL)
+		}
 		c.httpClient = &http.Client{
 			Timeout:   60 * time.Second,
-			Transport: NewSafeHTTPTransport(c.allowInsecureTestHosts),
+			Transport: transport,
 		}
 	} else if c.httpClient.Transport == nil {
 		c.httpClient.Transport = NewSafeHTTPTransport(c.allowInsecureTestHosts)
@@ -432,7 +436,7 @@ func (c *Client) DownloadToTemp(ctx context.Context, downloadURL string, maxSize
 	}
 
 	headers := map[string]string{
-		"Accept":     "application/octet-stream",
+		"Accept":     "*/*",
 		"User-Agent": c.userAgent,
 	}
 

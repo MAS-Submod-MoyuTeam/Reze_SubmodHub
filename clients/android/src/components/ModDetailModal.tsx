@@ -130,7 +130,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                     : 'bg-slate-850 hover:bg-slate-800 text-slate-300 border border-slate-750'
                 }`}
               >
-                v{ver.version} {ver.id === mod.latest_version_id && '(最新)'}
+                {ver.version} {ver.id === mod.latest_version_id && '(最新)'}
               </button>
             ))}
           </div>
@@ -182,7 +182,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
             </div>
             <div className="flex items-center justify-between">
               <span className="text-slate-400">当前活跃实例:</span>
-              <span className="font-mono text-emerald-400">v{currentInstallation.mas_version} (兼容)</span>
+              <span className="font-mono text-emerald-400">{currentInstallation.mas_version} (兼容)</span>
             </div>
           </div>
 
@@ -209,7 +209,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                         {dep.is_satisfied ? (
                           <div className="flex items-center gap-1 text-emerald-400 text-[11px]">
                             <ShieldCheck className="w-3.5 h-3.5" />
-                            <span>已满足 (v{dep.installed_version})</span>
+                            <span>已满足 ({dep.installed_version})</span>
                           </div>
                         ) : (
                           <div className="flex items-center gap-1 text-rose-400 text-[11px]">

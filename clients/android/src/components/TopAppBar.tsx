@@ -47,7 +47,7 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
               )}
             </div>
             <p className="text-[10px] text-slate-400 font-mono truncate">
-              {isPermissionOk ? `MAS v${currentInstallation.mas_version}` : '目录未授权'}
+              {isPermissionOk ? `MAS ${currentInstallation.mas_version}` : '目录未授权'}
             </p>
           </div>
         </button>
