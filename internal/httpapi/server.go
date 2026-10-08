@@ -257,7 +257,13 @@ func New(c Catalog) http.Handler {
 }
 func NewStoreHandler(s *Store) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		status := map[string]any{"status": "ok"}
+		if diag := s.GetGitHubSyncDiagnostics(); diag != nil {
+			status["github_sync"] = diag
+		}
+		writeJSON(w, 200, status)
+	})
 	mux.HandleFunc("/api/v1/mods", s.listMods)
 	mux.HandleFunc("/api/v1/session", s.session)
 	mux.HandleFunc("/api/v1/auth/flarum/login", s.loginFlarum)

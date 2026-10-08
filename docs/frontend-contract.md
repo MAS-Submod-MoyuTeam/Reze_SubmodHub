@@ -143,3 +143,26 @@
 4. 手工修改已安装文件后再次操作，客户端以 `external_change` 暂停，不覆盖用户文件。
 
 本文是前端设计输入，不是 UI 实现或已通过的发布验收。前端设计稿应覆盖 Web 与双平台客户端的全部视图和上述关键状态。
+
+## 6. GitHub Releases 源模式契约扩展
+
+### 模组源配置与同步状态字段
+在模组元数据对象（`ModSummary`）中，扩展以下源管理字段：
+- `source_type`: `local`（默认，站内创建候选版本）或 `github_releases`（由外部 Release 自动同步）。
+- `github_owner`: GitHub 组织或用户坐标。
+- `github_repo`: GitHub 仓库名称。
+- `github_asset_regex`: RE2 正则表达式，匹配 Release 资产中的 `.zip` 文件名。
+- `github_source_code`: 布尔值，当 Release 未提供匹配的资产文件时，是否允许自动使用 Release 源码包 (`zipball_url`)。
+- `github_last_sync_at`: 最近一次同步时间（仅作者工作台与管理端可见，公开目录自动脱敏）。
+- `github_last_sync_error`: 最近一次同步非致命错误描述（仅作者工作台与管理端可见）。
+- `github_last_release_id`: 最近处理的 GitHub Release ID（仅作者工作台与管理端可见）。
+
+### 接口定义
+- `PATCH /api/v1/author/mods/{id}/source`：更新模组的源配置。鉴权要求作者或管理员。校验 owner/repo 格式及 asset regex 语法，保存后清空上次同步错误。
+- `POST /api/v1/author/mods/{id}/github-sync`：手动触发立即同步。返回 `{ mod_id, synced_at, created, skipped, failed, items: [...] }` 汇总。
+
+### 权限与防护规则
+- 当模组配置为 `github_releases` 时：
+  - 调用 `POST /api/v1/author/mods/{id}/versions` 会被服务端拦截并拒绝，返回 HTTP 409 `github_source_managed`。前端界面相应隐藏“+ 创建候选版本”按钮，改为主显示“立即同步 Releases”及同步状态。
+  - 调用 `PATCH /api/v1/author/versions/{id}/edit` 时，禁止修改版本 tag (`Version`)，尝试修改返回 HTTP 409 `github_source_managed`；但依然允许修订说明与依赖。
+  - 对 `local` 模组调用 `POST /api/v1/author/mods/{id}/github-sync` 返回 HTTP 400 `not_github_source`。

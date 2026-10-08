@@ -195,3 +195,62 @@ func TestSourceConfigPublicSanitization(t *testing.T) {
 		t.Fatalf("public listing missing public source coordinates: %+v", item)
 	}
 }
+
+func TestHealthzGitHubSyncDiagnostics(t *testing.T) {
+	now := time.Now().UTC()
+	store, err := NewStore(t.TempDir(), Catalog{
+		Mods: []Mod{
+			{
+				ID:                  "m1",
+				Title:               "Managed Mod",
+				SourceType:          "github_releases",
+				GitHubOwner:         "octocat",
+				GitHubRepo:          "hello",
+				GitHubLastSyncAt:    &now,
+				GitHubLastSyncError: "temporary rate limit",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.GitHubSyncInterval = 10 * time.Minute
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	res, err := server.Client().Get(server.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+
+	var payload struct {
+		Status     string `json:"status"`
+		GitHubSync struct {
+			Interval         string `json:"interval"`
+			TotalManagedMods int    `json:"total_managed_mods"`
+			LastSyncError    string `json:"last_sync_error"`
+		} `json:"github_sync"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+
+	if payload.Status != "ok" {
+		t.Fatalf("expected status ok, got %q", payload.Status)
+	}
+	if payload.GitHubSync.TotalManagedMods != 1 {
+		t.Fatalf("expected 1 managed mod, got %d", payload.GitHubSync.TotalManagedMods)
+	}
+	if payload.GitHubSync.Interval != "10m0s" {
+		t.Fatalf("expected interval 10m0s, got %q", payload.GitHubSync.Interval)
+	}
+	if payload.GitHubSync.LastSyncError != "temporary rate limit" {
+		t.Fatalf("expected last sync error, got %q", payload.GitHubSync.LastSyncError)
+	}
+}

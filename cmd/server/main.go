@@ -59,6 +59,26 @@ func main() {
 		}
 		store.AdminGroupIDs = auth.ParseGroupIDs(os.Getenv("ADMIN_FLARUM_GROUP_IDS"))
 	}
+
+	syncIntervalStr := os.Getenv("GITHUB_SYNC_INTERVAL")
+	var syncInterval time.Duration = 15 * time.Minute
+	if syncIntervalStr == "0" {
+		syncInterval = 0
+		log.Printf("GitHub Releases background sync disabled (GITHUB_SYNC_INTERVAL=0)")
+	} else if syncIntervalStr != "" {
+		parsed, parseErr := time.ParseDuration(syncIntervalStr)
+		if parseErr != nil {
+			log.Printf("Invalid GITHUB_SYNC_INTERVAL=%q, falling back to 15m default: %v", syncIntervalStr, parseErr)
+		} else {
+			syncInterval = parsed
+		}
+	}
+	store.GitHubSyncInterval = syncInterval
+	if store.GitHubSyncInterval > 0 {
+		store.StartGitHubSync()
+		log.Printf("GitHub Releases background sync started (interval: %s)", store.GitHubSyncInterval)
+	}
+
 	log.Printf("SubmodHub API listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, httpapi.NewStoreHandler(store)))
 }

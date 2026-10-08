@@ -456,3 +456,45 @@ func (s *Store) Close() error {
 	})
 	return err
 }
+
+type GitHubSyncDiagnostics struct {
+	Interval         string     `json:"interval"`
+	ActiveJobs       int        `json:"active_jobs"`
+	LastSyncAt       *time.Time `json:"last_sync_at,omitempty"`
+	LastSyncError    string     `json:"last_sync_error,omitempty"`
+	TotalManagedMods int        `json:"total_managed_mods"`
+}
+
+func (s *Store) GetGitHubSyncDiagnostics() *GitHubSyncDiagnostics {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	managedCount := 0
+	var latestSync *time.Time
+	var latestErr string
+
+	for _, m := range s.Catalog.Mods {
+		if m.GetSourceType() == "github_releases" {
+			managedCount++
+			if m.GitHubLastSyncAt != nil && (latestSync == nil || m.GitHubLastSyncAt.After(*latestSync)) {
+				latestSync = m.GitHubLastSyncAt
+			}
+			if m.GitHubLastSyncError != "" {
+				latestErr = m.GitHubLastSyncError
+			}
+		}
+	}
+
+	intervalStr := "disabled"
+	if s.GitHubSyncInterval > 0 {
+		intervalStr = s.GitHubSyncInterval.String()
+	}
+
+	return &GitHubSyncDiagnostics{
+		Interval:         intervalStr,
+		ActiveJobs:       0,
+		LastSyncAt:       latestSync,
+		LastSyncError:    latestErr,
+		TotalManagedMods: managedCount,
+	}
+}
