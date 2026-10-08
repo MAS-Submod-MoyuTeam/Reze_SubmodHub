@@ -1380,8 +1380,7 @@ func (s *Store) modResource(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 404, "not_found", "version was not found")
 			return
 		}
-		v.ArchivePath = ""
-		writeJSON(w, 200, resolveVersionDependencies(s.Catalog, v))
+		writeJSON(w, 200, resolveVersionDependencies(s.Catalog, v.SanitizeForClient()))
 		return
 	}
 	writeError(w, 404, "not_found", "resource was not found")

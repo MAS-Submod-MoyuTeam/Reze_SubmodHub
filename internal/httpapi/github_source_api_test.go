@@ -96,6 +96,60 @@ func TestGitHubSourceAPIAndPermissions(t *testing.T) {
 	}
 }
 
+func TestPublicVersionEndpointsHideGitHubSourceURL(t *testing.T) {
+	store, err := NewStore(t.TempDir(), Catalog{
+		Mods: []Mod{{
+			ID:              "mod_1",
+			Title:           "Demo Mod",
+			LatestVersionID: "ver_1",
+			Author:          Author{ID: "author_1"},
+		}},
+		Versions: map[string]Version{
+			"ver_1": {
+				ID:      "ver_1",
+				ModID:   "mod_1",
+				Version: "1.0.0",
+				State:   "published",
+				SHA256:  strings.Repeat("a", 64),
+				GitHubSource: &VersionSourceLocation{
+					DownloadURL: "https://github.com/octocat/demo/releases/download/v1/demo.zip?token=secret",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	for _, endpoint := range []string{
+		"/api/v1/mods/mod_1/versions/ver_1",
+		"/api/v1/mods/mod_1/versions",
+	} {
+		res, err := server.Client().Get(server.URL + endpoint)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+			res.Body.Close()
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s: expected 200, got %d", endpoint, res.StatusCode)
+		}
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(encoded), "github_source") || strings.Contains(string(encoded), "releases/download") || strings.Contains(string(encoded), "secret") {
+			t.Fatalf("GET %s exposed GitHub source details: %s", endpoint, encoded)
+		}
+	}
+}
+
 func TestGitHubManualSyncEndpoint(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
