@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { MarkdownText } from './MarkdownText';
 import { getReviewSubmission } from '../../../ui/submission-api';
 import { Submission, ScanReport, ScannedFile } from '../types/submodhub';
 import {
@@ -370,7 +371,7 @@ export const ReviewerWorkbench: React.FC = () => {
                   <div className="border border-sky-200 bg-sky-50/50 rounded-lg p-4 space-y-3 text-xs">
                     <h3 className="font-bold text-sky-950">本次提交变更摘要</h3>
                     <div><span className="font-semibold">模组简介：</span>{reviewDetail.mod?.summary || '未填写'}</div>
-                    <div><span className="font-semibold">版本说明：</span>{reviewDetail.version?.release_notes || '未填写'}</div>
+                    <div><span className="font-semibold">版本说明：</span><MarkdownText value={reviewDetail.version?.release_notes || '未填写'} /></div>
                     <div><span className="font-semibold">前置依赖：</span>{reviewDetail.version?.dependencies?.map((item) => `${item.mod_title || item.mod_id} ${item.version_range || '*'}`).join('、') || '无'}</div>
                     <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-700">
                       <span>归档大小：{reviewDetail.version?.size_bytes || 0} bytes</span>

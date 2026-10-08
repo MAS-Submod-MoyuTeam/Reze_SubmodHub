@@ -253,9 +253,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                 {/* Release notes */}
                 <div className="space-y-1">
                   <span className="text-[11px] font-medium text-neutral-500">发行说明 (Changelog):</span>
-                  <p className="text-neutral-800 whitespace-pre-wrap bg-white p-2.5 rounded border border-neutral-200">
-                    {currentVersion.release_notes || '暂无更新日志'}
-                  </p>
+                  <MarkdownText value={currentVersion.release_notes || '暂无更新日志'} className="text-neutral-800 bg-white p-2.5 rounded border border-neutral-200" />
                 </div>
 
                 {/* Dependencies */}

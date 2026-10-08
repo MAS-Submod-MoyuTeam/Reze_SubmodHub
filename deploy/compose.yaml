@@ -36,6 +36,8 @@ services:
       - "100.72.137.92:${SUBMODHUB_PORT:-18082}:8080"
     volumes:
       - ./data:/data
+    tmpfs:
+      - /tmp:size=160m,mode=1777
     read_only: true
     security_opt:
       - no-new-privileges:true

@@ -42,6 +42,10 @@ func (s *Store) getGitHubClient() *github.Client {
 }
 
 func (s *Store) SyncMod(ctx context.Context, modID string) (*SyncSummary, error) {
+	return s.syncMod(ctx, modID, false)
+}
+
+func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSummary, error) {
 	now := time.Now().UTC()
 	s.mu.RLock()
 	var targetMod *Mod
@@ -87,7 +91,13 @@ func (s *Store) SyncMod(ctx context.Context, modID string) (*SyncSummary, error)
 	}
 
 	client := s.getGitHubClient()
-	releases, newETag, notModified, err := client.ListReleases(ctx, targetMod.GitHubOwner, targetMod.GitHubRepo, targetMod.GitHubETag)
+	etag := targetMod.GitHubETag
+	// A failed import must not be mistaken for an unchanged, fully imported
+	// release list.
+	if force || targetMod.GitHubLastSyncError != "" {
+		etag = ""
+	}
+	releases, newETag, notModified, err := client.ListReleases(ctx, targetMod.GitHubOwner, targetMod.GitHubRepo, etag)
 	if err != nil {
 		var backoffDeadline *time.Time
 		if github.IsRateLimited(err) {

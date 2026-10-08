@@ -763,7 +763,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "not_github_source", "mod is not configured for github_releases")
 			return
 		}
-		summary, err := s.SyncMod(r.Context(), modID)
+		summary, err := s.syncMod(r.Context(), modID, true)
 		if err != nil {
 			writeError(w, 500, "sync_failed", err.Error())
 			return

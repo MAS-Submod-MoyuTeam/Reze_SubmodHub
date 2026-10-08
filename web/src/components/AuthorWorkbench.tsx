@@ -4,6 +4,7 @@ import { ModCategory, Platform, ModSummary, ModDependency, ModVersion, ScannedFi
 import { validateGitHubSourceInput, formatLastSyncTime, getGitHubRepoUrl } from './sourceConfig';
 import { formatVersionCreatedAt } from './versionDate';
 import { DeprecationNotice } from './DeprecationNotice';
+import { MarkdownText } from './MarkdownText';
 import { mapDependencyInput, mapDependencyRangeInput, mapDependencySelection } from './dependencyMapping';
 import { DependencyNamePicker } from './DependencyNamePicker';
 import { canEditVersion, versionFormState } from './versionFormState';
@@ -861,9 +862,7 @@ export const AuthorWorkbench: React.FC = () => {
                             </div>
 
                               {/* Release Notes */}
-                            <p className="text-xs text-neutral-600 bg-white p-2.5 rounded border border-neutral-200/80">
-                              {v.release_notes || '暂无发布说明'}
-                              </p>
+                            <MarkdownText value={v.release_notes || '暂无发布说明'} className="text-xs text-neutral-600 bg-white p-2.5 rounded border border-neutral-200/80" />
 
                             <DeprecationNotice deprecated={v.deprecated} reason={v.deprecation_reason} />
 
@@ -1554,11 +1553,11 @@ export const AuthorWorkbench: React.FC = () => {
 
               <div>
                 <label className="block font-medium text-neutral-700 mb-1">
-                  发行说明 (Release Notes)
+                  发行说明 (Markdown，可选)
                 </label>
                 <textarea
                   rows={3}
-                  placeholder="说明此版本的新增内容、修复漏洞与破坏性变更..."
+                  placeholder={'## 更新内容\n- **新增**功能\n- 修复问题'}
                   value={newReleaseNotes}
                   onChange={(e) => setNewReleaseNotes(e.target.value)}
                   className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600"

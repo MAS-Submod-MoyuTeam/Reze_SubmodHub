@@ -177,6 +177,64 @@ func TestGitHubSyncPersistsETagWhenReleaseImportFails(t *testing.T) {
 	}
 }
 
+func TestGitHubSyncRetriesFailedReleaseDespiteETag(t *testing.T) {
+	for _, force := range []bool{false, true} {
+		t.Run(fmt.Sprintf("force=%t", force), func(t *testing.T) {
+			zipData := createTestZip(t, "init python:\n    pass\n")
+			var downloads, conditionalRequests int
+			var ghServer *httptest.Server
+			ghServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/repos/octocat/retry/releases":
+					if r.Header.Get("If-None-Match") != "" {
+						conditionalRequests++
+						w.WriteHeader(http.StatusNotModified)
+						return
+					}
+					w.Header().Set("ETag", `"retry-v1"`)
+					fmt.Fprintf(w, `[{"id":401,"tag_name":"v1.0.0","assets":[{"id":402,"name":"demo.zip","browser_download_url":%q}]}]`, ghServer.URL+"/download/demo.zip")
+				case "/download/demo.zip":
+					downloads++
+					if downloads == 1 {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
+					_, _ = w.Write(zipData)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer ghServer.Close()
+
+			store, err := NewStore(t.TempDir(), Catalog{Mods: []Mod{{
+				ID: "retry", Author: Author{ID: "author"}, Category: "submod",
+				SourceType: "github_releases", GitHubOwner: "octocat", GitHubRepo: "retry",
+				GitHubAssetRegex: `.*\.zip`,
+			}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			store.GitHubClient = github.NewClient(github.WithBaseURL(ghServer.URL), github.WithHTTPClient(ghServer.Client()))
+
+			first, err := store.SyncMod(context.Background(), "retry")
+			if err != nil || first.Failed != 1 {
+				t.Fatalf("expected initial download failure, summary=%+v err=%v", first, err)
+			}
+			if force {
+				// Recover the state left by an older 304 that cleared the import error.
+				store.Catalog.Mods[0].GitHubLastSyncError = ""
+			}
+			second, err := store.syncMod(context.Background(), "retry", force)
+			if err != nil || second.Created != 1 || second.Failed != 0 {
+				t.Fatalf("expected failed release to retry, summary=%+v err=%v", second, err)
+			}
+			if downloads != 2 || conditionalRequests != 0 {
+				t.Fatalf("retry was skipped by ETag: downloads=%d conditionalRequests=%d", downloads, conditionalRequests)
+			}
+		})
+	}
+}
+
 func TestGitHubSyncPublishedVersionNotOverwritten(t *testing.T) {
 	zipData := createTestZip(t, "init python:\n    pass\n")
 	var ghServer *httptest.Server

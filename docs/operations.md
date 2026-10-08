@@ -14,6 +14,12 @@ Flarum 配置沿用 MAS_UniSync 的论坛地址，`ADMIN_FLARUM_GROUP_IDS=16,22`
 
 ## 远端部署
 
+### 自动发布
+
+在 `deploy/.env` 中设置 `SUBMODHUB_AUTO_PUBLISH=true`，所有作者提交的子模组、精灵包，以及 GitHub Releases 同步通过扫描的新版本，会跳过人工审核并直接发布。默认值为 `false`，仍需管理员审核。手动上传的草稿仍需作者执行提交操作；该开关不自动批准此前已进入审核队列的版本。ZIP 上传、静态检测和阻断检查仍然执行。
+
+修改后运行 `docker compose --env-file deploy/.env -f deploy/compose.yaml up -d api`，重建 API 容器使环境变量生效；无需重建镜像。
+
 测试站使用 HTTP 时，前端构建需临时设置 `VITE_ALLOW_INSECURE_AUTH=true`，否则浏览器会在发出登录请求前报 `https_required`。此开关只用于测试站构建，不要写入全局环境或生产构建配置。例如在 PowerShell 中执行 `$env:VITE_ALLOW_INSECURE_AUTH='true'; npm run build`，随后上传 `web/dist`。服务端仍需在测试环境配置 `SUBMODHUB_ALLOW_INSECURE_AUTH=true`。
 
 部署目录：`/home/sirp/submodhub`。默认 API 端口：`18082`。部署前保存远端目录快照和 Compose 状态；更新只重建 `api`，不删除数据卷。

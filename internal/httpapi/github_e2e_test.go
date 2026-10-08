@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"archive/zip"
 	"bytes"
 	"encoding/json"
@@ -217,18 +218,25 @@ func TestGitHubReleaseSourceE2EWorkflow(t *testing.T) {
 		t.Fatalf("v1.2.0 did not pick stable first asset (ID 2): %+v", v120)
 	}
 
-	// 4. Repeated sync with ETag hits 304 and creates 0 new versions
+	// 4. Manual sync refreshes the list and skips already imported versions.
 	syncReq2, _ := http.NewRequest(http.MethodPost, apiServer.URL+"/api/v1/author/mods/"+createdMod.ID+"/github-sync", nil)
 	syncReq2.AddCookie(&http.Cookie{Name: "submodhub_session", Value: authorToken})
 	syncRes2, _ := apiServer.Client().Do(syncReq2)
 	var summary2 SyncSummary
 	_ = json.NewDecoder(syncRes2.Body).Decode(&summary2)
 	syncRes2.Body.Close()
-	if summary2.Created != 0 {
+	if summary2.Created != 0 || summary2.Skipped != 3 {
 		t.Fatalf("expected 0 created on second sync, got %+v", summary2)
 	}
+	if etagHits != 0 {
+		t.Fatalf("manual sync must bypass ETag, got %d 304 hits", etagHits)
+	}
+	// Periodic sync still benefits from conditional requests.
+	if _, err := store.SyncMod(context.Background(), createdMod.ID); err != nil {
+		t.Fatal(err)
+	}
 	if etagHits != 1 {
-		t.Fatalf("expected 1 ETag 304 hit, got %d", etagHits)
+		t.Fatalf("expected periodic sync to use ETag, got %d 304 hits", etagHits)
 	}
 
 	// 5. Handling HTTP 429 does not crash
