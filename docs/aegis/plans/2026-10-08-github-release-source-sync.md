@@ -1,6 +1,6 @@
 # GitHub Releases 源同步实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `aegis:subagent-driven-development` (recommended) or `aegis:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `aegis:subagent-driven-development` (recommended) or `aegis:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 允许作者在新建/编辑模组草稿时绑定 GitHub Releases 源，由系统按 Release tag 自动生成候选版本、按正则选择 ZIP 资产或使用 Release source code ZIP，并在后续 Release 发布时自动同步。
 
@@ -62,10 +62,10 @@
 
 **Why this task exists:** 为后续同步提供稳定、可版本化的源配置契约；旧 catalog 必须能读取，未配置字段默认为 `local`。
 
-- [ ] 写失败测试：旧 Mod JSON 解码为 local；合法 GitHub 配置可保存；owner/repo、正则、源模式非法组合被拒绝；正则编译失败返回 `validation_failed`。
-- [ ] 实现最小字段与校验，保留现有权限字段；禁止把 source 配置混入 `Version`。
-- [ ] 运行 `go test ./internal/httpapi -run Source`，确认先红后绿。
-- [ ] 更新 TypeScript API 类型，运行 `npx --no-install tsx --tsconfig web/tsconfig.json --test ui/submission-api.test.ts`。
+- [x] 写失败测试：旧 Mod JSON 解码为 local；合法 GitHub 配置可保存；owner/repo、正则、源模式非法组合被拒绝；正则编译失败返回 `validation_failed`。
+- [x] 实现最小字段与校验，保留现有权限字段；禁止把 source 配置混入 `Version`。
+- [x] 运行 `go test ./internal/httpapi -run Source`，确认先红后绿。
+- [x] 更新 TypeScript API 类型，运行 `npx --no-install tsx --tsconfig web/tsconfig.json --test ui/submission-api.test.ts`。
 
 ### Task 2: GitHub API client 和资产选择器
 
@@ -76,10 +76,10 @@
 
 **Why this task exists:** 将外部 API 和选择规则隔离，确保同步器可测试且不会把 GitHub JSON 细节散落在 HTTP handler 中。
 
-- [ ] 写失败测试：分页读取 releases；304 返回 not-modified；asset 正则只匹配 `.zip`；多匹配按文件名稳定排序；无 asset 且允许 source code 选 `zipball_url`；无可选来源返回明确错误；超时/非 2xx 分类。
-- [ ] 使用 Go `regexp.Compile`（RE2），禁止动态 shell、路径拼接或执行仓库代码。
-- [ ] 下载流使用大小上限 `maxArchiveSize`，边下载边写临时文件并计算 SHA-256；超过上限立即中止并清理。
-- [ ] 运行 `go test ./internal/github -count=1`。
+- [x] 写失败测试：分页读取 releases；304 返回 not-modified；asset 正则只匹配 `.zip`；多匹配按文件名稳定排序；无 asset 且允许 source code 选 `zipball_url`；无可选来源返回明确错误；超时/非 2xx 分类。
+- [x] 使用 Go `regexp.Compile`（RE2），禁止动态 shell、路径拼接或执行仓库代码。
+- [x] 下载流使用大小上限 `maxArchiveSize`，边下载边写临时文件并计算 SHA-256；超过上限立即中止并清理。
+- [x] 运行 `go test ./internal/github -count=1`。
 
 ### Task 3: 同步器、幂等和现有扫描审核链路接入
 
@@ -91,12 +91,12 @@
 
 **Why this task exists:** 将 Release 事件转成站内不可变候选版本，并保证重复轮询、失败重试和重启恢复不产生重复版本。
 
-- [ ] 写失败测试：首次同步创建 tag 对应版本并保存归档/sha256/扫描报告；重复同步不创建第二个版本；新 tag 创建第二个版本；已发布 tag 不覆盖；下载失败不留下临时文件或半成品 Version；扫描阻断进入现有阻断状态；同步状态记录错误。
-- [ ] 实现 `(mod_id, github_release_id)` 和 `(mod_id, version tag)` 双重幂等检查。
-- [ ] 版本说明使用 Release body/name，来源信息写入版本内部字段或扫描元数据；公开 API 不泄露本地临时路径。
-- [ ] 默认将新版本送入现有审核流程，遵守 `SUBMODHUB_AUTO_PUBLISH` 既有策略；不要让 GitHub 源绕过审核。
-- [ ] ticker 使用可注入 clock/interval，测试中不等待真实 15 分钟；关闭 Store 时停止 goroutine。
-- [ ] 运行 `go test ./internal/httpapi -run GitHubSync -count=1` 和 `go test ./...`。
+- [x] 写失败测试：首次同步创建 tag 对应版本并保存归档/sha256/扫描报告；重复同步不创建第二个版本；新 tag 创建第二个版本；已发布 tag 不覆盖；下载失败不留下临时文件或半成品 Version；扫描阻断进入现有阻断状态；同步状态记录错误。
+- [x] 实现 `(mod_id, github_release_id)` 和 `(mod_id, version tag)` 双重幂等检查。
+- [x] 版本说明使用 Release body/name，来源信息写入版本内部字段或扫描元数据；公开 API 不泄露本地临时路径。
+- [x] 默认将新版本送入现有审核流程，遵守 `SUBMODHUB_AUTO_PUBLISH` 既有策略；不要让 GitHub 源绕过审核。
+- [x] ticker 使用可注入 clock/interval，测试中不等待真实 15 分钟；关闭 Store 时停止 goroutine。
+- [x] 运行 `go test ./internal/httpapi -run GitHubSync -count=1` 和 `go test ./...`。
 
 ### Task 4: 作者 API、手动同步和源模式权限边界
 
@@ -107,11 +107,11 @@
 
 **Why this task exists:** 让作者可验证配置并确保 GitHub 源模组不能从本站创建候选版本。
 
-- [ ] 新增 `PATCH /api/v1/author/mods/{id}/source`：作者/管理员可改，校验仓库和正则，保存后清空旧错误但不删除历史版本。
-- [ ] 新增 `POST /api/v1/author/mods/{id}/github-sync`：只允许作者/管理员，返回同步摘要（created/skipped/failed、release/tag、选中资产、sha256）。
-- [ ] `POST /api/v1/author/mods/{id}/versions` 在 `github_releases` 模式返回 `409 github_source_managed`；已有本地 draft 不自动删除，迁移时明确提示并禁止提交。
-- [ ] `PATCH /author/versions/{id}/edit` 禁止修改 GitHub 管理版本的 tag/来源字段，但允许修订说明和依赖的既有规则需明确测试。
-- [ ] 测试作者、管理员、普通用户三种权限以及 local 模式回归。
+- [x] 新增 `PATCH /api/v1/author/mods/{id}/source`：作者/管理员可改，校验仓库和正则，保存后清空旧错误但不删除历史版本。
+- [x] 新增 `POST /api/v1/author/mods/{id}/github-sync`：只允许作者/管理员，返回同步摘要（created/skipped/failed、release/tag、选中资产、sha256）。
+- [x] `POST /api/v1/author/mods/{id}/versions` 在 `github_releases` 模式返回 `409 github_source_managed`；已有本地 draft 不自动删除，迁移时明确提示并禁止提交。
+- [x] `PATCH /author/versions/{id}/edit` 禁止修改 GitHub 管理版本的 tag/来源字段，但允许修订说明和依赖的既有规则需明确测试。
+- [x] 测试作者、管理员、普通用户三种权限以及 local 模式回归。
 
 ### Task 5: 发布页源配置 UI 和本地候选版本入口切换
 
@@ -123,12 +123,12 @@
 
 **Why this task exists:** 让作者能在创建草稿时选择 GitHub 源，并在源模式下清楚看到版本由 Releases 管理。
 
-- [ ] 源选择使用分段控件：`本站上传` / `GitHub Releases`；默认本站上传。
-- [ ] GitHub 模式字段：owner、repo、资产文件名正则、`无匹配时使用 Release source code ZIP` 开关；展示正则示例，如 `^MyMod[-_]v?\\d+\\.\\d+\\.\\d+.*\\.zip$`。
-- [ ] 保存时调用 source API；创建 GitHub 源草稿后不显示“创建候选版本”；显示“立即同步 Releases”和最近同步状态。
-- [ ] 本地模式保持现有上传/候选版本 UI，不改变已有详情图、作者显示名和标签行为。
-- [ ] 处理 loading、无权限、GitHub 限流、无匹配文件、扫描失败等状态；不显示假版本或假下载链接。
-- [ ] 运行 Web lint/build 和前端测试；Playwright 验证两种模式切换和按钮隐藏。
+- [x] 源选择使用分段控件：`本站上传` / `GitHub Releases`；默认本站上传。
+- [x] GitHub 模式字段：owner、repo、资产文件名正则、`无匹配时使用 Release source code ZIP` 开关；展示正则示例，如 `^MyMod[-_]v?\\d+\\.\\d+\\.\\d+.*\\.zip$`。
+- [x] 保存时调用 source API；创建 GitHub 源草稿后不显示“创建候选版本”；显示“立即同步 Releases”和最近同步状态。
+- [x] 本地模式保持现有上传/候选版本 UI，不改变已有详情图、作者显示名和标签行为。
+- [x] 处理 loading、无权限、GitHub 限流、无匹配文件、扫描失败等状态；不显示假版本或假下载链接。
+- [x] 运行 Web lint/build 和前端测试；Playwright 验证两种模式切换和按钮隐藏。
 
 ### Task 6: 自动同步运维配置、可观测性与 Docker 部署
 
@@ -140,10 +140,10 @@
 
 **Why this task exists:** 自动同步必须可控、可诊断，且重启/网络故障不能破坏已有归档。
 
-- [ ] 配置默认 15m，支持 `0` 禁用 ticker 但保留手动同步；配置解析失败时拒绝启动或回退安全默认并记录日志。
-- [ ] 日志包含 mod ID、repo、release ID/tag、选择结果、状态和耗时，不记录 token 或完整下载 URL 查询参数。
-- [ ] 增加健康/指标信息：最近成功同步时间、最近错误、活跃任务数；不把 GitHub API 故障报告成数据库故障。
-- [ ] Docker Compose 重启 API 后确认 ticker 恢复；保留 PostgreSQL 数据卷和历史归档。
+- [x] 配置默认 15m，支持 `0` 禁用 ticker 但保留手动同步；配置解析失败时拒绝启动或回退安全默认并记录日志。
+- [x] 日志包含 mod ID、repo、release ID/tag、选择结果、状态和耗时，不记录 token 或完整下载 URL 查询参数。
+- [x] 增加健康/指标信息：最近成功同步时间、最近错误、活跃任务数；不把 GitHub API 故障报告成数据库故障。
+- [x] Docker Compose 重启 API 后确认 ticker 恢复；保留 PostgreSQL 数据卷和历史归档。
 
 ### Task 7: 端到端验收、文档和回滚演练
 
@@ -153,12 +153,12 @@
 
 **Why this task exists:** 覆盖用户主流程并验证外部依赖失败时的安全边界。
 
-- [ ] 使用 fixture 仓库模拟：v1.0.0 有匹配 asset、v1.1.0 只有 source code、v1.2.0 有多个匹配 asset、重复轮询、HTTP 429、损坏 ZIP。
-- [ ] 验证创建 GitHub 源草稿后本站“创建候选版本”不可用且 API 返回 `github_source_managed`。
-- [ ] 验证同步版本号严格等于 release tag，ZIP 经过扫描后进入审核，审核/发布后归档不可变。
-- [ ] 验证 local 模组上传候选版本流程完全回归。
-- [ ] 验证删除/下架 GitHub 源模组不删除已发布归档；清除源配置后可恢复本站候选版本创建（已有 GitHub 版本仍标记来源）。
-- [ ] 运行 `go test ./...`、Web lint/build、前端测试、Docker Compose smoke，并记录外部 GitHub 不可用时的手动复现步骤。
+- [x] 使用 fixture 仓库模拟：v1.0.0 有匹配 asset、v1.1.0 只有 source code、v1.2.0 有多个匹配 asset、重复轮询、HTTP 429、损坏 ZIP。
+- [x] 验证创建 GitHub 源草稿后本站“创建候选版本”不可用且 API 返回 `github_source_managed`。
+- [x] 验证同步版本号严格等于 release tag，ZIP 经过扫描后进入审核，审核/发布后归档不可变。
+- [x] 验证 local 模组上传候选版本流程完全回归。
+- [x] 验证删除/下架 GitHub 源模组不删除已发布归档；清除源配置后可恢复本站候选版本创建（已有 GitHub 版本仍标记来源）。
+- [x] 运行 `go test ./...`、Web lint/build、前端测试、Docker Compose smoke，并记录外部 GitHub 不可用时的手动复现步骤。
 
 ## 风险、回滚和未决边界
 
