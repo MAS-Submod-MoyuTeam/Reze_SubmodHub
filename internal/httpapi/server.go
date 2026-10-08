@@ -80,6 +80,7 @@ type Mod struct {
 	GitHubLastSyncError string     `json:"github_last_sync_error,omitempty"`
 	GitHubLastReleaseID int64      `json:"github_last_release_id,omitempty"`
 	GitHubETag          string     `json:"github_etag,omitempty"`
+	GitHubBackoffUntil  *time.Time `json:"github_backoff_until,omitempty"`
 }
 
 func (m Mod) GetSourceType() string {
@@ -128,6 +129,8 @@ func cleanPublicMod(m Mod) Mod {
 	cp.GitHubLastSyncAt = nil
 	cp.GitHubLastSyncError = ""
 	cp.GitHubLastReleaseID = 0
+	cp.GitHubBackoffUntil = nil
+	cp.GitHubETag = ""
 	return cp
 }
 type Catalog struct {
@@ -192,6 +195,7 @@ type Store struct {
 	sessions           map[string]authSession
 	GitHubClient       *github.Client
 	GitHubSyncInterval time.Duration
+	gitHubBackoffUntil time.Time
 	syncStopChan       chan struct{}
 	syncDoneChan       chan struct{}
 	syncCloseOnce      sync.Once
@@ -715,6 +719,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		}
 		if mod.GitHubOwner != strings.TrimSpace(req.GitHubOwner) || mod.GitHubRepo != strings.TrimSpace(req.GitHubRepo) {
 			mod.GitHubETag = ""
+			mod.GitHubBackoffUntil = nil
 		}
 		mod.SourceType = srcType
 		mod.GitHubOwner = strings.TrimSpace(req.GitHubOwner)
@@ -722,6 +727,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		mod.GitHubAssetRegex = strings.TrimSpace(req.GitHubAssetRegex)
 		mod.GitHubSourceCode = req.GitHubSourceCode
 		mod.GitHubLastSyncError = ""
+		mod.GitHubBackoffUntil = nil
 		if err := s.saveLocked(); err != nil {
 			s.mu.Unlock()
 			writeError(w, 500, "storage_error", "mod source was not saved")

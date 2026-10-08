@@ -4,13 +4,53 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestParseNextPageURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		header   string
+		expected string
+	}{
+		{
+			name:     "empty",
+			header:   "",
+			expected: "",
+		},
+		{
+			name:     "no rel next",
+			header:   `<https://api.github.com/repos/o/r/releases?page=1>; rel="prev", <https://api.github.com/repos/o/r/releases?page=5>; rel="last"`,
+			expected: "",
+		},
+		{
+			name:     "standard rel next",
+			header:   `<https://api.github.com/repos/o/r/releases?page=2&per_page=100>; rel="next", <https://api.github.com/repos/o/r/releases?page=5&per_page=100>; rel="last"`,
+			expected: "https://api.github.com/repos/o/r/releases?page=2&per_page=100",
+		},
+		{
+			name:     "rel next with single quotes and spaces",
+			header:   `<https://example.com/next-page>; rel = 'next'`,
+			expected: "https://example.com/next-page",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseNextPageURL(tt.header)
+			if got != tt.expected {
+				t.Errorf("ParseNextPageURL(%q) = %q, want %q", tt.header, got, tt.expected)
+			}
+		})
+	}
+}
 
 func TestClientListReleases(t *testing.T) {
 	etagSent := false
@@ -97,6 +137,88 @@ func TestClientListReleases(t *testing.T) {
 	}
 	if !etagSent {
 		t.Fatal("If-None-Match header was not sent")
+	}
+}
+
+func TestClientListReleasesPagination(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/octocat/multi/releases" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Get("page") == "2" {
+			// Page 2
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, `[
+				{"id": 3, "tag_name": "v1.2.0", "name": "Rel 3", "draft": false},
+				{"id": 4, "tag_name": "v1.3.0-draft", "name": "Rel 4 Draft", "draft": true}
+			]`)
+			return
+		}
+
+		// Page 1
+		w.Header().Set("ETag", `"etag-page1"`)
+		w.Header().Set("Link", fmt.Sprintf(`<%s/repos/octocat/multi/releases?page=2&per_page=100>; rel="next"`, server.URL))
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `[
+			{"id": 1, "tag_name": "v1.0.0", "name": "Rel 1", "draft": false},
+			{"id": 2, "tag_name": "v1.1.0", "name": "Rel 2", "draft": false}
+		]`)
+	}))
+	defer server.Close()
+
+	client := NewClient(WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	releases, etag, notModified, err := client.ListReleases(context.Background(), "octocat", "multi", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if notModified {
+		t.Fatal("expected notModified to be false")
+	}
+	if etag != `"etag-page1"` {
+		t.Fatalf("expected etag \"etag-page1\", got %q", etag)
+	}
+	// Total 3 published releases across pages 1 and 2 (excluding 1 draft)
+	if len(releases) != 3 {
+		t.Fatalf("expected 3 published releases from multi-page response, got %d", len(releases))
+	}
+	if releases[0].TagName != "v1.0.0" || releases[1].TagName != "v1.1.0" || releases[2].TagName != "v1.2.0" {
+		t.Fatalf("unexpected releases list: %+v", releases)
+	}
+}
+
+func TestClientListReleasesRateLimitHeaders(t *testing.T) {
+	resetEpoch := time.Now().Add(30 * time.Minute).Unix()
+	server429 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Ratelimit-Reset", fmt.Sprintf("%d", resetEpoch))
+		w.Header().Set("Retry-After", "120")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"message":"API rate limit exceeded for 1.2.3.4"}`)
+	}))
+	defer server429.Close()
+
+	client := NewClient(WithBaseURL(server429.URL), WithHTTPClient(server429.Client()))
+	_, _, _, err := client.ListReleases(context.Background(), "octocat", "hello", "")
+	if err == nil {
+		t.Fatal("expected rate limited error, got nil")
+	}
+	if !IsRateLimited(err) {
+		t.Fatalf("expected IsRateLimited(err) == true, got %v", err)
+	}
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("expected errors.Is(err, ErrRateLimited) == true")
+	}
+
+	rlErr, ok := AsRateLimitError(err)
+	if !ok {
+		t.Fatalf("expected AsRateLimitError to succeed, got %v", err)
+	}
+	if rlErr.ResetAt.Unix() != resetEpoch {
+		t.Fatalf("expected ResetAt unix %d, got %d", resetEpoch, rlErr.ResetAt.Unix())
+	}
+	if rlErr.RetryAfter != 120*time.Second {
+		t.Fatalf("expected RetryAfter 120s, got %v", rlErr.RetryAfter)
 	}
 }
 

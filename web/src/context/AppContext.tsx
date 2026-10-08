@@ -231,6 +231,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         github_last_sync_at: mod.github_last_sync_at,
         github_last_sync_error: mod.github_last_sync_error,
         github_last_release_id: mod.github_last_release_id,
+        github_backoff_until: mod.github_backoff_until,
       }));
       const ownVersions: ModVersion[] = items.flatMap(({ versions: entries }) => entries.map((version) => ({
         id: version.id, mod_id: version.mod_id, version: version.version, state: version.state as ModVersion['state'],
@@ -1232,6 +1233,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           github_last_sync_at: mod.github_last_sync_at,
           github_last_sync_error: mod.github_last_sync_error,
           github_last_release_id: mod.github_last_release_id,
+        github_backoff_until: mod.github_backoff_until,
         }));
         const ownVersions: ModVersion[] = items.flatMap(({ versions: entries }) => entries.map((version) => ({
           id: version.id, mod_id: version.mod_id, version: version.version, state: version.state as ModVersion['state'],

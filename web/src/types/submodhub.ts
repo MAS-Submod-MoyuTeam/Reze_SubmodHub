@@ -54,6 +54,7 @@ export interface ModSummary {
   github_last_sync_at?: string;
   github_last_sync_error?: string;
   github_last_release_id?: number;
+  github_backoff_until?: string;
 }
 
 export type VersionState =

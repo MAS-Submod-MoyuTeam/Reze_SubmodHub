@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -30,8 +31,105 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("github api error (%d): %s", e.StatusCode, e.Message)
 }
 
+type RateLimitError struct {
+	StatusCode int
+	ResetAt    time.Time
+	RetryAfter time.Duration
+	Message    string
+}
+
+func (e *RateLimitError) Error() string {
+	if !e.ResetAt.IsZero() {
+		return fmt.Sprintf("github api rate limit exceeded (reset at %s): %s", e.ResetAt.UTC().Format(time.RFC3339), e.Message)
+	}
+	if e.RetryAfter > 0 {
+		return fmt.Sprintf("github api rate limit exceeded (retry after %s): %s", e.RetryAfter, e.Message)
+	}
+	return fmt.Sprintf("github api rate limit exceeded: %s", e.Message)
+}
+
+func (e *RateLimitError) Is(target error) bool {
+	return target == ErrRateLimited
+}
+
+func AsRateLimitError(err error) (*RateLimitError, bool) {
+	var rlErr *RateLimitError
+	if errors.As(err, &rlErr) {
+		return rlErr, true
+	}
+	return nil, false
+}
+
+func parseRateLimitError(res *http.Response) *RateLimitError {
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+	msg := strings.TrimSpace(string(body))
+	if msg == "" {
+		msg = http.StatusText(res.StatusCode)
+	}
+
+	var resetAt time.Time
+	var retryAfter time.Duration
+
+	if resetHeader := res.Header.Get("X-Ratelimit-Reset"); resetHeader != "" {
+		if sec, err := strconv.ParseInt(strings.TrimSpace(resetHeader), 10, 64); err == nil && sec > 0 {
+			resetAt = time.Unix(sec, 0)
+		}
+	}
+
+	if retryHeader := res.Header.Get("Retry-After"); retryHeader != "" {
+		retryHeader = strings.TrimSpace(retryHeader)
+		if sec, err := strconv.ParseInt(retryHeader, 10, 64); err == nil && sec > 0 {
+			retryAfter = time.Duration(sec) * time.Second
+		} else if parsedTime, err := http.ParseTime(retryHeader); err == nil {
+			if dur := time.Until(parsedTime); dur > 0 {
+				retryAfter = dur
+			}
+			if resetAt.IsZero() {
+				resetAt = parsedTime
+			}
+		}
+	}
+
+	return &RateLimitError{
+		StatusCode: res.StatusCode,
+		ResetAt:    resetAt,
+		RetryAfter: retryAfter,
+		Message:    msg,
+	}
+}
+
+func ParseNextPageURL(linkHeader string) string {
+	if strings.TrimSpace(linkHeader) == "" {
+		return ""
+	}
+	for _, part := range strings.Split(linkHeader, ",") {
+		part = strings.TrimSpace(part)
+		start := strings.Index(part, "<")
+		end := strings.Index(part, ">")
+		if start >= 0 && end > start+1 {
+			params := part[end+1:]
+			for _, param := range strings.Split(params, ";") {
+				param = strings.TrimSpace(param)
+				paramNoSpace := strings.ReplaceAll(param, " ", "")
+				if strings.HasPrefix(strings.ToLower(paramNoSpace), "rel=") {
+					val := strings.TrimPrefix(strings.ToLower(paramNoSpace), "rel=")
+					val = strings.Trim(val, "\"'")
+					if val == "next" {
+						return strings.TrimSpace(part[start+1 : end])
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func IsRateLimited(err error) bool {
 	if errors.Is(err, ErrRateLimited) {
+		return true
+	}
+	var rlErr *RateLimitError
+	if errors.As(err, &rlErr) {
 		return true
 	}
 	var apiErr *APIError
@@ -114,7 +212,7 @@ func NewClient(opts ...Option) *Client {
 }
 
 func (c *Client) ListReleases(ctx context.Context, owner, repo, etag string) ([]Release, string, bool, error) {
-	relURL := fmt.Sprintf("%s/repos/%s/%s/releases", c.baseURL, url.PathEscape(owner), url.PathEscape(repo))
+	relURL := fmt.Sprintf("%s/repos/%s/%s/releases?per_page=100", c.baseURL, url.PathEscape(owner), url.PathEscape(repo))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, relURL, nil)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("create request failed: %w", err)
@@ -129,26 +227,74 @@ func (c *Client) ListReleases(ctx context.Context, owner, repo, etag string) ([]
 	if err != nil {
 		return nil, "", false, fmt.Errorf("http request failed: %w", err)
 	}
-	defer res.Body.Close()
 
 	if res.StatusCode == http.StatusNotModified {
+		_ = res.Body.Close()
 		return nil, etag, true, nil
 	}
 	if res.StatusCode == http.StatusForbidden || res.StatusCode == http.StatusTooManyRequests {
-		return nil, "", false, ErrRateLimited
+		defer res.Body.Close()
+		return nil, "", false, parseRateLimitError(res)
 	}
 	if res.StatusCode == http.StatusNotFound {
+		_ = res.Body.Close()
 		return nil, "", false, ErrNotFound
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		defer res.Body.Close()
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
 		return nil, "", false, &APIError{StatusCode: res.StatusCode, Message: string(body)}
 	}
 
 	newETag := res.Header.Get("ETag")
-	var allReleases []Release
-	if err := json.NewDecoder(res.Body).Decode(&allReleases); err != nil {
+	var pageReleases []Release
+	if err := json.NewDecoder(res.Body).Decode(&pageReleases); err != nil {
+		_ = res.Body.Close()
 		return nil, "", false, fmt.Errorf("decode releases response failed: %w", err)
+	}
+	nextURL := ParseNextPageURL(res.Header.Get("Link"))
+	_ = res.Body.Close()
+
+	var allReleases []Release
+	allReleases = append(allReleases, pageReleases...)
+
+	// Follow pagination if multiple pages exist (up to 20 pages / 2000 releases safety ceiling)
+	const maxPages = 20
+	for page := 2; nextURL != "" && page <= maxPages; page++ {
+		if strings.HasPrefix(nextURL, "/") {
+			nextURL = c.baseURL + nextURL
+		}
+		nextReq, err := http.NewRequestWithContext(ctx, http.MethodGet, nextURL, nil)
+		if err != nil {
+			return nil, "", false, fmt.Errorf("create next page request failed: %w", err)
+		}
+		nextReq.Header.Set("Accept", "application/vnd.github+json")
+		nextReq.Header.Set("User-Agent", c.userAgent)
+
+		nextRes, err := c.httpClient.Do(nextReq)
+		if err != nil {
+			return nil, "", false, fmt.Errorf("next page request failed: %w", err)
+		}
+
+		if nextRes.StatusCode == http.StatusForbidden || nextRes.StatusCode == http.StatusTooManyRequests {
+			defer nextRes.Body.Close()
+			return nil, "", false, parseRateLimitError(nextRes)
+		}
+		if nextRes.StatusCode < 200 || nextRes.StatusCode >= 300 {
+			defer nextRes.Body.Close()
+			body, _ := io.ReadAll(io.LimitReader(nextRes.Body, 4096))
+			return nil, "", false, &APIError{StatusCode: nextRes.StatusCode, Message: string(body)}
+		}
+
+		var nextPageReleases []Release
+		if err := json.NewDecoder(nextRes.Body).Decode(&nextPageReleases); err != nil {
+			_ = nextRes.Body.Close()
+			return nil, "", false, fmt.Errorf("decode next page releases failed: %w", err)
+		}
+		nextURL = ParseNextPageURL(nextRes.Header.Get("Link"))
+		_ = nextRes.Body.Close()
+
+		allReleases = append(allReleases, nextPageReleases...)
 	}
 
 	// Filter out draft releases
@@ -192,7 +338,7 @@ func (c *Client) DownloadToTemp(ctx context.Context, downloadURL string, maxSize
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		cleanup()
 		if res.StatusCode == http.StatusForbidden || res.StatusCode == http.StatusTooManyRequests {
-			return "", "", 0, ErrRateLimited
+			return "", "", 0, parseRateLimitError(res)
 		}
 		if res.StatusCode == http.StatusNotFound {
 			return "", "", 0, ErrNotFound

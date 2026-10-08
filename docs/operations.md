@@ -50,4 +50,4 @@ curl http://100.72.137.92:18082/healthz
   - `total_managed_mods`：受 GitHub Releases 管理的模组数量
   - `last_sync_at`：最近一次执行同步的时间戳
   - `last_sync_error`：最近一次同步发生的非致命错误描述（如 GitHub API 限流）
-- 故障隔离：外部 GitHub API 网络波动或限流错误仅记录至诊断字段与对应模组的 `github_last_sync_error`，绝不会将 API 容器或数据库判定为不健康状态。
+- 故障隔离与退避：外部 GitHub API 网络波动或限流错误仅记录至诊断字段与对应模组的 `github_last_sync_error`，绝不会将 API 容器或数据库判定为不健康状态。当遭遇 HTTP 403/429 速率限制时，系统自动提取 `X-Ratelimit-Reset` 与 `Retry-After` 进入自动退避期，退避期内自动暂停向 GitHub 轮询以保护 IP 配额。

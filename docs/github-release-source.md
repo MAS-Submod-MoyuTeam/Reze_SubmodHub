@@ -73,9 +73,14 @@ SubmodHub 仅允许下载 `.zip` 格式的 Release 资产文件，非 `.zip` 文
 - 接口地址：`POST /api/v1/author/mods/{id}/github-sync`
 - 同步完成后，工作台将即时更新显示同步结果统计（新增版本数、跳过数、失败原因）。
 
-### API 速率限制（Rate Limit）
-- SubmodHub 采用匿名 GitHub REST API 读取公开 Releases，并全程携带 `ETag` / `If-None-Match`。未更新时返回 HTTP 304，不消耗内容下载配额。
-- 若触发 GitHub API 速率限制（HTTP 403 / 429），系统会自动退避，并在模组状态中记录 `github_last_sync_error: github api rate limit exceeded`。此错误属于非致命错误，不会导致模组下架或服务崩溃。
+### 分页与 ETag 缓存策略
+- **分页拉取（Pagination）**：单次请求默认拉取每页最多 100 条（`per_page=100`）。若版本数量超过 100 条，系统会自动解析 GitHub RFC 5988 `Link` 分页头（跟随 `rel="next"`），支持拉取多页版本（设置安全保护上限 20 页 / 最多 2000 条 Releases），确保全部历史版本均能完整进入同步流程。
+- **ETag 无条件保存**：首页响应返回的 `ETag` 在收到成功响应（HTTP 200）后无条件保存；即使仓库暂无 Release、列表为空或全部版本均已被过滤，也会完整保存 `newETag` 并在后续轮询中持续发送 `If-None-Match`。未变更时返回 HTTP 304，完全不消耗内容配额。
+
+### API 速率限制与自动退避（Rate Limit Backoff）
+- **自动解析重置时间**：当触发 GitHub API 速率限制（HTTP 403 / 429）时，系统自动解析响应头中的 `X-Ratelimit-Reset`（Unix 时间戳）或 `Retry-After`（秒数/标准时间格式）。若未提供具体头部，系统采用默认 15 分钟退避间隔。
+- **保护性退避锁定**：退避期内，模组与后台全局同步器记录 `github_backoff_until` 截止时间。在截止时间到来前，系统定时轮询与手动同步将自动跳过外部网络请求，并在模组状态记录 `github_last_sync_error: github api rate limit backoff active until <UTC时间> (remaining: <剩余时间>)`，彻底防止短时间内连续空耗 IP 配额。
+- **自动恢复**：退避时间过后，下一次同步请求恢复正常执行，成功后自动清除退避状态。
 
 ### 切换回 Local 源与回滚演练
 - 作者或管理员可在模组编辑窗口将来源切回 **本站上传 (local)**，或调用 `PATCH /api/v1/author/mods/{id}/source` 设置 `{"source_type":"local"}`。

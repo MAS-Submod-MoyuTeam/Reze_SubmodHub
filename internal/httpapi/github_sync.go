@@ -61,14 +61,58 @@ func (s *Store) SyncMod(ctx context.Context, modID string) (*SyncSummary, error)
 		return nil, errors.New("mod is not configured for github_releases source")
 	}
 
+	// Rate limit backoff check
+	s.mu.RLock()
+	var inBackoff bool
+	var backoffDeadline time.Time
+	if !s.gitHubBackoffUntil.IsZero() && now.Before(s.gitHubBackoffUntil) {
+		inBackoff = true
+		backoffDeadline = s.gitHubBackoffUntil
+	} else if targetMod.GitHubBackoffUntil != nil && now.Before(*targetMod.GitHubBackoffUntil) {
+		inBackoff = true
+		backoffDeadline = *targetMod.GitHubBackoffUntil
+	}
+	s.mu.RUnlock()
+
+	if inBackoff {
+		remaining := backoffDeadline.Sub(now).Round(time.Second)
+		msg := fmt.Sprintf("github api rate limit backoff active until %s (remaining: %s)",
+			backoffDeadline.UTC().Format(time.RFC3339), remaining)
+		return &SyncSummary{
+			ModID:     modID,
+			SyncedAt:  now,
+			Failed:    1,
+			LastError: msg,
+		}, nil
+	}
+
 	client := s.getGitHubClient()
 	releases, newETag, notModified, err := client.ListReleases(ctx, targetMod.GitHubOwner, targetMod.GitHubRepo, targetMod.GitHubETag)
 	if err != nil {
+		var backoffDeadline *time.Time
+		if github.IsRateLimited(err) {
+			deadline := now.Add(15 * time.Minute)
+			if rlErr, ok := github.AsRateLimitError(err); ok {
+				if rlErr.ResetAt.After(now) {
+					deadline = rlErr.ResetAt
+				} else if rlErr.RetryAfter > 0 {
+					deadline = now.Add(rlErr.RetryAfter)
+				}
+			}
+			backoffDeadline = &deadline
+		}
+
 		s.mu.Lock()
+		if backoffDeadline != nil {
+			s.gitHubBackoffUntil = *backoffDeadline
+		}
 		for i := range s.Catalog.Mods {
 			if s.Catalog.Mods[i].ID == modID {
 				s.Catalog.Mods[i].GitHubLastSyncAt = &now
 				s.Catalog.Mods[i].GitHubLastSyncError = err.Error()
+				if backoffDeadline != nil {
+					s.Catalog.Mods[i].GitHubBackoffUntil = backoffDeadline
+				}
 				_ = s.saveLocked()
 				break
 			}
@@ -88,6 +132,29 @@ func (s *Store) SyncMod(ctx context.Context, modID string) (*SyncSummary, error)
 			if s.Catalog.Mods[i].ID == modID {
 				s.Catalog.Mods[i].GitHubLastSyncAt = &now
 				s.Catalog.Mods[i].GitHubLastSyncError = ""
+				s.Catalog.Mods[i].GitHubBackoffUntil = nil
+				_ = s.saveLocked()
+				break
+			}
+		}
+		s.mu.Unlock()
+		return &SyncSummary{
+			ModID:    modID,
+			SyncedAt: now,
+			Items:    []SyncItemResult{},
+		}, nil
+	}
+
+	if len(releases) == 0 {
+		s.mu.Lock()
+		for i := range s.Catalog.Mods {
+			if s.Catalog.Mods[i].ID == modID {
+				s.Catalog.Mods[i].GitHubLastSyncAt = &now
+				s.Catalog.Mods[i].GitHubLastSyncError = ""
+				s.Catalog.Mods[i].GitHubBackoffUntil = nil
+				if newETag != "" {
+					s.Catalog.Mods[i].GitHubETag = newETag
+				}
 				_ = s.saveLocked()
 				break
 			}
@@ -175,6 +242,26 @@ func (s *Store) SyncMod(ctx context.Context, modID string) (*SyncSummary, error)
 		// Download to temp file
 		tmpPath, _, _, dlErr := client.DownloadToTemp(ctx, selected.DownloadURL, maxArchiveSize)
 		if dlErr != nil {
+			if github.IsRateLimited(dlErr) {
+				deadline := now.Add(15 * time.Minute)
+				if rlErr, ok := github.AsRateLimitError(dlErr); ok {
+					if rlErr.ResetAt.After(now) {
+						deadline = rlErr.ResetAt
+					} else if rlErr.RetryAfter > 0 {
+						deadline = now.Add(rlErr.RetryAfter)
+					}
+				}
+				s.mu.Lock()
+				s.gitHubBackoffUntil = deadline
+				for idx := range s.Catalog.Mods {
+					if s.Catalog.Mods[idx].ID == modID {
+						s.Catalog.Mods[idx].GitHubBackoffUntil = &deadline
+						_ = s.saveLocked()
+						break
+					}
+				}
+				s.mu.Unlock()
+			}
 			summary.Failed++
 			summary.Items = append(summary.Items, SyncItemResult{
 				ReleaseID: rel.ID,
@@ -334,6 +421,7 @@ func (s *Store) SyncMod(ctx context.Context, modID string) (*SyncSummary, error)
 			if s.Catalog.Mods[idx].ID == modID {
 				s.Catalog.Mods[idx].GitHubLastReleaseID = rel.ID
 				s.Catalog.Mods[idx].GitHubLastSyncAt = &now
+				s.Catalog.Mods[idx].GitHubBackoffUntil = nil
 				if hasBlockers {
 					s.Catalog.Mods[idx].GitHubLastSyncError = fmt.Sprintf("scan blocked on %s: %s", tag, strings.Join(report.Unsupported, "; "))
 				} else {
@@ -378,12 +466,14 @@ func (s *Store) SyncMod(ctx context.Context, modID string) (*SyncSummary, error)
 		}
 		s.mu.Unlock()
 		summary.LastError = lastErrMsg
-	} else if summary.Created > 0 || summary.Skipped > 0 {
+	} else {
+		// All releases succeeded or skipped: unconditionally save newETag and clear errors & backoff
 		s.mu.Lock()
 		for i := range s.Catalog.Mods {
 			if s.Catalog.Mods[i].ID == modID {
 				s.Catalog.Mods[i].GitHubLastSyncAt = &now
 				s.Catalog.Mods[i].GitHubLastSyncError = ""
+				s.Catalog.Mods[i].GitHubBackoffUntil = nil
 				if newETag != "" {
 					s.Catalog.Mods[i].GitHubETag = newETag
 				}
@@ -399,6 +489,8 @@ func (s *Store) SyncMod(ctx context.Context, modID string) (*SyncSummary, error)
 
 func (s *Store) SyncAllGitHubMods(ctx context.Context) map[string]*SyncSummary {
 	s.mu.RLock()
+	globalBackoff := !s.gitHubBackoffUntil.IsZero() && time.Now().Before(s.gitHubBackoffUntil)
+	backoffDeadline := s.gitHubBackoffUntil
 	modIDs := make([]string, 0)
 	for _, m := range s.Catalog.Mods {
 		if m.GetSourceType() == "github_releases" {
@@ -408,6 +500,19 @@ func (s *Store) SyncAllGitHubMods(ctx context.Context) map[string]*SyncSummary {
 	s.mu.RUnlock()
 
 	results := make(map[string]*SyncSummary, len(modIDs))
+	if globalBackoff {
+		log.Printf("[github-sync] rate limit backoff active until %s, skipping periodic poll", backoffDeadline.UTC().Format(time.RFC3339))
+		for _, id := range modIDs {
+			results[id] = &SyncSummary{
+				ModID:     id,
+				SyncedAt:  time.Now(),
+				Failed:    1,
+				LastError: fmt.Sprintf("github api rate limit backoff active until %s", backoffDeadline.UTC().Format(time.RFC3339)),
+			}
+		}
+		return results
+	}
+
 	for _, id := range modIDs {
 		summary, err := s.SyncMod(ctx, id)
 		if err != nil {

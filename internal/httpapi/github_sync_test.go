@@ -311,3 +311,149 @@ func TestGitHubSyncTickerLifecycle(t *testing.T) {
 		t.Fatalf("second close failed: %v", err)
 	}
 }
+
+func TestGitHubSyncEmptyReleasesSavesETag(t *testing.T) {
+	etagSent := false
+	ghServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/octocat/empty/releases" {
+			if r.Header.Get("If-None-Match") == `"etag-empty-1"` {
+				etagSent = true
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			w.Header().Set("ETag", `"etag-empty-1"`)
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, `[]`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ghServer.Close()
+
+	store, err := NewStore(t.TempDir(), Catalog{
+		Mods: []Mod{
+			{
+				ID:          "mod_empty",
+				Title:       "Empty Repo Mod",
+				Summary:     "Summary",
+				Category:    "submod",
+				Author:      Author{ID: "author_1", DisplayName: "Author One"},
+				SourceType:  "github_releases",
+				GitHubOwner: "octocat",
+				GitHubRepo:  "empty",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.GitHubClient = github.NewClient(github.WithBaseURL(ghServer.URL), github.WithHTTPClient(ghServer.Client()))
+
+	// 1. Initial sync with empty releases from GitHub: should save ETag and timestamp
+	summary, err := store.SyncMod(context.Background(), "mod_empty")
+	if err != nil {
+		t.Fatalf("sync empty repo failed: %v", err)
+	}
+	if summary.Created != 0 || summary.Skipped != 0 || summary.Failed != 0 {
+		t.Fatalf("unexpected summary for empty releases: %+v", summary)
+	}
+
+	store.mu.RLock()
+	mod := store.Catalog.Mods[0]
+	if mod.GitHubETag != `"etag-empty-1"` {
+		t.Fatalf("expected GitHubETag \"etag-empty-1\", got %q", mod.GitHubETag)
+	}
+	if mod.GitHubLastSyncAt == nil {
+		t.Fatal("expected GitHubLastSyncAt to be updated on empty release list")
+	}
+	if mod.GitHubLastSyncError != "" {
+		t.Fatalf("expected empty GitHubLastSyncError, got %q", mod.GitHubLastSyncError)
+	}
+	store.mu.RUnlock()
+
+	// 2. Second sync: must send saved If-None-Match header
+	summary2, err := store.SyncMod(context.Background(), "mod_empty")
+	if err != nil {
+		t.Fatalf("second sync failed: %v", err)
+	}
+	if !etagSent {
+		t.Fatal("expected If-None-Match header to be sent on second sync")
+	}
+	if summary2.Created != 0 || summary2.Failed != 0 {
+		t.Fatalf("unexpected summary2: %+v", summary2)
+	}
+}
+
+func TestGitHubSyncRateLimitBackoff(t *testing.T) {
+	requestsCount := 0
+	futureReset := time.Now().Add(45 * time.Minute)
+	ghServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestsCount++
+		w.Header().Set("X-Ratelimit-Reset", fmt.Sprintf("%d", futureReset.Unix()))
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"message":"API rate limit exceeded"}`)
+	}))
+	defer ghServer.Close()
+
+	store, err := NewStore(t.TempDir(), Catalog{
+		Mods: []Mod{
+			{
+				ID:          "mod_ratelimit",
+				Title:       "Ratelimit Mod",
+				Summary:     "Summary",
+				Category:    "submod",
+				Author:      Author{ID: "author_1", DisplayName: "Author One"},
+				SourceType:  "github_releases",
+				GitHubOwner: "octocat",
+				GitHubRepo:  "ratelimited",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.GitHubClient = github.NewClient(github.WithBaseURL(ghServer.URL), github.WithHTTPClient(ghServer.Client()))
+
+	// 1. First sync hits 429
+	summary1, err := store.SyncMod(context.Background(), "mod_ratelimit")
+	if err != nil {
+		t.Fatalf("SyncMod should not return fatal err: %v", err)
+	}
+	if summary1.Failed != 1 {
+		t.Fatalf("expected 1 failure on rate limit, got %+v", summary1)
+	}
+	if requestsCount != 1 {
+		t.Fatalf("expected 1 request, got %d", requestsCount)
+	}
+
+	store.mu.RLock()
+	mod := store.Catalog.Mods[0]
+	if mod.GitHubBackoffUntil == nil {
+		t.Fatal("expected GitHubBackoffUntil to be recorded on mod")
+	}
+	if mod.GitHubBackoffUntil.Unix() != futureReset.Unix() {
+		t.Fatalf("expected backoff until %v, got %v", futureReset.Unix(), mod.GitHubBackoffUntil.Unix())
+	}
+	store.mu.RUnlock()
+
+	// 2. Second sync immediately: should be suppressed by backoff, NOT making a network request
+	summary2, err := store.SyncMod(context.Background(), "mod_ratelimit")
+	if err != nil {
+		t.Fatalf("SyncMod should not return fatal err: %v", err)
+	}
+	if summary2.Failed != 1 {
+		t.Fatalf("expected failure recorded: %+v", summary2)
+	}
+	if requestsCount != 1 {
+		t.Fatalf("expected requestsCount to stay 1 due to backoff, got %d", requestsCount)
+	}
+
+	// 3. SyncAllGitHubMods should also be suppressed by store-level backoff
+	allResults := store.SyncAllGitHubMods(context.Background())
+	if requestsCount != 1 {
+		t.Fatalf("SyncAllGitHubMods should have skipped network requests, got %d calls", requestsCount)
+	}
+	if allResults["mod_ratelimit"] == nil || allResults["mod_ratelimit"].Failed != 1 {
+		t.Fatalf("expected backoff summary in SyncAllGitHubMods: %+v", allResults)
+	}
+}
