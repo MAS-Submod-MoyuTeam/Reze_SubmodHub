@@ -83,10 +83,14 @@ export async function syncAuthorModGitHub(
   id: string,
   fetcher: typeof fetch = fetch
 ): Promise<SyncSummary> {
-  return json(
-    await fetcher(endpoint(base, `/author/mods/${encodeURIComponent(id)}/github-sync`), {
-      method: 'POST',
-      credentials: 'same-origin',
-    })
-  );
+  const url = endpoint(base, `/author/mods/${encodeURIComponent(id)}/github-sync`);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetcher(url, { method: 'POST', credentials: 'same-origin' });
+    const contentType = response.headers.get('content-type') || '';
+    if (response.ok || ![502, 503, 504].includes(response.status) || contentType.includes('json')) {
+      return json(response);
+    }
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+  }
+  throw new Error('github_sync_gateway_unavailable');
 }

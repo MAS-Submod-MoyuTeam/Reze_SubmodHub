@@ -318,6 +318,29 @@ func (c *Client) executeRequest(ctx context.Context, targetURL string, headers m
 	return nil, ErrTooManyRedirects
 }
 
+func (c *Client) LatestRelease(ctx context.Context, owner, repo string) (*Release, error) {
+	endpoint := fmt.Sprintf("%s/repos/%s/%s/releases/latest", c.baseURL, url.PathEscape(owner), url.PathEscape(repo))
+	res, err := c.executeRequest(ctx, endpoint, map[string]string{"Accept": "application/vnd.github+json", "User-Agent": c.userAgent})
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+	if res.StatusCode == http.StatusForbidden || res.StatusCode == http.StatusTooManyRequests {
+		return nil, parseRateLimitError(res)
+	}
+	if res.StatusCode != http.StatusOK {
+		return nil, &APIError{StatusCode: res.StatusCode, Message: "latest release lookup failed"}
+	}
+	var release Release
+	if err := json.NewDecoder(res.Body).Decode(&release); err != nil {
+		return nil, err
+	}
+	return &release, nil
+}
+
 func (c *Client) ListReleases(ctx context.Context, owner, repo, etag string) ([]Release, string, bool, error) {
 	relURL := fmt.Sprintf("%s/repos/%s/%s/releases?per_page=100", c.baseURL, url.PathEscape(owner), url.PathEscape(repo))
 

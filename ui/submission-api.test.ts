@@ -141,3 +141,15 @@ test('triggers manual github release synchronization', async () => {
   assert.equal(summary.created, 1);
   assert.equal(summary.items[0].tag, 'v1.0.0');
 });
+
+test('retries transient gateway errors without retrying JSON API errors', async () => {
+  let attempts = 0;
+  const fetcher = (async () => {
+    attempts += 1;
+    if (attempts < 3) return new Response('<html>gateway unavailable</html>', { status: 503, headers: { 'Content-Type': 'text/html' } });
+    return new Response(JSON.stringify({ mod_id: 'mod_test', synced_at: '2026-10-08T12:00:00Z', created: 0, skipped: 1, failed: 0, items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  const summary = await syncAuthorModGitHub('/api/v1', 'mod_test', fetcher);
+  assert.equal(summary.skipped, 1);
+  assert.equal(attempts, 3);
+});

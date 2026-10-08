@@ -139,6 +139,14 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 		}, nil
 	}
 
+	latestRelease, latestErr := client.LatestRelease(ctx, targetMod.GitHubOwner, targetMod.GitHubRepo)
+	if latestErr == nil {
+		// Reconcile after imports, including the 304 and already-imported paths.
+		defer s.followGitHubLatest(modID, latestRelease.ID)
+	} else if !github.IsNotFound(latestErr) {
+		log.Printf("[github-sync] latest release lookup for %s failed: %v", modID, latestErr)
+	}
+
 	if notModified {
 		s.mu.Lock()
 		for i := range s.Catalog.Mods {
@@ -242,6 +250,16 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 		// Select release asset
 		selected, selectErr := github.SelectReleaseAsset(rel, targetMod.GitHubAssetRegex, targetMod.GitHubSourceCode)
 		if selectErr != nil {
+			if errors.Is(selectErr, github.ErrNoMatchingAsset) {
+				summary.Skipped++
+				summary.Items = append(summary.Items, SyncItemResult{
+					ReleaseID: rel.ID,
+					Tag:       tag,
+					Action:    "skipped",
+					Reason:    selectErr.Error(),
+				})
+				continue
+			}
 			summary.Failed++
 			summary.Items = append(summary.Items, SyncItemResult{
 				ReleaseID: rel.ID,
@@ -439,11 +457,6 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 			}
 			if state == "published" {
 				sub.PublishedAt = &now
-				for idx := range s.Catalog.Mods {
-					if s.Catalog.Mods[idx].ID == modID {
-						s.Catalog.Mods[idx].LatestVersionID = versionID
-					}
-				}
 			}
 			s.Catalog.Submissions = append(s.Catalog.Submissions, sub)
 		}
@@ -523,6 +536,23 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 	}
 
 	return summary, nil
+}
+
+func (s *Store) followGitHubLatest(modID string, releaseID int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, version := range s.Catalog.Versions {
+		if version.ModID != modID || version.GitHubReleaseID != releaseID || version.State != "published" {
+			continue
+		}
+		for i := range s.Catalog.Mods {
+			if s.Catalog.Mods[i].ID == modID && s.Catalog.Mods[i].LatestVersionID != version.ID {
+				s.Catalog.Mods[i].LatestVersionID = version.ID
+				_ = s.saveLocked()
+			}
+		}
+		return
+	}
 }
 
 func allowSourceRootReadme(report *packagezip.Report) {

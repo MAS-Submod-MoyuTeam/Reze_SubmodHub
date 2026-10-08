@@ -1240,10 +1240,10 @@ export const AuthorWorkbench: React.FC = () => {
 
       {/* New Mod Draft Modal */}
       {isNewModModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-          <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95">
-            <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-neutral-900">{editingModId ? '编辑模组元数据 (PATCH /author/mods/{id})' : '新建模组草稿 (POST /author/mods)'}</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs">
+          <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-5xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
+            <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between shrink-0">
+              <h3 className="text-sm font-semibold text-neutral-900">{editingModId ? '编辑模组元数据' : '新建模组草稿'}</h3>
               <button
                 onClick={() => { setIsNewModModalOpen(false); setEditingModId(null); }}
                 className="text-neutral-400 hover:text-neutral-600 text-xs"
@@ -1252,7 +1252,10 @@ export const AuthorWorkbench: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleCreateDraftSubmit} className="p-5 space-y-4 text-xs">
+            <form onSubmit={handleCreateDraftSubmit} className="flex min-h-0 flex-1 flex-col text-xs">
+              <div className="min-h-0 flex-1 overflow-y-auto p-5">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <div className="min-w-0 space-y-4">
               <div>
                 <label className="block font-medium text-neutral-700 mb-1">内容与版本来源 (Source)</label>
                 <div className="grid grid-cols-2 gap-2 p-1 bg-neutral-100 rounded border border-neutral-200">
@@ -1393,6 +1396,9 @@ export const AuthorWorkbench: React.FC = () => {
                 />
                 <p className="mt-1 text-[11px] text-neutral-400">仅修改目录中的作者显示，不改变上传者权限。</p>
               </div>
+                  </div>
+
+                  <div className="min-w-0 space-y-4">
 
               <div className="rounded border border-neutral-200 bg-neutral-50 p-3 space-y-2">
                 <label className="block font-medium text-neutral-700">模组详情图（可选，最多 8 张）</label>
@@ -1473,7 +1479,11 @@ export const AuthorWorkbench: React.FC = () => {
                 </div>
               </div>
 
-              <div className="pt-2 flex justify-end gap-2 border-t border-neutral-100">
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-5 py-3 flex justify-end gap-2 border-t border-neutral-100 bg-white shrink-0">
                 <button
                   type="button"
                   onClick={() => { setIsNewModModalOpen(false); setEditingModId(null); }}

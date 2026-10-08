@@ -29,6 +29,46 @@ func createTestZip(t *testing.T, submodCode string) []byte {
 	return buf.Bytes()
 }
 
+func TestGitHubLatestFollowsMarkedReleaseEvenWhenListUnchanged(t *testing.T) {
+	latestID := int64(101)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/octocat/hello/releases/latest" {
+			fmt.Fprintf(w, `{"id":%d}`, latestID)
+			return
+		}
+		if r.URL.Path == "/repos/octocat/hello/releases" {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	store, err := NewStore(t.TempDir(), Catalog{
+		Mods: []Mod{{ID: "latest", SourceType: "github_releases", GitHubOwner: "octocat", GitHubRepo: "hello", LatestVersionID: "newer"}},
+		Versions: map[string]Version{
+			"older":   {ID: "older", ModID: "latest", State: "published", GitHubReleaseID: 101},
+			"newer":   {ID: "newer", ModID: "latest", State: "published", GitHubReleaseID: 102},
+			"blocked": {ID: "blocked", ModID: "latest", State: "scanning", GitHubReleaseID: 103},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.GitHubClient = github.NewClient(github.WithBaseURL(server.URL), github.WithHTTPClient(server.Client()))
+	for _, tc := range []struct {
+		release int64
+		want    string
+	}{{101, "older"}, {102, "newer"}, {103, "newer"}, {999, "newer"}} {
+		latestID = tc.release
+		if _, err := store.SyncMod(context.Background(), "latest"); err != nil {
+			t.Fatal(err)
+		}
+		if got := store.Catalog.Mods[0].LatestVersionID; got != tc.want {
+			t.Fatalf("latest release %d: got %q, want %q", tc.release, got, tc.want)
+		}
+	}
+}
+
 func TestGitHubSourceZipRootReadmeDoesNotBlockPublishing(t *testing.T) {
 	for _, tc := range []struct {
 		name, extra, wantState string
@@ -205,6 +245,41 @@ func TestGitHubSyncSuccessAndIdempotency(t *testing.T) {
 	}
 }
 
+func TestGitHubSyncSkipsReleaseWithoutMatchingAsset(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/octocat/no-asset/releases" {
+			fmt.Fprint(w, `[{"id":404,"tag_name":"v2.0.0","assets":[{"id":1,"name":"installer.exe","browser_download_url":"https://example.com/installer.exe"}]}]`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	store, err := NewStore(t.TempDir(), Catalog{Mods: []Mod{{
+		ID: "mod_no_asset", Title: "No Asset", Category: "submod", Author: Author{ID: "author_1"},
+		SourceType: "github_releases", GitHubOwner: "octocat", GitHubRepo: "no-asset",
+		GitHubAssetRegex: `^Expected-.*\.zip$`, GitHubSourceCode: false,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.GitHubClient = github.NewClient(github.WithBaseURL(server.URL), github.WithHTTPClient(server.Client()))
+
+	summary, err := store.SyncMod(context.Background(), "mod_no_asset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Created != 0 || summary.Failed != 0 || summary.Skipped != 1 {
+		t.Fatalf("expected one skipped release and no failures: %+v", summary)
+	}
+	if summary.Items[0].Action != "skipped" || summary.Items[0].Reason != "no matching zip release asset found and source code fallback is disabled" {
+		t.Fatalf("unexpected skipped item: %+v", summary.Items[0])
+	}
+	if store.Catalog.Mods[0].GitHubLastSyncError != "" {
+		t.Fatalf("expected no sync error for skipped release, got %q", store.Catalog.Mods[0].GitHubLastSyncError)
+	}
+}
+
 func TestGitHubSyncPersistsETagWhenReleaseImportFails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/repos/octocat/partial/releases" {
@@ -220,7 +295,7 @@ func TestGitHubSyncPersistsETagWhenReleaseImportFails(t *testing.T) {
 	store, err := NewStore(t.TempDir(), Catalog{Mods: []Mod{{
 		ID: "partial", Author: Author{ID: "author"}, Category: "submod",
 		SourceType: "github_releases", GitHubOwner: "octocat", GitHubRepo: "partial",
-		GitHubAssetRegex: `.*\\.zip`,
+		GitHubAssetRegex: `[invalid`,
 	}}})
 	if err != nil {
 		t.Fatal(err)
