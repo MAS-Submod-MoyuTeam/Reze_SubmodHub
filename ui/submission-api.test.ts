@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, createAuthorMod, reorderModImages, uploadModImages } from './submission-api';
+import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, createAuthorMod, reorderModImages, uploadModImages, updateAuthorModSource, syncAuthorModGitHub } from './submission-api';
 
 test('loads the authenticated author workspace', async () => {
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -97,4 +97,47 @@ test('creates a mod with github source configuration', async () => {
   assert.equal(result.source_type, 'github_releases');
   assert.equal(result.github_owner, 'octocat');
   assert.equal(result.github_repo, 'hello-world');
+});
+
+test('updates mod source configuration through dedicated endpoint', async () => {
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), '/api/v1/author/mods/mod_test/source');
+    assert.equal(init?.method, 'PATCH');
+    assert.equal(init?.credentials, 'same-origin');
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.source_type, 'github_releases');
+    assert.equal(body.github_owner, 'octocat');
+    assert.equal(body.github_repo, 'hello');
+    return new Response(JSON.stringify({
+      id: 'mod_test',
+      source_type: 'github_releases',
+      github_owner: 'octocat',
+      github_repo: 'hello',
+    }), { status: 200 });
+  }) as typeof fetch;
+  const result = await updateAuthorModSource('/api/v1', 'mod_test', {
+    source_type: 'github_releases',
+    github_owner: 'octocat',
+    github_repo: 'hello',
+  }, fetcher);
+  assert.equal(result.source_type, 'github_releases');
+});
+
+test('triggers manual github release synchronization', async () => {
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), '/api/v1/author/mods/mod_test/github-sync');
+    assert.equal(init?.method, 'POST');
+    assert.equal(init?.credentials, 'same-origin');
+    return new Response(JSON.stringify({
+      mod_id: 'mod_test',
+      synced_at: '2026-10-08T12:00:00Z',
+      created: 1,
+      skipped: 0,
+      failed: 0,
+      items: [{ release_id: 1, tag: 'v1.0.0', action: 'created' }],
+    }), { status: 200 });
+  }) as typeof fetch;
+  const summary = await syncAuthorModGitHub('/api/v1', 'mod_test', fetcher);
+  assert.equal(summary.created, 1);
+  assert.equal(summary.items[0].tag, 'v1.0.0');
 });

@@ -32,3 +32,61 @@ export async function clearVersionDeprecation(base: string, id: string, fetcher:
 export async function editAuthorVersion(base: string, id: string, version: string, releaseNotes: string, dependencies: unknown[] = [], fetcher: typeof fetch = fetch): Promise<ApiVersion> { return json(await fetcher(endpoint(base, `/author/versions/${encodeURIComponent(id)}/edit`), { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version, release_notes: releaseNotes, dependencies }) })); }
 export async function decideReview(base: string, submissionID: string, decision: 'approve' | 'reject', reason: string, fetcher: typeof fetch = fetch): Promise<ApiSubmission> { return json(await fetcher(endpoint(base, `/review/submissions/${encodeURIComponent(submissionID)}/decision`), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision, reason }) })); }
 export async function publishReview(base: string, submissionID: string, fetcher: typeof fetch = fetch): Promise<ApiSubmission> { return json(await fetcher(endpoint(base, `/review/submissions/${encodeURIComponent(submissionID)}/publish`), { method: 'POST', credentials: 'same-origin' })); }
+
+export interface AuthorModSourceInput {
+  source_type: 'local' | 'github_releases';
+  github_owner?: string;
+  github_repo?: string;
+  github_asset_regex?: string;
+  github_source_code?: boolean;
+}
+
+export interface SyncItemResult {
+  release_id: number;
+  tag: string;
+  action: 'created' | 'skipped' | 'failed';
+  reason?: string;
+  version_id?: string;
+  asset_name?: string;
+  sha256?: string;
+  size_bytes?: number;
+}
+
+export interface SyncSummary {
+  mod_id: string;
+  synced_at: string;
+  created: number;
+  skipped: number;
+  failed: number;
+  items: SyncItemResult[];
+  last_error?: string;
+}
+
+export async function updateAuthorModSource(
+  base: string,
+  id: string,
+  input: AuthorModSourceInput,
+  fetcher: typeof fetch = fetch
+): Promise<ApiMod> {
+  return json(
+    await fetcher(endpoint(base, `/author/mods/${encodeURIComponent(id)}/source`), {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  );
+}
+
+export async function syncAuthorModGitHub(
+  base: string,
+  id: string,
+  fetcher: typeof fetch = fetch
+): Promise<SyncSummary> {
+  return json(
+    await fetcher(endpoint(base, `/author/mods/${encodeURIComponent(id)}/github-sync`), {
+      method: 'POST',
+      credentials: 'same-origin',
+    })
+  );
+}

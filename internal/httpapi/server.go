@@ -512,6 +512,10 @@ func (s *Store) authorVersionResource(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "validation_failed", "uploaded or rejected version requires a version identifier")
 			return
 		}
+		if version.SourceType == "github_releases" && strings.TrimSpace(req.Version) != "" && strings.TrimSpace(req.Version) != version.Version {
+			writeError(w, http.StatusConflict, "github_source_managed", "cannot modify version tag of github-managed release")
+			return
+		}
 		if req.Dependencies != nil {
 			for _, dependency := range *req.Dependencies {
 				if dependency.LinkedModID == "" {
@@ -545,7 +549,7 @@ func (s *Store) authorVersionResource(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		version.Version = strings.TrimSpace(req.Version)
-		if version.State == "draft" || version.State == "rejected" {
+		if version.State == "draft" || version.State == "rejected" || version.SourceType == "github_releases" {
 			version.ReleaseNotes = req.ReleaseNotes
 		}
 		if req.Dependencies != nil {
@@ -643,6 +647,116 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not supported")
 		}
+		return
+	}
+	if len(parts) == 2 && parts[1] == "source" && r.Method == http.MethodPatch {
+		modID := parts[0]
+		isAdmin := containsRole(s.effectiveRoles(session), "admin")
+		s.mu.RLock()
+		index := -1
+		for i := range s.Catalog.Mods {
+			if s.Catalog.Mods[i].ID == modID {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			s.mu.RUnlock()
+			writeError(w, 404, "not_found", "mod was not found")
+			return
+		}
+		if s.Catalog.Mods[index].Author.ID != session.User.ID && !isAdmin {
+			s.mu.RUnlock()
+			writeError(w, 403, "forbidden", "administrator or author permission required")
+			return
+		}
+		s.mu.RUnlock()
+		r.Body = http.MaxBytesReader(w, r.Body, 16384)
+		var req struct {
+			SourceType       string `json:"source_type"`
+			GitHubOwner      string `json:"github_owner"`
+			GitHubRepo       string `json:"github_repo"`
+			GitHubAssetRegex string `json:"github_asset_regex"`
+			GitHubSourceCode bool   `json:"github_source_code"`
+		}
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if dec.Decode(&req) != nil {
+			writeError(w, 400, "validation_failed", "invalid source configuration body")
+			return
+		}
+		if err := validateSourceConfig(req.SourceType, req.GitHubOwner, req.GitHubRepo, req.GitHubAssetRegex, req.GitHubSourceCode); err != nil {
+			writeError(w, 400, "validation_failed", err.Error())
+			return
+		}
+		s.mu.Lock()
+		index = -1
+		for i := range s.Catalog.Mods {
+			if s.Catalog.Mods[i].ID == modID {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			s.mu.Unlock()
+			writeError(w, 404, "not_found", "mod was not found")
+			return
+		}
+		mod := &s.Catalog.Mods[index]
+		srcType := req.SourceType
+		if srcType == "" {
+			srcType = "local"
+		}
+		if mod.GitHubOwner != strings.TrimSpace(req.GitHubOwner) || mod.GitHubRepo != strings.TrimSpace(req.GitHubRepo) {
+			mod.GitHubETag = ""
+		}
+		mod.SourceType = srcType
+		mod.GitHubOwner = strings.TrimSpace(req.GitHubOwner)
+		mod.GitHubRepo = strings.TrimSpace(req.GitHubRepo)
+		mod.GitHubAssetRegex = strings.TrimSpace(req.GitHubAssetRegex)
+		mod.GitHubSourceCode = req.GitHubSourceCode
+		mod.GitHubLastSyncError = ""
+		if err := s.saveLocked(); err != nil {
+			s.mu.Unlock()
+			writeError(w, 500, "storage_error", "mod source was not saved")
+			return
+		}
+		updated := *mod
+		s.mu.Unlock()
+		writeJSON(w, http.StatusOK, updated)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "github-sync" && r.Method == http.MethodPost {
+		modID := parts[0]
+		isAdmin := containsRole(s.effectiveRoles(session), "admin")
+		s.mu.RLock()
+		var mod *Mod
+		for i := range s.Catalog.Mods {
+			if s.Catalog.Mods[i].ID == modID {
+				m := s.Catalog.Mods[i]
+				mod = &m
+				break
+			}
+		}
+		s.mu.RUnlock()
+		if mod == nil {
+			writeError(w, 404, "not_found", "mod was not found")
+			return
+		}
+		if mod.Author.ID != session.User.ID && !isAdmin {
+			writeError(w, 403, "forbidden", "administrator or author permission required")
+			return
+		}
+		if mod.GetSourceType() != "github_releases" {
+			writeError(w, 400, "not_github_source", "mod is not configured for github_releases")
+			return
+		}
+		summary, err := s.SyncMod(r.Context(), modID)
+		if err != nil {
+			writeError(w, 500, "sync_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, summary)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "unpublish" && r.Method == http.MethodPost {
@@ -826,6 +940,10 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 	if mod == nil || mod.Author.ID != session.User.ID {
 		writeError(w, 404, "not_found", "mod was not found")
+		return
+	}
+	if mod.GetSourceType() == "github_releases" {
+		writeError(w, http.StatusConflict, "github_source_managed", "versions for this mod are managed by GitHub Releases")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 16384)
