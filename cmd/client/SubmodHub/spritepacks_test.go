@@ -21,12 +21,12 @@ func TestSpritepackScanAndGift(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("mod_assets/monika/j/shirt.json", `{"type":2,"name":"shirt","img_sit":"shirt","giftname":"shirtgift","select_info":{"display_name":"Pink Shirt","thumb":"shirt"}}`)
+	write("mod_assets/monika/j/shirt.json", `{"type":2,"name":"shirt","img_sit":"shirt","giftname":"shirtgift","select_info":{"display_name":"Pink Shirt","group":"casual","thumb":"shirt"}}`)
 	write("mod_assets/monika/c/shirt/body-def-0.png", "image")
 	write("mod_assets/thumbs/clothes-shirt.png", "preview")
 	service := &DesktopService{root: root}
 	items, err := service.ScanInstalledSpritepacks()
-	if err != nil || len(items) != 1 || !items[0].Complete || items[0].Preview == "" {
+	if err != nil || len(items) != 1 || !items[0].Complete || items[0].Preview == "" || items[0].Group != "casual" {
 		t.Fatalf("scan: %+v, %v", items, err)
 	}
 	if _, err := service.CreateSpriteGift("shirt.json"); err != nil {

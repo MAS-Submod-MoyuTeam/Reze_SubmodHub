@@ -18,6 +18,7 @@ type Spritepack struct {
 	Name     string   `json:"name"`
 	Author   string   `json:"author"`
 	Kind     string   `json:"kind"`
+	Group    string   `json:"group"`
 	GiftName string   `json:"giftname"`
 	Complete bool     `json:"complete"`
 	Missing  []string `json:"missing"`
@@ -32,6 +33,7 @@ type spriteJSON struct {
 	GiftName string `json:"giftname"`
 	Select   struct {
 		DisplayName string `json:"display_name"`
+		Group       string `json:"group"`
 		Thumb       string `json:"thumb"`
 	} `json:"select_info"`
 }
@@ -67,7 +69,7 @@ func (s *DesktopService) spritepack(file string) (Spritepack, error) {
 	if err := json.Unmarshal(data, &spec); err != nil {
 		return Spritepack{}, err
 	}
-	item := Spritepack{File: file, Name: spec.Select.DisplayName, Author: spec.Author, GiftName: spec.GiftName, Missing: []string{}}
+	item := Spritepack{File: file, Name: spec.Select.DisplayName, Author: spec.Author, Group: strings.TrimSpace(spec.Select.Group), GiftName: spec.GiftName, Missing: []string{}}
 	if item.Name == "" {
 		item.Name = spec.Name
 	}

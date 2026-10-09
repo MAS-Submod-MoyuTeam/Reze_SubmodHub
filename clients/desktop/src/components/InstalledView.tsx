@@ -15,6 +15,10 @@ import {
   Info,
   Gift,
   ImageIcon,
+  Search,
+  Filter,
+  ChevronDown,
+  X,
 } from 'lucide-react';
 import { InstalledItem, ModSummary } from '../types/client';
 import { Spritepack } from '../wails';
@@ -54,6 +58,24 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [creatingGiftFile, setCreatingGiftFile] = useState<string | null>(null);
   const [giftMessages, setGiftMessages] = useState<Record<string, string>>({});
+  const [spriteSearch, setSpriteSearch] = useState('');
+  const [spriteGroup, setSpriteGroup] = useState('');
+
+  const spriteGroups = [...new Set(spritepacks.map((item) => item.group?.trim() || '未分类'))].sort((a, b) =>
+    a.localeCompare(b, 'zh')
+  );
+  const selectedGroup = spriteGroups.includes(spriteGroup) ? spriteGroup : '';
+  const spriteQuery = spriteSearch.trim().toLocaleLowerCase();
+  const visibleSpritepacks = spritepacks.filter((item) => {
+    const group = item.group?.trim() || '未分类';
+    return (
+      (!selectedGroup || group === selectedGroup) &&
+      (!spriteQuery ||
+        [item.name, item.author, item.file].some((value) =>
+          value.toLocaleLowerCase().includes(spriteQuery)
+        ))
+    );
+  });
 
   const createGift = async (file: string) => {
     setCreatingGiftFile(file);
@@ -116,7 +138,16 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
 
         {/* Global Action Buttons */}
         <div className="flex items-center gap-2 text-xs">
-          {subTab === 'spritepacks' && <button onClick={onRefreshSpritepacks} className="p-2 rounded bg-neutral-800 text-neutral-300 hover:text-white" title="重新扫描精灵包" aria-label="重新扫描精灵包"><RefreshCw className="w-4 h-4" /></button>}
+          {subTab === 'spritepacks' && (
+            <button
+              onClick={onRefreshSpritepacks}
+              className="px-3 py-1.5 rounded-lg bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-300 hover:text-white transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title="重新扫描已安装精灵包"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-neutral-400" />
+              <span>重新扫描精灵包</span>
+            </button>
+          )}
           {subTab !== 'spritepacks' && <>
           <button
             onClick={onVerifyIntegrity}
@@ -140,23 +171,191 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4">
         {subTab === 'spritepacks' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
-            {spritepacks.length === 0 && <p className="text-sm text-neutral-400 col-span-full py-8 text-center">当前实例未检测到精灵包 JSON。</p>}
-            {spritepacks.map((item) => <div key={item.file} className="flex gap-3 p-3 bg-neutral-900 border border-neutral-800 rounded-lg min-w-0">
-              <div className="w-24 h-24 shrink-0 bg-neutral-950 border border-neutral-800 rounded overflow-hidden flex items-center justify-center">
-                {item.preview ? <img src={item.preview} alt={item.name} className="w-full h-full object-contain" /> : <ImageIcon className="w-6 h-6 text-neutral-600" />}
-              </div>
-              <div className="min-w-0 flex-1 flex flex-col gap-1">
-                <div className="font-medium text-sm text-neutral-100 truncate" title={item.name}>{item.name}</div>
-                <div className="text-xs text-neutral-400 truncate">{item.kind || '未知类型'}{item.author ? ` · ${item.author}` : ''}</div>
-                <div className={`text-xs ${item.complete ? 'text-emerald-400' : 'text-amber-400'}`}>{item.complete ? '已安装' : `文件不完整：${item.missing.join('、')}`}</div>
-                <div className="mt-auto flex items-center gap-2">
-                  <button disabled={!item.complete || !item.giftname || creatingGiftFile !== null || deletingFile === item.file} onClick={() => { void createGift(item.file); }} className="self-start flex items-center gap-1 text-xs px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-white disabled:bg-neutral-800 disabled:text-neutral-500" title={!item.giftname ? '此精灵包未声明礼物名称' : `创建 ${item.giftname}.gift`}><Gift className="w-3.5 h-3.5" />{creatingGiftFile === item.file ? '创建中…' : '创建礼物'}</button>
-                  <button disabled={deletingFile !== null} onClick={() => { void confirmDeleteSpritepack(item); }} className="p-1 rounded text-rose-400 hover:bg-rose-950/50 disabled:opacity-50" title="删除精灵包并保留备份" aria-label={`删除 ${item.name}`}><Trash2 className="w-4 h-4" /></button>
+          <div className="space-y-4">
+            {/* Filter & Search Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex w-full min-w-0 flex-col gap-3 sm:w-auto sm:flex-1 sm:flex-row sm:items-center">
+                <div className="relative w-full min-w-0 sm:max-w-md sm:flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                  <input
+                    type="text"
+                    value={spriteSearch}
+                    onChange={(event) => setSpriteSearch(event.target.value)}
+                    placeholder="搜索精灵包名称、作者或文件名..."
+                    aria-label="搜索已安装精灵包"
+                    className="w-full h-8 pl-9 pr-9 bg-neutral-900 border border-neutral-700/80 rounded-lg text-xs text-neutral-200 placeholder-neutral-500 focus:outline-hidden focus:border-neutral-500 transition-colors"
+                  />
+                  {spriteSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setSpriteSearch('')}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-neutral-500 transition-colors cursor-pointer"
+                      title="清除搜索"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
-                {giftMessages[item.file] && <div role="status" className="text-xs text-neutral-300 break-words">{giftMessages[item.file]}</div>}
+
+                <div className="relative w-full shrink-0 flex items-center sm:w-44">
+                  <Filter className="w-3.5 h-3.5 absolute left-2.5 text-neutral-500 pointer-events-none" />
+                  <select
+                    value={selectedGroup}
+                    onChange={(event) => setSpriteGroup(event.target.value)}
+                    aria-label="按 group 分类筛选"
+                    className="w-full h-8 pl-8 pr-8 truncate bg-neutral-900 border border-neutral-700/80 rounded-lg text-xs text-neutral-200 focus:outline-hidden focus:border-neutral-500 transition-colors appearance-none cursor-pointer"
+                  >
+                    <option value="">全部分类 ({spritepacks.length})</option>
+                    {spriteGroups.map((group) => {
+                      const count = spritepacks.filter((item) => (item.group?.trim() || '未分类') === group).length;
+                      return (
+                        <option key={group} value={group}>
+                          {group} ({count})
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 absolute right-2 text-neutral-500 pointer-events-none" />
+                </div>
               </div>
-            </div>)}
+
+              <div className="flex shrink-0 items-center gap-3 text-xs">
+                <span className="text-neutral-500 whitespace-nowrap font-mono tabular-nums">
+                  显示 <span className="font-medium text-neutral-200">{visibleSpritepacks.length}</span> / {spritepacks.length}
+                </span>
+                {(spriteSearch || selectedGroup) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSpriteSearch('');
+                      setSpriteGroup('');
+                    }}
+                    className="inline-flex h-8 items-center px-2 rounded-md text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-neutral-500 transition-colors cursor-pointer"
+                  >
+                    重置筛选
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Grid Area */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+              {spritepacks.length === 0 && (
+                <div className="col-span-full py-16 text-center text-neutral-400 flex flex-col items-center justify-center gap-2">
+                  <div className="w-12 h-12 rounded-full bg-neutral-900 flex items-center justify-center border border-neutral-800">
+                    <ImageIcon className="w-6 h-6 text-neutral-500" />
+                  </div>
+                  <p className="text-sm font-medium text-neutral-300">当前 MAS 实例未检测到精灵包</p>
+                  <p className="text-xs text-neutral-500">未扫描到 spritepacks JSON 配置文件。</p>
+                </div>
+              )}
+              {spritepacks.length > 0 && visibleSpritepacks.length === 0 && (
+                <div className="col-span-full py-16 text-center text-neutral-400 flex flex-col items-center justify-center gap-2">
+                  <div className="w-12 h-12 rounded-full bg-neutral-900 flex items-center justify-center border border-neutral-800">
+                    <Search className="w-6 h-6 text-neutral-500" />
+                  </div>
+                  <p className="text-sm font-medium text-neutral-300">没有符合条件的精灵包</p>
+                  <p className="text-xs text-neutral-500">可尝试调整搜索关键词或重置分类筛选</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSpriteSearch('');
+                      setSpriteGroup('');
+                    }}
+                    className="mt-2 px-3 py-1 text-xs rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-colors cursor-pointer"
+                  >
+                    清除筛选条件
+                  </button>
+                </div>
+              )}
+              {visibleSpritepacks.map((item) => (
+                <div
+                  key={item.file}
+                  className="group flex gap-3.5 p-3.5 bg-neutral-900/60 hover:bg-neutral-900 border border-neutral-800/80 hover:border-neutral-700/80 rounded-xl transition-all shadow-xs min-w-0"
+                >
+                  <div className="w-24 h-24 shrink-0 bg-neutral-950 rounded-lg border border-neutral-800/80 overflow-hidden flex items-center justify-center p-1 relative">
+                    {item.preview ? (
+                      <img
+                        src={item.preview}
+                        alt={item.name}
+                        className="w-full h-full object-contain drop-shadow-xs transition-transform duration-200 group-hover:scale-105"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center gap-1 text-neutral-600">
+                        <ImageIcon className="w-6 h-6" />
+                        <span className="text-[10px]">无预览</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 flex flex-col justify-between">
+                    <div className="space-y-1.5">
+                      <div className="font-medium text-sm text-neutral-100 truncate group-hover:text-emerald-400 transition-colors" title={item.name}>
+                        {item.name}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                        {item.group && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700/60 max-w-[130px] truncate" title={`分组: ${item.group}`}>
+                            <FolderOpen className="w-3 h-3 text-neutral-400 shrink-0" />
+                            <span className="truncate">{item.group}</span>
+                          </span>
+                        )}
+                        <span className="px-1.5 py-0.5 rounded bg-neutral-800/60 text-neutral-400 border border-neutral-700/40">
+                          {item.kind || '未知类型'}
+                        </span>
+                        {item.author && (
+                          <span className="text-neutral-400 truncate max-w-[120px]" title={`作者: ${item.author}`}>
+                            · {item.author}
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        {item.complete ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400">
+                            <CheckCircle2 className="w-3 h-3 shrink-0" />
+                            已完整安装
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-400"
+                            title={`缺失文件：\n${item.missing.join('、')}`}
+                          >
+                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                            文件不完整 ({item.missing.length})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-2.5 pt-2 flex items-center justify-between gap-2 border-t border-neutral-800/60">
+                      <button
+                        disabled={!item.complete || !item.giftname || creatingGiftFile !== null || deletingFile === item.file}
+                        onClick={() => { void createGift(item.file); }}
+                        className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-medium disabled:bg-neutral-800 disabled:text-neutral-500 disabled:cursor-not-allowed transition-colors shadow-xs cursor-pointer"
+                        title={!item.giftname ? '此精灵包未声明礼物名称' : `在 characters 目录创建 ${item.giftname}.gift`}
+                      >
+                        <Gift className="w-3.5 h-3.5" />
+                        <span>{creatingGiftFile === item.file ? '生成中…' : '创建礼物'}</span>
+                      </button>
+                      <button
+                        disabled={deletingFile !== null}
+                        onClick={() => { void confirmDeleteSpritepack(item); }}
+                        className="p-1.5 rounded-md text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 disabled:opacity-40 transition-colors cursor-pointer"
+                        title="删除精灵包并保留备份"
+                        aria-label={`删除 ${item.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {giftMessages[item.file] && (
+                      <div role="status" className="mt-2 text-xs px-2 py-1.5 rounded-md bg-neutral-950 border border-neutral-800 text-neutral-300 flex items-start gap-1.5">
+                        <Info className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                        <span className="break-all">{giftMessages[item.file]}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         {/* SUBTAB 1: MANAGED MODS */}

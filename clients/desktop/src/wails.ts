@@ -32,5 +32,5 @@ export const BrowseMASDirectory = () => browserMode ? Promise.reject(new Error('
 
 export type LocalSubmod = { directory: string; name: string; version: string; files: Array<{ path: string; sha256: string; size: number }> };
 export type MASInstancesState = { instances: Array<{ id: string; label: string; root: string; status: { valid: boolean; game_exists: boolean; submods: number } }>; active_id: string };
-export type Spritepack = { file: string; name: string; author: string; kind: string; giftname: string; complete: boolean; missing: string[]; preview: string };
+export type Spritepack = { file: string; name: string; author: string; kind: string; group: string; giftname: string; complete: boolean; missing: string[]; preview: string };
 export type InstalledArchive = { mod_id: string; version_id: string; version: string; title: string; operation_id: string; files: number; size_bytes: number; sha256: string; installed_at: string; submod_dirs: string[] };
