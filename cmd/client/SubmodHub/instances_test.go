@@ -1,10 +1,35 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestLaunchMASInstanceRejectsMissingExecutable(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "game"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := &DesktopService{configPath: filepath.Join(t.TempDir(), "instances.json")}
+	state, err := s.AddMASInstance("Test", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.LaunchMASInstance("unknown"); err == nil || err.Error() != "mas_instance_not_found" {
+		t.Fatalf("unknown instance: %v", err)
+	}
+	if err := s.LaunchMASInstance(state.ActiveID); err == nil || err.Error() != "mas_executable_missing" {
+		t.Fatalf("missing executable: %v", err)
+	}
+	if err := os.Remove(filepath.Join(root, "game")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	if err := s.LaunchMASInstance(state.ActiveID); err == nil || err.Error() != "mas_game_directory_missing" {
+		t.Fatalf("missing game directory: %v", err)
+	}
+}
 
 func TestMASInstancesPersistAndSwitch(t *testing.T) {
 	config := filepath.Join(t.TempDir(), "instances.json")

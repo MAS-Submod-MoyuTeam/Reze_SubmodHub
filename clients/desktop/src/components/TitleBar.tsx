@@ -12,6 +12,7 @@ import {
   ChevronDown,
   CheckCircle2,
   Lock,
+  Play,
 } from 'lucide-react';
 import { Installation } from '../types/client';
 
@@ -24,6 +25,8 @@ interface TitleBarProps {
   onToggleGameRunning: () => void;
   onToggleOffline: () => void;
   onOpenInstancesView: () => void;
+  onLaunchGame: () => Promise<void>;
+  isLaunchingGame: boolean;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -35,6 +38,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onToggleGameRunning,
   onToggleOffline,
   onOpenInstancesView,
+  onLaunchGame,
+  isLaunchingGame,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const activeInst = installations.find((i) => i.id === activeInstallationId) || {
@@ -52,7 +57,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <span className="font-semibold text-neutral-100 tracking-tight text-sm">
             SubmodHub
           </span>
-          <span className="text-[11px] text-neutral-400 font-mono">
+          <span className="hidden text-[11px] text-neutral-400 font-mono lg:inline">
             PC Client
           </span>
         </div>
@@ -67,7 +72,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             title={activeInst.path_hint}
           >
             <HardDrive className="w-3.5 h-3.5 text-neutral-400" />
-            <span className="font-medium max-w-[180px] truncate">
+            <span className="font-medium max-w-[100px] lg:max-w-[180px] truncate">
               {activeInst.label}
             </span>
             {activeInst.is_valid && <span className="text-[10px] px-1 py-0.2 bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 rounded font-mono">
@@ -129,10 +134,20 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             </>
           )}
         </div>
+        <button
+          onClick={() => void onLaunchGame()}
+          disabled={!activeInst.is_valid || isLaunchingGame}
+          className="flex h-[26px] shrink-0 items-center gap-1.5 rounded bg-emerald-700 px-2.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+          title={activeInst.is_valid ? `启动 ${activeInst.label} 的 DDLC.exe` : '请先选择有效的 MAS 实例'}
+          aria-label={isLaunchingGame ? '启动中' : '启动游戏'}
+        >
+          <Play className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">{isLaunchingGame ? '启动中…' : '启动游戏'}</span>
+        </button>
       </div>
 
       {/* Middle zone: Real-time Guards & Indicators */}
-      <div className="flex items-center gap-3">
+      <div className="hidden xl:flex items-center gap-3">
         {/* Game Process Guard */}
         {!activeInst.is_valid ? (
           <div className="flex items-center gap-1.5 text-amber-400 text-[11px]">
@@ -181,6 +196,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
       {/* Right zone: Window Controls */}
       <div className="flex items-center">
+        <div className="hidden md:flex items-center">
         <button
           className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors"
           title="最小化"
@@ -199,6 +215,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         >
           <X className="w-3.5 h-3.5" />
         </button>
+        </div>
       </div>
     </header>
   );

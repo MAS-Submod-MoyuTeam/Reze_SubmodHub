@@ -33,6 +33,34 @@ export class ArchiveInstallRequest {
              */
             this["expected_sha256"] = "";
         }
+        if (!("mod_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["mod_id"] = "";
+        }
+        if (!("version_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["version_id"] = "";
+        }
+        if (!("version" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["version"] = "";
+        }
+        if (!("title" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["title"] = "";
+        }
 
         Object.assign(this, $$source);
     }
@@ -140,6 +168,101 @@ export class InstallRequest {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new InstallRequest(/** @type {Partial<InstallRequest>} */($$parsedSource));
+    }
+}
+
+export class InstalledArchive {
+    /**
+     * Creates a new InstalledArchive instance.
+     * @param {Partial<InstalledArchive>} [$$source = {}] - The source object to create the InstalledArchive.
+     */
+    constructor($$source = {}) {
+        if (!("mod_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["mod_id"] = "";
+        }
+        if (!("version_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["version_id"] = "";
+        }
+        if (!("version" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["version"] = "";
+        }
+        if (!("title" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["title"] = "";
+        }
+        if (!("operation_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["operation_id"] = "";
+        }
+        if (!("files" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["files"] = 0;
+        }
+        if (!("size_bytes" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["size_bytes"] = 0;
+        }
+        if (!("sha256" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["sha256"] = "";
+        }
+        if (!("installed_at" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["installed_at"] = "0001-01-01T00:00:00.000Z";
+        }
+        if (!("submod_dirs" in $$source)) {
+            /**
+             * @member
+             * @type {string[]}
+             */
+            this["submod_dirs"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new InstalledArchive instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {InstalledArchive}
+     */
+    static createFrom($$source = {}) {
+        const $$createField9_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("submod_dirs" in $$parsedSource) {
+            $$parsedSource["submod_dirs"] = $$createField9_0($$parsedSource["submod_dirs"]);
+        }
+        return new InstalledArchive(/** @type {Partial<InstalledArchive>} */($$parsedSource));
     }
 }
 
@@ -383,6 +506,122 @@ export class MASStatus {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new MASStatus(/** @type {Partial<MASStatus>} */($$parsedSource));
+    }
+}
+
+export class Spritepack {
+    /**
+     * Creates a new Spritepack instance.
+     * @param {Partial<Spritepack>} [$$source = {}] - The source object to create the Spritepack.
+     */
+    constructor($$source = {}) {
+        if (!("file" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["file"] = "";
+        }
+        if (!("name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("author" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["author"] = "";
+        }
+        if (!("kind" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["kind"] = "";
+        }
+        if (!("giftname" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["giftname"] = "";
+        }
+        if (!("complete" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["complete"] = false;
+        }
+        if (!("missing" in $$source)) {
+            /**
+             * @member
+             * @type {string[]}
+             */
+            this["missing"] = [];
+        }
+        if (!("preview" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["preview"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Spritepack instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {Spritepack}
+     */
+    static createFrom($$source = {}) {
+        const $$createField6_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("missing" in $$parsedSource) {
+            $$parsedSource["missing"] = $$createField6_0($$parsedSource["missing"]);
+        }
+        return new Spritepack(/** @type {Partial<Spritepack>} */($$parsedSource));
+    }
+}
+
+export class SpritepackDeleteResult {
+    /**
+     * Creates a new SpritepackDeleteResult instance.
+     * @param {Partial<SpritepackDeleteResult>} [$$source = {}] - The source object to create the SpritepackDeleteResult.
+     */
+    constructor($$source = {}) {
+        if (!("files" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["files"] = 0;
+        }
+        if (!("backup" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["backup"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SpritepackDeleteResult instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {SpritepackDeleteResult}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new SpritepackDeleteResult(/** @type {Partial<SpritepackDeleteResult>} */($$parsedSource));
     }
 }
 

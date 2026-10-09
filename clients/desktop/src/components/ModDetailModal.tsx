@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Check, Copy, Download, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { fetchModImages, fetchPublishedVersions, fetchSpriteSets, fetchVerifiedSpriteSelection, type CatalogVersion, type SpriteSet } from '../../../../ui/catalog-api';
+import { fetchModImages, fetchPublishedVersions, fetchSpriteSets, fetchVerifiedSpriteSelection, type CatalogVersion, type DownloadProgress, type SpriteSet } from '../../../../ui/catalog-api';
 import { ModSummary } from '../types/client';
 
 interface Props {
@@ -13,6 +13,8 @@ interface Props {
   onStartInstallPlan: (mod: ModSummary, version: CatalogVersion) => void;
   onDownloadArchive: (mod: ModSummary, versionId: string) => void;
   isDownloadingArchive: boolean;
+  isInstalling: boolean;
+  archiveProgress: DownloadProgress | null;
   isInstalled: boolean;
   installedVersion?: string;
   hasUpdate?: boolean;
@@ -22,13 +24,14 @@ const apiBase = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}
 const formatBytes = (bytes: number) => bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 const Markdown: React.FC<{ value: string }> = ({ value }) => <div className="min-w-0 space-y-2 break-words [&_a]:text-sky-400 [&_a]:underline [&_h1]:text-base [&_h2]:text-sm [&_h1]:font-semibold [&_h2]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-neutral-900 [&_pre]:p-2 [&_table]:block [&_table]:overflow-x-auto [&_img]:max-w-full"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{value}</ReactMarkdown></div>;
 
-export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod, onClose, onStartInstallPlan, onDownloadArchive, isDownloadingArchive, isInstalled, installedVersion, hasUpdate }) => {
+export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod, onClose, onStartInstallPlan, onDownloadArchive, isDownloadingArchive, isInstalling, archiveProgress, isInstalled, installedVersion, hasUpdate }) => {
   const [versions, setVersions] = useState<CatalogVersion[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const [spriteSets, setSpriteSets] = useState<SpriteSet[]>([]);
   const [selectedSets, setSelectedSets] = useState<string[]>([]);
   const [downloadingSprite, setDownloadingSprite] = useState(false);
+  const [spriteProgress, setSpriteProgress] = useState<DownloadProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
@@ -68,8 +71,9 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
   const downloadSets = async (ids: string[]) => {
     if (!ids.length || downloadingSprite) return;
     setDownloadingSprite(true);
+    setSpriteProgress(null);
     try {
-      const archive = await fetchVerifiedSpriteSelection(mod.id, ids, apiBase);
+      const archive = await fetchVerifiedSpriteSelection(mod.id, ids, apiBase, fetch, setSpriteProgress);
       const url = URL.createObjectURL(archive.blob);
       const link = document.createElement('a');
       link.href = url;
@@ -79,8 +83,11 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (cause) { setError(`套装下载失败：${cause instanceof Error ? cause.message : String(cause)}`); }
-    finally { setDownloadingSprite(false); }
+    finally { setDownloadingSprite(false); setSpriteProgress(null); }
   };
+
+  const progress = mod.category === 'spritepack' ? spriteProgress : archiveProgress;
+  const progressPercent = progress ? Math.min(100, Math.round(progress.received / progress.total * 100)) : 0;
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section role="dialog" aria-modal="true" aria-label={`${mod.title} 详情`} className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-2xl">
@@ -108,7 +115,8 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
             </div>}
           </section>}
       </div>
-      {mod.category !== 'spritepack' && selected && <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-800 p-4 text-xs"><span className="text-neutral-400">{isInstalled ? `${hasUpdate ? '可更新' : '已安装'} ${installedVersion || ''}` : '选择版本后下载或安装'}</span><div className="flex flex-wrap gap-2"><button onClick={() => onDownloadArchive(mod, selected.id)} disabled={isDownloadingArchive} className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 text-neutral-100 hover:bg-neutral-700 disabled:opacity-50"><Download className="h-4 w-4" />{isDownloadingArchive ? '校验中' : '下载 ZIP'}</button><button onClick={() => { onClose(); onStartInstallPlan(mod, selected); }} className="flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600"><Download className="h-4 w-4" />安装预览</button></div></footer>}
+      {progress && <div role="status" aria-label="下载进度" className="shrink-0 space-y-1.5 border-t border-neutral-800 bg-neutral-900 px-5 py-3 text-xs"><div className="flex justify-between gap-3 text-neutral-300"><span>{progress.stage === 'downloading' ? '正在下载' : '正在校验'}</span><span className="font-mono tabular-nums">{progressPercent}% · {formatBytes(progress.received)} / {formatBytes(progress.total)}</span></div><div className="h-2 overflow-hidden rounded bg-neutral-700" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressPercent}><div className="h-full bg-emerald-500 transition-[width] duration-150" style={{ width: `${progressPercent}%` }} /></div></div>}
+      {mod.category !== 'spritepack' && selected && <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-800 p-4 text-xs"><span className="text-neutral-400">{isInstalled ? `${hasUpdate ? '可更新' : '已安装'} ${installedVersion || ''}` : '选择版本后下载或安装'}</span><div className="flex flex-wrap gap-2"><button onClick={() => onDownloadArchive(mod, selected.id)} disabled={isDownloadingArchive} className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 text-neutral-100 hover:bg-neutral-700 disabled:opacity-50"><Download className="h-4 w-4" />{isDownloadingArchive ? (archiveProgress?.stage === 'verifying' ? '校验中' : `下载中 ${archiveProgress ? Math.round(archiveProgress.received / archiveProgress.total * 100) : 0}%`) : '下载 ZIP'}</button><button onClick={() => { onClose(); onStartInstallPlan(mod, selected); }} disabled={isInstalling} className="flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"><Download className="h-4 w-4" />{isInstalling ? '安装中…' : '安装'}</button></div></footer>}
     </section>
   </div>;
 };

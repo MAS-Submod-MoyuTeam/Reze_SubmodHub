@@ -15,6 +15,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { ModSummary, InstalledItem, Installation } from '../types/client';
+import type { DownloadProgress } from '../../../../ui/catalog-api';
 
 interface CatalogViewProps {
   mods: ModSummary[];
@@ -24,6 +25,8 @@ interface CatalogViewProps {
   onOpenDetail: (mod: ModSummary) => void;
   onStartInstallPlan: (mod: ModSummary) => void;
   onStartUpdatePlan: (mod: ModSummary) => void;
+  installingModId: string | null;
+  installProgress: DownloadProgress | null;
 }
 
 export const CatalogView: React.FC<CatalogViewProps> = ({
@@ -34,6 +37,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   onOpenDetail,
   onStartInstallPlan,
   onStartUpdatePlan,
+  installingModId,
+  installProgress,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'submod' | 'spritepack'>('all');
@@ -113,7 +118,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Search bar */}
           <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
@@ -357,7 +362,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                       onClick={() => onOpenDetail(mod)}
                       className="px-2.5 py-1.5 text-xs text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 rounded-md transition-colors"
                     >
-                      查看扫描报告与依赖
+                      查看详情
                     </button>
 
                     {installed ? (
@@ -378,12 +383,13 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                         </button>
                       )
                     ) : (
-                      <button
-                        onClick={() => onStartInstallPlan(mod)}
+                        <button
+                          onClick={() => onStartInstallPlan(mod)}
+                          disabled={installingModId !== null}
                         className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-md transition-colors flex items-center gap-1.5 shadow-xs"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        <span>安装规划预览</span>
+                        <span>{installingModId === mod.id ? installProgress?.stage === 'downloading' ? `下载 ${Math.round(installProgress.received / installProgress.total * 100)}%` : installProgress?.stage === 'verifying' ? '校验中…' : '安装中…' : '安装'}</span>
                       </button>
                     )}
                   </div>

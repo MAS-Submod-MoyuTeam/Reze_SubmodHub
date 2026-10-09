@@ -13,11 +13,18 @@ import {
   CheckCircle2,
   FolderOpen,
   Info,
+  Gift,
+  ImageIcon,
 } from 'lucide-react';
 import { InstalledItem, ModSummary } from '../types/client';
+import { Spritepack } from '../wails';
 
 interface InstalledViewProps {
   installedMods: InstalledItem[];
+  spritepacks: Spritepack[];
+  onRefreshSpritepacks: () => void;
+  onCreateSpriteGift: (file: string) => Promise<string>;
+  onDeleteSpritepack: (file: string) => Promise<void>;
   onStartUpdatePlan: (modSummary: ModSummary) => void;
   onStartUninstallPlan: (installedItem: InstalledItem) => void;
   onStartRepairPlan: (installedItem: InstalledItem) => void;
@@ -30,6 +37,10 @@ interface InstalledViewProps {
 
 export const InstalledView: React.FC<InstalledViewProps> = ({
   installedMods,
+  spritepacks,
+  onRefreshSpritepacks,
+  onCreateSpriteGift,
+  onDeleteSpritepack,
   onStartUpdatePlan,
   onStartUninstallPlan,
   onStartRepairPlan,
@@ -39,7 +50,24 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
   onVerifyIntegrity,
   isVerifying,
 }) => {
-  const [subTab, setSubTab] = useState<'managed' | 'unmanaged'>('managed');
+  const [subTab, setSubTab] = useState<'managed' | 'unmanaged' | 'spritepacks'>('managed');
+  const [deletingFile, setDeletingFile] = useState<string | null>(null);
+  const [creatingGiftFile, setCreatingGiftFile] = useState<string | null>(null);
+  const [giftMessages, setGiftMessages] = useState<Record<string, string>>({});
+
+  const createGift = async (file: string) => {
+    setCreatingGiftFile(file);
+    try {
+      const message = await onCreateSpriteGift(file);
+      setGiftMessages((previous) => ({ ...previous, [file]: message }));
+    } finally { setCreatingGiftFile(null); }
+  };
+
+  const confirmDeleteSpritepack = async (item: Spritepack) => {
+    if (!window.confirm(`确定删除「${item.name}」吗？其 JSON 和未被其他精灵包引用的图片将从游戏中移走，并保存备份。礼物文件会保留。`)) return;
+    setDeletingFile(item.file);
+    try { await onDeleteSpritepack(item.file); } finally { setDeletingFile(null); }
+  };
 
   const managedMods = installedMods.filter((m) => m.is_managed);
   const unmanagedMods = installedMods.filter((m) => !m.is_managed);
@@ -80,11 +108,16 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
               <FileQuestion className="w-3.5 h-3.5 text-amber-400" />
               <span>未托管检测结果 ({unmanagedMods.length})</span>
             </button>
+            <button onClick={() => setSubTab('spritepacks')} className={`px-3 py-1 font-medium rounded-md transition-colors flex items-center gap-1.5 ${subTab === 'spritepacks' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-neutral-200'}`}>
+              <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />已安装精灵包 ({spritepacks.length})
+            </button>
           </div>
         </div>
 
         {/* Global Action Buttons */}
         <div className="flex items-center gap-2 text-xs">
+          {subTab === 'spritepacks' && <button onClick={onRefreshSpritepacks} className="p-2 rounded bg-neutral-800 text-neutral-300 hover:text-white" title="重新扫描精灵包" aria-label="重新扫描精灵包"><RefreshCw className="w-4 h-4" /></button>}
+          {subTab !== 'spritepacks' && <>
           <button
             onClick={onVerifyIntegrity}
             disabled={isVerifying}
@@ -100,11 +133,32 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
             <RefreshCw className="w-3.5 h-3.5" />
             <span>检查所有模组更新</span>
           </button>
+          </>}
         </div>
       </div>
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4">
+        {subTab === 'spritepacks' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+            {spritepacks.length === 0 && <p className="text-sm text-neutral-400 col-span-full py-8 text-center">当前实例未检测到精灵包 JSON。</p>}
+            {spritepacks.map((item) => <div key={item.file} className="flex gap-3 p-3 bg-neutral-900 border border-neutral-800 rounded-lg min-w-0">
+              <div className="w-24 h-24 shrink-0 bg-neutral-950 border border-neutral-800 rounded overflow-hidden flex items-center justify-center">
+                {item.preview ? <img src={item.preview} alt={item.name} className="w-full h-full object-contain" /> : <ImageIcon className="w-6 h-6 text-neutral-600" />}
+              </div>
+              <div className="min-w-0 flex-1 flex flex-col gap-1">
+                <div className="font-medium text-sm text-neutral-100 truncate" title={item.name}>{item.name}</div>
+                <div className="text-xs text-neutral-400 truncate">{item.kind || '未知类型'}{item.author ? ` · ${item.author}` : ''}</div>
+                <div className={`text-xs ${item.complete ? 'text-emerald-400' : 'text-amber-400'}`}>{item.complete ? '已安装' : `文件不完整：${item.missing.join('、')}`}</div>
+                <div className="mt-auto flex items-center gap-2">
+                  <button disabled={!item.complete || !item.giftname || creatingGiftFile !== null || deletingFile === item.file} onClick={() => { void createGift(item.file); }} className="self-start flex items-center gap-1 text-xs px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-white disabled:bg-neutral-800 disabled:text-neutral-500" title={!item.giftname ? '此精灵包未声明礼物名称' : `创建 ${item.giftname}.gift`}><Gift className="w-3.5 h-3.5" />{creatingGiftFile === item.file ? '创建中…' : '创建礼物'}</button>
+                  <button disabled={deletingFile !== null} onClick={() => { void confirmDeleteSpritepack(item); }} className="p-1 rounded text-rose-400 hover:bg-rose-950/50 disabled:opacity-50" title="删除精灵包并保留备份" aria-label={`删除 ${item.name}`}><Trash2 className="w-4 h-4" /></button>
+                </div>
+                {giftMessages[item.file] && <div role="status" className="text-xs text-neutral-300 break-words">{giftMessages[item.file]}</div>}
+              </div>
+            </div>)}
+          </div>
+        )}
         {/* SUBTAB 1: MANAGED MODS */}
         {subTab === 'managed' && (
           <div className="space-y-3">

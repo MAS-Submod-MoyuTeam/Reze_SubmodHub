@@ -185,7 +185,7 @@ func detectRoot(files []*zip.File) (string, error) {
 	for _, f := range files {
 		parts := strings.Split(f.Name, "/")
 		for i := 0; i < len(parts)-1; i++ {
-			if parts[i] == "game" || parts[i] == "Submods" || parts[i] == "mod_assets" || parts[i] == "python-packages" || parts[i] == "gui" || parts[i] == "custom_bgm" || parts[i] == "piano_songs" {
+			if parts[i] == "game" || parts[i] == "Submods" || parts[i] == "mod_assets" || parts[i] == "python-packages" || parts[i] == "gui" || parts[i] == "custom_bgm" || parts[i] == "piano_songs" || parts[i] == "lib" || parts[i] == "characters" {
 				candidates = append(candidates, strings.Join(parts[:i], "/"))
 				break
 			}

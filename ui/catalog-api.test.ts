@@ -96,6 +96,27 @@ test('returns archive bytes only after size and SHA-256 verification', async () 
   assert.equal(result.sha256, sha256);
 });
 
+test('reports received archive bytes before verification', async () => {
+  const bytes = new TextEncoder().encode('fixture ZIP bytes');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const updates: Array<{ received: number; total: number; stage: string }> = [];
+  const fetcher = async (input: RequestInfo | URL) => String(input).endsWith('/download')
+    ? Response.json({ url: '/api/v1/archives/v1', expires_at: '2099-01-01T00:00:00Z', sha256: hash, size_bytes: bytes.length })
+    : new Response(new ReadableStream({ start(controller) { controller.enqueue(bytes.slice(0, 4)); controller.enqueue(bytes.slice(4)); controller.close(); } }));
+  await fetchVerifiedArchive('v1', '/api/v1', fetcher as typeof fetch, (update) => updates.push(update));
+  assert.deepEqual(updates.map((update) => update.received), [0, 4, bytes.length, bytes.length]);
+  assert.equal(updates.at(-1)?.stage, 'verifying');
+});
+
+test('reports sprite selection transfer progress', async () => {
+  const bytes = new TextEncoder().encode('selected sprite ZIP');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const updates: number[] = [];
+  const fetcher = async () => new Response(bytes, { headers: { 'X-Archive-SHA256': hash, 'Content-Length': String(bytes.length) } });
+  await fetchVerifiedSpriteSelection('mod', ['set'], '/api/v1', fetcher as typeof fetch, ({ received }) => updates.push(received));
+  assert.deepEqual(updates, [0, bytes.length, bytes.length]);
+});
+
 test('rejects changed archive size or hash before saving', async () => {
   const bytes = new TextEncoder().encode('bad bytes');
   for (const [size, sha256, code] of [

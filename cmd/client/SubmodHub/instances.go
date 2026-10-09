@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -169,6 +170,35 @@ func (s *DesktopService) RemoveMASInstance(id string) (MASInstancesState, error)
 		}
 	}
 	return MASInstancesState{}, errors.New("mas_instance_not_found")
+}
+
+func (s *DesktopService) LaunchMASInstance(id string) error {
+	if err := s.loadInstances(); err != nil {
+		return err
+	}
+	for _, instance := range s.instances {
+		if instance.ID != id {
+			continue
+		}
+		if !fileExists(filepath.Join(instance.Root, "game")) {
+			return errors.New("mas_game_directory_missing")
+		}
+		executable := filepath.Join(instance.Root, "DDLC.exe")
+		info, err := os.Stat(executable)
+		if errors.Is(err, os.ErrNotExist) || (err == nil && info.IsDir()) {
+			return errors.New("mas_executable_missing")
+		}
+		if err != nil {
+			return err
+		}
+		cmd := exec.Command(executable)
+		cmd.Dir = instance.Root
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		return cmd.Process.Release()
+	}
+	return errors.New("mas_instance_not_found")
 }
 
 func (s *DesktopService) BrowseMASDirectory() (string, error) {

@@ -47,11 +47,46 @@ export function BrowseMASDirectory() {
 }
 
 /**
+ * @param {string} file
+ * @returns {$CancellablePromise<string>}
+ */
+export function CreateSpriteGift(file) {
+    return $Call.ByID(3471295810, file);
+}
+
+/**
+ * @param {string} file
+ * @returns {$CancellablePromise<$models.SpritepackDeleteResult>}
+ */
+export function DeleteSpritepack(file) {
+    return $Call.ByID(856149942, file).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType2($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<$models.MASStatus>}
  */
 export function GetMASStatus() {
     return $Call.ByID(767909844).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType2($result);
+        return $$createType3($result);
+    }));
+}
+
+/**
+ * @param {string} id
+ * @returns {$CancellablePromise<void>}
+ */
+export function LaunchMASInstance(id) {
+    return $Call.ByID(1011314150, id);
+}
+
+/**
+ * @returns {$CancellablePromise<$models.InstalledArchive[]>}
+ */
+export function ListInstalledArchives() {
+    return $Call.ByID(2310294626).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType5($result);
     }));
 }
 
@@ -83,11 +118,20 @@ export function RemoveMASInstance(id) {
 }
 
 /**
+ * @returns {$CancellablePromise<$models.Spritepack[]>}
+ */
+export function ScanInstalledSpritepacks() {
+    return $Call.ByID(3856932559).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType7($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<$models.LocalSubmod[]>}
  */
 export function ScanLocalSubmods() {
     return $Call.ByID(1364442018).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType4($result);
+        return $$createType9($result);
     }));
 }
 
@@ -107,7 +151,7 @@ export function SelectMASInstance(id) {
  */
 export function SetMASRoot(root) {
     return $Call.ByID(958382738, root).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType2($result);
+        return $$createType3($result);
     }));
 }
 
@@ -123,6 +167,11 @@ export function Uninstall(operationID, uninstallOperationID) {
 // Private type creation functions
 const $$createType0 = $models.MASInstancesState.createFrom;
 const $$createType1 = $models.ArchiveInstallResult.createFrom;
-const $$createType2 = $models.MASStatus.createFrom;
-const $$createType3 = $models.LocalSubmod.createFrom;
-const $$createType4 = $Create.Array($$createType3);
+const $$createType2 = $models.SpritepackDeleteResult.createFrom;
+const $$createType3 = $models.MASStatus.createFrom;
+const $$createType4 = $models.InstalledArchive.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = $models.Spritepack.createFrom;
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = $models.LocalSubmod.createFrom;
+const $$createType9 = $Create.Array($$createType8);

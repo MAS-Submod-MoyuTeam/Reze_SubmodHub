@@ -34,6 +34,10 @@ type ArchiveInstallRequest struct {
 	OperationID   string `json:"operation_id"`
 	ArchiveBase64 string `json:"archive_base64"`
 	ExpectedSHA   string `json:"expected_sha256"`
+	ModID         string `json:"mod_id"`
+	VersionID     string `json:"version_id"`
+	Version       string `json:"version"`
+	Title         string `json:"title"`
 }
 type ArchiveInstallResult struct {
 	State    string   `json:"state"`
@@ -182,6 +186,9 @@ func (s *DesktopService) Uninstall(operationID, uninstallOperationID string) (st
 	if err := s.core.Uninstall(operationID, uninstallOperationID); err != nil {
 		return "", err
 	}
+	if err := s.removeInstalledArchive(operationID); err != nil {
+		return "", err
+	}
 	return "committed", nil
 }
 func (s *DesktopService) ApplyArchive(request ArchiveInstallRequest) (ArchiveInstallResult, error) {
@@ -228,10 +235,19 @@ func (s *DesktopService) ApplyArchive(request ArchiveInstallRequest) (ArchiveIns
 		if readErr != nil {
 			return ArchiveInstallResult{}, readErr
 		}
-		changes = append(changes, core.Change{Path: filepath.ToSlash(filepath.Join("game", file.Target)), Content: content})
+		target := filepath.ToSlash(filepath.Join("game", file.Target))
+		if strings.HasPrefix(file.Target, "lib/") || strings.HasPrefix(file.Target, "characters/") {
+			target = file.Target
+		}
+		changes = append(changes, core.Change{Path: target, Content: content})
 	}
 	if err := s.core.Apply(core.Operation{ID: request.OperationID, Changes: changes}); err != nil {
 		return ArchiveInstallResult{}, err
+	}
+	if request.ModID != "" {
+		if err := s.recordInstalledArchive(request, report, hex.EncodeToString(hash[:]), int64(len(data))); err != nil {
+			return ArchiveInstallResult{}, err
+		}
 	}
 	return ArchiveInstallResult{State: "committed", Files: len(changes), Warnings: report.Warnings}, nil
 }

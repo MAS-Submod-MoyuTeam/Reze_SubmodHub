@@ -11,9 +11,12 @@ export {
     ArchiveInstallRequest,
     ArchiveInstallResult,
     InstallRequest,
+    InstalledArchive,
     LocalSubmod,
     LocalSubmodFile,
     MASInstance,
     MASInstancesState,
-    MASStatus
+    MASStatus,
+    Spritepack,
+    SpritepackDeleteResult
 } from "./models.js";

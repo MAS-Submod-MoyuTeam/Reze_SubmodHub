@@ -11,6 +11,7 @@ import (
 )
 
 var roots = map[string]bool{"Submods": true, "mod_assets": true, "python-packages": true, "gui": true, "custom_bgm": true, "piano_songs": true}
+var installationRoots = map[string]bool{"lib": true, "characters": true}
 var devices = map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": true}
 
 // Validate returns the NFC path and its Windows-insensitive collision key.
@@ -41,11 +42,13 @@ func MapLegacyPath(name string) (string, bool, error) {
 	normal, _, err := Validate(name)
 	if err != nil { return "", false, err }
 	parts := strings.Split(normal, "/")
+	rootLevel := parts[0] != "game"
 	if parts[0] == "game" {
 		if len(parts) < 3 { return "", false, nil }
 		parts = parts[1:]
 	}
 	if roots[parts[0]] && len(parts) > 1 { return path.Join(parts...), true, nil }
+	if rootLevel && installationRoots[parts[0]] && len(parts) > 1 { return path.Join(parts...), true, nil }
 	if len(parts) == 1 && (strings.HasSuffix(strings.ToLower(parts[0]), ".rpy") || strings.HasSuffix(strings.ToLower(parts[0]), ".rpym")) {
 		return path.Join("Submods/UnGroupScripts", parts[0]), true, nil
 	}

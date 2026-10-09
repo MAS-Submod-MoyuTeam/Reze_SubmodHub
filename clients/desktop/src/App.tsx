@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { CatalogView } from './components/CatalogView';
@@ -15,8 +15,8 @@ import {
   INITIAL_EXTERNAL_DRIFT,
   MOCK_MOD_VERSIONS,
 } from './data/mockData';
-import { fetchPublishedCatalog, fetchVerifiedArchive } from '../../../ui/catalog-api';
-import { AddMASInstance, ApplyArchive, BrowseMASDirectory, ListMASInstances, RemoveMASInstance, ScanLocalSubmods, SelectMASInstance, SetMASRoot, Uninstall, LocalSubmod, MASInstancesState } from './wails';
+import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
+import { AddMASInstance, ApplyArchive, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, Uninstall, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
 import {
   Installation,
   ModSummary,
@@ -41,6 +41,7 @@ export default function App() {
   // Catalog and Installed Data
   const [catalogMods, setCatalogMods] = useState<ModSummary[]>([]);
   const [installedMods, setInstalledMods] = useState<InstalledItem[]>([]);
+  const [spritepacks, setSpritepacks] = useState<Spritepack[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
   const [externalDrift, setExternalDrift] = useState<ExternalChangeDrift | null>(null);
 
@@ -51,7 +52,12 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
   const [isDownloadingArchive, setIsDownloadingArchive] = useState(false);
-  const [pendingArchives, setPendingArchives] = useState<Record<string, { blob: Blob; sha256: string }>>({});
+  const [archiveProgress, setArchiveProgress] = useState<DownloadProgress | null>(null);
+  const [transferTitle, setTransferTitle] = useState<string | null>(null);
+  const [installStage, setInstallStage] = useState<'preparing' | 'installing' | null>(null);
+  const installingRef = useRef(false);
+  const [installingModId, setInstallingModId] = useState<string | null>(null);
+  const [isLaunchingGame, setIsLaunchingGame] = useState(false);
 
   // Modals
   const [selectedModDetail, setSelectedModDetail] = useState<ModSummary | null>(null);
@@ -91,8 +97,18 @@ export default function App() {
 
   const scanLocalSubmods = async () => {
     try {
-      const local = await ScanLocalSubmods() as unknown as LocalSubmod[];
-      const unmanaged: InstalledItem[] = local.map((item) => ({
+      const [local, receipts] = await Promise.all([ScanLocalSubmods(), ListInstalledArchives()]) as [LocalSubmod[], InstalledArchive[]];
+      const managedDirs = new Set(receipts.flatMap((receipt) => receipt.submod_dirs || []).map((dir) => dir.toLowerCase()));
+      const managed: InstalledItem[] = receipts.map((receipt) => ({
+        mod_id: receipt.mod_id, title: receipt.title, summary: '已通过 SubmodHub 安装',
+        author_name: '本地安装记录', category: 'submod', installed_version: receipt.version,
+        installed_version_id: receipt.version_id, latest_version: receipt.version,
+        latest_version_id: receipt.version_id, has_update: false, priority: 50,
+        is_managed: true, files_count: receipt.files, size_bytes: receipt.size_bytes,
+        installed_at: receipt.installed_at, sha256: receipt.sha256,
+        integrity_status: 'unknown', managed_operation_id: receipt.operation_id,
+      }));
+      const unmanaged: InstalledItem[] = local.filter((item) => !managedDirs.has(item.directory.toLowerCase())).map((item) => ({
         mod_id: `local:${item.directory}`, title: item.name || item.directory,
         summary: '检测到 MAS 本地子模组，尚未与 SubmodHub 安装记录关联。',
         author_name: '未知作者 (本地检测)', category: 'submod',
@@ -104,7 +120,7 @@ export default function App() {
         unmanaged_paths: (item.files || []).map((file) => file.path), submod_dir_name: item.directory,
         integrity_status: 'unknown',
       }));
-      setInstalledMods((current) => [...current.filter((item) => item.is_managed), ...unmanaged]);
+      setInstalledMods([...managed, ...unmanaged]);
     } catch (error) {
       showToast(`本地子模组扫描失败：${error instanceof Error ? error.message : 'unknown_error'}`);
     }
@@ -120,7 +136,12 @@ export default function App() {
     setInstallations(items.length ? items : [{ ...INITIAL_INSTALLATIONS[0], id: 'unverified', label: '尚未连接 MAS', path_hint: '', permission_state: 'pending', mas_version: '', is_valid: false, is_running: false, disk_available_bytes: 0, last_validated_at: '' }]);
     setActiveInstallationId(state.active_id || 'unverified');
     setInstalledMods([]);
-    if (state.active_id) void scanLocalSubmods();
+    setSpritepacks([]);
+    if (state.active_id) {
+      void scanLocalSubmods();
+      void ScanInstalledSpritepacks().then((items) => setSpritepacks(items as Spritepack[]))
+        .catch((error) => showToast(`精灵包扫描失败：${String(error)}`));
+    }
   };
 
   useEffect(() => {
@@ -136,6 +157,8 @@ export default function App() {
 
   const unmanagedCount = installedMods.filter((m) => !m.is_managed).length;
   const recoverableOpsCount = operations.filter((o) => o.state === 'recoverable').length;
+  const transferPercent = archiveProgress ? Math.min(100, Math.round(archiveProgress.received / archiveProgress.total * 100)) : 0;
+  const formatTransferBytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
   // Handler: Refresh Catalog
   const handleRefreshCatalog = () => {
@@ -143,11 +166,13 @@ export default function App() {
   };
 
   const handleDownloadArchive = async (mod: ModSummary, versionId = mod.latest_version_id) => {
-    if (isDownloadingArchive) return;
+    if (isDownloadingArchive || installingRef.current) return;
     setIsDownloadingArchive(true);
+    setTransferTitle(mod.title);
+    setArchiveProgress(null);
     try {
       const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-      const archive = await fetchVerifiedArchive(versionId, base);
+      const archive = await fetchVerifiedArchive(versionId, base, fetch, setArchiveProgress);
       const url = URL.createObjectURL(archive.blob);
       const link = document.createElement('a');
       link.href = url;
@@ -161,6 +186,8 @@ export default function App() {
       showToast(`下载未完成：${error instanceof Error ? error.message : 'unknown_error'}`);
     } finally {
       setIsDownloadingArchive(false);
+      setArchiveProgress(null);
+      setTransferTitle(null);
     }
   };
 
@@ -173,79 +200,43 @@ export default function App() {
     }, 1000);
   };
 
-  // Handler: Generate and Open Install Plan Preview
+  // Handler: Download, verify, and install the selected published archive.
   const handleStartInstallPlan = async (mod: ModSummary, selectedVersion?: { id: string; version: string; size_bytes: number; sha256: string }) => {
     if (!activeInstallation.is_valid) { showToast('请先验证 MAS 目录。'); return; }
+    if (installingRef.current || isDownloadingArchive) return;
+    if (isGameRunning) { showToast('请先退出 MAS 游戏再安装。'); return; }
+    if (hasDependencyBlocker && mod.id === 'mod_memories_rain') { showToast('缺少前置依赖 ExtraPlus，无法安装。'); return; }
+    installingRef.current = true;
+    setInstallingModId(mod.id);
+    setTransferTitle(mod.title);
+    setInstallStage('preparing');
     const version = selectedVersion || { id: mod.latest_version_id, version: mod.latest_version, size_bytes: mod.size_bytes, sha256: mod.sha256 };
     try {
-      showToast(`正在校验 ${mod.title} 的 ZIP 归档...`);
       const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-      const archive = await fetchVerifiedArchive(version.id, base);
-      setPendingArchives((prev) => ({ ...prev, [version.id]: { blob: archive.blob, sha256: archive.sha256 } }));
+      setArchiveProgress(null);
+      const archive = await fetchVerifiedArchive(version.id, base, fetch, setArchiveProgress);
       await SetMASRoot(activeInstallation.path_hint);
-    } catch (error) { showToast(`安装准备失败：${error instanceof Error ? error.message : String(error)}`); return; }
-    const isUpdate = installedMods.some((i) => i.mod_id === mod.id);
-
-    // Build realistic Plan according to contract
-    const newPlan: Plan = {
-      plan_id: `plan_${activeInstallation.id}_${mod.id}_${Date.now().toString().slice(-6)}`,
-      kind: isUpdate ? 'update' : 'install',
-      installation_id: activeInstallation.id,
-      mod_id: mod.id,
-      mod_title: mod.title,
-      version_id: version.id,
-      version_str: version.version,
-      expires_at: new Date(Date.now() + 300000).toISOString(),
-      dependency_blockers:
-        hasDependencyBlocker && mod.id === 'mod_memories_rain'
-          ? [
-              {
-                mod_id: 'mod_extraplus',
-                mod_title: 'ExtraPlus',
-                required_range: '>=1.3.0',
-                reason: '缺少核心前置子模组运行库，需先行安装 ExtraPlus 框架。',
-              },
-            ]
-          : [],
-      semantic_blockers: [],
-      changes: [
-        {
-          target_path: `game/submods/${mod.id}/header.rpy`,
-          action: isUpdate ? 'OVERWRITE' : 'CREATE',
-          previous_owner: isUpdate ? mod.title : null,
-          next_owner: mod.title,
-          previous_hash: isUpdate ? '8835b8df838520cf8126b4859a4bb38ca094f31c' : null,
-          next_hash: version.sha256.slice(0, 40),
-          reason: '核心入口声明与子模组元数据注册',
-          backup_required: isUpdate,
-        },
-        {
-          target_path: `game/submods/${mod.id}/content.rpy`,
-          action: isUpdate ? 'OVERWRITE' : 'CREATE',
-          previous_owner: isUpdate ? mod.title : null,
-          next_owner: mod.title,
-          previous_hash: isUpdate ? '38a902bf8910a8b901fc883901af88290192c392' : null,
-          next_hash: version.sha256.slice(20, 60),
-          reason: '功能交互对话流与事件监听脚本',
-          backup_required: isUpdate,
-        },
-        {
-          target_path: `game/submods/${mod.id}/assets/pack.png`,
-          action: 'CREATE',
-          previous_owner: null,
-          next_owner: mod.title,
-          previous_hash: null,
-          next_hash: '9a87d46e38b3a0f18835b8df838520cf8126b485',
-          reason: 'UI 贴图资源',
-          backup_required: false,
-        },
-      ],
-      backups_required: isUpdate ? 2 : 0,
-      bytes_required: version.size_bytes + 2400000,
-      warnings: [],
-    };
-
-    setCurrentPlan(newPlan);
+      setArchiveProgress(null);
+      setInstallStage('installing');
+      showToast(`正在安装 ${mod.title}...`);
+      await handleApplyPlan({
+        plan_id: `install_${mod.id}_${Date.now()}`,
+        kind: installedMods.some((item) => item.mod_id === mod.id) ? 'update' : 'install',
+        installation_id: activeInstallation.id, mod_id: mod.id, mod_title: mod.title,
+        version_id: version.id, version_str: version.version,
+        expires_at: new Date(Date.now() + 300000).toISOString(),
+        dependency_blockers: [], semantic_blockers: [], changes: [],
+        backups_required: 0, bytes_required: version.size_bytes, warnings: [],
+      }, archive);
+    } catch (error) {
+      showToast(`安装失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setArchiveProgress(null);
+      installingRef.current = false;
+      setInstallingModId(null);
+      setTransferTitle(null);
+      setInstallStage(null);
+    }
   };
 
   // Handler: Start Uninstall Plan
@@ -303,12 +294,8 @@ export default function App() {
   };
 
   // Handler: Apply Plan (Atomic write transaction)
-  const handleApplyPlan = async (planId: string) => {
-    if (!currentPlan) return;
-    const plan = currentPlan;
+  const handleApplyPlan = async (plan: Plan, archive?: { blob: Blob; sha256: string }) => {
     setCurrentPlan(null);
-
-    const archive = pendingArchives[plan.version_id];
     if (plan.kind === 'uninstall') {
       const installed = installedMods.find((item) => item.mod_id === plan.mod_id);
       if (!installed?.managed_operation_id) {
@@ -338,8 +325,8 @@ export default function App() {
       try {
         const encoded = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.onerror = () => reject(reader.error); reader.readAsDataURL(archive.blob); });
         const operationId = `op_${plan.kind}_${plan.mod_id}_${Date.now()}`;
-        const result = await ApplyArchive({ operation_id: operationId, archive_base64: encoded, expected_sha256: archive.sha256 });
-        setPendingArchives((prev) => { const next = { ...prev }; delete next[plan.version_id]; return next; });
+        const result = await ApplyArchive({ operation_id: operationId, archive_base64: encoded, expected_sha256: archive.sha256,
+          mod_id: plan.mod_id, version_id: plan.version_id, version: plan.version_str, title: plan.mod_title });
         setOperations((prev) => [{
           operation_id: operationId, installation_id: plan.installation_id,
           mod_id: plan.mod_id, mod_title: plan.mod_title, version_id: plan.version_id,
@@ -574,6 +561,19 @@ export default function App() {
     catch (error) { showToast(`移除实例失败：${String(error)}`); }
   };
 
+  const handleLaunchInstance = async (id: string) => {
+    if (isLaunchingGame) return;
+    setIsLaunchingGame(true);
+    try {
+      await LaunchMASInstance(id);
+      showToast('游戏已启动。');
+    } catch (error) {
+      showToast(`启动失败：${String(error)}`);
+    } finally {
+      setIsLaunchingGame(false);
+    }
+  };
+
   const handleRefreshInstances = async () => {
     try { syncInstances(await ListMASInstances() as MASInstancesState); }
     catch (error) { showToast(`重新检查失败：${String(error)}`); }
@@ -634,7 +634,21 @@ export default function App() {
         onToggleGameRunning={() => showToast('MAS 进程检测尚未接入。')}
         onToggleOffline={() => showToast('离线缓存尚未接入。')}
         onOpenInstancesView={() => setActiveTab('instances')}
+        onLaunchGame={() => handleLaunchInstance(activeInstallationId)}
+        isLaunchingGame={isLaunchingGame}
       />
+
+      {(isDownloadingArchive || installingModId !== null) && (
+        <div role="status" aria-label="下载进度" className="shrink-0 border-b border-neutral-800 bg-neutral-900 px-4 py-2 text-xs text-neutral-200">
+          <div className="mb-1.5 flex items-center justify-between gap-3">
+            <span className="min-w-0 truncate">{archiveProgress?.stage === 'downloading' ? `正在下载 ${transferTitle}` : archiveProgress?.stage === 'verifying' ? `正在校验 ${transferTitle}` : installStage === 'installing' ? `正在安装 ${transferTitle}` : `正在准备下载 ${transferTitle}`}</span>
+            <span className="shrink-0 font-mono tabular-nums text-neutral-300">{archiveProgress ? `${transferPercent}% · ${formatTransferBytes(archiveProgress.received)} / ${formatTransferBytes(archiveProgress.total)}` : installStage === 'installing' ? '下载完成' : '等待响应'}</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded bg-neutral-700" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={archiveProgress ? transferPercent : undefined}>
+            <div className={`h-full bg-emerald-500 transition-[width] duration-150 ${archiveProgress ? '' : 'animate-pulse'}`} style={{ width: archiveProgress ? `${transferPercent}%` : installStage === 'installing' ? '100%' : '30%' }} />
+          </div>
+        </div>
+      )}
 
       {/* 2. Main Desktop Workspace (Sidebar + Dynamic Viewport) */}
       <div className="flex flex-1 overflow-hidden">
@@ -642,7 +656,7 @@ export default function App() {
         <Sidebar
           activeTab={activeTab}
           onSelectTab={(tab) => {
-            if (tab === 'catalog' || tab === 'instances') setActiveTab(tab);
+            if (tab === 'catalog' || tab === 'instances' || tab === 'installed') setActiveTab(tab);
             else showToast('本地安装、恢复和优先级服务尚未接入。');
           }}
           activeInstallation={activeInstallation}
@@ -664,12 +678,37 @@ export default function App() {
               onOpenDetail={(mod) => setSelectedModDetail(mod)}
               onStartInstallPlan={handleStartInstallPlan}
               onStartUpdatePlan={handleStartInstallPlan}
+              installingModId={installingModId}
+              installProgress={installingModId ? archiveProgress : null}
             />
           )}
 
           {activeTab === 'installed' && (
             <InstalledView
               installedMods={installedMods}
+              spritepacks={spritepacks}
+              onRefreshSpritepacks={() => { void ScanInstalledSpritepacks().then((items) => setSpritepacks(items as Spritepack[])).catch((error) => showToast(`精灵包扫描失败：${String(error)}`)); }}
+              onCreateSpriteGift={async (file) => {
+                try {
+                  const path = await CreateSpriteGift(file);
+                  return `礼物已创建：${path}`;
+                } catch (error) {
+                  const message = String(error);
+                  if (message.includes('sprite_gift_already_exists')) return '礼物已存在，无需重复创建。';
+                  if (message.includes('spritepack_incomplete')) return '精灵包文件不完整，暂时无法创建礼物。';
+                  if (message.includes('spritepack_has_no_valid_giftname')) return '该精灵包没有可用的礼物名称。';
+                  return '礼物创建失败，请检查游戏目录权限后重试。';
+                }
+              }}
+              onDeleteSpritepack={async (file) => {
+                try {
+                  const result = await DeleteSpritepack(file);
+                  setSpritepacks(await ScanInstalledSpritepacks() as Spritepack[]);
+                  showToast(`已移出 ${result.files} 项，备份位于 ${result.backup}`);
+                } catch (error) {
+                  showToast(`删除精灵包失败：${String(error)}`);
+                }
+              }}
               onStartUpdatePlan={handleStartInstallPlan}
               onStartUninstallPlan={handleStartUninstallPlan}
               onStartRepairPlan={handleStartRepairPlan}
@@ -730,10 +769,12 @@ export default function App() {
           onClose={() => setSelectedModDetail(null)}
           onDownloadArchive={(mod, versionId) => void handleDownloadArchive(mod, versionId)}
           isDownloadingArchive={isDownloadingArchive}
+          archiveProgress={archiveProgress}
           onStartInstallPlan={(mod, version) => {
             setSelectedModDetail(null);
             void handleStartInstallPlan(mod, version);
           }}
+          isInstalling={installingModId === selectedModDetail.id}
           isInstalled={installedMods.some((i) => i.mod_id === selectedModDetail.id)}
           installedVersion={
             installedMods.find((i) => i.mod_id === selectedModDetail.id)?.installed_version
@@ -751,7 +792,7 @@ export default function App() {
           activeInstallation={activeInstallation}
           isGameRunning={isGameRunning}
           onClose={() => setCurrentPlan(null)}
-          onApplyPlan={handleApplyPlan}
+          onApplyPlan={() => { if (currentPlan) void handleApplyPlan(currentPlan); }}
         />
       )}
 

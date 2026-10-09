@@ -49,6 +49,33 @@ func TestApplyStopsOnExternalChange(t *testing.T) {
 	}
 }
 
+func TestJournalKeepsPathsWithoutFilePayload(t *testing.T) {
+	root := t.TempDir()
+	state := filepath.Join(t.TempDir(), "state")
+	content := make([]byte, 1024*1024)
+	for index := range content {
+		content[index] = byte(index % 251)
+	}
+	installer := New(root, state)
+	if err := installer.Apply(Operation{ID: "large", Changes: []Change{{Path: "game/Submods/large.bin", Content: content}}}); err != nil {
+		t.Fatal(err)
+	}
+	journal, err := installer.LoadJournal("large")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(journal.Operation.Changes) != 1 || journal.Operation.Changes[0].Path != "game/Submods/large.bin" || len(journal.Operation.Changes[0].Content) != 0 {
+		t.Fatalf("journal retained %d payload bytes", len(journal.Operation.Changes[0].Content))
+	}
+	info, err := os.Stat(filepath.Join(state, "large.json"))
+	if err != nil || info.Size() > 4096 {
+		t.Fatalf("journal size=%v err=%v", info, err)
+	}
+	if err := installer.Uninstall("large", "remove_large"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoadJournalAndRecoverRestoresBackup(t *testing.T) {
 	root := t.TempDir()
 	state := filepath.Join(t.TempDir(), "state")
@@ -126,11 +153,20 @@ func TestUninstallDeletesPreviousFileInsteadOfRestoringBackup(t *testing.T) {
 }
 
 func TestUninstallDeletesDriftedFile(t *testing.T) {
-	root := t.TempDir(); state := filepath.Join(t.TempDir(), "state")
-	p := filepath.Join(root, "game", "drift.txt"); _ = os.MkdirAll(filepath.Dir(p), 0o755); _ = os.WriteFile(p, []byte("before"), 0o644)
+	root := t.TempDir()
+	state := filepath.Join(t.TempDir(), "state")
+	p := filepath.Join(root, "game", "drift.txt")
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	_ = os.WriteFile(p, []byte("before"), 0o644)
 	i := New(root, state)
-	if err := i.Apply(Operation{ID: "install-drift", Changes: []Change{{Path: "game/drift.txt", Content: []byte("managed"), ExpectedSHA256: hashBytes([]byte("before"))}}}); err != nil { t.Fatal(err) }
+	if err := i.Apply(Operation{ID: "install-drift", Changes: []Change{{Path: "game/drift.txt", Content: []byte("managed"), ExpectedSHA256: hashBytes([]byte("before"))}}}); err != nil {
+		t.Fatal(err)
+	}
 	_ = os.WriteFile(p, []byte("user change"), 0o644)
-	if err := i.Uninstall("install-drift", "uninstall-drift"); err != nil { t.Fatal(err) }
-	if _, err := os.Stat(p); !os.IsNotExist(err) { t.Fatalf("drifted file was not deleted: %v", err) }
+	if err := i.Uninstall("install-drift", "uninstall-drift"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatalf("drifted file was not deleted: %v", err)
+	}
 }

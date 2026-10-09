@@ -72,7 +72,12 @@ func (i *Installer) Apply(op Operation) error {
 	if err := os.MkdirAll(filepath.Join(i.state, "backups", op.ID), 0o700); err != nil {
 		return err
 	}
-	j := Journal{Operation: op, Backups: map[string]string{}, State: "planned", UpdatedAt: time.Now().UTC()}
+	journalChanges := make([]Change, len(op.Changes))
+	for index, change := range op.Changes {
+		change.Content = nil
+		journalChanges[index] = change
+	}
+	j := Journal{Operation: Operation{ID: op.ID, Changes: journalChanges}, Backups: map[string]string{}, State: "planned", UpdatedAt: time.Now().UTC()}
 	if err := i.writeJournal(j); err != nil {
 		return err
 	}
