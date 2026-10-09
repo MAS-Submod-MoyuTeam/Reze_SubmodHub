@@ -1,410 +1,114 @@
-import React, { useState } from 'react';
-import {
-  X,
-  ShieldCheck,
-  AlertTriangle,
-  Download,
-  Copy,
-  Check,
-  FileCode2,
-  Image as ImageIcon,
-  Music,
-  GitBranch,
-  Layers,
-  FileSpreadsheet,
-  CheckCircle2,
-  ExternalLink,
-} from 'lucide-react';
-import { ModSummary, ModVersion, ScanReport } from '../types/client';
+import React, { useEffect, useState } from 'react';
+import { AlertTriangle, Check, Copy, Download, X } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { fetchModImages, fetchPublishedVersions, fetchSpriteSets, fetchVerifiedSpriteSelection, type CatalogVersion, type SpriteSet } from '../../../../ui/catalog-api';
+import { ModSummary } from '../types/client';
 
-interface ModDetailModalProps {
+interface Props {
   mod: ModSummary | null;
+  catalogMods: ModSummary[];
+  onSelectMod: (mod: ModSummary) => void;
   onClose: () => void;
-  onStartInstallPlan: (mod: ModSummary) => void;
-  onDownloadArchive: (mod: ModSummary) => void;
+  onStartInstallPlan: (mod: ModSummary, version: CatalogVersion) => void;
+  onDownloadArchive: (mod: ModSummary, versionId: string) => void;
   isDownloadingArchive: boolean;
   isInstalled: boolean;
   installedVersion?: string;
   hasUpdate?: boolean;
 }
 
-export const ModDetailModal: React.FC<ModDetailModalProps> = ({
-  mod,
-  onClose,
-  onStartInstallPlan,
-  onDownloadArchive,
-  isDownloadingArchive,
-  isInstalled,
-  installedVersion,
-  hasUpdate,
-}) => {
-  const [activeTab, setActiveTab] = useState<'scan' | 'files' | 'dependencies' | 'notes'>('scan');
-  const [copiedHash, setCopiedHash] = useState(false);
+const apiBase = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+const formatBytes = (bytes: number) => bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+const Markdown: React.FC<{ value: string }> = ({ value }) => <div className="min-w-0 space-y-2 break-words [&_a]:text-sky-400 [&_a]:underline [&_h1]:text-base [&_h2]:text-sm [&_h1]:font-semibold [&_h2]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-neutral-900 [&_pre]:p-2 [&_table]:block [&_table]:overflow-x-auto [&_img]:max-w-full"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{value}</ReactMarkdown></div>;
+
+export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod, onClose, onStartInstallPlan, onDownloadArchive, isDownloadingArchive, isInstalled, installedVersion, hasUpdate }) => {
+  const [versions, setVersions] = useState<CatalogVersion[]>([]);
+  const [selectedVersionId, setSelectedVersionId] = useState('');
+  const [images, setImages] = useState<string[]>([]);
+  const [spriteSets, setSpriteSets] = useState<SpriteSet[]>([]);
+  const [selectedSets, setSelectedSets] = useState<string[]>([]);
+  const [downloadingSprite, setDownloadingSprite] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!mod) return;
+    let active = true;
+    setLoading(true);
+    setError('');
+    setVersions([]);
+    setSelectedVersionId(mod.latest_version_id);
+    setImages([]);
+    setSpriteSets([]);
+    const detail = mod.category === 'spritepack'
+      ? fetchSpriteSets(mod.id, apiBase).then((sets) => { if (active) { setSpriteSets(sets); setSelectedSets(sets.length === 1 ? [sets[0].id] : []); } })
+      : fetchPublishedVersions(mod.id, apiBase).then((items) => { if (active) setVersions(items.filter((item) => item.state === 'published')); });
+    const pictures = mod.category === 'spritepack' ? Promise.resolve() : fetchModImages(mod.id, apiBase)
+      .then((items) => { if (active) setImages(items.map((url) => new URL(url, window.location.origin).href)); });
+    Promise.all([detail, pictures]).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [mod?.id, mod?.category]);
 
   if (!mod) return null;
-
-  // Retrieve version details or fallback
-  const versionData: ModVersion = {
-    id: mod.latest_version_id,
-    mod_id: mod.id,
-    version: mod.latest_version,
-    state: 'published',
-    size_bytes: mod.size_bytes,
-    sha256: mod.sha256,
-    release_notes: '发行说明暂不可用。',
-    dependencies: [],
-    created_at: mod.updated_at,
+  const selected = versions.find((version) => version.id === selectedVersionId) || versions[0];
+  const orderedVersions = [...versions].sort((a, b) => {
+    if (a.id === mod.latest_version_id) return -1;
+    if (b.id === mod.latest_version_id) return 1;
+    return (b.created_at || '').localeCompare(a.created_at || '');
+  });
+  const copyHash = async () => {
+    if (!selected) return;
+    await navigator.clipboard.writeText(selected.sha256);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  };
+  const downloadSets = async (ids: string[]) => {
+    if (!ids.length || downloadingSprite) return;
+    setDownloadingSprite(true);
+    try {
+      const archive = await fetchVerifiedSpriteSelection(mod.id, ids, apiBase);
+      const url = URL.createObjectURL(archive.blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `spritepack_${mod.id}_${ids.length === spriteSets.length ? 'all' : ids.length + '-sets'}.zip`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (cause) { setError(`套装下载失败：${cause instanceof Error ? cause.message : String(cause)}`); }
+    finally { setDownloadingSprite(false); }
   };
 
-  const scan = versionData.scan_report;
-
-  const copyHash = () => {
-    navigator.clipboard.writeText(versionData.sha256);
-    setCopiedHash(true);
-    setTimeout(() => setCopiedHash(false), 2000);
-  };
-
-  const formatBytes = (bytes: number) => {
-    if (bytes >= 1024 * 1024) {
-      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-    }
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs select-none">
-      <div className="bg-neutral-900 border border-neutral-700/80 rounded-xl w-full max-w-4xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        {/* Header */}
-        <div className="p-4 border-b border-neutral-800 flex items-start justify-between bg-neutral-900/90 shrink-0">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-neutral-100">{mod.title}</h2>
-              <span className="text-xs font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/80">
-                {versionData.version}
-              </span>
-              <span className="text-[11px] text-neutral-400 font-mono">
-                发布归档已锁定 (不可变版本)
-              </span>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-neutral-400 mt-1">
-              <span>作者: {mod.author.display_name}</span>
-              <span aria-hidden="true">·</span>
-              <span>分类: {mod.category === 'submod' ? '功能模组 (submod)' : '外观礼包 (spritepack)'}</span>
-              <span aria-hidden="true">·</span>
-              <span>要求 MAS 范围: {mod.mas_version_range}</span>
-            </div>
-          </div>
-
-          <button
-            onClick={onClose}
-            className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* SHA-256 and Integrity Bar */}
-        <div className="px-4 py-2 bg-neutral-950/80 border-b border-neutral-800/80 flex items-center justify-between text-xs font-mono text-neutral-400 shrink-0">
-          <div className="flex items-center gap-2 truncate pr-4">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="text-neutral-400 shrink-0">SHA-256:</span>
-            <span className="text-neutral-300 truncate selection:bg-neutral-800">{versionData.sha256}</span>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="text-neutral-400 tabular-nums">大小: {formatBytes(versionData.size_bytes)}</span>
-            <button
-              onClick={copyHash}
-              className="flex items-center gap-1 px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[11px] transition-colors"
-            >
-              {copiedHash ? (
-                <>
-                  <Check className="w-3 h-3 text-emerald-400" />
-                  <span>已复制</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3 h-3 text-neutral-400" />
-                  <span>复制校验码</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Sub-Tabs: Scan Report / File Tree / Dependencies / Release Notes */}
-        <div className="flex items-center gap-1 px-4 pt-2 border-b border-neutral-800 bg-neutral-900/60 text-xs shrink-0">
-          <button
-            onClick={() => setActiveTab('scan')}
-            className={`px-3 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === 'scan'
-                ? 'border-emerald-500 text-emerald-400'
-                : 'border-transparent text-neutral-400 hover:text-neutral-200'
-            }`}
-          >
-            安全扫描与签名报告
-          </button>
-          <button
-            onClick={() => setActiveTab('files')}
-            className={`px-3 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === 'files'
-                ? 'border-emerald-500 text-emerald-400'
-                : 'border-transparent text-neutral-400 hover:text-neutral-200'
-            }`}
-          >
-            包文件树 ({scan?.files.length || 0})
-          </button>
-          <button
-            onClick={() => setActiveTab('dependencies')}
-            className={`px-3 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === 'dependencies'
-                ? 'border-emerald-500 text-emerald-400'
-                : 'border-transparent text-neutral-400 hover:text-neutral-200'
-            }`}
-          >
-            依赖关系 ({versionData.dependencies.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('notes')}
-            className={`px-3 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === 'notes'
-                ? 'border-emerald-500 text-emerald-400'
-                : 'border-transparent text-neutral-400 hover:text-neutral-200'
-            }`}
-          >
-            发行说明
-          </button>
-        </div>
-
-        {/* Modal Scrollable Body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Tab 1: Scan Report */}
-          {activeTab === 'scan' && (
-            <div className="space-y-4">
-              {/* Scan Status Summary */}
-              <div className="p-3.5 rounded-lg bg-neutral-950/70 border border-neutral-800 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                <div>
-                  <div className="text-neutral-400 mb-0.5">静态合规状态</div>
-                  <div className="flex items-center gap-1.5 font-semibold text-emerald-400">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>通过预审 (Ready)</span>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-neutral-400 mb-0.5">阻断性项 (Blockers)</div>
-                  <div className="font-semibold font-mono tabular-nums text-neutral-200">
-                    {scan?.blockers.length || 0} 项阻断
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-neutral-400 mb-0.5">Ren&apos;Py 脚本文件</div>
-                  <div className="font-semibold font-mono tabular-nums text-neutral-200 flex items-center gap-1.5">
-                    <FileCode2 className="w-3.5 h-3.5 text-sky-400" />
-                    <span>{scan?.resource_stats.scripts_count} 个 .rpy 文件</span>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-neutral-400 mb-0.5">材质资源统计</div>
-                  <div className="font-semibold font-mono tabular-nums text-neutral-200 flex items-center gap-1.5">
-                    <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
-                    <span>{scan?.resource_stats.images_count} 张图像</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Submod / Spritepack Registrations */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-semibold text-neutral-300">
-                  代码声明与静态注册识别（未知静态解析不假定安全）
-                </h4>
-                <div className="p-3 rounded-lg bg-neutral-950/50 border border-neutral-800 space-y-2 text-xs">
-                  {scan?.registrations && scan.registrations.length > 0 ? (
-                    scan.registrations.map((reg) => (
-                      <div key={reg.name} className="flex items-center justify-between font-mono">
-                        <div className="flex items-center gap-2">
-                          <span className="text-neutral-400">[{reg.type}]</span>
-                          <span className="text-neutral-200">{reg.name}</span>
-                        </div>
-                        <span className="text-[11px] text-emerald-400">
-                          置信度: 已知注册 ({reg.confidence})
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-neutral-400 font-mono text-xs">
-                      无 Ren&apos;Py 代码钩子注册（纯静态外观贴图包）
-                    </div>
-                  )}
-
-                  {/* Derived giftnames */}
-                  {scan?.derived_gifts && scan.derived_gifts.length > 0 && (
-                    <div className="pt-2 border-t border-neutral-800/80">
-                      <div className="text-neutral-400 mb-1 text-[11px]">
-                        派生礼物命名绑定 (Derived Giftnames):
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap font-mono text-emerald-300">
-                        {scan.derived_gifts.map((g) => (
-                          <span key={g} className="px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/60 text-xs">
-                            {g}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Mod Description */}
-              <div className="space-y-1.5">
-                <h4 className="text-xs font-semibold text-neutral-300">详细描述</h4>
-                <p className="text-xs text-neutral-300 leading-relaxed bg-neutral-950/40 p-3 rounded-lg border border-neutral-800/60">
-                  {mod.description || mod.summary}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Tab 2: File Tree */}
-          {activeTab === 'files' && (
-            <div className="space-y-2">
-              <div className="text-xs text-neutral-400">
-                安装归档内包含的解压映射目标路径及文件散列：
-              </div>
-              <div className="border border-neutral-800 rounded-lg overflow-hidden font-mono text-xs">
-                <table className="w-full text-left">
-                  <thead className="bg-neutral-950 text-neutral-400 text-[11px] border-b border-neutral-800">
-                    <tr>
-                      <th className="py-2 px-3">目标安装路径</th>
-                      <th className="py-2 px-3">类型</th>
-                      <th className="py-2 px-3 text-right">大小</th>
-                      <th className="py-2 px-3">SHA-256 前缀</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-800/60 bg-neutral-900/40">
-                    {scan?.files.map((f) => (
-                      <tr key={f.target_path} className="hover:bg-neutral-800/30">
-                        <td className="py-2 px-3 text-neutral-200 truncate max-w-sm" title={f.target_path}>
-                          {f.target_path}
-                        </td>
-                        <td className="py-2 px-3 text-neutral-400 uppercase text-[10px]">
-                          {f.kind}
-                        </td>
-                        <td className="py-2 px-3 text-right text-neutral-300 tabular-nums">
-                          {formatBytes(f.size_bytes)}
-                        </td>
-                        <td className="py-2 px-3 text-neutral-400 text-[10px]">
-                          {f.sha256.substring(0, 16)}...
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Tab 3: Dependencies */}
-          {activeTab === 'dependencies' && (
-            <div className="space-y-3">
-              <div className="text-xs text-neutral-400">
-                此模组声明依赖的前置子模组或组件库：
-              </div>
-              {versionData.dependencies.length === 0 ? (
-                <div className="p-4 rounded-lg bg-neutral-950/40 border border-neutral-800 text-xs text-neutral-400">
-                  独立运行，无外部依赖前置模组。
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {versionData.dependencies.map((dep) => (
-                    <div
-                      key={dep.mod_id}
-                      className="p-3 rounded-lg bg-neutral-950/60 border border-neutral-800 flex items-center justify-between text-xs"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <GitBranch className="w-4 h-4 text-emerald-400" />
-                        <div>
-                          <div className="font-semibold text-neutral-200">
-                            {dep.mod_title || dep.mod_id}
-                          </div>
-                          <div className="text-[11px] text-neutral-400 font-mono">
-                            兼容版本约束: {dep.version_range} · {dep.required ? '强制必须' : '可选推荐'}
-                          </div>
-                        </div>
-                      </div>
-
-                      <span className="text-emerald-400 text-[11px] font-mono flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>已满足本地契约</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Tab 4: Release Notes */}
-          {activeTab === 'notes' && (
-            <div className="space-y-2">
-              <div className="text-xs text-neutral-400 font-mono">
-                发布时间: {new Date(versionData.created_at).toLocaleString()}
-              </div>
-              <div className="p-3 rounded-lg bg-neutral-950/60 border border-neutral-800 text-xs text-neutral-200 whitespace-pre-wrap leading-relaxed font-sans">
-                {versionData.release_notes}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer Actions */}
-        <div className="p-4 border-t border-neutral-800 bg-neutral-900/90 flex items-center justify-between shrink-0">
-          <div className="text-xs text-neutral-400">
-            {isInstalled ? (
-              hasUpdate ? (
-                <span className="text-amber-400 font-mono">
-                  当前已安装 {installedVersion}，检测到可升级为 {versionData.version}
-                </span>
-              ) : (
-                <span className="text-emerald-400 font-mono">
-                  已安装最新版本 ({installedVersion})
-                </span>
-              )
-            ) : (
-              <span>准备就绪：点击右侧开始安装前依赖校验与文件覆盖计划生成</span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={() => onDownloadArchive(mod)}
-              disabled={isDownloadingArchive}
-              className="px-3.5 py-1.5 text-xs font-medium text-neutral-200 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50"
-            >
-              <Download className="w-3.5 h-3.5" />
-              {isDownloadingArchive ? '下载校验中' : '下载 ZIP'}
-            </button>
-            <button
-              onClick={onClose}
-              className="px-3.5 py-1.5 text-xs font-medium text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700/80 rounded-lg transition-colors"
-            >
-              关闭
-            </button>
-            <button
-              onClick={() => {
-                onClose();
-                onStartInstallPlan(mod);
-              }}
-              className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>{isInstalled ? (hasUpdate ? '进入更新规划预览' : '重新安装/修复预览') : '进入安装规划预览'}</span>
-            </button>
-          </div>
-        </div>
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section role="dialog" aria-modal="true" aria-label={`${mod.title} 详情`} className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-2xl">
+      <header className="flex shrink-0 items-start justify-between gap-4 border-b border-neutral-800 px-5 py-4">
+        <div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-neutral-400"><span className="font-semibold text-emerald-400">{mod.category === 'spritepack' ? 'Spritepack 服饰配件' : 'Submod 功能模组'}</span><span>·</span><span>作者: {mod.author.display_name}</span>{mod.mas_version_range && <><span>·</span><span>兼容 MAS {mod.mas_version_range}</span></>}</div><h2 className="text-base font-bold">{mod.title}</h2></div>
+        <button onClick={onClose} title="关闭详情" aria-label="关闭详情" className="shrink-0 rounded p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-white"><X className="h-5 w-5" /></button>
+      </header>
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5 text-xs leading-relaxed">
+        <section className="space-y-2"><h3 className="font-semibold text-neutral-100">详细简介</h3><div className="rounded border border-neutral-800 bg-neutral-950 p-3 text-neutral-300"><Markdown value={mod.description || mod.summary || '暂无简介'} /></div></section>
+        {images.length > 0 && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{images.map((url, index) => <img key={url} src={url} alt={`${mod.title} 详情图 ${index + 1}`} loading="lazy" className="max-h-80 w-full rounded border border-neutral-800 bg-neutral-950 object-contain" />)}</div>}
+        {loading && <p className="text-neutral-400">正在读取详情...</p>}
+        {error && <div role="alert" className="rounded border border-rose-800 bg-rose-950/50 p-3 text-rose-200">详情读取失败：{error}</div>}
+        {mod.category === 'spritepack' ? <section className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">外观套装 · {spriteSets.length} 套</h3><div className="flex flex-wrap gap-2"><button onClick={() => setSelectedSets(selectedSets.length === spriteSets.length ? [] : spriteSets.map((set) => set.id))} className="rounded bg-neutral-800 px-2 py-1.5">{selectedSets.length === spriteSets.length ? '取消全选' : '全选'}</button><button disabled={!selectedSets.length || downloadingSprite} onClick={() => void downloadSets(selectedSets)} className="rounded bg-emerald-700 px-2 py-1.5 disabled:opacity-50">下载已选 ({selectedSets.length})</button><button disabled={!spriteSets.length || downloadingSprite} onClick={() => void downloadSets(spriteSets.map((set) => set.id))} className="rounded border border-emerald-700 px-2 py-1.5 disabled:opacity-50">全部下载</button></div></div>{!loading && !error && spriteSets.length === 0 && <p className="text-neutral-400">暂无公开套装</p>}{spriteSets.map((set) => <div key={set.id} className="rounded border border-neutral-800 bg-neutral-950 p-3"><label className="flex cursor-pointer items-center gap-2 font-semibold"><input type="checkbox" checked={selectedSets.includes(set.id)} onChange={(event) => setSelectedSets((previous) => event.target.checked ? [...previous, set.id] : previous.filter((id) => id !== set.id))} />{set.name} <span className="text-neutral-500">({set.items.length})</span></label><div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">{set.items.map((item, index) => <div key={`${set.id}-${index}`} className="min-w-0 text-neutral-300">{item.preview_url && <img src={new URL(item.preview_url, window.location.origin).href} alt={item.display_name} loading="lazy" className="mb-1 aspect-square w-full rounded bg-neutral-900 object-contain" />}<span className="break-words">{item.display_name}</span></div>)}</div></div>)}</section> :
+          <section className="space-y-3"><h3 className="font-semibold">版本历史</h3><div className="flex gap-2 overflow-x-auto pb-1">{orderedVersions.map((version) => <button key={version.id} onClick={() => setSelectedVersionId(version.id)} className={`shrink-0 rounded px-3 py-1.5 ${selected?.id === version.id ? 'bg-emerald-700 text-white' : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'}`}>{version.version}{version.deprecated && <AlertTriangle className="ml-1 inline h-3 w-3 text-amber-400" aria-label="不推荐使用" />}</button>)}</div>
+            {!loading && !error && versions.length === 0 && <p className="text-neutral-400">暂无公开版本</p>}
+            {selected && <div className="space-y-4 rounded border border-neutral-800 bg-neutral-950 p-4"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 pb-3"><div><div className="font-semibold text-neutral-100">版本 {selected.version}</div><div className="text-neutral-400">大小: {formatBytes(selected.size_bytes)}{selected.created_at && ` · 发布于 ${new Date(selected.created_at).toLocaleDateString()}`}</div></div>{selected.deprecated && <span className="text-amber-400">不推荐使用：{selected.deprecation_reason || '请查看其他版本'}</span>}</div>
+              <div><h4 className="mb-1 font-medium text-neutral-400">发行说明</h4><div className="text-neutral-200"><Markdown value={selected.release_notes || '暂无更新日志'} /></div></div>
+              {(selected.dependencies || []).length > 0 && <div className="space-y-2"><h4 className="font-medium text-neutral-400">前置模组依赖</h4>{selected.dependencies!.map((dep, index) => {
+                const linkedIds = dep.linked_mod_ids?.length ? dep.linked_mod_ids : dep.linked_mod_id ? [dep.linked_mod_id] : [];
+                const linkedMods = linkedIds.map((id) => catalogMods.find((candidate) => candidate.id === id)).filter((candidate): candidate is ModSummary => Boolean(candidate));
+                return <div key={`${dep.mod_id}-${index}`} className="flex flex-wrap justify-between gap-2 rounded border border-neutral-800 bg-neutral-900 px-3 py-2"><span className="flex flex-wrap gap-2">{linkedMods.length ? linkedMods.map((candidate) => <button key={candidate.id} type="button" onClick={() => onSelectMod(candidate)} className="text-left font-medium text-emerald-400 hover:underline">{candidate.title}</button>) : dep.mod_title || dep.mod_id}</span><span className="text-neutral-400">{dep.version_range} {dep.required ? '(必需)' : '(可选建议)'}</span></div>;
+              })}</div>}
+              <div><div className="mb-1 flex items-center justify-between gap-2"><h4 className="font-medium text-neutral-400">归档 SHA-256</h4><button onClick={() => void copyHash()} title="复制 SHA-256" aria-label="复制 SHA-256" className="text-emerald-400">{copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}</button></div><div className="break-all rounded border border-neutral-800 bg-neutral-900 p-2 font-mono text-neutral-200 select-all">{selected.sha256}</div></div>
+              {selected.scan_report_id && <p className="text-neutral-500">扫描报告 ID：{selected.scan_report_id}。公开接口暂未提供完整扫描报告。</p>}
+            </div>}
+          </section>}
       </div>
-    </div>
-  );
+      {mod.category !== 'spritepack' && selected && <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-800 p-4 text-xs"><span className="text-neutral-400">{isInstalled ? `${hasUpdate ? '可更新' : '已安装'} ${installedVersion || ''}` : '选择版本后下载或安装'}</span><div className="flex flex-wrap gap-2"><button onClick={() => onDownloadArchive(mod, selected.id)} disabled={isDownloadingArchive} className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 text-neutral-100 hover:bg-neutral-700 disabled:opacity-50"><Download className="h-4 w-4" />{isDownloadingArchive ? '校验中' : '下载 ZIP'}</button><button onClick={() => { onClose(); onStartInstallPlan(mod, selected); }} className="flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600"><Download className="h-4 w-4" />安装预览</button></div></footer>}
+    </section>
+  </div>;
 };

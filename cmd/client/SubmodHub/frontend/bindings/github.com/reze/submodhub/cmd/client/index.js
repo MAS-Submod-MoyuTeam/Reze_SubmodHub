@@ -13,5 +13,7 @@ export {
     InstallRequest,
     LocalSubmod,
     LocalSubmodFile,
+    MASInstance,
+    MASInstancesState,
     MASStatus
 } from "./models.js";

@@ -16,7 +16,7 @@ import {
   MOCK_MOD_VERSIONS,
 } from './data/mockData';
 import { fetchPublishedCatalog, fetchVerifiedArchive } from '../../../ui/catalog-api';
-import { ApplyArchive, GetMASStatus, ScanLocalSubmods, SetMASRoot, Uninstall, LocalSubmod } from './wails';
+import { AddMASInstance, ApplyArchive, BrowseMASDirectory, ListMASInstances, RemoveMASInstance, ScanLocalSubmods, SelectMASInstance, SetMASRoot, Uninstall, LocalSubmod, MASInstancesState } from './wails';
 import {
   Installation,
   ModSummary,
@@ -73,7 +73,7 @@ export default function App() {
       const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
       const entries = await fetchPublishedCatalog(base);
       setCatalogMods(entries.map(({ mod, version }) => ({
-        id: mod.id, title: mod.title, summary: mod.summary || '', description: mod.summary || '',
+        id: mod.id, title: mod.title, summary: mod.summary || '', description: mod.description || mod.summary || '',
         author: mod.author || { id: '', display_name: '未知作者' },
         category: mod.category || 'submod', tags: mod.tags || [],
         supported_platforms: mod.supported_platforms || [], mas_version_range: mod.mas_version_range || '',
@@ -98,10 +98,10 @@ export default function App() {
         author_name: '未知作者 (本地检测)', category: 'submod',
         installed_version: item.version || '未声明', installed_version_id: '',
         latest_version: '未托管', latest_version_id: '', has_update: false,
-        priority: 0, is_managed: false, files_count: item.files.length,
-        size_bytes: item.files.reduce((sum, file) => sum + file.size, 0),
-        installed_at: new Date().toISOString(), sha256: item.files[0]?.sha256 || '',
-        unmanaged_paths: item.files.map((file) => file.path), submod_dir_name: item.directory,
+        priority: 0, is_managed: false, files_count: (item.files || []).length,
+        size_bytes: (item.files || []).reduce((sum, file) => sum + file.size, 0),
+        installed_at: new Date().toISOString(), sha256: item.files?.[0]?.sha256 || '',
+        unmanaged_paths: (item.files || []).map((file) => file.path), submod_dir_name: item.directory,
         integrity_status: 'unknown',
       }));
       setInstalledMods((current) => [...current.filter((item) => item.is_managed), ...unmanaged]);
@@ -110,15 +110,29 @@ export default function App() {
     }
   };
 
-  useEffect(() => { void loadCatalog(); void GetMASStatus().then((status) => {
-    if (status.valid && status.game_exists) {
-      const installation: Installation = { id: 'mas-real', label: 'MAS 实例', platform: 'windows', path_hint: status.root, permission_state: 'authorized', mas_version: 'unknown', is_valid: true, is_running: false, disk_available_bytes: 0, last_validated_at: new Date().toISOString() };
-      setInstallations([installation]); setActiveInstallationId(installation.id); void scanLocalSubmods();
-    }
-  }).catch(() => undefined); }, []);
+  const syncInstances = (state: MASInstancesState) => {
+    const items: Installation[] = state.instances.map((item) => ({
+      id: item.id, label: item.label, platform: 'windows', path_hint: item.root,
+      permission_state: item.status.valid && item.status.game_exists ? 'authorized' : 'revoked',
+      mas_version: '未检测', is_valid: item.status.valid && item.status.game_exists,
+      is_running: false, disk_available_bytes: 0, last_validated_at: new Date().toISOString(),
+    }));
+    setInstallations(items.length ? items : [{ ...INITIAL_INSTALLATIONS[0], id: 'unverified', label: '尚未连接 MAS', path_hint: '', permission_state: 'pending', mas_version: '', is_valid: false, is_running: false, disk_available_bytes: 0, last_validated_at: '' }]);
+    setActiveInstallationId(state.active_id || 'unverified');
+    setInstalledMods([]);
+    if (state.active_id) void scanLocalSubmods();
+  };
 
-  const activeInstallation =
-    installations.find((i) => i.id === activeInstallationId) || installations[0];
+  useEffect(() => {
+    void loadCatalog();
+    void ListMASInstances().then((state) => syncInstances(state as MASInstancesState))
+      .catch((error) => showToast(`实例列表读取失败：${String(error)}`));
+  }, []);
+
+  const activeInstallation = installations.find((i) => i.id === activeInstallationId) || {
+    ...INITIAL_INSTALLATIONS[0], id: 'unverified', label: '尚未选择 MAS', path_hint: '',
+    permission_state: 'pending' as const, is_valid: false,
+  };
 
   const unmanagedCount = installedMods.filter((m) => !m.is_managed).length;
   const recoverableOpsCount = operations.filter((o) => o.state === 'recoverable').length;
@@ -128,16 +142,16 @@ export default function App() {
     void loadCatalog();
   };
 
-  const handleDownloadArchive = async (mod: ModSummary) => {
+  const handleDownloadArchive = async (mod: ModSummary, versionId = mod.latest_version_id) => {
     if (isDownloadingArchive) return;
     setIsDownloadingArchive(true);
     try {
       const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-      const archive = await fetchVerifiedArchive(mod.latest_version_id, base);
+      const archive = await fetchVerifiedArchive(versionId, base);
       const url = URL.createObjectURL(archive.blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `submod_${mod.latest_version_id}.zip`;
+      link.download = `submod_${versionId}.zip`;
       document.body.append(link);
       link.click();
       link.remove();
@@ -160,13 +174,14 @@ export default function App() {
   };
 
   // Handler: Generate and Open Install Plan Preview
-  const handleStartInstallPlan = async (mod: ModSummary) => {
+  const handleStartInstallPlan = async (mod: ModSummary, selectedVersion?: { id: string; version: string; size_bytes: number; sha256: string }) => {
     if (!activeInstallation.is_valid) { showToast('请先验证 MAS 目录。'); return; }
+    const version = selectedVersion || { id: mod.latest_version_id, version: mod.latest_version, size_bytes: mod.size_bytes, sha256: mod.sha256 };
     try {
       showToast(`正在校验 ${mod.title} 的 ZIP 归档...`);
       const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-      const archive = await fetchVerifiedArchive(mod.latest_version_id, base);
-      setPendingArchives((prev) => ({ ...prev, [mod.latest_version_id]: { blob: archive.blob, sha256: archive.sha256 } }));
+      const archive = await fetchVerifiedArchive(version.id, base);
+      setPendingArchives((prev) => ({ ...prev, [version.id]: { blob: archive.blob, sha256: archive.sha256 } }));
       await SetMASRoot(activeInstallation.path_hint);
     } catch (error) { showToast(`安装准备失败：${error instanceof Error ? error.message : String(error)}`); return; }
     const isUpdate = installedMods.some((i) => i.mod_id === mod.id);
@@ -178,8 +193,8 @@ export default function App() {
       installation_id: activeInstallation.id,
       mod_id: mod.id,
       mod_title: mod.title,
-      version_id: mod.latest_version_id,
-      version_str: mod.latest_version,
+      version_id: version.id,
+      version_str: version.version,
       expires_at: new Date(Date.now() + 300000).toISOString(),
       dependency_blockers:
         hasDependencyBlocker && mod.id === 'mod_memories_rain'
@@ -200,7 +215,7 @@ export default function App() {
           previous_owner: isUpdate ? mod.title : null,
           next_owner: mod.title,
           previous_hash: isUpdate ? '8835b8df838520cf8126b4859a4bb38ca094f31c' : null,
-          next_hash: mod.sha256.slice(0, 40),
+          next_hash: version.sha256.slice(0, 40),
           reason: '核心入口声明与子模组元数据注册',
           backup_required: isUpdate,
         },
@@ -210,7 +225,7 @@ export default function App() {
           previous_owner: isUpdate ? mod.title : null,
           next_owner: mod.title,
           previous_hash: isUpdate ? '38a902bf8910a8b901fc883901af88290192c392' : null,
-          next_hash: mod.sha256.slice(20, 60),
+          next_hash: version.sha256.slice(20, 60),
           reason: '功能交互对话流与事件监听脚本',
           backup_required: isUpdate,
         },
@@ -226,7 +241,7 @@ export default function App() {
         },
       ],
       backups_required: isUpdate ? 2 : 0,
-      bytes_required: mod.size_bytes + 2400000,
+      bytes_required: version.size_bytes + 2400000,
       warnings: [],
     };
 
@@ -319,7 +334,7 @@ export default function App() {
       }
       return;
     }
-    if (archive && plan.kind !== 'uninstall') {
+    if (archive) {
       try {
         const encoded = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.onerror = () => reject(reader.error); reader.readAsDataURL(archive.blob); });
         const operationId = `op_${plan.kind}_${plan.mod_id}_${Date.now()}`;
@@ -543,32 +558,25 @@ export default function App() {
   };
 
   // Handler: Add Custom Instance
-  const handleAddCustomInstance = (label: string, path: string) => {
-    const newInst: Installation = {
-      id: `inst_custom_${Date.now()}`,
-      label,
-      platform: 'windows',
-      path_hint: path,
-      permission_state: 'authorized',
-      mas_version: 'v0.12.14',
-      is_valid: true,
-      is_running: false,
-      disk_available_bytes: 84000000000,
-      last_validated_at: new Date().toISOString(),
-    };
-    setInstallations((prev) => [...prev, newInst]);
-    setActiveInstallationId(newInst.id);
-    showToast(`新 MAS 实例 "${label}" 验证通过并已设为活动实例`);
+  const handleAddCustomInstance = async (label: string, path: string) => {
+    const state = await AddMASInstance(label, path);
+    syncInstances(state as MASInstancesState);
+    showToast('MAS 实例已添加并设为活动实例。');
   };
 
-  // Handler: Reauthorize Instance
-  const handleReauthorizeInstance = (id: string) => {
-    const installation = installations.find((item) => item.id === id);
-    if (!installation) return;
-    void SetMASRoot(installation.path_hint).then((status) => {
-      setInstallations((prev) => prev.map((item) => item.id === id ? { ...item, permission_state: status.valid && status.game_exists ? 'authorized' : 'revoked', is_valid: status.valid && status.game_exists, last_validated_at: new Date().toISOString() } : item));
-      showToast(status.valid && status.game_exists ? 'MAS 目录已通过 Wails Go bindings 重新验证。' : 'MAS 目录验证失败。');
-    }).catch((error) => showToast(`MAS 目录验证失败：${error instanceof Error ? error.message : String(error)}`));
+  const handleSelectInstance = async (id: string) => {
+    try { syncInstances(await SelectMASInstance(id) as MASInstancesState); }
+    catch (error) { showToast(`切换实例失败：${String(error)}`); }
+  };
+
+  const handleRemoveInstance = async (id: string) => {
+    try { syncInstances(await RemoveMASInstance(id) as MASInstancesState); }
+    catch (error) { showToast(`移除实例失败：${String(error)}`); }
+  };
+
+  const handleRefreshInstances = async () => {
+    try { syncInstances(await ListMASInstances() as MASInstancesState); }
+    catch (error) { showToast(`重新检查失败：${String(error)}`); }
   };
 
   // Scenario Toggles
@@ -620,12 +628,12 @@ export default function App() {
       <TitleBar
         installations={installations}
         activeInstallationId={activeInstallationId}
-        onSelectInstallation={setActiveInstallationId}
+        onSelectInstallation={(id) => { void handleSelectInstance(id); }}
         isGameRunning={isGameRunning}
         isOffline={isOffline}
         onToggleGameRunning={() => showToast('MAS 进程检测尚未接入。')}
         onToggleOffline={() => showToast('离线缓存尚未接入。')}
-        onOpenInstancesView={() => showToast('MAS 实例管理尚未接入。')}
+        onOpenInstancesView={() => setActiveTab('instances')}
       />
 
       {/* 2. Main Desktop Workspace (Sidebar + Dynamic Viewport) */}
@@ -634,7 +642,7 @@ export default function App() {
         <Sidebar
           activeTab={activeTab}
           onSelectTab={(tab) => {
-            if (tab === 'catalog') setActiveTab(tab);
+            if (tab === 'catalog' || tab === 'instances') setActiveTab(tab);
             else showToast('本地安装、恢复和优先级服务尚未接入。');
           }}
           activeInstallation={activeInstallation}
@@ -695,9 +703,11 @@ export default function App() {
             <InstancesView
               installations={installations}
               activeInstallationId={activeInstallationId}
-              onSelectActive={setActiveInstallationId}
+              onSelectActive={handleSelectInstance}
               onAddCustomInstance={handleAddCustomInstance}
-              onReauthorizeInstance={handleReauthorizeInstance}
+              onRemoveInstance={handleRemoveInstance}
+              onRefreshInstances={handleRefreshInstances}
+              onBrowseDirectory={BrowseMASDirectory}
             />
           )}
 
@@ -715,12 +725,14 @@ export default function App() {
       {selectedModDetail && (
         <ModDetailModal
           mod={selectedModDetail}
+          catalogMods={catalogMods}
+          onSelectMod={setSelectedModDetail}
           onClose={() => setSelectedModDetail(null)}
-          onDownloadArchive={(mod) => void handleDownloadArchive(mod)}
+          onDownloadArchive={(mod, versionId) => void handleDownloadArchive(mod, versionId)}
           isDownloadingArchive={isDownloadingArchive}
-          onStartInstallPlan={(mod) => {
+          onStartInstallPlan={(mod, version) => {
             setSelectedModDetail(null);
-            handleStartInstallPlan(mod);
+            void handleStartInstallPlan(mod, version);
           }}
           isInstalled={installedMods.some((i) => i.mod_id === selectedModDetail.id)}
           installedVersion={

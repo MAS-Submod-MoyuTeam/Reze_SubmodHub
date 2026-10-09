@@ -37,7 +37,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onOpenInstancesView,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const activeInst = installations.find((i) => i.id === activeInstallationId) || installations[0];
+  const activeInst = installations.find((i) => i.id === activeInstallationId) || {
+    label: '尚未选择 MAS', path_hint: '', is_valid: false, mas_version: '',
+  };
 
   return (
     <header className="h-10 bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-3 select-none shrink-0 z-40 text-xs">

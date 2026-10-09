@@ -10,14 +10,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"regexp"
+	"strings"
 
 	core "github.com/reze/submodhub/internal/install"
 	packagezip "github.com/reze/submodhub/internal/package"
 )
-
-const defaultMASRoot = `E:\MAS_Cn001280\MAS_CN0012F0`
 
 type MASStatus struct {
 	Root       string `json:"root"`
@@ -42,25 +40,39 @@ type ArchiveInstallResult struct {
 	Files    int      `json:"files"`
 	Warnings []string `json:"warnings"`
 }
-type LocalSubmodFile struct { Path string `json:"path"`; SHA256 string `json:"sha256"`; Size int64 `json:"size"` }
-type LocalSubmod struct { Directory string `json:"directory"`; Name string `json:"name"`; Version string `json:"version"`; Files []LocalSubmodFile `json:"files"` }
+type LocalSubmodFile struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+}
+type LocalSubmod struct {
+	Directory string            `json:"directory"`
+	Name      string            `json:"name"`
+	Version   string            `json:"version"`
+	Files     []LocalSubmodFile `json:"files"`
+}
 type DesktopService struct {
-	root  string
-	state string
-	core  *core.Installer
+	root       string
+	state      string
+	core       *core.Installer
+	configPath string
+	instances  []MASInstance
+	activeID   string
+	loaded     bool
 }
 
 func NewDesktopService() *DesktopService {
 	root := os.Getenv("SUBMODHUB_MAS_ROOT")
-	if root == "" && os.PathSeparator == '\\' {
-		root = defaultMASRoot
-	}
-	return &DesktopService{root: root}
+	configDir, _ := os.UserConfigDir()
+	return &DesktopService{root: root, configPath: filepath.Join(configDir, "SubmodHub", "instances.json")}
 }
 func (s *DesktopService) SetMASRoot(root string) (MASStatus, error) {
 	root = filepath.Clean(strings.TrimSpace(root))
 	if root == "." || root == "" || !filepath.IsAbs(root) {
 		return MASStatus{}, errors.New("invalid_mas_root")
+	}
+	if !fileExists(filepath.Join(root, "game")) {
+		return MASStatus{}, errors.New("mas_game_directory_missing")
 	}
 	s.root = root
 	s.state = filepath.Join(root, ".submodhub", "state")
@@ -85,22 +97,52 @@ func (s *DesktopService) GetMASStatus() (MASStatus, error) {
 	return MASStatus{Root: s.root, GamePath: game, Valid: fileExists(s.root), GameExists: fileExists(game), Submods: count}, nil
 }
 func (s *DesktopService) ScanLocalSubmods() ([]LocalSubmod, error) {
-	if s.root == "" { return nil, errors.New("mas_root_not_configured") }
+	if s.root == "" {
+		return nil, errors.New("mas_root_not_configured")
+	}
 	base := filepath.Join(s.root, "game", "Submods")
-	entries, err := os.ReadDir(base); if err != nil { if os.IsNotExist(err) { return []LocalSubmod{}, nil }; return nil, err }
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []LocalSubmod{}, nil
+		}
+		return nil, err
+	}
 	nameRe := regexp.MustCompile(`(?s)Submod\s*\(.*?\bname\s*=\s*["']([^"']+)["'].*?\bversion\s*=\s*["']([^"']+)["']`)
 	result := make([]LocalSubmod, 0)
 	for _, entry := range entries {
-		if !entry.IsDir() { continue }
-		root := filepath.Join(base, entry.Name()); item := LocalSubmod{Directory: entry.Name()}
+		if !entry.IsDir() {
+			continue
+		}
+		root := filepath.Join(base, entry.Name())
+		item := LocalSubmod{Directory: entry.Name()}
 		err = filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
-			if walkErr != nil { return walkErr }; if info.IsDir() { return nil }
-			b, readErr := os.ReadFile(path); if readErr != nil { return readErr }
-			h := sha256.Sum256(b); rel, relErr := filepath.Rel(filepath.Join(s.root, "game"), path); if relErr != nil { return relErr }
+			if walkErr != nil {
+				return walkErr
+			}
+			if info.IsDir() {
+				return nil
+			}
+			b, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			h := sha256.Sum256(b)
+			rel, relErr := filepath.Rel(filepath.Join(s.root, "game"), path)
+			if relErr != nil {
+				return relErr
+			}
 			item.Files = append(item.Files, LocalSubmodFile{Path: filepath.ToSlash(filepath.Join("game", rel)), SHA256: hex.EncodeToString(h[:]), Size: info.Size()})
-			if item.Name == "" && (strings.HasSuffix(strings.ToLower(path), ".rpy") || strings.HasSuffix(strings.ToLower(path), ".rpym") || strings.HasSuffix(strings.ToLower(path), ".py")) { if m := nameRe.FindSubmatch(b); len(m) == 3 { item.Name, item.Version = string(m[1]), string(m[2]) } }
+			if item.Name == "" && (strings.HasSuffix(strings.ToLower(path), ".rpy") || strings.HasSuffix(strings.ToLower(path), ".rpym") || strings.HasSuffix(strings.ToLower(path), ".py")) {
+				if m := nameRe.FindSubmatch(b); len(m) == 3 {
+					item.Name, item.Version = string(m[1]), string(m[2])
+				}
+			}
 			return nil
-		}); if err != nil { return nil, err }
+		})
+		if err != nil {
+			return nil, err
+		}
 		result = append(result, item)
 	}
 	return result, nil

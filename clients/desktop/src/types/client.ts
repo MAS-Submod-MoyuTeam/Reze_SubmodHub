@@ -77,6 +77,7 @@ export interface ModSummary {
   updated_at: string;
   downloads_count: number;
   banner_color?: string;
+  source_type?: string;
 }
 
 export interface Installation {

@@ -1,0 +1,176 @@
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
+)
+
+type MASInstance struct {
+	ID     string    `json:"id"`
+	Label  string    `json:"label"`
+	Root   string    `json:"root"`
+	Status MASStatus `json:"status"`
+}
+
+type MASInstancesState struct {
+	Instances []MASInstance `json:"instances"`
+	ActiveID  string        `json:"active_id"`
+}
+
+func (s *DesktopService) loadInstances() error {
+	if s.loaded {
+		return nil
+	}
+	data, err := os.ReadFile(s.configPath)
+	if errors.Is(err, os.ErrNotExist) {
+		s.instances = []MASInstance{}
+		s.loaded = true
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var stored MASInstancesState
+	if err := json.Unmarshal(data, &stored); err != nil {
+		return err
+	}
+	s.loaded = true
+	s.instances, s.activeID = stored.Instances, stored.ActiveID
+	for _, instance := range s.instances {
+		if instance.ID == s.activeID {
+			if _, err := s.SetMASRoot(instance.Root); err != nil {
+				s.activeID = ""
+			}
+			break
+		}
+	}
+	return nil
+}
+
+func (s *DesktopService) saveInstances() error {
+	if err := os.MkdirAll(filepath.Dir(s.configPath), 0o700); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(MASInstancesState{Instances: s.instances, ActiveID: s.activeID}, "", "  ")
+	if err != nil {
+		return err
+	}
+	temp := s.configPath + ".tmp"
+	if err := os.WriteFile(temp, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(temp, s.configPath); err != nil {
+		_ = os.Remove(temp)
+		return err
+	}
+	return nil
+}
+
+func (s *DesktopService) ListMASInstances() (MASInstancesState, error) {
+	if err := s.loadInstances(); err != nil {
+		return MASInstancesState{}, err
+	}
+	items := make([]MASInstance, len(s.instances))
+	copy(items, s.instances)
+	for i := range items {
+		items[i].Status = inspectMASRoot(items[i].Root)
+	}
+	return MASInstancesState{Instances: items, ActiveID: s.activeID}, nil
+}
+
+func inspectMASRoot(root string) MASStatus {
+	game := filepath.Join(root, "game")
+	status := MASStatus{Root: root, GamePath: game, Valid: fileExists(root), GameExists: fileExists(game)}
+	if entries, err := os.ReadDir(filepath.Join(game, "Submods")); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				status.Submods++
+			}
+		}
+	}
+	return status
+}
+
+func (s *DesktopService) AddMASInstance(label, root string) (MASInstancesState, error) {
+	if err := s.loadInstances(); err != nil {
+		return MASInstancesState{}, err
+	}
+	root = filepath.Clean(strings.TrimSpace(root))
+	if !filepath.IsAbs(root) || !fileExists(filepath.Join(root, "game")) {
+		return MASInstancesState{}, errors.New("mas_game_directory_missing")
+	}
+	for _, item := range s.instances {
+		if strings.EqualFold(item.Root, root) {
+			return MASInstancesState{}, errors.New("mas_instance_already_exists")
+		}
+	}
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = filepath.Base(root)
+	}
+	instance := MASInstance{ID: fmt.Sprintf("mas-%d", time.Now().UnixNano()), Label: label, Root: root}
+	s.instances = append(s.instances, instance)
+	previousID := s.activeID
+	s.activeID = instance.ID
+	if _, err := s.SetMASRoot(root); err != nil {
+		s.instances = s.instances[:len(s.instances)-1]
+		s.activeID = previousID
+		return MASInstancesState{}, err
+	}
+	if err := s.saveInstances(); err != nil {
+		return MASInstancesState{}, err
+	}
+	return s.ListMASInstances()
+}
+
+func (s *DesktopService) SelectMASInstance(id string) (MASInstancesState, error) {
+	if err := s.loadInstances(); err != nil {
+		return MASInstancesState{}, err
+	}
+	for _, item := range s.instances {
+		if item.ID == id {
+			if _, err := s.SetMASRoot(item.Root); err != nil {
+				return MASInstancesState{}, err
+			}
+			s.activeID = id
+			if err := s.saveInstances(); err != nil {
+				return MASInstancesState{}, err
+			}
+			return s.ListMASInstances()
+		}
+	}
+	return MASInstancesState{}, errors.New("mas_instance_not_found")
+}
+
+func (s *DesktopService) RemoveMASInstance(id string) (MASInstancesState, error) {
+	if err := s.loadInstances(); err != nil {
+		return MASInstancesState{}, err
+	}
+	for i, item := range s.instances {
+		if item.ID == id {
+			s.instances = append(s.instances[:i], s.instances[i+1:]...)
+			if s.activeID == id {
+				s.activeID = ""
+				s.root = ""
+				s.core = nil
+				s.state = ""
+			}
+			if err := s.saveInstances(); err != nil {
+				return MASInstancesState{}, err
+			}
+			return s.ListMASInstances()
+		}
+	}
+	return MASInstancesState{}, errors.New("mas_instance_not_found")
+}
+
+func (s *DesktopService) BrowseMASDirectory() (string, error) {
+	return application.Get().Dialog.OpenFile().CanChooseFiles(false).CanChooseDirectories(true).SetTitle("选择 MAS 游戏根目录").PromptForSingleSelection()
+}

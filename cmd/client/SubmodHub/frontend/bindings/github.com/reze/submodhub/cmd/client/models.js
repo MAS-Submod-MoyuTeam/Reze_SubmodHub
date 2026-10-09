@@ -238,6 +238,98 @@ export class LocalSubmodFile {
     }
 }
 
+export class MASInstance {
+    /**
+     * Creates a new MASInstance instance.
+     * @param {Partial<MASInstance>} [$$source = {}] - The source object to create the MASInstance.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (!("label" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["label"] = "";
+        }
+        if (!("root" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["root"] = "";
+        }
+        if (!("status" in $$source)) {
+            /**
+             * @member
+             * @type {MASStatus}
+             */
+            this["status"] = (new MASStatus());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MASInstance instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {MASInstance}
+     */
+    static createFrom($$source = {}) {
+        const $$createField3_0 = $$createType3;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("status" in $$parsedSource) {
+            $$parsedSource["status"] = $$createField3_0($$parsedSource["status"]);
+        }
+        return new MASInstance(/** @type {Partial<MASInstance>} */($$parsedSource));
+    }
+}
+
+export class MASInstancesState {
+    /**
+     * Creates a new MASInstancesState instance.
+     * @param {Partial<MASInstancesState>} [$$source = {}] - The source object to create the MASInstancesState.
+     */
+    constructor($$source = {}) {
+        if (!("instances" in $$source)) {
+            /**
+             * @member
+             * @type {MASInstance[]}
+             */
+            this["instances"] = [];
+        }
+        if (!("active_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["active_id"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MASInstancesState instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {MASInstancesState}
+     */
+    static createFrom($$source = {}) {
+        const $$createField0_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("instances" in $$parsedSource) {
+            $$parsedSource["instances"] = $$createField0_0($$parsedSource["instances"]);
+        }
+        return new MASInstancesState(/** @type {Partial<MASInstancesState>} */($$parsedSource));
+    }
+}
+
 export class MASStatus {
     /**
      * Creates a new MASStatus instance.
@@ -298,3 +390,6 @@ export class MASStatus {
 const $$createType0 = $Create.Array($Create.Any);
 const $$createType1 = LocalSubmodFile.createFrom;
 const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = MASStatus.createFrom;
+const $$createType4 = MASInstance.createFrom;
+const $$createType5 = $Create.Array($$createType4);

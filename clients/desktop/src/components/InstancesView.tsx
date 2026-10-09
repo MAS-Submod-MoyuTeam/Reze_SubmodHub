@@ -18,9 +18,11 @@ import { Installation } from '../types/client';
 interface InstancesViewProps {
   installations: Installation[];
   activeInstallationId: string;
-  onSelectActive: (id: string) => void;
-  onAddCustomInstance: (label: string, path: string) => void;
-  onReauthorizeInstance: (id: string) => void;
+  onSelectActive: (id: string) => Promise<void>;
+  onAddCustomInstance: (label: string, path: string) => Promise<void>;
+  onRemoveInstance: (id: string) => Promise<void>;
+  onRefreshInstances: () => Promise<void>;
+  onBrowseDirectory: () => Promise<string>;
 }
 
 export const InstancesView: React.FC<InstancesViewProps> = ({
@@ -28,32 +30,35 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
   activeInstallationId,
   onSelectActive,
   onAddCustomInstance,
-  onReauthorizeInstance,
+  onRemoveInstance,
+  onRefreshInstances,
+  onBrowseDirectory,
 }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [newPath, setNewPath] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
 
   const formatBytes = (bytes: number) => {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!newPath.trim()) {
       setValidationError('请输入或选择有效的 MAS 根目录路径');
       return;
     }
-    // Check if path contains game or DDLC
-    if (!newPath.toLowerCase().includes('ddlc') && !newPath.toLowerCase().includes('mas') && !newPath.toLowerCase().includes('game')) {
-      setValidationError('错误代码: [invalid_mas_root] - 该目录下未找到 game/ 核心目录或 MAS 特征文件');
-      return;
-    }
-    onAddCustomInstance(newLabel.trim() || '自定义 MAS 实例', newPath.trim());
-    setShowAddModal(false);
-    setNewLabel('');
-    setNewPath('');
-    setValidationError(null);
+    setIsAdding(true);
+    try {
+      await onAddCustomInstance(newLabel.trim(), newPath.trim());
+      setShowAddModal(false);
+      setNewLabel('');
+      setNewPath('');
+      setValidationError(null);
+    } catch (error) {
+      setValidationError(`目录验证失败：${String(error)}`);
+    } finally { setIsAdding(false); }
   };
 
   return (
@@ -64,11 +69,11 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
           <div className="flex items-center gap-2">
             <FolderCog className="w-4 h-4 text-emerald-400" />
             <h2 className="text-sm font-bold text-neutral-100">
-              MAS 游戏实例与存储授权管理 (ListInstallations & SelectInstallation)
+              MAS 游戏实例
             </h2>
           </div>
           <p className="text-xs text-neutral-400 mt-0.5">
-            契约规范要求：未验证有效 MAS 根目录不得执行任何写入操作；支持多实例、Steam 探测与移动端 SAF 授权状态跟踪。
+            添加本机 MAS 目录，选择当前实例；路径失效时请重新检查。
           </p>
         </div>
 
@@ -79,6 +84,7 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
           <FolderPlus className="w-3.5 h-3.5" />
           <span>手选添加新 MAS 目录...</span>
         </button>
+        <button onClick={() => void onRefreshInstances()} className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white flex items-center gap-1" title="重新检查目录"><RefreshCw className="w-3.5 h-3.5" />重新检查</button>
       </div>
 
       {/* Main List */}
@@ -107,61 +113,31 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
                           当前生效
                         </span>
                       )}
-                      <span className="text-[10px] px-2 py-0.2 rounded bg-neutral-800 text-neutral-300 font-mono">
-                        MAS {inst.mas_version}
-                      </span>
-                      <span className="text-[10px] text-neutral-400 uppercase font-mono">
-                        平台: {inst.platform}
-                      </span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded ${inst.is_valid ? 'bg-emerald-950 text-emerald-300' : 'bg-rose-950 text-rose-300'}`}>{inst.is_valid ? '目录有效' : '目录失效'}</span>
                     </div>
 
                     <div className="font-mono text-xs text-neutral-300 bg-neutral-950/70 px-3 py-1.5 rounded-lg border border-neutral-800/80 break-all">
                       {inst.path_hint}
                     </div>
 
-                    {/* Verification Checklist */}
-                    <div className="flex items-center gap-3 text-[11px] text-neutral-400 pt-1 font-mono">
-                      <span className="flex items-center gap-1 text-emerald-400">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>game/ 目录存在</span>
-                      </span>
-                      <span className="flex items-center gap-1 text-emerald-400">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>submods/ 挂载点就绪</span>
-                      </span>
-                      <span className="flex items-center gap-1 text-emerald-400">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>log/submod_log.txt 可写</span>
-                      </span>
-                      <span className="text-neutral-400">
-                        剩余存储: {formatBytes(inst.disk_available_bytes)}
-                      </span>
-                    </div>
+                    <div className="text-[11px] text-neutral-500">{inst.is_valid ? 'game/ 目录已验证' : '找不到 game/ 目录'}</div>
                   </div>
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 shrink-0 self-end md:self-start">
-                    {!isAuthorized ? (
-                      <button
-                        onClick={() => onReauthorizeInstance(inst.id)}
-                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors flex items-center gap-1"
-                      >
-                        <ShieldAlert className="w-3.5 h-3.5" />
-                        <span>重新授权目录 (SAF)</span>
-                      </button>
-                    ) : isActive ? (
+                    {isActive ? (
                       <span className="text-xs text-emerald-400 font-mono flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>使用中</span>
                       </span>
                     ) : (
-                      <button
-                        onClick={() => onSelectActive(inst.id)}
+                      <button disabled={!isAuthorized} onClick={() => void onSelectActive(inst.id)}
                         className="px-3 py-1.5 text-xs font-medium text-neutral-200 hover:text-white bg-neutral-800 hover:bg-neutral-700/80 rounded-lg transition-colors border border-neutral-700"
                       >
                         切换为活动实例
                       </button>
                     )}
+                    {inst.id !== 'unverified' && <button onClick={() => void onRemoveInstance(inst.id)} className="px-2 py-1.5 text-xs text-rose-300 hover:text-rose-200" title="移除实例记录">移除</button>}
                   </div>
                 </div>
               </div>
@@ -169,27 +145,6 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
           })}
         </div>
 
-        {/* Directory Structure Technical Specification Card */}
-        <div className="p-4 rounded-xl bg-neutral-900/50 border border-neutral-800 text-xs space-y-3">
-          <div className="font-semibold text-neutral-200">
-            MAS 根目录有效性契约与文件布局标准
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-neutral-400 font-mono text-[11px]">
-            <div className="bg-neutral-950/70 p-3 rounded-lg border border-neutral-800/80 space-y-1">
-              <div className="text-neutral-200 font-semibold mb-1">子模组安装目录 (Submods Root)</div>
-              <div>• 路径：<code>&lt;MAS_ROOT&gt;/game/submods/&lt;Mod_ID&gt;/</code></div>
-              <div>• 放置：包含 <code>header.rpy</code> 的主逻辑脚本及附属 <code>.rpy/.rpyc</code></div>
-              <div>• 规则：每个子模组建议拥有独立自包含文件夹</div>
-            </div>
-
-            <div className="bg-neutral-950/70 p-3 rounded-lg border border-neutral-800/80 space-y-1">
-              <div className="text-neutral-200 font-semibold mb-1">外观礼包目录 (Spritepack Assets)</div>
-              <div>• 路径：<code>&lt;MAS_ROOT&gt;/game/mod_assets/monika/&lt;layer&gt;/</code></div>
-              <div>• 放置：按部位分类的发带 (c)、衣服 (b)、发型 (h)、配件 (a)</div>
-              <div>• 礼物：<code>&lt;MAS_ROOT&gt;/characters/&lt;giftname&gt;.gift</code> 送礼判定</div>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Add Custom Instance Modal */}
@@ -236,13 +191,10 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
                     className="flex-1 px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-lg text-neutral-200 font-mono focus:outline-hidden focus:border-neutral-500"
                   />
                   <button
-                    onClick={() => {
-                      setNewPath('D:\\Games\\DDLC_MAS_Custom');
-                      setValidationError(null);
-                    }}
+                    onClick={() => void onBrowseDirectory().then((path) => { if (path) { setNewPath(path); setValidationError(null); } }).catch((error) => setValidationError(String(error)))}
                     className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg shrink-0"
                   >
-                    模拟浏览...
+                    浏览...
                   </button>
                 </div>
               </div>
@@ -253,9 +205,7 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
                 </div>
               )}
 
-              <div className="text-neutral-400 text-[11px] leading-relaxed">
-                选择后，客户端将根据 <code>DiscoverInstallations</code> 契约扫描 <code>game/</code> 核心与 <code>definitions.rpy</code>，提取 MAS 版本号并分配唯一实例 ID。
-              </div>
+              <div className="text-neutral-400 text-[11px]">所选目录需要包含 game/ 子目录。</div>
             </div>
 
             <div className="p-4 border-t border-neutral-800 bg-neutral-950 flex justify-end gap-2 text-xs">
@@ -266,7 +216,8 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
                 取消
               </button>
               <button
-                onClick={handleCreate}
+                onClick={() => void handleCreate()}
+                disabled={isAdding}
                 className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg shadow-xs"
               >
                 验证并添加实例

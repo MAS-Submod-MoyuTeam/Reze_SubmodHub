@@ -11,12 +11,23 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
+ * @param {string} label
+ * @param {string} root
+ * @returns {$CancellablePromise<$models.MASInstancesState>}
+ */
+export function AddMASInstance(label, root) {
+    return $Call.ByID(4064119060, label, root).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
  * @param {$models.ArchiveInstallRequest} request
  * @returns {$CancellablePromise<$models.ArchiveInstallResult>}
  */
 export function ApplyArchive(request) {
     return $Call.ByID(2557078979, request).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType0($result);
+        return $$createType1($result);
     }));
 }
 
@@ -29,11 +40,27 @@ export function ApplyFile(request) {
 }
 
 /**
+ * @returns {$CancellablePromise<string>}
+ */
+export function BrowseMASDirectory() {
+    return $Call.ByID(1762336089);
+}
+
+/**
  * @returns {$CancellablePromise<$models.MASStatus>}
  */
 export function GetMASStatus() {
     return $Call.ByID(767909844).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType1($result);
+        return $$createType2($result);
+    }));
+}
+
+/**
+ * @returns {$CancellablePromise<$models.MASInstancesState>}
+ */
+export function ListMASInstances() {
+    return $Call.ByID(1233296036).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
     }));
 }
 
@@ -46,11 +73,31 @@ export function Recover(operationID) {
 }
 
 /**
+ * @param {string} id
+ * @returns {$CancellablePromise<$models.MASInstancesState>}
+ */
+export function RemoveMASInstance(id) {
+    return $Call.ByID(3113281931, id).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<$models.LocalSubmod[]>}
  */
 export function ScanLocalSubmods() {
     return $Call.ByID(1364442018).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType3($result);
+        return $$createType4($result);
+    }));
+}
+
+/**
+ * @param {string} id
+ * @returns {$CancellablePromise<$models.MASInstancesState>}
+ */
+export function SelectMASInstance(id) {
+    return $Call.ByID(3424323131, id).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
     }));
 }
 
@@ -60,7 +107,7 @@ export function ScanLocalSubmods() {
  */
 export function SetMASRoot(root) {
     return $Call.ByID(958382738, root).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType1($result);
+        return $$createType2($result);
     }));
 }
 
@@ -74,7 +121,8 @@ export function Uninstall(operationID, uninstallOperationID) {
 }
 
 // Private type creation functions
-const $$createType0 = $models.ArchiveInstallResult.createFrom;
-const $$createType1 = $models.MASStatus.createFrom;
-const $$createType2 = $models.LocalSubmod.createFrom;
-const $$createType3 = $Create.Array($$createType2);
+const $$createType0 = $models.MASInstancesState.createFrom;
+const $$createType1 = $models.ArchiveInstallResult.createFrom;
+const $$createType2 = $models.MASStatus.createFrom;
+const $$createType3 = $models.LocalSubmod.createFrom;
+const $$createType4 = $Create.Array($$createType3);
