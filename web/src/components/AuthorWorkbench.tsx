@@ -30,6 +30,7 @@ import {
   X,
   Pencil,
   RefreshCw,
+  EyeOff,
 } from 'lucide-react';
 
 export const AuthorWorkbench: React.FC = () => {
@@ -459,14 +460,6 @@ export const AuthorWorkbench: React.FC = () => {
             </button>
           </div>
 
-          <button
-            onClick={() => setIsGithubImportOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200/80 rounded transition-colors"
-          >
-            <Github className="w-3.5 h-3.5 text-neutral-800" />
-            GitHub 导入
-          </button>
-
                   <button
                     onClick={openNewModEditor}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded transition-colors shadow-xs"
@@ -692,7 +685,7 @@ export const AuthorWorkbench: React.FC = () => {
                       <Pencil className="w-3.5 h-3.5" />
                       编辑模组
                     </button>
-                    {activeMod.is_published ? <button type="button" onClick={() => { if (window.confirm('确认下架这个模组？版本、归档和详情图会保留。')) void unpublishMod(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors">下架模组</button> : activeModVersions.every((version) => version.state !== 'published') && <button type="button" onClick={() => { if (window.confirm('确认删除草稿模组？候选版本、扫描记录和详情图会一并删除。')) void deleteModDraft(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-700 border border-rose-200 hover:bg-rose-50 rounded transition-colors">删除草稿模组</button>}
+                    {activeMod.is_published ? <button type="button" onClick={() => { if (window.confirm('确认下架这个模组？版本、归档和详情图会保留。')) void unpublishMod(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors"><EyeOff className="w-3.5 h-3.5" />下架模组</button> : activeModVersions.every((version) => version.state !== 'published') && <button type="button" onClick={() => { if (window.confirm('确认删除草稿模组？候选版本、扫描记录和详情图会一并删除。')) void deleteModDraft(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-700 border border-rose-200 hover:bg-rose-50 rounded transition-colors">删除草稿模组</button>}
                     {activeMod.source_type === 'github_releases' ? (
                       <button
                         type="button"
@@ -717,7 +710,7 @@ export const AuthorWorkbench: React.FC = () => {
                           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded transition-colors"
                         >
                           <Plus className="w-3.5 h-3.5" />
-                          + 创建候选版本
+                          创建候选版本
                         </button>
                       )
                     )}

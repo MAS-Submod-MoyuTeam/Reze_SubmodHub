@@ -211,7 +211,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!currentUser) return;
     let cancelled = false;
     const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-    listAuthorWorkspace(base).then((items) => {
+    const refreshWorkspace = () => listAuthorWorkspace(base).then((items) => {
       if (cancelled) return;
       const restoredReports = Object.fromEntries(items.flatMap(({ versions: entries, scan_reports: reports }) => entries.flatMap((version) => {
         const report = version.scan_report_id && reports?.[version.scan_report_id];
@@ -244,8 +244,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setMods((prev) => [...ownMods, ...prev.filter((mod) => !ownMods.some((owned) => owned.id === mod.id))]);
       setVersions((prev) => [...ownVersions, ...prev.filter((version) => !ownVersions.some((owned) => owned.id === version.id))]);
       setScanReports((prev) => ({ ...prev, ...restoredReports }));
-    }).catch(() => setIsOffline(true));
-    return () => { cancelled = true; };
+    }).catch(() => { if (!cancelled) setIsOffline(true); });
+    void refreshWorkspace();
+    const interval = window.setInterval(() => { void refreshWorkspace(); }, 60_000);
+    return () => { cancelled = true; window.clearInterval(interval); };
   }, [currentUser]);
 
   useEffect(() => {
