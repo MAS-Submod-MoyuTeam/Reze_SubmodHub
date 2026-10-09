@@ -13,6 +13,7 @@ export interface CatalogMod {
   mas_version_range?: string;
   recommended_priority?: number;
   latest_version_id: string;
+  downloads_count?: number;
   latest_version?: string;
   size_bytes?: number;
   sha256?: string;

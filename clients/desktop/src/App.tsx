@@ -79,7 +79,7 @@ export default function App() {
         supported_platforms: mod.supported_platforms || [], mas_version_range: mod.mas_version_range || '',
         recommended_priority: mod.recommended_priority || 0, latest_version_id: version.id,
         latest_version: version.version, size_bytes: version.size_bytes, sha256: version.sha256,
-        updated_at: '', downloads_count: 0,
+        updated_at: '', downloads_count: mod.downloads_count || 0,
       })));
       setIsOffline(false);
     } catch (error) {

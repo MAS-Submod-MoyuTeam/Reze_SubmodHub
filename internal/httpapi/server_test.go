@@ -38,6 +38,42 @@ func TestCatalogAndDownloadContract(t *testing.T) {
 	}
 }
 
+func TestArchiveDownloadCountPersists(t *testing.T) {
+	dir := t.TempDir()
+	archive := makeZip(t)
+	path := filepath.Join(dir, "archives", "v1.zip")
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, archive, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewStore(dir, Catalog{Mods: []Mod{{ID: "m1", Title: "Rain", LatestVersionID: "v1"}}, Versions: map[string]Version{"v1": {ID: "v1", ModID: "m1", State: "published", ArchivePath: path, SizeBytes: int64(len(archive))}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(NewStoreHandler(store))
+	defer ts.Close()
+	for _, path := range []string{"/api/v1/versions/v1/download", "/api/v1/archives/v1"} {
+		res, err := ts.Client().Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, res.Body)
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("%s: %d", path, res.StatusCode)
+		}
+	}
+	reloaded, err := NewStore(dir, Catalog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.Catalog.Mods[0].DownloadsCount; got != 1 {
+		t.Fatalf("downloads = %d, want 1", got)
+	}
+}
+
 func TestArchiveUploadPersistsAndDownloads(t *testing.T) {
 	dir := t.TempDir()
 	archive := makeZip(t)

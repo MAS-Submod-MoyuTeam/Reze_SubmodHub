@@ -174,7 +174,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: mod.id, title: mod.title, summary: mod.summary || '', description: mod.description || mod.summary || '',
       author: mod.author || { id: '', display_name: '未知作者' }, category: mod.category || 'submod',
       tags: mod.tags || [], supported_platforms: mod.supported_platforms || [], mas_version_range: mod.mas_version_range || '',
-      recommended_priority: mod.recommended_priority || 0, latest_version_id: version.id, downloads_count: 0,
+      recommended_priority: mod.recommended_priority || 0, latest_version_id: version.id, downloads_count: mod.downloads_count || 0,
       updated_at: '', created_at: '', is_published: true,
     }));
     setMods((prev) => [...publishedMods, ...prev.filter((mod) => !mod.is_published && !publishedMods.some((published) => published.id === mod.id))]);

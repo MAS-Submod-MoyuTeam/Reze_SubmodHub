@@ -94,6 +94,7 @@ type Mod struct {
 	LatestVersion       string     `json:"latest_version"`
 	SizeBytes           int64      `json:"size_bytes"`
 	SHA256              string     `json:"sha256"`
+	DownloadsCount      int64      `json:"downloads_count"`
 	ImagePaths          []string   `json:"image_paths,omitempty"`
 	Unpublished         bool       `json:"unpublished,omitempty"`
 	SourceType          string     `json:"source_type,omitempty"`
@@ -1711,7 +1712,22 @@ func (s *Store) downloadArchive(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Length", fmt.Sprint(v.SizeBytes))
 	w.Header().Set("X-Archive-SHA256", v.SHA256)
-	_, _ = io.Copy(w, f)
+	if n, err := io.Copy(w, f); err == nil && n == v.SizeBytes {
+		s.recordDownload(v.ModID)
+	}
+}
+func (s *Store) recordDownload(modID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.Catalog.Mods {
+		if s.Catalog.Mods[i].ID == modID {
+			s.Catalog.Mods[i].DownloadsCount++
+			if err := s.saveLocked(); err != nil {
+				s.Catalog.Mods[i].DownloadsCount--
+			}
+			return
+		}
+	}
 }
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")

@@ -107,5 +107,7 @@ func (s *Store) relayDownloadArchive(w http.ResponseWriter, r *http.Request, v V
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Length", fmt.Sprint(totalSize))
 	w.Header().Set("X-Archive-SHA256", v.SHA256)
-	_, _ = io.Copy(w, f)
+	if n, err := io.Copy(w, f); err == nil && n == totalSize {
+		s.recordDownload(v.ModID)
+	}
 }
