@@ -6,10 +6,92 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestDesktopServiceInstallsMultiRootSpritepack(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	files := map[string]string{
+		"Set A/mod_assets/monika/j/necklace.json":      `{"type":0,"name":"necklace","img_sit":"necklace"}`,
+		"Set A/mod_assets/monika/a/acs-necklace-0.png": "necklace image",
+		"Set A/gifts/necklace.gift":                    "gift",
+		"Set B/mod_assets/monika/j/ribbon.json":        `{"type":0,"name":"ribbon","img_sit":"ribbon"}`,
+		"Set B/mod_assets/monika/a/acs-ribbon-0.png":   "ribbon image",
+		"Set B/gifts/ribbon.gift":                      "gift",
+	}
+	for name, content := range files {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, category := range []string{"spritepack", "submod", ""} {
+		t.Run(category, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "game"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			service := NewDesktopService()
+			if _, err := service.SetMASRoot(root); err != nil {
+				t.Fatal(err)
+			}
+			hash := sha256.Sum256(archive.Bytes())
+			payload, err := json.Marshal(map[string]any{"operation_id": "sprite-install", "archive_base64": base64.StdEncoding.EncodeToString(archive.Bytes()), "expected_sha256": hex.EncodeToString(hash[:]), "mod_id": "sprite-mod", "category": category})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var request ArchiveInstallRequest
+			if err := json.Unmarshal(payload, &request); err != nil {
+				t.Fatal(err)
+			}
+			result, err := service.ApplyArchive(request)
+			if category != "spritepack" {
+				if err == nil || !strings.Contains(err.Error(), "ambiguous package roots") {
+					t.Fatalf("result=%+v err=%v", result, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.State != "committed" || result.Files != len(files) {
+				t.Fatalf("result=%+v", result)
+			}
+			for name, want := range files {
+				rel := strings.SplitN(name, "/", 2)[1]
+				target := "game/" + rel
+				if strings.HasPrefix(rel, "gifts/") {
+					target = "characters/" + strings.TrimPrefix(rel, "gifts/")
+				}
+				got, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(target)))
+				if err != nil || string(got) != want {
+					t.Fatalf("%s: got=%q err=%v", target, got, err)
+				}
+			}
+			receipts, err := service.ListInstalledArchives()
+			if err != nil || len(receipts) != 1 || receipts[0].SHA256 != request.ExpectedSHA || receipts[0].SizeBytes != int64(archive.Len()) || receipts[0].Files != len(files) {
+				t.Fatalf("receipts=%+v err=%v", receipts, err)
+			}
+			if _, err := service.Uninstall(request.OperationID, "sprite-uninstall"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(root, "characters", "necklace.gift")); !os.IsNotExist(err) {
+				t.Fatalf("gift remains: %v", err)
+			}
+		})
+	}
+}
 
 func TestDesktopServiceBindsMASRootAndWritesThroughCore(t *testing.T) {
 	root := t.TempDir()
@@ -44,11 +126,15 @@ func TestDesktopServiceInstallsVerifiedArchive(t *testing.T) {
 	_, _ = entry.Write([]byte("# Wails fixture\n"))
 	for name, content := range map[string]string{
 		"lib/windows-i686/Lib/Cookie.py": "# library\n",
-		"characters/HeavenForest.sce": "scene",
+		"characters/HeavenForest.sce":    "scene",
 	} {
 		entry, err = writer.Create(name)
-		if err != nil { t.Fatal(err) }
-		if _, err = entry.Write([]byte(content)); err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = entry.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)
@@ -71,10 +157,12 @@ func TestDesktopServiceInstallsVerifiedArchive(t *testing.T) {
 	}
 	for name, want := range map[string]string{
 		"lib/windows-i686/Lib/Cookie.py": "# library\n",
-		"characters/HeavenForest.sce": "scene",
+		"characters/HeavenForest.sce":    "scene",
 	} {
 		got, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
-		if err != nil || string(got) != want { t.Fatalf("%s: got=%q err=%v", name, got, err) }
+		if err != nil || string(got) != want {
+			t.Fatalf("%s: got=%q err=%v", name, got, err)
+		}
 	}
 }
 

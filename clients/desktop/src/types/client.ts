@@ -107,6 +107,7 @@ export interface PlanChange {
 }
 
 export interface Plan {
+  category?: 'submod' | 'spritepack';
   plan_id: string;
   kind: PlanKind;
   installation_id: string;

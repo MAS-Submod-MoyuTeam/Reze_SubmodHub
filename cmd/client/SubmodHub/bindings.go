@@ -31,6 +31,7 @@ type InstallRequest struct {
 	ExpectedSHA string `json:"expected_sha256"`
 }
 type ArchiveInstallRequest struct {
+	Category      string `json:"category"`
 	OperationID   string `json:"operation_id"`
 	ArchiveBase64 string `json:"archive_base64"`
 	ExpectedSHA   string `json:"expected_sha256"`
@@ -208,11 +209,29 @@ func (s *DesktopService) ApplyArchive(request ArchiveInstallRequest) (ArchiveIns
 	if request.ExpectedSHA != "" && !strings.EqualFold(hex.EncodeToString(hash[:]), request.ExpectedSHA) {
 		return ArchiveInstallResult{}, errors.New("archive_hash_mismatch")
 	}
-	report, err := packagezip.Scan(bytes.NewReader(data), int64(len(data)), packagezip.Limits{})
+	archiveData := data
+	var spriteWarnings []string
+	if request.Category == "spritepack" {
+		spriteReport, scanErr := packagezip.ScanSpriteArchive(bytes.NewReader(data), int64(len(data)), packagezip.Limits{})
+		if scanErr != nil {
+			return ArchiveInstallResult{}, scanErr
+		}
+		setIDs := make([]string, 0, len(spriteReport.SpriteSets))
+		for _, set := range spriteReport.SpriteSets {
+			setIDs = append(setIDs, set.ID)
+		}
+		archiveData, err = packagezip.BuildSpriteSelection(bytes.NewReader(data), int64(len(data)), spriteReport, setIDs)
+		if err != nil {
+			return ArchiveInstallResult{}, err
+		}
+		spriteWarnings = spriteReport.Warnings
+	}
+	report, err := packagezip.Scan(bytes.NewReader(archiveData), int64(len(archiveData)), packagezip.Limits{})
 	if err != nil {
 		return ArchiveInstallResult{}, err
 	}
-	z, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	report.Warnings = append(report.Warnings, spriteWarnings...)
+	z, err := zip.NewReader(bytes.NewReader(archiveData), int64(len(archiveData)))
 	if err != nil {
 		return ArchiveInstallResult{}, err
 	}

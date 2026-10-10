@@ -12,6 +12,13 @@ export class ArchiveInstallRequest {
      * @param {Partial<ArchiveInstallRequest>} [$$source = {}] - The source object to create the ArchiveInstallRequest.
      */
     constructor($$source = {}) {
+        if (!("category" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["category"] = "";
+        }
         if (!("operation_id" in $$source)) {
             /**
              * @member
@@ -543,6 +550,13 @@ export class Spritepack {
              */
             this["kind"] = "";
         }
+        if (!("group" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["group"] = "";
+        }
         if (!("giftname" in $$source)) {
             /**
              * @member
@@ -581,10 +595,10 @@ export class Spritepack {
      * @returns {Spritepack}
      */
     static createFrom($$source = {}) {
-        const $$createField6_0 = $$createType0;
+        const $$createField7_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("missing" in $$parsedSource) {
-            $$parsedSource["missing"] = $$createField6_0($$parsedSource["missing"]);
+            $$parsedSource["missing"] = $$createField7_0($$parsedSource["missing"]);
         }
         return new Spritepack(/** @type {Partial<Spritepack>} */($$parsedSource));
     }

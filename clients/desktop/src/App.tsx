@@ -223,6 +223,7 @@ export default function App() {
         plan_id: `install_${mod.id}_${Date.now()}`,
         kind: installedMods.some((item) => item.mod_id === mod.id) ? 'update' : 'install',
         installation_id: activeInstallation.id, mod_id: mod.id, mod_title: mod.title,
+        category: mod.category,
         version_id: version.id, version_str: version.version,
         expires_at: new Date(Date.now() + 300000).toISOString(),
         dependency_blockers: [], semantic_blockers: [], changes: [],
@@ -326,7 +327,7 @@ export default function App() {
         const encoded = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.onerror = () => reject(reader.error); reader.readAsDataURL(archive.blob); });
         const operationId = `op_${plan.kind}_${plan.mod_id}_${Date.now()}`;
         const result = await ApplyArchive({ operation_id: operationId, archive_base64: encoded, expected_sha256: archive.sha256,
-          mod_id: plan.mod_id, version_id: plan.version_id, version: plan.version_str, title: plan.mod_title });
+          mod_id: plan.mod_id, version_id: plan.version_id, version: plan.version_str, title: plan.mod_title, category: plan.category || 'submod' });
         setOperations((prev) => [{
           operation_id: operationId, installation_id: plan.installation_id,
           mod_id: plan.mod_id, mod_title: plan.mod_title, version_id: plan.version_id,
@@ -345,7 +346,7 @@ export default function App() {
           } : item);
           return [...prev, {
             mod_id: plan.mod_id, title: plan.mod_title, summary: '已通过 SubmodHub 验证安装',
-            author_name: '已签约作者', category: 'submod', installed_version: plan.version_str,
+            author_name: '已签约作者', category: plan.category || 'submod', installed_version: plan.version_str,
             installed_version_id: plan.version_id, latest_version: plan.version_str,
             latest_version_id: plan.version_id, has_update: false, priority: 50, is_managed: true,
             files_count: result.files, size_bytes: plan.bytes_required, installed_at: new Date().toISOString(),
