@@ -25,6 +25,10 @@ export const ListInstalledArchives = () => invoke('ListInstalledArchives', () =>
 export const ScanInstalledSpritepacks = () => invoke('ScanInstalledSpritepacks', () => native.ScanInstalledSpritepacks());
 export const CreateSpriteGift = (file: string) => invoke('CreateSpriteGift', () => native.CreateSpriteGift(file), [file]);
 export const DeleteSpritepack = (file: string) => invoke('DeleteSpritepack', () => native.DeleteSpritepack(file), [file]);
+export const StageArchive = (request: Parameters<typeof native.StageArchive>[0]) => invoke('StageArchive', () => native.StageArchive(request), [request]);
+export const GetStageProgress = (operationID: string) => invoke('GetStageProgress', () => native.GetStageProgress(operationID), [operationID]);
+export const CancelStage = (operationID: string) => invoke('CancelStage', () => native.CancelStage(operationID), [operationID]);
+export const ReleaseArchive = (archiveID: string) => invoke('ReleaseArchive', () => native.ReleaseArchive(archiveID), [archiveID]);
 export const PreviewArchive = (request: Parameters<typeof native.PreviewArchive>[0]) => invoke('PreviewArchive', () => native.PreviewArchive(request), [request]);
 export const PreviewUninstall = (targetID: string) => invoke('PreviewUninstall', () => native.PreviewUninstall(targetID), [targetID]);
 export const ExecutePlan = (request: Parameters<typeof native.ExecutePlan>[0]) => invoke('ExecutePlan', () => native.ExecutePlan(request), [request]);
@@ -33,7 +37,7 @@ export const Uninstall = (operationID: string, uninstallID: string) => invoke('U
 export const Recover = (operationID: string) => invoke('Recover', () => native.Recover(operationID), [operationID]);
 export const BrowseMASDirectory = () => browserMode ? Promise.reject(new Error('浏览器模式请手动输入 MAS 根目录')) : native.BrowseMASDirectory();
 
-export type LocalSubmod = { directory: string; name: string; version: string; files: Array<{ path: string; sha256: string; size: number }> };
+export type LocalSubmod = { directory: string; name: string; author?: string; version: string; files: Array<{ path: string; sha256: string; size: number }> };
 export type MASInstancesState = { instances: Array<{ id: string; label: string; root: string; status: { valid: boolean; game_exists: boolean; submods: number; available_bytes?: number } }>; active_id: string };
 export type Spritepack = { file: string; name: string; author: string; kind: string; group: string; giftname: string; complete: boolean; missing: string[]; preview: string };
-export type InstalledArchive = { mod_id: string; version_id: string; version: string; title: string; operation_id: string; files: number; size_bytes: number; sha256: string; installed_at: string; submod_dirs: string[] };
+export type InstalledArchive = { mod_id: string; version_id: string; version: string; title: string; author?: string; category?: string; operation_id: string; files: number; size_bytes: number; sha256: string; installed_at: string; submod_dirs: string[] };

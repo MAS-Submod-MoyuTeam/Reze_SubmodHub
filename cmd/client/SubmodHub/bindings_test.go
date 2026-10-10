@@ -212,7 +212,7 @@ func TestDesktopServiceScansLocalSubmods(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "main.rpy"), []byte(`init python:\n    mod = Submod(name="Local Mod", version="2.0")`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "main.rpy"), []byte(`init python:\n    mod = Submod(author="RealAuthor", name="Local Mod", version="2.0")`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	service := NewDesktopService()
@@ -223,7 +223,7 @@ func TestDesktopServiceScansLocalSubmods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result) != 1 || result[0].Directory != "LocalMod" || result[0].Name != "Local Mod" || result[0].Version != "2.0" || len(result[0].Files) != 1 || result[0].Files[0].SHA256 == "" {
+	if len(result) != 1 || result[0].Directory != "LocalMod" || result[0].Name != "Local Mod" || result[0].Author != "RealAuthor" || result[0].Version != "2.0" || len(result[0].Files) != 1 || result[0].Files[0].SHA256 == "" {
 		t.Fatalf("result=%+v", result)
 	}
 }

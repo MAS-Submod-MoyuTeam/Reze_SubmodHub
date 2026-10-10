@@ -115,6 +115,7 @@ export interface Plan {
   installation_id: string;
   mod_id: string;
   mod_title: string;
+  author_name?: string;
   version_id: string;
   version_str: string;
   expires_at: string;

@@ -58,7 +58,7 @@ export interface SpriteSet {
   items: Array<{ display_name: string; preview_url?: string }>;
 }
 
-export type DownloadProgress = { received: number; total: number; stage: 'downloading' | 'verifying' };
+export type DownloadProgress = { received: number; total: number; stage: 'connecting' | 'downloading' | 'verifying' };
 export type DownloadProgressCallback = (progress: DownloadProgress) => void;
 
 export async function fetchSpriteSets(modID: string, base = '/api/v1', fetcher: typeof fetch = fetch): Promise<SpriteSet[]> {
@@ -68,12 +68,20 @@ export async function fetchSpriteSets(modID: string, base = '/api/v1', fetcher: 
   return result.sets;
 }
 
-export async function fetchVerifiedSpriteSelection(modID: string, setIDs: string[], base = '/api/v1', fetcher: typeof fetch = fetch, onProgress?: DownloadProgressCallback): Promise<{ blob: Blob; sha256: string; size_bytes: number }> {
+export async function fetchVerifiedSpriteSelection(
+  modID: string,
+  setIDs: string[],
+  base = '/api/v1',
+  fetcher: typeof fetch = fetch,
+  onProgress?: DownloadProgressCallback,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; sha256: string; size_bytes: number }> {
   if (setIDs.length === 0) throw new Error('empty_sprite_selection');
+  onProgress?.({ received: 0, total: 0, stage: 'connecting' });
   const serviceURL = new URL(base, typeof window === 'undefined' ? 'http://localhost/' : window.location.href);
   const url = new URL(`${serviceURL.pathname.replace(/\/$/, '')}/spritepacks/${encodeURIComponent(modID)}/download`, serviceURL);
   url.searchParams.set('sets', setIDs.join(','));
-  const response = await fetcher(url.href);
+  const response = await fetcher(url.href, { signal });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { code?: string } | null;
     throw new Error(body?.code || `http_${response.status}`);
@@ -84,14 +92,23 @@ export async function fetchVerifiedSpriteSelection(modID: string, setIDs: string
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
+  let lastProgressTime = 0;
   onProgress?.({ received: 0, total: expectedSize, stage: 'downloading' });
   while (true) {
+    if (signal?.aborted) {
+      await reader.cancel();
+      throw new Error('download_aborted');
+    }
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
     if (size > expectedSize) { await reader.cancel(); throw new Error('download_size_mismatch'); }
     chunks.push(value);
-    onProgress?.({ received: size, total: expectedSize, stage: 'downloading' });
+    const now = Date.now();
+    if (now - lastProgressTime >= 50 || size === expectedSize) {
+      lastProgressTime = now;
+      onProgress?.({ received: size, total: expectedSize, stage: 'downloading' });
+    }
   }
   if (size !== expectedSize) throw new Error('download_size_mismatch');
   onProgress?.({ received: size, total: expectedSize, stage: 'verifying' });
@@ -156,7 +173,14 @@ export async function fetchDownloadDescriptor(versionID: string, base = '/api/v1
   return descriptor;
 }
 
-export async function fetchVerifiedArchive(versionID: string, base = '/api/v1', fetcher: typeof fetch = fetch, onProgress?: DownloadProgressCallback): Promise<{ blob: Blob; sha256: string; size_bytes: number }> {
+export async function fetchVerifiedArchive(
+  versionID: string,
+  base = '/api/v1',
+  fetcher: typeof fetch = fetch,
+  onProgress?: DownloadProgressCallback,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; sha256: string; size_bytes: number }> {
+  onProgress?.({ received: 0, total: 0, stage: 'connecting' });
   const descriptor = await fetchDownloadDescriptor(versionID, base, fetcher);
   if (descriptor.size_bytes < 1 || descriptor.size_bytes > 128 * 1024 * 1024) throw new Error('download_too_large');
   if (descriptor.url.startsWith('//') || (!descriptor.url.startsWith('/') && !descriptor.url.startsWith('https://'))) {
@@ -164,16 +188,27 @@ export async function fetchVerifiedArchive(versionID: string, base = '/api/v1', 
   }
   const expiry = Date.parse(descriptor.expires_at);
   if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new Error('download_expired');
+
+  onProgress?.({ received: 0, total: descriptor.size_bytes, stage: 'connecting' });
   const serviceURL = new URL(base, typeof window === 'undefined' ? 'http://localhost/' : window.location.href);
   const archiveURL = new URL(descriptor.url, serviceURL);
-  const response = await fetcher(archiveURL.href);
-  if (!response.ok) throw new Error(`http_${response.status}`);
+  const response = await fetcher(archiveURL.href, { signal });
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null) as { code?: string } | null;
+    throw new Error(errorBody?.code || `http_${response.status}`);
+  }
   if (!response.body) throw new Error('invalid_download_response');
+
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
+  let lastProgressTime = 0;
   onProgress?.({ received: 0, total: descriptor.size_bytes, stage: 'downloading' });
   while (true) {
+    if (signal?.aborted) {
+      await reader.cancel();
+      throw new Error('download_aborted');
+    }
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
@@ -182,7 +217,11 @@ export async function fetchVerifiedArchive(versionID: string, base = '/api/v1', 
       throw new Error('download_size_mismatch');
     }
     chunks.push(value);
-    onProgress?.({ received: size, total: descriptor.size_bytes, stage: 'downloading' });
+    const now = Date.now();
+    if (now - lastProgressTime >= 50 || size === descriptor.size_bytes) {
+      lastProgressTime = now;
+      onProgress?.({ received: size, total: descriptor.size_bytes, stage: 'downloading' });
+    }
   }
   if (size !== descriptor.size_bytes) throw new Error('download_size_mismatch');
   onProgress?.({ received: size, total: descriptor.size_bytes, stage: 'verifying' });

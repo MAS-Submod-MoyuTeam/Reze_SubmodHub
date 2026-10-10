@@ -25,6 +25,10 @@ export function BrowseMASDirectory(): $CancellablePromise<string> {
     return $Call.ByID(1762336089);
 }
 
+export function CancelStage(operationID: string): $CancellablePromise<void> {
+    return $Call.ByID(4041293975, operationID);
+}
+
 export function CreateSpriteGift(file: string): $CancellablePromise<string> {
     return $Call.ByID(3471295810, file);
 }
@@ -37,8 +41,16 @@ export function ExecutePlan(request: $models.ExecutePlanRequest): $CancellablePr
     return $Call.ByID(628431563, request);
 }
 
+export function GetAPIURL(): $CancellablePromise<string> {
+    return $Call.ByID(644102822);
+}
+
 export function GetMASStatus(): $CancellablePromise<$models.MASStatus> {
     return $Call.ByID(767909844);
+}
+
+export function GetStageProgress(operationID: string): $CancellablePromise<$models.StageProgress> {
+    return $Call.ByID(546730124, operationID);
 }
 
 export function LaunchMASInstance(id: string): $CancellablePromise<void> {
@@ -69,6 +81,10 @@ export function Recover(operationID: string): $CancellablePromise<void> {
     return $Call.ByID(1449242715, operationID);
 }
 
+export function ReleaseArchive(archiveID: string): $CancellablePromise<void> {
+    return $Call.ByID(241537660, archiveID);
+}
+
 export function RemoveMASInstance(id: string): $CancellablePromise<$models.MASInstancesState> {
     return $Call.ByID(3113281931, id);
 }
@@ -85,8 +101,16 @@ export function SelectMASInstance(id: string): $CancellablePromise<$models.MASIn
     return $Call.ByID(3424323131, id);
 }
 
+export function SetAPIURL(apiURL: string): $CancellablePromise<void> {
+    return $Call.ByID(3112850050, apiURL);
+}
+
 export function SetMASRoot(root: string): $CancellablePromise<$models.MASStatus> {
     return $Call.ByID(958382738, root);
+}
+
+export function StageArchive(request: $models.StageArchiveRequest): $CancellablePromise<$models.StagedArchiveInfo> {
+    return $Call.ByID(1671860989, request);
 }
 
 export function Uninstall(operationID: string, uninstallOperationID: string): $CancellablePromise<string> {

@@ -41,6 +41,7 @@ func main() {
 	if apiURL == "" {
 		apiURL = defaultAPIURL
 	}
+	service.SetAPIURL(apiURL)
 	handler, err := desktopAssets(apiURL, application.AssetFileServerFS(assets))
 	if err != nil {
 		log.Fatal(err)

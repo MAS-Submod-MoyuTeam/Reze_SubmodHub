@@ -2,15 +2,21 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/reze/submodhub/internal/github"
+)
+
+var (
+	relayMaxDownloadDuration = 10 * time.Minute
+	relayReadIdleTimeout     = 30 * time.Second
 )
 
 func (s *Store) getGitHubClientWithProxy(proxyTemplate string) *github.Client {
@@ -40,6 +46,11 @@ func (s *Store) relayDownloadArchive(w http.ResponseWriter, r *http.Request, v V
 		return
 	}
 
+	if v.State != "published" || v.SizeBytes <= 0 || v.SizeBytes > maxArchiveSize {
+		writeError(w, 404, "not_found", "version is no longer available")
+		return
+	}
+
 	s.mu.RLock()
 	proxyTemplate := s.Catalog.Settings.GitHubProxyTemplate
 	s.mu.RUnlock()
@@ -57,7 +68,19 @@ func (s *Store) relayDownloadArchive(w http.ResponseWriter, r *http.Request, v V
 		return
 	}
 
-	tmpPath, shaHex, totalSize, err := client.DownloadToTemp(r.Context(), v.GitHubSource.DownloadURL, maxArchiveSize)
+	// Re-verify version is still published before calling upstream
+	s.mu.RLock()
+	currentV, currentOk := s.Catalog.Versions[v.ID]
+	s.mu.RUnlock()
+	if !currentOk || currentV.State != "published" {
+		writeError(w, 404, "not_found", "version is no longer available")
+		return
+	}
+
+	downloadCtx, cancelDownload := context.WithTimeout(r.Context(), relayMaxDownloadDuration)
+	defer cancelDownload()
+
+	res, err := client.OpenArchiveStream(downloadCtx, v.GitHubSource.DownloadURL)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return
@@ -80,34 +103,68 @@ func (s *Store) relayDownloadArchive(w http.ResponseWriter, r *http.Request, v V
 		writeError(w, 502, "github_upstream_failed", fmt.Sprintf("github upstream download failed: %v", err))
 		return
 	}
-	defer os.Remove(tmpPath)
+	defer res.Body.Close()
 
-	// Verify consistency against published record
-	if totalSize != v.SizeBytes || !strings.EqualFold(shaHex, v.SHA256) {
-		writeError(w, 502, "upstream_archive_changed", "upstream archive hash or size mismatch")
+	// Pre-response validation: Check upstream Content-Length if known
+	if res.ContentLength >= 0 && res.ContentLength != v.SizeBytes {
+		writeError(w, 502, "upstream_archive_changed", fmt.Sprintf("upstream archive size mismatch: expected %d, got %d", v.SizeBytes, res.ContentLength))
 		return
 	}
-
-	// Re-verify version is still published and exists before sending
-	s.mu.RLock()
-	currentV, currentOk := s.Catalog.Versions[v.ID]
-	s.mu.RUnlock()
-	if !currentOk || currentV.State != "published" {
-		writeError(w, 404, "not_found", "version is no longer available")
-		return
-	}
-
-	f, err := os.Open(tmpPath)
-	if err != nil {
-		writeError(w, 500, "storage_error", "failed to read temp archive")
-		return
-	}
-	defer f.Close()
 
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Length", fmt.Sprint(totalSize))
+	w.Header().Set("Content-Length", fmt.Sprint(v.SizeBytes))
 	w.Header().Set("X-Archive-SHA256", v.SHA256)
-	if n, err := io.Copy(w, f); err == nil && n == totalSize {
-		s.recordDownload(v.ModID)
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, canFlush := w.(http.Flusher)
+
+	hasher := sha256.New()
+	buf := make([]byte, 32*1024)
+	var totalTransferred int64
+	maxAllowed := v.SizeBytes + 1
+
+	idleTimer := time.AfterFunc(relayReadIdleTimeout, cancelDownload)
+	defer idleTimer.Stop()
+
+	for {
+		toRead := int64(len(buf))
+		if remaining := maxAllowed - totalTransferred; remaining < toRead {
+			toRead = remaining
+			if toRead <= 0 {
+				return
+			}
+		}
+
+		n, rErr := res.Body.Read(buf[:toRead])
+		if n > 0 {
+			idleTimer.Reset(relayReadIdleTimeout)
+			totalTransferred += int64(n)
+			if totalTransferred > v.SizeBytes {
+				return
+			}
+
+			hasher.Write(buf[:n])
+			written, wErr := w.Write(buf[:n])
+			if wErr != nil || written != n {
+				return
+			}
+			if canFlush {
+				flusher.Flush()
+			}
+		}
+
+		if rErr != nil {
+			if errors.Is(rErr, io.EOF) {
+				break
+			}
+			return
+		}
+	}
+
+	if totalTransferred == v.SizeBytes {
+		actualSHA := hex.EncodeToString(hasher.Sum(nil))
+		if strings.EqualFold(actualSHA, v.SHA256) {
+			s.recordDownload(v.ModID)
+		}
 	}
 }

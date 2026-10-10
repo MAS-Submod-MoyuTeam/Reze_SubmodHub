@@ -4,12 +4,14 @@
 export interface ArchiveInstallRequest {
     "category": string;
     "operation_id": string;
-    "archive_base64": string;
+    "archive_base64"?: string;
+    "archive_id"?: string;
     "expected_sha256": string;
     "mod_id": string;
     "version_id": string;
     "version": string;
     "title": string;
+    "author"?: string;
 }
 
 export interface ArchiveInstallResult {
@@ -35,6 +37,8 @@ export interface InstalledArchive {
     "version_id": string;
     "version": string;
     "title": string;
+    "author"?: string;
+    "category"?: string;
     "operation_id": string;
     "files": number;
     "size_bytes": number;
@@ -46,6 +50,7 @@ export interface InstalledArchive {
 export interface LocalSubmod {
     "directory": string;
     "name": string;
+    "author"?: string;
     "version": string;
     "files": LocalSubmodFile[] | null;
 }
@@ -141,4 +146,28 @@ export interface Spritepack {
 export interface SpritepackDeleteResult {
     "files": number;
     "backup": string;
+}
+
+export interface StageArchiveRequest {
+    "api_base": string;
+    "version_id": string;
+    "operation_id": string;
+}
+
+export interface StageProgress {
+    /**
+     * "connecting", "downloading", "verifying", "completed", "error"
+     */
+    "stage": string;
+    "received": number;
+    "total": number;
+    "error"?: string;
+}
+
+export interface StagedArchiveInfo {
+    "archive_id": string;
+    "operation_id": string;
+    "sha256": string;
+    "size_bytes": number;
+    "expires_at": string;
 }

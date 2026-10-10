@@ -380,3 +380,69 @@ func TestProxyErrorScenarios(t *testing.T) {
 		t.Fatal("expected SSRF error for 127.0.0.1, got nil")
 	}
 }
+
+
+func TestOpenArchiveStreamViaProxy(t *testing.T) {
+	var directHits, proxyHits int32
+	var directServer, cdnServer, proxyServer *httptest.Server
+
+	cdnServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&directHits, 1)
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write([]byte("stream-via-proxy-content"))
+	}))
+	defer cdnServer.Close()
+
+	directServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&directHits, 1)
+		http.Redirect(w, r, cdnServer.URL+"/asset.zip", http.StatusFound)
+	}))
+	defer directServer.Close()
+
+	proxyServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&proxyHits, 1)
+		target := strings.TrimPrefix(r.URL.RequestURI(), "/")
+		if !strings.HasPrefix(target, "http") {
+			target = "http://" + target
+		}
+		targetURL, _ := url.Parse(target)
+		fReq, _ := http.NewRequest(r.Method, targetURL.String(), nil)
+		fRes, err := http.DefaultTransport.RoundTrip(fReq)
+		if err != nil {
+			http.Error(w, err.Error(), 502)
+			return
+		}
+		defer fRes.Body.Close()
+		for k, vals := range fRes.Header {
+			for _, v := range vals {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(fRes.StatusCode)
+		_, _ = io.Copy(w, fRes.Body)
+	}))
+	defer proxyServer.Close()
+
+	client := NewClient(
+		WithBaseURL(directServer.URL),
+		WithProxyTemplate(proxyServer.URL+"/{url}"),
+		WithAllowInsecureTestHosts(true),
+	)
+
+	res, err := client.OpenArchiveStream(context.Background(), directServer.URL+"/download.zip")
+	if err != nil {
+		t.Fatalf("OpenArchiveStream failed: %v", err)
+	}
+	defer res.Body.Close()
+
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read stream failed: %v", err)
+	}
+	if string(data) != "stream-via-proxy-content" {
+		t.Fatalf("unexpected content: %s", string(data))
+	}
+	if atomic.LoadInt32(&proxyHits) == 0 {
+		t.Fatal("expected proxy hits > 0")
+	}
+}

@@ -17,7 +17,7 @@ import {
   MOCK_MOD_VERSIONS,
 } from './data/mockData';
 import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
-import { AddMASInstance, PreviewArchive, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
+import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
 import {
   Installation,
   ModSummary,
@@ -42,6 +42,7 @@ export default function App() {
 
   // Catalog and Installed Data
   const [catalogMods, setCatalogMods] = useState<ModSummary[]>([]);
+  const catalogModsRef = useRef<ModSummary[]>([]);
   const [installedMods, setInstalledMods] = useState<InstalledItem[]>([]);
   const [spritepacks, setSpritepacks] = useState<Spritepack[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
@@ -101,19 +102,25 @@ export default function App() {
     try {
       const [local, receipts] = await Promise.all([ScanLocalSubmods(), ListInstalledArchives()]) as [LocalSubmod[], InstalledArchive[]];
       const managedDirs = new Set(receipts.flatMap((receipt) => receipt.submod_dirs || []).map((dir) => dir.toLowerCase()));
-      const managed: InstalledItem[] = receipts.map((receipt) => ({
-        mod_id: receipt.mod_id, title: receipt.title, summary: '已通过 SubmodHub 安装',
-        author_name: '本地安装记录', category: 'submod', installed_version: receipt.version,
-        installed_version_id: receipt.version_id, latest_version: receipt.version,
-        latest_version_id: receipt.version_id, has_update: false, priority: 50,
-        is_managed: true, files_count: receipt.files, size_bytes: receipt.size_bytes,
-        installed_at: receipt.installed_at, sha256: receipt.sha256,
-        integrity_status: 'unknown', managed_operation_id: receipt.operation_id,
-      }));
+      const catalog = catalogModsRef.current.length > 0 ? catalogModsRef.current : catalogMods;
+      const catalogMap = new Map(catalog.map((item) => [item.id, item]));
+      const managed: InstalledItem[] = receipts.map((receipt) => {
+        const catMod = catalogMap.get(receipt.mod_id);
+        const authorName = receipt.author || catMod?.author?.display_name || '未知作者';
+        return {
+          mod_id: receipt.mod_id, title: receipt.title, summary: '已通过 SubmodHub 安装',
+          author_name: authorName, category: (receipt.category as any) || catMod?.category || 'submod', installed_version: receipt.version,
+          installed_version_id: receipt.version_id, latest_version: catMod?.latest_version || receipt.version,
+          latest_version_id: catMod?.latest_version_id || receipt.version_id, has_update: false, priority: 50,
+          is_managed: true, files_count: receipt.files, size_bytes: receipt.size_bytes,
+          installed_at: receipt.installed_at ? new Date(receipt.installed_at).toISOString() : new Date().toISOString(), sha256: receipt.sha256,
+          integrity_status: 'unknown', managed_operation_id: receipt.operation_id,
+        };
+      });
       const unmanaged: InstalledItem[] = local.filter((item) => !managedDirs.has(item.directory.toLowerCase())).map((item) => ({
         mod_id: `local:${item.directory}`, title: item.name || item.directory,
         summary: '检测到 MAS 本地子模组，尚未与 SubmodHub 安装记录关联。',
-        author_name: '未知作者 (本地检测)', category: 'submod',
+        author_name: item.author || '未知作者 (本地检测)', category: 'submod',
         installed_version: item.version || '未声明', installed_version_id: '',
         latest_version: '未托管', latest_version_id: '', has_update: false,
         priority: 0, is_managed: false, files_count: (item.files || []).length,
@@ -154,6 +161,26 @@ export default function App() {
       .catch((error) => showToast(`实例列表读取失败：${String(error)}`));
   }, []);
 
+  useEffect(() => {
+    catalogModsRef.current = catalogMods;
+    if (catalogMods.length === 0) return;
+    setInstalledMods((prev) => {
+      let changed = false;
+      const catMap = new Map(catalogMods.map((m) => [m.id, m]));
+      const next = prev.map((item) => {
+        const catMod = catMap.get(item.mod_id);
+        if (!catMod) return item;
+        const author = catMod.author?.display_name;
+        if (author && (item.author_name === '未知作者' || item.author_name === '已签约作者' || item.author_name === '本地安装记录' || !item.author_name)) {
+          changed = true;
+          return { ...item, author_name: author };
+        }
+        return item;
+      });
+      return changed ? next : prev;
+    });
+  }, [catalogMods]);
+
   const activeInstallation = installations.find((i) => i.id === activeInstallationId) || {
     ...INITIAL_INSTALLATIONS[0], id: 'unverified', label: '尚未选择 MAS', path_hint: '',
     permission_state: 'pending' as const, is_valid: false,
@@ -161,7 +188,7 @@ export default function App() {
 
   const unmanagedCount = installedMods.filter((m) => !m.is_managed).length;
   const recoverableOpsCount = operations.filter((o) => o.state === 'recoverable').length;
-  const transferPercent = archiveProgress ? Math.min(100, Math.round(archiveProgress.received / archiveProgress.total * 100)) : 0;
+  const transferPercent = archiveProgress && archiveProgress.total > 0 ? Math.min(100, Math.round(archiveProgress.received / archiveProgress.total * 100)) : 0;
   const formatTransferBytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
   // Handler: Refresh Catalog
@@ -205,6 +232,7 @@ export default function App() {
   };
 
   // Handler: Download, verify, and install the selected published archive.
+  // Handler: Download, verify, and install the selected published archive using Go streaming stage.
   const handleStartInstallPlan = async (mod: ModSummary, selectedVersion?: { id: string; version: string; size_bytes: number; sha256: string }) => {
     if (!activeInstallation.is_valid) { showToast('请先验证 MAS 目录。'); return; }
     if (installingRef.current || isDownloadingArchive) return;
@@ -215,30 +243,77 @@ export default function App() {
     setTransferTitle(mod.title);
     setInstallStage('preparing');
     const version = selectedVersion || { id: mod.latest_version_id, version: mod.latest_version, size_bytes: mod.size_bytes, sha256: mod.sha256 };
+    const operationId = `op_install_${mod.id}_${Date.now()}`;
+    let pollTimer: number | null = null;
     try {
-      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+      // If VITE_API_BASE_URL is configured, pass it; otherwise pass empty string to let Go use configured backend API URL
+      const configuredBase = import.meta.env.VITE_API_BASE_URL;
+      const apiBase = configuredBase ? `${configuredBase.replace(/\/$/, '')}/api/v1` : '';
       setArchiveProgress(null);
-      const archive = await fetchVerifiedArchive(version.id, base, fetch, setArchiveProgress);
+
+      pollTimer = window.setInterval(async () => {
+        try {
+          const prog = await GetStageProgress(operationId);
+          if (prog && prog.stage !== 'completed') {
+            setArchiveProgress({
+              received: prog.received,
+              total: prog.total,
+              stage: prog.stage === 'connecting' ? 'connecting' : prog.stage === 'verifying' ? 'verifying' : 'downloading',
+            });
+          }
+        } catch {
+          // ignore transient poll error
+        }
+      }, 100);
+
+      const staged = await StageArchive({
+        api_base: apiBase,
+        version_id: version.id,
+        operation_id: operationId,
+      });
+
+      if (pollTimer !== null) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      setArchiveProgress(null);
+
       await SetMASRoot(activeInstallation.path_hint);
-      setArchiveProgress(null);
-      const encoded = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.onerror = () => reject(reader.error); reader.readAsDataURL(archive.blob); });
-      const operationId = `op_install_${mod.id}_${Date.now()}`;
-      const preview = await PreviewArchive({ operation_id: operationId, archive_base64: encoded, expected_sha256: archive.sha256,
-        mod_id: mod.id, version_id: version.id, version: version.version, title: mod.title, category: mod.category });
+      const preview = await PreviewArchive({
+        operation_id: operationId,
+        archive_id: staged.archive_id,
+        expected_sha256: staged.sha256,
+        mod_id: mod.id,
+        version_id: version.id,
+        version: version.version,
+        title: mod.title,
+        author: mod.author?.display_name || "",
+        category: mod.category,
+      });
       setCurrentPlan(mapPlanPreview(preview, {
-        backend_operation_id: operationId, archive_sha256: archive.sha256,
+        backend_operation_id: operationId,
+        archive_sha256: staged.sha256,
         plan_id: `install_${mod.id}_${Date.now()}`,
         kind: installedMods.some((item) => item.mod_id === mod.id) ? 'update' : 'install',
-        installation_id: activeInstallation.id, mod_id: mod.id, mod_title: mod.title,
+        installation_id: activeInstallation.id,
+        mod_id: mod.id,
+        mod_title: mod.title,
+        author_name: mod.author?.display_name || "未知作者",
         category: mod.category,
-        version_id: version.id, version_str: version.version,
+        version_id: version.id,
+        version_str: version.version,
         expires_at: new Date(Date.now() + 300000).toISOString(),
-        dependency_blockers: [], semantic_blockers: [], changes: [],
-        backups_required: 0, bytes_required: version.size_bytes, warnings: [],
+        dependency_blockers: [],
+        semantic_blockers: [],
+        changes: [],
+        backups_required: 0,
+        bytes_required: version.size_bytes,
+        warnings: [],
       }));
     } catch (error) {
       showToast(`安装失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
+      if (pollTimer !== null) clearInterval(pollTimer);
       setArchiveProgress(null);
       installingRef.current = false;
       setInstallingModId(null);
@@ -247,7 +322,6 @@ export default function App() {
     }
   };
 
-  // Handler: Start Uninstall Plan
   const handleStartUninstallPlan = async (item: InstalledItem) => {
     if (!activeInstallation.is_valid || !item.managed_operation_id) {
       showToast('该模组没有可追溯的真实安装记录，或 MAS 目录尚未验证。');
@@ -342,15 +416,20 @@ export default function App() {
         }, ...prev]);
         setInstalledMods((prev) => {
           const exists = prev.find((item) => item.mod_id === plan.mod_id);
+          const authorName = plan.author_name
+            || catalogMods.find((item) => item.id === plan.mod_id)?.author?.display_name
+            || exists?.author_name
+            || '未知作者';
           if (exists) return prev.map((item) => item.mod_id === plan.mod_id ? {
             ...item, installed_version: plan.version_str, installed_version_id: plan.version_id,
             latest_version: plan.version_str, latest_version_id: plan.version_id,
+            author_name: authorName,
             has_update: false, integrity_status: 'intact', is_managed: true,
             managed_operation_id: operationId, files_count: result.files,
           } : item);
           return [...prev, {
             mod_id: plan.mod_id, title: plan.mod_title, summary: '已通过 SubmodHub 验证安装',
-            author_name: '已签约作者', category: plan.category || 'submod', installed_version: plan.version_str,
+            author_name: authorName, category: plan.category || 'submod', installed_version: plan.version_str,
             installed_version_id: plan.version_id, latest_version: plan.version_str,
             latest_version_id: plan.version_id, has_update: false, priority: 50, is_managed: true,
             files_count: result.files, size_bytes: plan.bytes_required, installed_at: new Date().toISOString(),
@@ -557,11 +636,11 @@ export default function App() {
       {(isDownloadingArchive || installingModId !== null) && (
         <div role="status" aria-label="下载进度" className="shrink-0 border-b border-neutral-800 bg-neutral-900 px-4 py-2 text-xs text-neutral-200">
           <div className="mb-1.5 flex items-center justify-between gap-3">
-            <span className="min-w-0 truncate">{archiveProgress?.stage === 'downloading' ? `正在下载 ${transferTitle}` : archiveProgress?.stage === 'verifying' ? `正在校验 ${transferTitle}` : installStage === 'installing' ? `正在安装 ${transferTitle}` : `正在准备下载 ${transferTitle}`}</span>
-            <span className="shrink-0 font-mono tabular-nums text-neutral-300">{archiveProgress ? `${transferPercent}% · ${formatTransferBytes(archiveProgress.received)} / ${formatTransferBytes(archiveProgress.total)}` : installStage === 'installing' ? '下载完成' : '等待响应'}</span>
+            <span className="min-w-0 truncate">{archiveProgress?.stage === 'connecting' ? `正在连接 ${transferTitle}` : archiveProgress?.stage === 'downloading' ? `正在下载 ${transferTitle}` : archiveProgress?.stage === 'verifying' ? `正在校验 ${transferTitle}` : installStage === 'installing' ? `正在安装 ${transferTitle}` : `正在准备 ${transferTitle}`}</span>
+            <span className="shrink-0 font-mono tabular-nums text-neutral-300">{archiveProgress ? (archiveProgress.total > 0 ? `${transferPercent}% · ${formatTransferBytes(archiveProgress.received)} / ${formatTransferBytes(archiveProgress.total)}` : formatTransferBytes(archiveProgress.received)) : installStage === 'installing' ? '下载完成' : '等待响应'}</span>
           </div>
-          <div className="h-1.5 overflow-hidden rounded bg-neutral-700" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={archiveProgress ? transferPercent : undefined}>
-            <div className={`h-full bg-emerald-500 transition-[width] duration-150 ${archiveProgress ? '' : 'animate-pulse'}`} style={{ width: archiveProgress ? `${transferPercent}%` : installStage === 'installing' ? '100%' : '30%' }} />
+          <div className="h-1.5 overflow-hidden rounded bg-neutral-700" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={archiveProgress && archiveProgress.total > 0 ? transferPercent : undefined}>
+            <div className={`h-full bg-emerald-500 transition-[width] duration-150 ${archiveProgress && archiveProgress.total > 0 ? '' : 'animate-pulse'}`} style={{ width: archiveProgress && archiveProgress.total > 0 ? `${transferPercent}%` : installStage === 'installing' ? '100%' : '30%' }} />
           </div>
         </div>
       )}
@@ -707,7 +786,7 @@ export default function App() {
           plan={currentPlan}
           activeInstallation={activeInstallation}
           isGameRunning={isGameRunning}
-          onClose={() => setCurrentPlan(null)}
+          onClose={() => { if (currentPlan?.backend_operation_id) void CancelStage(currentPlan.backend_operation_id); setCurrentPlan(null); }}
           onApplyPlan={() => { if (currentPlan) void handleApplyPlan(currentPlan); }}
         />
       )}

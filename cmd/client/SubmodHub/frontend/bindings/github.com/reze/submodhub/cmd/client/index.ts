@@ -22,5 +22,8 @@ export type {
     PlanPreviewSummary,
     PlanResult,
     Spritepack,
-    SpritepackDeleteResult
+    SpritepackDeleteResult,
+    StageArchiveRequest,
+    StageProgress,
+    StagedArchiveInfo
 } from "./models.js";

@@ -17,6 +17,8 @@ type InstalledArchive struct {
 	VersionID   string    `json:"version_id"`
 	Version     string    `json:"version"`
 	Title       string    `json:"title"`
+	Author      string    `json:"author,omitempty"`
+	Category    string    `json:"category,omitempty"`
 	OperationID string    `json:"operation_id"`
 	Files       int       `json:"files"`
 	SizeBytes   int64     `json:"size_bytes"`
@@ -98,6 +100,8 @@ func (s *DesktopService) projectedInstalledArchives(request ArchiveInstallReques
 		VersionID:   request.VersionID,
 		Version:     request.Version,
 		Title:       request.Title,
+		Author:      request.Author,
+		Category:    request.Category,
 		OperationID: request.OperationID,
 		Files:       len(report.Files),
 		SizeBytes:   size,

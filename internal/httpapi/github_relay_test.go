@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/reze/submodhub/internal/github"
 )
@@ -28,6 +31,11 @@ func TestGitHubRelayScenarios(t *testing.T) {
 	hash := sha256.Sum256(rawZip)
 	hashHex := hex.EncodeToString(hash[:])
 
+	// Same length as rawZip, but corrupted bytes for hash mismatch test
+	corruptedZip := make([]byte, len(rawZip))
+	copy(corruptedZip, rawZip)
+	corruptedZip[len(corruptedZip)-1] ^= 0xff
+
 	var ghHits int32
 	var proxyHits int32
 
@@ -36,11 +44,28 @@ func TestGitHubRelayScenarios(t *testing.T) {
 		atomic.AddInt32(&ghHits, 1)
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/ok.zip"):
+			w.Header().Set("Content-Length", fmt.Sprint(len(rawZip)))
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(rawZip)
-		case strings.HasSuffix(r.URL.Path, "/changed.zip"):
+		case strings.HasSuffix(r.URL.Path, "/chunked-ok.zip"):
+			// Unknown Content-Length (chunked transfer)
+			w.Header().Set("Transfer-Encoding", "chunked")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("PK\x03\x04different-content-bytes"))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			_, _ = w.Write(rawZip)
+		case strings.HasSuffix(r.URL.Path, "/size-changed.zip"):
+			// Pre-response size error: Content-Length differs
+			diffSizeZip := []byte("PK\x03\x04different-content-bytes")
+			w.Header().Set("Content-Length", fmt.Sprint(len(diffSizeZip)))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(diffSizeZip)
+		case strings.HasSuffix(r.URL.Path, "/hash-mismatch.zip"):
+			// Same size, but corrupted hash
+			w.Header().Set("Content-Length", fmt.Sprint(len(corruptedZip)))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(corruptedZip)
 		case strings.HasSuffix(r.URL.Path, "/rate-limited.zip"):
 			w.Header().Set("Retry-After", "120")
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -111,6 +136,21 @@ func TestGitHubRelayScenarios(t *testing.T) {
 				DownloadURL: mockGH.URL + "/ok.zip",
 			},
 		},
+		"v-chunked-ok": {
+			ID:          "v-chunked-ok",
+			ModID:       "mod-1",
+			Version:     "1.0.0-chunked",
+			State:       "published",
+			SizeBytes:   int64(len(rawZip)),
+			SHA256:      hashHex,
+			ArchivePath: filepath.Join(dataDir, "placeholder-v-chunked.zip"),
+			SourceType:  "github_releases",
+			GitHubSource: &VersionSourceLocation{
+				Owner:       "octocat",
+				Repo:        "test",
+				DownloadURL: mockGH.URL + "/chunked-ok.zip",
+			},
+		},
 		"v-legacy": {
 			ID:          "v-legacy",
 			ModID:       "mod-1",
@@ -120,7 +160,6 @@ func TestGitHubRelayScenarios(t *testing.T) {
 			SHA256:      hashHex,
 			ArchivePath: localZipPath,
 			SourceType:  "github_releases",
-			// GitHubSource is nil (legacy)
 		},
 		"v-unpublished": {
 			ID:          "v-unpublished",
@@ -136,8 +175,8 @@ func TestGitHubRelayScenarios(t *testing.T) {
 				DownloadURL: mockGH.URL + "/ok.zip",
 			},
 		},
-		"v-changed": {
-			ID:          "v-changed",
+		"v-size-changed": {
+			ID:          "v-size-changed",
 			ModID:       "mod-1",
 			Version:     "1.0.1",
 			State:       "published",
@@ -148,7 +187,22 @@ func TestGitHubRelayScenarios(t *testing.T) {
 			GitHubSource: &VersionSourceLocation{
 				Owner:       "octocat",
 				Repo:        "test",
-				DownloadURL: mockGH.URL + "/changed.zip",
+				DownloadURL: mockGH.URL + "/size-changed.zip",
+			},
+		},
+		"v-hash-mismatch": {
+			ID:          "v-hash-mismatch",
+			ModID:       "mod-1",
+			Version:     "1.0.1-badhash",
+			State:       "published",
+			SizeBytes:   int64(len(rawZip)),
+			SHA256:      hashHex, // Expects original hashHex
+			ArchivePath: filepath.Join(dataDir, "placeholder-badhash.zip"),
+			SourceType:  "github_releases",
+			GitHubSource: &VersionSourceLocation{
+				Owner:       "octocat",
+				Repo:        "test",
+				DownloadURL: mockGH.URL + "/hash-mismatch.zip",
 			},
 		},
 		"v-429": {
@@ -188,6 +242,7 @@ func TestGitHubRelayScenarios(t *testing.T) {
 			Title:           "Test Mod",
 			LatestVersionID: "v-relay-ok",
 			Author:          Author{ID: "flarum:1", DisplayName: "author"},
+			DownloadsCount:  0,
 		},
 	}
 
@@ -213,8 +268,29 @@ func TestGitHubRelayScenarios(t *testing.T) {
 	if atomic.LoadInt32(&proxyHits) == 0 {
 		t.Fatal("expected proxy hits > 0 for relay download")
 	}
+	// Verify download count incremented on successful verified stream
+	store.mu.RLock()
+	cnt := store.Catalog.Mods[0].DownloadsCount
+	store.mu.RUnlock()
+	if cnt != 1 {
+		t.Fatalf("expected downloads_count=1, got %d", cnt)
+	}
 
-	// 2. Legacy version with nil GitHubSource: should serve from local and NOT hit proxy/GH
+	// 2. Unknown Content-Length streaming: GET /api/v1/archives/v-chunked-ok
+	resChunked, err := http.Get(server.URL + "/api/v1/archives/v-chunked-ok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resChunked.StatusCode != 200 {
+		t.Fatalf("expected 200 for v-chunked-ok, got %d", resChunked.StatusCode)
+	}
+	chunkedBody, _ := io.ReadAll(resChunked.Body)
+	_ = resChunked.Body.Close()
+	if string(chunkedBody) != string(rawZip) {
+		t.Fatalf("chunked stream content mismatch")
+	}
+
+	// 3. Legacy version with nil GitHubSource: should serve from local and NOT hit proxy/GH
 	atomic.StoreInt32(&proxyHits, 0)
 	resLegacy, err := http.Get(server.URL + "/api/v1/archives/v-legacy")
 	if err != nil {
@@ -232,7 +308,7 @@ func TestGitHubRelayScenarios(t *testing.T) {
 		t.Fatal("expected 0 proxy hits for legacy local archive")
 	}
 
-	// 3. Unpublished version: should return 404
+	// 4. Unpublished version: should return 404
 	resUnpub, err := http.Get(server.URL + "/api/v1/archives/v-unpublished")
 	if err != nil {
 		t.Fatal(err)
@@ -241,23 +317,55 @@ func TestGitHubRelayScenarios(t *testing.T) {
 		t.Fatalf("expected 404 for unpublished version, got %d", resUnpub.StatusCode)
 	}
 
-	// 4. Hash mismatch / upstream archive changed: should return 502 upstream_archive_changed
-	resChanged, err := http.Get(server.URL + "/api/v1/archives/v-changed")
+	// 5. Pre-response size error: upstream Content-Length mismatch returns 502 upstream_archive_changed
+	resSizeChanged, err := http.Get(server.URL + "/api/v1/archives/v-size-changed")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resChanged.StatusCode != 502 {
-		t.Fatalf("expected 502 for changed archive, got %d", resChanged.StatusCode)
+	if resSizeChanged.StatusCode != 502 {
+		t.Fatalf("expected 502 for changed archive size, got %d", resSizeChanged.StatusCode)
 	}
 	var errResp struct {
 		Code string `json:"code"`
 	}
-	_ = json.NewDecoder(resChanged.Body).Decode(&errResp)
+	_ = json.NewDecoder(resSizeChanged.Body).Decode(&errResp)
 	if errResp.Code != "upstream_archive_changed" {
 		t.Fatalf("expected code upstream_archive_changed, got %q", errResp.Code)
 	}
 
-	// 5. Upstream 429 rate limited: should return 503 github_upstream_rate_limited with Retry-After
+	// 6. Post-response hash mismatch: relay streams 200, client validates hash and rejects. Server does NOT increment count.
+	store.mu.RLock()
+	countBeforeBadHash := store.Catalog.Mods[0].DownloadsCount
+	store.mu.RUnlock()
+
+	resBadHash, err := http.Get(server.URL + "/api/v1/archives/v-hash-mismatch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resBadHash.StatusCode != 200 {
+		t.Fatalf("expected 200 streaming for bad hash archive, got %d", resBadHash.StatusCode)
+	}
+	receivedBadBytes, _ := io.ReadAll(resBadHash.Body)
+	_ = resBadHash.Body.Close()
+	if len(receivedBadBytes) != len(rawZip) {
+		t.Fatalf("expected %d bytes, got %d", len(rawZip), len(receivedBadBytes))
+	}
+	// Client calculates SHA256 of received bytes
+	calcHash := sha256.Sum256(receivedBadBytes)
+	calcHex := hex.EncodeToString(calcHash[:])
+	expectedHeaderHash := resBadHash.Header.Get("X-Archive-SHA256")
+	if calcHex == expectedHeaderHash {
+		t.Fatalf("expected client hash calculation to differ from header hash %s", expectedHeaderHash)
+	}
+	// Server download count must NOT have incremented
+	store.mu.RLock()
+	countAfterBadHash := store.Catalog.Mods[0].DownloadsCount
+	store.mu.RUnlock()
+	if countAfterBadHash != countBeforeBadHash {
+		t.Fatalf("server download count increased on hash mismatch: was %d, now %d", countBeforeBadHash, countAfterBadHash)
+	}
+
+	// 7. Upstream 429 rate limited: should return 503 github_upstream_rate_limited with Retry-After
 	res429, err := http.Get(server.URL + "/api/v1/archives/v-429")
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +377,7 @@ func TestGitHubRelayScenarios(t *testing.T) {
 		t.Fatalf("expected Retry-After 120, got %q", res429.Header.Get("Retry-After"))
 	}
 
-	// 6. Upstream 404 missing: should return 502 github_upstream_failed
+	// 8. Upstream 404 missing: should return 502 github_upstream_failed
 	res404, err := http.Get(server.URL + "/api/v1/archives/v-404")
 	if err != nil {
 		t.Fatal(err)
@@ -278,7 +386,7 @@ func TestGitHubRelayScenarios(t *testing.T) {
 		t.Fatalf("expected 502 for missing upstream, got %d", res404.StatusCode)
 	}
 
-	// 7. HEAD request: should return metadata without triggering proxy download
+	// 9. HEAD request: should return metadata without triggering proxy download
 	atomic.StoreInt32(&proxyHits, 0)
 	headRes, err := http.Head(server.URL + "/api/v1/archives/v-relay-ok")
 	if err != nil {
@@ -294,7 +402,7 @@ func TestGitHubRelayScenarios(t *testing.T) {
 		t.Fatal("expected HEAD request not to trigger proxy download")
 	}
 
-	// 8. Descriptor contract test: only local endpoint, sha256, size; no upstream URL or proxy leaked
+	// 10. Descriptor contract test: only local endpoint, sha256, size; no upstream URL or proxy leaked
 	descRes, err := http.Get(server.URL + "/api/v1/versions/v-relay-ok/download")
 	if err != nil {
 		t.Fatal(err)
@@ -306,5 +414,364 @@ func TestGitHubRelayScenarios(t *testing.T) {
 	descStr := string(descBody)
 	if strings.Contains(descStr, mockGH.URL) || strings.Contains(descStr, mockProxy.URL) {
 		t.Fatalf("descriptor leaked upstream or proxy URL: %s", descStr)
+	}
+
+	// 11. Semaphore slot release verification
+	if len(store.downloadSem) != 0 {
+		t.Fatalf("download semaphore slot was not released! current len = %d", len(store.downloadSem))
+	}
+}
+
+// TestRelayPureStreamingChannelSync verifies that relay streams chunks incrementally
+// and does NOT buffer the full archive or wait for upstream EOF before returning bytes to the client.
+func TestRelayPureStreamingChannelSync(t *testing.T) {
+	chunk1 := []byte("FIRST_STREAMED_CHUNK_")
+	chunk2 := []byte("SECOND_STREAMED_CHUNK_")
+	fullZip := append(chunk1, chunk2...)
+	hash := sha256.Sum256(fullZip)
+	hashHex := hex.EncodeToString(hash[:])
+
+	chunk1Acked := make(chan struct{})
+
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Length", fmt.Sprint(len(fullZip)))
+		w.WriteHeader(http.StatusOK)
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("upstream response writer is not a flusher")
+			return
+		}
+
+		// Write Chunk 1 and flush to client
+		if _, err := w.Write(chunk1); err != nil {
+			return
+		}
+		flusher.Flush()
+
+		// Wait for the client to receive chunk1 before sending chunk2!
+		// If relay were buffering the full body, relay would block waiting for upstream EOF,
+		// but upstream is waiting for client to read chunk1 -> deadlock / timeout!
+		select {
+		case <-chunk1Acked:
+		case <-r.Context().Done():
+			return
+		case <-time.After(5 * time.Second):
+			t.Error("timeout waiting for client to ack chunk 1")
+			return
+		}
+
+		// Send Chunk 2
+		_, _ = w.Write(chunk2)
+		flusher.Flush()
+	}))
+	defer upstreamServer.Close()
+
+	dataDir := t.TempDir()
+	store, err := NewStore(dataDir, Catalog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.GitHubClient = github.NewClient(
+		github.WithBaseURL(upstreamServer.URL),
+		github.WithAllowInsecureTestHosts(true),
+	)
+	store.Catalog.Versions = map[string]Version{
+		"v-sync": {
+			ID:        "v-sync",
+			ModID:     "mod-sync",
+			Version:   "1.0.0",
+			State:     "published",
+			SizeBytes: int64(len(fullZip)),
+			SHA256:    hashHex,
+			GitHubSource: &VersionSourceLocation{
+				Owner:       "test",
+				Repo:        "test",
+				DownloadURL: upstreamServer.URL + "/archive.zip",
+			},
+		},
+	}
+	store.Catalog.Mods = []Mod{
+		{
+			ID:              "mod-sync",
+			Title:           "Sync Mod",
+			LatestVersionID: "v-sync",
+			Author:          Author{ID: "1", DisplayName: "a"},
+		},
+	}
+
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	// Client downloads from relay
+	res, err := http.Get(server.URL + "/api/v1/archives/v-sync")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+
+	// Read first chunk from relay
+	readBuf := make([]byte, len(chunk1))
+	_, err = io.ReadFull(res.Body, readBuf)
+	if err != nil {
+		t.Fatalf("failed reading chunk1 from relay: %v", err)
+	}
+	if string(readBuf) != string(chunk1) {
+		t.Fatalf("chunk1 mismatch: expected %s, got %s", chunk1, readBuf)
+	}
+
+	// Signal upstream that chunk 1 has arrived at the client!
+	close(chunk1Acked)
+
+	// Now read the remainder of the stream
+	rest, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("failed reading chunk2 from relay: %v", err)
+	}
+	if string(rest) != string(chunk2) {
+		t.Fatalf("chunk2 mismatch: expected %s, got %s", chunk2, rest)
+	}
+}
+
+// TestRelayCreatesNoTempFiles verifies relay does not write files to temp directory
+// and statically verifies github_relay.go does not call DownloadToTemp or CreateTemp.
+func TestRelayCreatesNoTempFiles(t *testing.T) {
+	// 1. Static source inspection
+	src, err := os.ReadFile("github_relay.go")
+	if err != nil {
+		// try relative to project root
+		src, err = os.ReadFile("internal/httpapi/github_relay.go")
+	}
+	if err != nil {
+		t.Fatalf("failed to read github_relay.go: %v", err)
+	}
+	srcStr := string(src)
+	forbiddenCalls := []string{
+		"DownloadToTemp",
+		"CreateTemp",
+		"os.CreateTemp",
+		"os.Open",
+		"os.Remove",
+		"io.ReadAll(res.Body)",
+	}
+	for _, call := range forbiddenCalls {
+		if strings.Contains(srcStr, call) {
+			t.Fatalf("github_relay.go contains forbidden call: %s", call)
+		}
+	}
+
+	// 2. Dynamic check during relay execution
+	zipData := []byte("PK\x03\x04test-pure-stream-data")
+	hash := sha256.Sum256(zipData)
+	hashHex := hex.EncodeToString(hash[:])
+
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Length", fmt.Sprint(len(zipData)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(zipData)
+	}))
+	defer upstreamServer.Close()
+
+	dataDir := t.TempDir()
+	store, err := NewStore(dataDir, Catalog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.GitHubClient = github.NewClient(
+		github.WithBaseURL(upstreamServer.URL),
+		github.WithAllowInsecureTestHosts(true),
+	)
+	store.Catalog.Versions = map[string]Version{
+		"v-notemp": {
+			ID:        "v-notemp",
+			ModID:     "mod-1",
+			Version:   "1.0.0",
+			State:     "published",
+			SizeBytes: int64(len(zipData)),
+			SHA256:    hashHex,
+			GitHubSource: &VersionSourceLocation{
+				Owner:       "test",
+				Repo:        "test",
+				DownloadURL: upstreamServer.URL + "/notemp.zip",
+			},
+		},
+	}
+	store.Catalog.Mods = []Mod{{ID: "mod-1", LatestVersionID: "v-notemp"}}
+
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	countSubmodhubTempFiles := func() int {
+		entries, err := os.ReadDir(os.TempDir())
+		if err != nil {
+			return 0
+		}
+		count := 0
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), "submodhub-gh-") {
+				count++
+			}
+		}
+		return count
+	}
+
+	countBefore := countSubmodhubTempFiles()
+	res, err := http.Get(server.URL + "/api/v1/archives/v-notemp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	countAfter := countSubmodhubTempFiles()
+
+	if countAfter > countBefore {
+		t.Fatalf("relay created temporary files! count before: %d, count after: %d", countBefore, countAfter)
+	}
+}
+
+// TestRelayContextCancellation verifies that if the client cancels the download context,
+// the relay terminates and the semaphore is released.
+func TestRelayContextCancellation(t *testing.T) {
+	chunk1 := []byte("CHUNK1_")
+	clientCancelled := make(chan struct{})
+
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		_, _ = w.Write(chunk1)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-clientCancelled
+	}))
+	defer upstreamServer.Close()
+
+	dataDir := t.TempDir()
+	store, err := NewStore(dataDir, Catalog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.GitHubClient = github.NewClient(
+		github.WithBaseURL(upstreamServer.URL),
+		github.WithAllowInsecureTestHosts(true),
+	)
+	store.Catalog.Versions = map[string]Version{
+		"v-cancel": {
+			ID:        "v-cancel",
+			ModID:     "mod-1",
+			Version:   "1.0.0",
+			State:     "published",
+			SizeBytes: 1000,
+			SHA256:    strings.Repeat("a", 64),
+			GitHubSource: &VersionSourceLocation{
+				Owner:       "test",
+				Repo:        "test",
+				DownloadURL: upstreamServer.URL + "/cancel.zip",
+			},
+		},
+	}
+	store.Catalog.Mods = []Mod{{ID: "mod-1", LatestVersionID: "v-cancel"}}
+
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/v1/archives/v-cancel", nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, len(chunk1))
+	_, _ = io.ReadFull(res.Body, buf)
+
+	// Cancel context from client
+	cancel()
+	_ = res.Body.Close()
+	close(clientCancelled)
+
+	// Wait briefly for relay goroutine to exit
+	time.Sleep(50 * time.Millisecond)
+
+	if len(store.downloadSem) != 0 {
+		t.Fatalf("semaphore slot not released after cancellation: %d", len(store.downloadSem))
+	}
+}
+
+
+// TestRelayReadIdleTimeout verifies that if upstream hangs mid-stream without sending bytes,
+// relay times out via idle read timeout and releases the semaphore slot.
+func TestRelayReadIdleTimeout(t *testing.T) {
+	origTimeout := relayReadIdleTimeout
+	relayReadIdleTimeout = 100 * time.Millisecond
+	defer func() { relayReadIdleTimeout = origTimeout }()
+
+	upstreamStallServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		_, _ = w.Write([]byte("CHUNK1_"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		// Hang without sending any more data until request context is canceled
+		<-r.Context().Done()
+	}))
+	defer upstreamStallServer.Close()
+
+	dataDir := t.TempDir()
+	store, err := NewStore(dataDir, Catalog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.GitHubClient = github.NewClient(
+		github.WithBaseURL(upstreamStallServer.URL),
+		github.WithAllowInsecureTestHosts(true),
+	)
+	store.Catalog.Versions = map[string]Version{
+		"v-stall": {
+			ID:        "v-stall",
+			ModID:     "mod-stall",
+			Version:   "1.0.0",
+			State:     "published",
+			SizeBytes: 1000,
+			SHA256:    strings.Repeat("a", 64),
+			GitHubSource: &VersionSourceLocation{
+				Owner:       "test",
+				Repo:        "test",
+				DownloadURL: upstreamStallServer.URL + "/stall.zip",
+			},
+		},
+	}
+	store.Catalog.Mods = []Mod{{ID: "mod-stall", LatestVersionID: "v-stall"}}
+
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	res, err := http.Get(server.URL + "/api/v1/archives/v-stall")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Try reading until stream terminates from idle timeout
+	_, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+
+	// Wait briefly to confirm goroutine exits and releases semaphore
+	time.Sleep(50 * time.Millisecond)
+
+	if len(store.downloadSem) != 0 {
+		t.Fatalf("semaphore slot not released after idle read timeout: %d", len(store.downloadSem))
 	}
 }

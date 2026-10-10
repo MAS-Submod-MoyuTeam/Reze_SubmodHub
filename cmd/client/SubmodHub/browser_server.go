@@ -73,7 +73,33 @@ func browserServiceHandler(service *DesktopService) http.Handler {
 					result, err = service.DeleteSpritepack(value)
 				}
 			}
-				case "PreviewArchive":
+				case "StageArchive":
+			var value StageArchiveRequest
+			err = arg(0, &value)
+			if err == nil {
+				result, err = service.StageArchive(value)
+			}
+		case "GetStageProgress":
+			var opID string
+			err = arg(0, &opID)
+			if err == nil {
+				result, err = service.GetStageProgress(opID)
+			}
+		case "ReleaseArchive":
+			var archiveID string
+			err = arg(0, &archiveID)
+			if err == nil {
+				err = service.ReleaseArchive(archiveID)
+				result = true
+			}
+		case "CancelStage":
+			var opID string
+			err = arg(0, &opID)
+			if err == nil {
+				err = service.CancelStage(opID)
+				result = true
+			}
+		case "PreviewArchive":
 			var value ArchiveInstallRequest
 			err = arg(0, &value)
 			if err == nil {

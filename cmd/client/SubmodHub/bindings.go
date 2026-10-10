@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 	"archive/zip"
@@ -39,12 +40,14 @@ type InstallRequest struct {
 type ArchiveInstallRequest struct {
 	Category      string `json:"category"`
 	OperationID   string `json:"operation_id"`
-	ArchiveBase64 string `json:"archive_base64"`
+	ArchiveBase64 string `json:"archive_base64,omitempty"`
+	ArchiveID     string `json:"archive_id,omitempty"`
 	ExpectedSHA   string `json:"expected_sha256"`
 	ModID         string `json:"mod_id"`
 	VersionID     string `json:"version_id"`
 	Version       string `json:"version"`
 	Title         string `json:"title"`
+	Author        string `json:"author,omitempty"`
 }
 
 type ArchiveInstallResult struct {
@@ -62,6 +65,7 @@ type LocalSubmodFile struct {
 type LocalSubmod struct {
 	Directory string            `json:"directory"`
 	Name      string            `json:"name"`
+	Author    string            `json:"author,omitempty"`
 	Version   string            `json:"version"`
 	Files     []LocalSubmodFile `json:"files"`
 }
@@ -120,18 +124,41 @@ type DesktopService struct {
 	instances  []MASInstance
 	activeID   string
 	loaded     bool
+	apiURL     string
+	stagingMgr *ArchiveStagingManager
 
-	activePlan        *core.Plan
-	activePlanRequest any
-	activePlanArchive []byte
-	activePlanHash    [32]byte
-	activePlanReport  packagezip.Report
+	activePlan          *core.Plan
+	activePlanRequest   any
+	activePlanArchiveID string
+	activePlanArchive   []byte
+	activePlanHash      [32]byte
+	activePlanReport    packagezip.Report
 }
 
 func NewDesktopService() *DesktopService {
 	root := os.Getenv("SUBMODHUB_MAS_ROOT")
 	configDir, _ := os.UserConfigDir()
-	return &DesktopService{root: root, configPath: filepath.Join(configDir, "SubmodHub", "instances.json")}
+	mgr, _ := NewArchiveStagingManager("")
+	apiURL := os.Getenv("SUBMODHUB_API_URL")
+	if apiURL == "" {
+		apiURL = "http://100.72.137.92:18082"
+	}
+	return &DesktopService{
+		root:       root,
+		configPath: filepath.Join(configDir, "SubmodHub", "instances.json"),
+		apiURL:     apiURL,
+		stagingMgr: mgr,
+	}
+}
+
+func (s *DesktopService) SetAPIURL(apiURL string) {
+	if apiURL != "" {
+		s.apiURL = apiURL
+	}
+}
+
+func (s *DesktopService) GetAPIURL() string {
+	return s.apiURL
 }
 
 func (s *DesktopService) SetMASRoot(root string) (MASStatus, error) {
@@ -189,7 +216,9 @@ func (s *DesktopService) ScanLocalSubmods() ([]LocalSubmod, error) {
 		}
 		return nil, err
 	}
-	nameRe := regexp.MustCompile(`(?s)Submod\s*\(.*?\bname\s*=\s*["']([^"']+)["'].*?\bversion\s*=\s*["']([^"']+)["']`)
+	nameRe := regexp.MustCompile(`\bname\s*=\s*["']([^"']+)["']`)
+	authorRe := regexp.MustCompile(`\bauthor\s*=\s*["']([^"']+)["']`)
+	versionRe := regexp.MustCompile(`\bversion\s*=\s*["']([^"']+)["']`)
 	result := make([]LocalSubmod, 0)
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -214,9 +243,23 @@ func (s *DesktopService) ScanLocalSubmods() ([]LocalSubmod, error) {
 				return relErr
 			}
 			item.Files = append(item.Files, LocalSubmodFile{Path: filepath.ToSlash(filepath.Join("game", rel)), SHA256: hex.EncodeToString(h[:]), Size: info.Size()})
-			if item.Name == "" && (strings.HasSuffix(strings.ToLower(path), ".rpy") || strings.HasSuffix(strings.ToLower(path), ".rpym") || strings.HasSuffix(strings.ToLower(path), ".py")) {
-				if m := nameRe.FindSubmatch(b); len(m) == 3 {
-					item.Name, item.Version = string(m[1]), string(m[2])
+			if strings.HasSuffix(strings.ToLower(path), ".rpy") || strings.HasSuffix(strings.ToLower(path), ".rpym") || strings.HasSuffix(strings.ToLower(path), ".py") {
+				if strings.Contains(string(b), "Submod") {
+					if item.Name == "" {
+						if m := nameRe.FindSubmatch(b); len(m) == 2 {
+							item.Name = string(m[1])
+						}
+					}
+					if item.Version == "" {
+						if m := versionRe.FindSubmatch(b); len(m) == 2 {
+							item.Version = string(m[1])
+						}
+					}
+					if item.Author == "" {
+						if m := authorRe.FindSubmatch(b); len(m) == 2 {
+							item.Author = string(m[1])
+						}
+					}
 				}
 			}
 			return nil
@@ -322,10 +365,38 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 	if request.OperationID == "" {
 		return PlanResult{}, errors.New("operation_id_required")
 	}
-	data, err := base64.StdEncoding.DecodeString(request.ArchiveBase64)
-	if err != nil {
-		return PlanResult{}, errors.New("invalid_archive_base64")
+
+	var data []byte
+	if request.ArchiveID != "" {
+		if s.stagingMgr == nil {
+			return PlanResult{}, errors.New("staging_manager_not_initialized")
+		}
+		entry, err := s.stagingMgr.GetEntry(request.ArchiveID, request.OperationID)
+		if err != nil {
+			return PlanResult{}, err
+		}
+		if request.ExpectedSHA != "" && !strings.EqualFold(entry.SHA256, request.ExpectedSHA) {
+			return PlanResult{}, errors.New("archive_hash_mismatch")
+		}
+		archiveData, err := os.ReadFile(entry.Path)
+		if err != nil {
+			return PlanResult{}, fmt.Errorf("read staged archive failed: %w", err)
+		}
+		data = archiveData
+	} else if request.ArchiveBase64 != "" {
+		const maxBridgeBase64Len = 22 * 1024 * 1024
+		if len(request.ArchiveBase64) > maxBridgeBase64Len {
+			return PlanResult{}, errors.New("archive_too_large_for_bridge")
+		}
+		decoded, err := base64.StdEncoding.DecodeString(request.ArchiveBase64)
+		if err != nil {
+			return PlanResult{}, errors.New("invalid_archive_base64")
+		}
+		data = decoded
+	} else {
+		return PlanResult{}, errors.New("archive_source_required")
 	}
+
 	hash := sha256.Sum256(data)
 	if request.ExpectedSHA != "" && !strings.EqualFold(hex.EncodeToString(hash[:]), request.ExpectedSHA) {
 		return PlanResult{}, errors.New("archive_hash_mismatch")
@@ -368,6 +439,10 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 		return PlanResult{}, err
 	}
 
+	if s.activePlanArchiveID != "" && s.activePlanArchiveID != request.ArchiveID && s.stagingMgr != nil {
+		s.stagingMgr.ReleaseArchive(s.activePlanArchiveID)
+	}
+	s.activePlanArchiveID = request.ArchiveID
 	s.activePlan = plan
 	s.activePlanRequest = request
 	s.activePlanArchive = data
@@ -594,6 +669,13 @@ func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstall
 	}
 
 	plan := s.activePlan
+	activeReq := s.activePlanRequest
+	defer func() {
+		if req, ok := activeReq.(ArchiveInstallRequest); ok && req.ArchiveID != "" && s.stagingMgr != nil {
+			s.stagingMgr.ReleaseArchive(req.ArchiveID)
+		}
+		s.activePlanArchiveID = ""
+	}()
 	tx, err := s.core.NewTransaction(plan)
 	if err != nil {
 		return ArchiveInstallResult{}, err
@@ -713,4 +795,43 @@ func resolveSourceTitle(src string, manifest *core.Manifest) string {
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+func (s *DesktopService) StageArchive(request StageArchiveRequest) (StagedArchiveInfo, error) {
+	if s.stagingMgr == nil {
+		mgr, err := NewArchiveStagingManager("")
+		if err != nil {
+			return StagedArchiveInfo{}, err
+		}
+		s.stagingMgr = mgr
+	}
+	effectiveBase := request.APIBase
+	if effectiveBase == "" || strings.HasPrefix(effectiveBase, "wails://") || strings.HasPrefix(effectiveBase, "http://wails.") || strings.HasPrefix(effectiveBase, "https://wails.") || strings.HasPrefix(effectiveBase, "/") {
+		apiServer := strings.TrimRight(s.apiURL, "/")
+		effectiveBase = apiServer + "/api/v1"
+	}
+	request.APIBase = effectiveBase
+	return s.stagingMgr.Stage(context.Background(), request)
+}
+
+func (s *DesktopService) GetStageProgress(operationID string) (StageProgress, error) {
+	if s.stagingMgr == nil {
+		return StageProgress{}, nil
+	}
+	return s.stagingMgr.GetProgress(operationID), nil
+}
+
+func (s *DesktopService) CancelStage(operationID string) error {
+	if s.stagingMgr == nil {
+		return nil
+	}
+	s.stagingMgr.Cancel(operationID)
+	return nil
+}
+
+func (s *DesktopService) ReleaseArchive(archiveID string) error {
+	if s.stagingMgr != nil && archiveID != "" {
+		s.stagingMgr.ReleaseArchive(archiveID)
+	}
+	return nil
 }

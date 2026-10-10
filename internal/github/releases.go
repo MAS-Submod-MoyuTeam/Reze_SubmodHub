@@ -261,6 +261,88 @@ func isRedirectStatus(status int) bool {
 		status == http.StatusPermanentRedirect
 }
 
+func (c *Client) executeStreamRequest(ctx context.Context, targetURL string, headers map[string]string) (*http.Response, error) {
+	currURL := targetURL
+
+	clientCopy := *c.httpClient
+	clientCopy.Timeout = 0
+	clientCopy.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	const maxRedirectAttempts = 10
+	for redirectCount := 0; redirectCount <= maxRedirectAttempts; redirectCount++ {
+		effectiveURL, err := RewriteGitHubURL(c.proxyTemplate, currURL, c.allowInsecureTestHosts)
+		if err != nil {
+			return nil, err
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, effectiveURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("create request failed: %w", err)
+		}
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+
+		res, err := clientCopy.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("http request failed: %w", err)
+		}
+
+		if isRedirectStatus(res.StatusCode) {
+			loc := res.Header.Get("Location")
+			_ = res.Body.Close()
+			if loc == "" {
+				return nil, fmt.Errorf("redirect with empty Location header (status %d)", res.StatusCode)
+			}
+			if redirectCount == maxRedirectAttempts {
+				return nil, ErrTooManyRedirects
+			}
+
+			baseParsed, err := url.Parse(currURL)
+			if err != nil {
+				return nil, fmt.Errorf("parse base url %q failed: %w", currURL, err)
+			}
+			relParsed, err := url.Parse(loc)
+			if err != nil {
+				return nil, fmt.Errorf("parse redirect url %q failed: %w", loc, err)
+			}
+			nextURL := baseParsed.ResolveReference(relParsed).String()
+			currURL = nextURL
+			continue
+		}
+
+		if res.StatusCode < 200 || res.StatusCode >= 300 {
+			defer res.Body.Close()
+			if res.StatusCode == http.StatusForbidden || res.StatusCode == http.StatusTooManyRequests {
+				return nil, parseRateLimitError(res)
+			}
+			if res.StatusCode == http.StatusNotFound {
+				return nil, ErrNotFound
+			}
+			body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+			return nil, &APIError{StatusCode: res.StatusCode, Message: strings.TrimSpace(string(body))}
+		}
+
+		return res, nil
+	}
+
+	return nil, ErrTooManyRedirects
+}
+
+// OpenArchiveStream opens an HTTP stream to download an archive from GitHub,
+// applying proxy rewriting and following redirects safely.
+// The caller is responsible for closing the returned Response.Body.
+// The request is bound to ctx without http.Client.Timeout constraints.
+func (c *Client) OpenArchiveStream(ctx context.Context, downloadURL string) (*http.Response, error) {
+	headers := map[string]string{
+		"Accept":     "*/*",
+		"User-Agent": c.userAgent,
+	}
+	return c.executeStreamRequest(ctx, downloadURL, headers)
+}
+
 func (c *Client) executeRequest(ctx context.Context, targetURL string, headers map[string]string) (*http.Response, error) {
 	currURL := targetURL
 
@@ -458,28 +540,12 @@ func (c *Client) DownloadToTemp(ctx context.Context, downloadURL string, maxSize
 		_ = os.Remove(tmpPath)
 	}
 
-	headers := map[string]string{
-		"Accept":     "*/*",
-		"User-Agent": c.userAgent,
-	}
-
-	res, err := c.executeRequest(ctx, downloadURL, headers)
+	res, err := c.OpenArchiveStream(ctx, downloadURL)
 	if err != nil {
 		cleanup()
-		return "", "", 0, fmt.Errorf("download request failed: %w", err)
+		return "", "", 0, err
 	}
 	defer res.Body.Close()
-
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		cleanup()
-		if res.StatusCode == http.StatusForbidden || res.StatusCode == http.StatusTooManyRequests {
-			return "", "", 0, parseRateLimitError(res)
-		}
-		if res.StatusCode == http.StatusNotFound {
-			return "", "", 0, ErrNotFound
-		}
-		return "", "", 0, fmt.Errorf("download returned status %d", res.StatusCode)
-	}
 
 	hasher := sha256.New()
 	writer := io.MultiWriter(tmpFile, hasher)
