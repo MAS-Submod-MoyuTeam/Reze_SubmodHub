@@ -1,12 +1,15 @@
 package main
 
 import (
+	"encoding/json"
+	"time"
 	"archive/zip"
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,18 +21,21 @@ import (
 )
 
 type MASStatus struct {
-	Root       string `json:"root"`
-	GamePath   string `json:"game_path"`
-	Valid      bool   `json:"valid"`
-	GameExists bool   `json:"game_exists"`
-	Submods    int    `json:"submods"`
+	Root           string `json:"root"`
+	GamePath       string `json:"game_path"`
+	Valid          bool   `json:"valid"`
+	GameExists     bool   `json:"game_exists"`
+	Submods        int    `json:"submods"`
+	AvailableBytes int64  `json:"available_bytes"`
 }
+
 type InstallRequest struct {
 	OperationID string `json:"operation_id"`
 	Path        string `json:"path"`
 	Content     string `json:"content"`
 	ExpectedSHA string `json:"expected_sha256"`
 }
+
 type ArchiveInstallRequest struct {
 	Category      string `json:"category"`
 	OperationID   string `json:"operation_id"`
@@ -40,22 +46,72 @@ type ArchiveInstallRequest struct {
 	Version       string `json:"version"`
 	Title         string `json:"title"`
 }
+
 type ArchiveInstallResult struct {
 	State    string   `json:"state"`
 	Files    int      `json:"files"`
 	Warnings []string `json:"warnings"`
 }
+
 type LocalSubmodFile struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
 }
+
 type LocalSubmod struct {
 	Directory string            `json:"directory"`
 	Name      string            `json:"name"`
 	Version   string            `json:"version"`
 	Files     []LocalSubmodFile `json:"files"`
 }
+
+type PlanPreviewAction struct {
+	Path           string `json:"path"`
+	Action         string `json:"action"` // CREATE, OVERWRITE, REMOVE, RESTORE, METADATA_ONLY
+	CurrentSource  string `json:"current_source"`
+	TargetSource   string `json:"target_source"`
+	CurrentHash    string `json:"current_hash"`
+	TargetHash     string `json:"target_hash"`
+	CurrentExists  bool   `json:"current_exists"`
+	TargetExists   bool   `json:"target_exists"`
+	BackupRequired bool   `json:"backup_required"`
+	Reason         string `json:"reason"`
+}
+
+type PlanPreviewRisk struct {
+	Type        string `json:"type"`
+	Path        string `json:"path"`
+	Description string `json:"description"`
+}
+
+type PlanPreviewSummary struct {
+	RestoresOriginal int `json:"restores_original"`
+	RestoresLayer    int `json:"restores_layer"`
+	MetadataOnly     int `json:"metadata_only"`
+	DeletesAdded     int `json:"deletes_added"`
+	WritesNew        int `json:"writes_new"`
+}
+
+type PlanResult struct {
+	PlanID     string              `json:"plan_id"`
+	Root       string              `json:"root"`
+	Generation int64               `json:"generation"`
+	Kind       string              `json:"kind"` // install, update, uninstall
+	TargetID   string              `json:"target_id"`
+	ModTitle   string              `json:"mod_title"`
+	Version    string              `json:"version"`
+	Actions    []PlanPreviewAction `json:"actions"`
+	Blockers   []string            `json:"blockers"`
+	Risks      []PlanPreviewRisk   `json:"risks"`
+	Summary    PlanPreviewSummary  `json:"summary"`
+}
+
+type ExecutePlanRequest struct {
+	PlanID    string `json:"plan_id"`
+	Confirmed bool   `json:"confirmed"`
+}
+
 type DesktopService struct {
 	root       string
 	state      string
@@ -64,6 +120,12 @@ type DesktopService struct {
 	instances  []MASInstance
 	activeID   string
 	loaded     bool
+
+	activePlan        *core.Plan
+	activePlanRequest any
+	activePlanArchive []byte
+	activePlanHash    [32]byte
+	activePlanReport  packagezip.Report
 }
 
 func NewDesktopService() *DesktopService {
@@ -71,6 +133,7 @@ func NewDesktopService() *DesktopService {
 	configDir, _ := os.UserConfigDir()
 	return &DesktopService{root: root, configPath: filepath.Join(configDir, "SubmodHub", "instances.json")}
 }
+
 func (s *DesktopService) SetMASRoot(root string) (MASStatus, error) {
 	root = filepath.Clean(strings.TrimSpace(root))
 	if root == "." || root == "" || !filepath.IsAbs(root) {
@@ -82,8 +145,16 @@ func (s *DesktopService) SetMASRoot(root string) (MASStatus, error) {
 	s.root = root
 	s.state = filepath.Join(root, ".submodhub", "state")
 	s.core = core.New(root, s.state)
+	s.activePlan = nil
+
+	// Invariant: recover any pending interrupted transactions on startup/set
+	if err := s.core.RecoverPending(); err != nil {
+		return MASStatus{}, err
+	}
+
 	return s.GetMASStatus()
 }
+
 func (s *DesktopService) GetMASStatus() (MASStatus, error) {
 	if s.root == "" {
 		return MASStatus{}, errors.New("mas_root_not_configured")
@@ -99,8 +170,13 @@ func (s *DesktopService) GetMASStatus() (MASStatus, error) {
 			count++
 		}
 	}
-	return MASStatus{Root: s.root, GamePath: game, Valid: fileExists(s.root), GameExists: fileExists(game), Submods: count}, nil
+	var avail int64
+	if space, err := core.GetAvailableDiskSpace(s.root); err == nil {
+		avail = int64(space)
+	}
+	return MASStatus{Root: s.root, GamePath: game, Valid: fileExists(s.root), GameExists: fileExists(game), Submods: count, AvailableBytes: avail}, nil
 }
+
 func (s *DesktopService) ScanLocalSubmods() ([]LocalSubmod, error) {
 	if s.root == "" {
 		return nil, errors.New("mas_root_not_configured")
@@ -152,6 +228,7 @@ func (s *DesktopService) ScanLocalSubmods() ([]LocalSubmod, error) {
 	}
 	return result, nil
 }
+
 func (s *DesktopService) ApplyFile(request InstallRequest) (string, error) {
 	if s.core == nil {
 		if _, err := s.SetMASRoot(s.root); err != nil {
@@ -167,6 +244,7 @@ func (s *DesktopService) ApplyFile(request InstallRequest) (string, error) {
 	}
 	return "committed", nil
 }
+
 func (s *DesktopService) Recover(operationID string) error {
 	if s.core == nil {
 		if _, err := s.SetMASRoot(s.root); err != nil {
@@ -175,99 +253,464 @@ func (s *DesktopService) Recover(operationID string) error {
 	}
 	return s.core.Recover(operationID)
 }
-func (s *DesktopService) Uninstall(operationID, uninstallOperationID string) (string, error) {
-	if s.core == nil {
-		if _, err := s.SetMASRoot(s.root); err != nil {
-			return "", err
-		}
-	}
-	if operationID == "" || uninstallOperationID == "" {
-		return "", errors.New("operation_id_required")
-	}
-	if err := s.core.Uninstall(operationID, uninstallOperationID); err != nil {
-		return "", err
-	}
-	if err := s.removeInstalledArchive(operationID); err != nil {
-		return "", err
-	}
-	return "committed", nil
-}
-func (s *DesktopService) ApplyArchive(request ArchiveInstallRequest) (ArchiveInstallResult, error) {
-	if s.core == nil {
-		if _, err := s.SetMASRoot(s.root); err != nil {
-			return ArchiveInstallResult{}, err
-		}
-	}
-	if request.OperationID == "" {
-		return ArchiveInstallResult{}, errors.New("operation_id_required")
-	}
-	data, err := base64.StdEncoding.DecodeString(request.ArchiveBase64)
-	if err != nil {
-		return ArchiveInstallResult{}, errors.New("invalid_archive_base64")
-	}
-	hash := sha256.Sum256(data)
-	if request.ExpectedSHA != "" && !strings.EqualFold(hex.EncodeToString(hash[:]), request.ExpectedSHA) {
-		return ArchiveInstallResult{}, errors.New("archive_hash_mismatch")
-	}
+
+func parseArchiveFiles(data []byte, category string) ([]core.PlannedFile, []string, packagezip.Report, error) {
 	archiveData := data
 	var spriteWarnings []string
-	if request.Category == "spritepack" {
+	if category == "spritepack" {
 		spriteReport, scanErr := packagezip.ScanSpriteArchive(bytes.NewReader(data), int64(len(data)), packagezip.Limits{})
 		if scanErr != nil {
-			return ArchiveInstallResult{}, scanErr
+			return nil, nil, packagezip.Report{}, scanErr
 		}
 		setIDs := make([]string, 0, len(spriteReport.SpriteSets))
 		for _, set := range spriteReport.SpriteSets {
 			setIDs = append(setIDs, set.ID)
 		}
+		var err error
 		archiveData, err = packagezip.BuildSpriteSelection(bytes.NewReader(data), int64(len(data)), spriteReport, setIDs)
 		if err != nil {
-			return ArchiveInstallResult{}, err
+			return nil, nil, packagezip.Report{}, err
 		}
 		spriteWarnings = spriteReport.Warnings
 	}
 	report, err := packagezip.Scan(bytes.NewReader(archiveData), int64(len(archiveData)), packagezip.Limits{})
 	if err != nil {
-		return ArchiveInstallResult{}, err
+		return nil, nil, packagezip.Report{}, err
 	}
 	report.Warnings = append(report.Warnings, spriteWarnings...)
 	z, err := zip.NewReader(bytes.NewReader(archiveData), int64(len(archiveData)))
 	if err != nil {
-		return ArchiveInstallResult{}, err
+		return nil, nil, packagezip.Report{}, err
 	}
 	bySource := make(map[string]*zip.File, len(z.File))
 	for _, entry := range z.File {
 		bySource[entry.Name] = entry
 	}
-	changes := make([]core.Change, 0, len(report.Files))
+	planned := make([]core.PlannedFile, 0, len(report.Files))
 	for _, file := range report.Files {
 		entry := bySource[file.Source]
 		if entry == nil {
-			return ArchiveInstallResult{}, errors.New("archive_entry_missing")
+			return nil, nil, packagezip.Report{}, errors.New("archive_entry_missing")
 		}
 		reader, openErr := entry.Open()
 		if openErr != nil {
-			return ArchiveInstallResult{}, openErr
+			return nil, nil, packagezip.Report{}, openErr
 		}
 		content, readErr := io.ReadAll(reader)
 		_ = reader.Close()
 		if readErr != nil {
-			return ArchiveInstallResult{}, readErr
+			return nil, nil, packagezip.Report{}, readErr
 		}
 		target := filepath.ToSlash(filepath.Join("game", file.Target))
 		if strings.HasPrefix(file.Target, "lib/") || strings.HasPrefix(file.Target, "characters/") {
 			target = file.Target
 		}
-		changes = append(changes, core.Change{Path: target, Content: content})
+		planned = append(planned, core.PlannedFile{Path: target, Content: content})
 	}
-	if err := s.core.Apply(core.Operation{ID: request.OperationID, Changes: changes}); err != nil {
-		return ArchiveInstallResult{}, err
+	return planned, report.Warnings, report, nil
+}
+
+func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResult, error) {
+	if s.core == nil {
+		if _, err := s.SetMASRoot(s.root); err != nil {
+			return PlanResult{}, err
+		}
 	}
+	if err := s.core.RecoverPending(); err != nil {
+		return PlanResult{}, err
+	}
+	if request.OperationID == "" {
+		return PlanResult{}, errors.New("operation_id_required")
+	}
+	data, err := base64.StdEncoding.DecodeString(request.ArchiveBase64)
+	if err != nil {
+		return PlanResult{}, errors.New("invalid_archive_base64")
+	}
+	hash := sha256.Sum256(data)
+	if request.ExpectedSHA != "" && !strings.EqualFold(hex.EncodeToString(hash[:]), request.ExpectedSHA) {
+		return PlanResult{}, errors.New("archive_hash_mismatch")
+	}
+
+	plannedFiles, warnings, report, err := parseArchiveFiles(data, request.Category)
+	if err != nil {
+		return PlanResult{}, err
+	}
+
+	manifest, err := s.core.LoadManifest()
+	if err != nil {
+		return PlanResult{}, err
+	}
+
+	blobs := s.core.GetBlobs()
+	for _, f := range plannedFiles {
+		if _, err := blobs.Put(f.Content); err != nil {
+			return PlanResult{}, err
+		}
+	}
+
+	kind := "install"
 	if request.ModID != "" {
-		if err := s.recordInstalledArchive(request, report, hex.EncodeToString(hash[:]), int64(len(data))); err != nil {
+		if _, exists := manifest.Installations[request.ModID]; exists {
+			kind = "update"
+		}
+	}
+
+	plan, err := core.PlanInstall(manifest, s.root, blobs, core.InstallOperation{
+		OperationID:    request.OperationID,
+		InstallationID: request.ModID,
+		ModID:          request.ModID,
+		VersionID:      request.VersionID,
+		Version:        request.Version,
+		Title:          request.Title,
+		Files:          plannedFiles,
+	})
+	if err != nil {
+		return PlanResult{}, err
+	}
+
+	s.activePlan = plan
+	s.activePlanRequest = request
+	s.activePlanArchive = data
+	s.activePlanHash = hash
+	s.activePlanReport = report
+
+	actions := make([]PlanPreviewAction, 0, len(plan.Actions))
+	for _, a := range plan.Actions {
+		actionType := "CREATE"
+		backupReq := false
+		reason := "新建文件"
+		switch a.Action {
+		case core.ActionWrite:
+			if a.CurrentExists {
+				actionType = "OVERWRITE"
+				backupReq = true
+				reason = "覆盖已有文件"
+			} else {
+				actionType = "CREATE"
+				reason = "新建文件"
+			}
+		case core.ActionMetadataOnly:
+			actionType = "METADATA_ONLY"
+			reason = "仅调整归属，无需更改磁盘"
+		}
+
+		cSrc := resolveSourceTitle(a.CurrentSource, manifest)
+
+		tSrc := a.TargetSource
+		if tSrc == "" || tSrc == request.ModID || tSrc == request.OperationID {
+			tSrc = request.Title
+			if tSrc == "" {
+				tSrc = request.ModID
+			}
+		} else {
+			tSrc = resolveSourceTitle(tSrc, manifest)
+		}
+
+		actions = append(actions, PlanPreviewAction{
+			Path:           a.Path,
+			Action:         actionType,
+			CurrentSource:  cSrc,
+			TargetSource:   tSrc,
+			CurrentHash:    a.CurrentHash,
+			TargetHash:     a.TargetHash,
+			CurrentExists:  a.CurrentExists,
+			TargetExists:   a.TargetExists,
+			BackupRequired: backupReq,
+			Reason:         reason,
+		})
+	}
+
+	risks := make([]PlanPreviewRisk, 0, len(plan.Risks))
+	for _, r := range plan.Risks {
+		risks = append(risks, PlanPreviewRisk{
+			Type:        r.Type,
+			Path:        r.Path,
+			Description: r.Description,
+		})
+	}
+
+	// Add package warnings as risks
+	for _, w := range warnings {
+		risks = append(risks, PlanPreviewRisk{
+			Type:        "package_warning",
+			Description: w,
+		})
+	}
+
+	return PlanResult{
+		PlanID:     plan.PlanID,
+		Root:       s.root,
+		Generation: plan.Generation,
+		Kind:       kind,
+		TargetID:   request.ModID,
+		ModTitle:   request.Title,
+		Version:    request.Version,
+		Actions:    actions,
+		Blockers:   plan.Blockers,
+		Risks:      risks,
+		Summary: PlanPreviewSummary{
+			RestoresOriginal: plan.Summary.RestoresOriginal,
+			RestoresLayer:    plan.Summary.RestoresLayer,
+			MetadataOnly:     plan.Summary.MetadataOnly,
+			DeletesAdded:     plan.Summary.DeletesAdded,
+			WritesNew:        plan.Summary.WritesNew,
+		},
+	}, nil
+}
+
+func (s *DesktopService) PreviewUninstallWithOpID(targetID, uninstallOpID string) (PlanResult, error) {
+	if s.core == nil {
+		if _, err := s.SetMASRoot(s.root); err != nil {
+			return PlanResult{}, err
+		}
+	}
+	if err := s.core.RecoverPending(); err != nil {
+		return PlanResult{}, err
+	}
+	if targetID == "" {
+		return PlanResult{}, errors.New("target_id_required")
+	}
+
+	manifest, err := s.core.LoadManifest()
+	if err != nil {
+		return PlanResult{}, err
+	}
+
+	// Check if this installation exists in manifest
+	if _, ok := manifest.Installations[targetID]; !ok {
+		// Check receipts
+		receipts, rErr := s.ListInstalledArchives()
+		if rErr == nil {
+			for _, rec := range receipts {
+				if rec.ModID == targetID || rec.OperationID == targetID {
+					// Fallback synthesis
+					targetID = rec.OperationID
+					break
+				}
+			}
+		}
+	}
+
+	if uninstallOpID == "" {
+		uninstallOpID = fmt.Sprintf("uninstall_%s_%d", targetID, time.Now().UnixNano())
+	}
+
+	plan, err := core.PlanUninstall(manifest, s.root, s.core.GetBlobs(), targetID, uninstallOpID)
+	if err != nil {
+		return PlanResult{}, err
+	}
+
+	s.activePlan = plan
+	s.activePlanRequest = targetID
+
+	actions := make([]PlanPreviewAction, 0, len(plan.Actions))
+	for _, a := range plan.Actions {
+		actionType := "REMOVE"
+		reason := "移除文件"
+		switch a.Action {
+		case core.ActionRestoreOriginal:
+			actionType = "RESTORE"
+			reason = "恢复游戏/外部原文件"
+		case core.ActionRestoreLayer:
+			actionType = "RESTORE"
+			reason = "恢复有效活动模组文件"
+		case core.ActionDelete:
+			actionType = "REMOVE"
+			reason = "移除模组新增文件"
+		case core.ActionMetadataOnly:
+			actionType = "METADATA_ONLY"
+			reason = "仅移除归属，保留高层文件"
+		}
+
+		cSrc := resolveSourceTitle(a.CurrentSource, manifest)
+
+		tSrc := a.TargetSource
+		if tSrc == "none" {
+			tSrc = "(移除)"
+		} else {
+			tSrc = resolveSourceTitle(tSrc, manifest)
+		}
+
+		actions = append(actions, PlanPreviewAction{
+			Path:           a.Path,
+			Action:         actionType,
+			CurrentSource:  cSrc,
+			TargetSource:   tSrc,
+			CurrentHash:    a.CurrentHash,
+			TargetHash:     a.TargetHash,
+			CurrentExists:  a.CurrentExists,
+			TargetExists:   a.TargetExists,
+			BackupRequired: false,
+			Reason:         reason,
+		})
+	}
+
+	risks := make([]PlanPreviewRisk, 0, len(plan.Risks))
+	for _, r := range plan.Risks {
+		risks = append(risks, PlanPreviewRisk{
+			Type:        r.Type,
+			Path:        r.Path,
+			Description: r.Description,
+		})
+	}
+
+	return PlanResult{
+		PlanID:     plan.PlanID,
+		Root:       s.root,
+		Generation: plan.Generation,
+		Kind:       "uninstall",
+		TargetID:   targetID,
+		Actions:    actions,
+		Blockers:   plan.Blockers,
+		Risks:      risks,
+		Summary: PlanPreviewSummary{
+			RestoresOriginal: plan.Summary.RestoresOriginal,
+			RestoresLayer:    plan.Summary.RestoresLayer,
+			MetadataOnly:     plan.Summary.MetadataOnly,
+			DeletesAdded:     plan.Summary.DeletesAdded,
+			WritesNew:        plan.Summary.WritesNew,
+		},
+	}, nil
+}
+
+func (s *DesktopService) PreviewUninstall(targetID string) (PlanResult, error) {
+	return s.PreviewUninstallWithOpID(targetID, "")
+}
+
+func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstallResult, error) {
+	if s.core == nil {
+		if _, err := s.SetMASRoot(s.root); err != nil {
 			return ArchiveInstallResult{}, err
 		}
 	}
-	return ArchiveInstallResult{State: "committed", Files: len(changes), Warnings: report.Warnings}, nil
+	if s.activePlan == nil || s.activePlan.PlanID != request.PlanID {
+		return ArchiveInstallResult{}, errors.New("plan_stale")
+	}
+	if s.activePlan.Root != s.root {
+		return ArchiveInstallResult{}, errors.New("plan_stale")
+	}
+	if len(s.activePlan.Blockers) > 0 {
+		return ArchiveInstallResult{}, errors.New("plan_blocked")
+	}
+
+	plan := s.activePlan
+	tx, err := s.core.NewTransaction(plan)
+	if err != nil {
+		return ArchiveInstallResult{}, err
+	}
+	defer tx.Close()
+
+	// Coordinate receipt update atomically within transaction boundary
+	if plan.OperationType == "install" {
+		req, ok := s.activePlanRequest.(ArchiveInstallRequest)
+		if ok && req.ModID != "" {
+			newReceipts, pErr := s.projectedInstalledArchives(req, s.activePlanReport, hex.EncodeToString(s.activePlanHash[:]), int64(len(s.activePlanArchive)))
+			if pErr != nil {
+				return ArchiveInstallResult{}, pErr
+			}
+			data, mErr := json.MarshalIndent(newReceipts, "", "  ")
+			if mErr != nil {
+				return ArchiveInstallResult{}, mErr
+			}
+			tx.SetReceiptUpdate(s.installedArchivesPath(), data)
+		}
+	} else if plan.OperationType == "uninstall" {
+		targetID, ok := s.activePlanRequest.(string)
+		if ok {
+			newReceipts, pErr := s.projectedRemoveInstalledArchive(targetID)
+			if pErr != nil {
+				return ArchiveInstallResult{}, pErr
+			}
+			data, mErr := json.MarshalIndent(newReceipts, "", "  ")
+			if mErr != nil {
+				return ArchiveInstallResult{}, mErr
+			}
+			tx.SetReceiptUpdate(s.installedArchivesPath(), data)
+		}
+	}
+
+	if err := tx.Execute(); err != nil {
+		s.activePlan = nil
+		s.activePlanRequest = nil
+		s.activePlanArchive = nil
+		return ArchiveInstallResult{}, err
+	}
+
+	s.activePlan = nil
+	s.activePlanRequest = nil
+	s.activePlanArchive = nil
+
+	return ArchiveInstallResult{
+		State:    "committed",
+		Files:    len(plan.Actions),
+		Warnings: []string{},
+	}, nil
 }
-func fileExists(path string) bool { info, err := os.Stat(path); return err == nil && info.IsDir() }
+
+func (s *DesktopService) ApplyArchive(request ArchiveInstallRequest) (ArchiveInstallResult, error) {
+	preview, err := s.PreviewArchive(request)
+	if err != nil {
+		return ArchiveInstallResult{}, err
+	}
+	if len(preview.Blockers) > 0 {
+		return ArchiveInstallResult{}, fmt.Errorf("plan_blocked: %s", strings.Join(preview.Blockers, "; "))
+	}
+	return s.ExecutePlan(ExecutePlanRequest{
+		PlanID:    preview.PlanID,
+		Confirmed: true,
+	})
+}
+
+func (s *DesktopService) Uninstall(operationID, uninstallOperationID string) (string, error) {
+	preview, err := s.PreviewUninstallWithOpID(operationID, uninstallOperationID)
+	if err != nil {
+		return "", err
+	}
+	if len(preview.Blockers) > 0 {
+		return "", fmt.Errorf("plan_blocked: %s", strings.Join(preview.Blockers, "; "))
+	}
+	res, err := s.ExecutePlan(ExecutePlanRequest{
+		PlanID:    preview.PlanID,
+		Confirmed: true,
+	})
+	if err != nil {
+		return "", err
+	}
+	return res.State, nil
+}
+
+
+func resolveSourceTitle(src string, manifest *core.Manifest) string {
+	if src == "original" || src == "" {
+		return "游戏/外部原文件"
+	}
+	if src == "none" {
+		return "(无)"
+	}
+	if manifest != nil && manifest.Installations != nil {
+		if inst, ok := manifest.Installations[src]; ok && inst != nil {
+			if inst.Title != "" {
+				return inst.Title
+			}
+			if inst.ModID != "" {
+				return inst.ModID
+			}
+		}
+		for _, inst := range manifest.Installations {
+			if inst != nil && (inst.ModID == src || inst.OperationID == src) {
+				if inst.Title != "" {
+					return inst.Title
+				}
+				if inst.ModID != "" {
+					return inst.ModID
+				}
+			}
+		}
+	}
+	return src
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}

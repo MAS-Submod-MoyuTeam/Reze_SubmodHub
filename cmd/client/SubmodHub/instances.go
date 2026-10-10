@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	core "github.com/reze/submodhub/internal/install"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -88,7 +89,11 @@ func (s *DesktopService) ListMASInstances() (MASInstancesState, error) {
 
 func inspectMASRoot(root string) MASStatus {
 	game := filepath.Join(root, "game")
-	status := MASStatus{Root: root, GamePath: game, Valid: fileExists(root), GameExists: fileExists(game)}
+	var avail int64
+	if space, err := core.GetAvailableDiskSpace(root); err == nil {
+		avail = int64(space)
+	}
+	status := MASStatus{Root: root, GamePath: game, Valid: fileExists(root), GameExists: fileExists(game), AvailableBytes: avail}
 	if entries, err := os.ReadDir(filepath.Join(game, "Submods")); err == nil {
 		for _, entry := range entries {
 			if entry.IsDir() {

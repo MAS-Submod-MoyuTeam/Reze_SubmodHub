@@ -73,6 +73,24 @@ func browserServiceHandler(service *DesktopService) http.Handler {
 					result, err = service.DeleteSpritepack(value)
 				}
 			}
+				case "PreviewArchive":
+			var value ArchiveInstallRequest
+			err = arg(0, &value)
+			if err == nil {
+				result, err = service.PreviewArchive(value)
+			}
+		case "PreviewUninstall":
+			var value string
+			err = arg(0, &value)
+			if err == nil {
+				result, err = service.PreviewUninstall(value)
+			}
+		case "ExecutePlan":
+			var value ExecutePlanRequest
+			err = arg(0, &value)
+			if err == nil {
+				result, err = service.ExecutePlan(value)
+			}
 		case "ApplyArchive":
 			var value ArchiveInstallRequest
 			err = arg(0, &value)

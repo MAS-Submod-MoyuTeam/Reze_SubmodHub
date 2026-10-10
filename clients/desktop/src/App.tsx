@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { mapPlanPreview } from './planPreview';
 import { TitleBar } from './components/TitleBar';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { CatalogView } from './components/CatalogView';
@@ -16,7 +17,7 @@ import {
   MOCK_MOD_VERSIONS,
 } from './data/mockData';
 import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
-import { AddMASInstance, ApplyArchive, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, Uninstall, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
+import { AddMASInstance, PreviewArchive, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
 import {
   Installation,
   ModSummary,
@@ -24,6 +25,7 @@ import {
   Operation,
   ExternalChangeDrift,
   Plan,
+  PlanChange,
 } from './types/client';
 
 export default function App() {
@@ -131,9 +133,11 @@ export default function App() {
       id: item.id, label: item.label, platform: 'windows', path_hint: item.root,
       permission_state: item.status.valid && item.status.game_exists ? 'authorized' : 'revoked',
       mas_version: '未检测', is_valid: item.status.valid && item.status.game_exists,
-      is_running: false, disk_available_bytes: 0, last_validated_at: new Date().toISOString(),
+      is_running: false,
+      disk_available_bytes: item.status.available_bytes !== undefined ? item.status.available_bytes : null,
+      last_validated_at: new Date().toISOString(),
     }));
-    setInstallations(items.length ? items : [{ ...INITIAL_INSTALLATIONS[0], id: 'unverified', label: '尚未连接 MAS', path_hint: '', permission_state: 'pending', mas_version: '', is_valid: false, is_running: false, disk_available_bytes: 0, last_validated_at: '' }]);
+    setInstallations(items.length ? items : [{ ...INITIAL_INSTALLATIONS[0], id: 'unverified', label: '尚未连接 MAS', path_hint: '', permission_state: 'pending', mas_version: '', is_valid: false, is_running: false, disk_available_bytes: null, last_validated_at: '' }]);
     setActiveInstallationId(state.active_id || 'unverified');
     setInstalledMods([]);
     setSpritepacks([]);
@@ -217,9 +221,12 @@ export default function App() {
       const archive = await fetchVerifiedArchive(version.id, base, fetch, setArchiveProgress);
       await SetMASRoot(activeInstallation.path_hint);
       setArchiveProgress(null);
-      setInstallStage('installing');
-      showToast(`正在安装 ${mod.title}...`);
-      await handleApplyPlan({
+      const encoded = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.onerror = () => reject(reader.error); reader.readAsDataURL(archive.blob); });
+      const operationId = `op_install_${mod.id}_${Date.now()}`;
+      const preview = await PreviewArchive({ operation_id: operationId, archive_base64: encoded, expected_sha256: archive.sha256,
+        mod_id: mod.id, version_id: version.id, version: version.version, title: mod.title, category: mod.category });
+      setCurrentPlan(mapPlanPreview(preview, {
+        backend_operation_id: operationId, archive_sha256: archive.sha256,
         plan_id: `install_${mod.id}_${Date.now()}`,
         kind: installedMods.some((item) => item.mod_id === mod.id) ? 'update' : 'install',
         installation_id: activeInstallation.id, mod_id: mod.id, mod_title: mod.title,
@@ -228,7 +235,7 @@ export default function App() {
         expires_at: new Date(Date.now() + 300000).toISOString(),
         dependency_blockers: [], semantic_blockers: [], changes: [],
         backups_required: 0, bytes_required: version.size_bytes, warnings: [],
-      }, archive);
+      }));
     } catch (error) {
       showToast(`安装失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -241,46 +248,39 @@ export default function App() {
   };
 
   // Handler: Start Uninstall Plan
-  const handleStartUninstallPlan = (item: InstalledItem) => {
-    const uninstallPlan: Plan = {
-      plan_id: `plan_uninstall_${item.mod_id}_${Date.now().toString().slice(-6)}`,
-      kind: 'uninstall',
-      installation_id: activeInstallation.id,
-      mod_id: item.mod_id,
-      mod_title: item.title,
-      version_id: item.installed_version_id,
-      version_str: item.installed_version,
-      expires_at: new Date(Date.now() + 300000).toISOString(),
-      dependency_blockers: [],
-      semantic_blockers: [],
-      changes: [
-        {
-          target_path: `game/submods/${item.submod_dir_name || item.mod_id}/header.rpy`,
-          action: 'REMOVE',
-          previous_owner: item.title,
-          next_owner: null,
-          previous_hash: item.sha256.slice(0, 40),
-          next_hash: null,
-          reason: '卸载子模组，清理脚本文件',
-          backup_required: true,
-        },
-        {
-          target_path: `game/submods/${item.submod_dir_name || item.mod_id}/content.rpy`,
-          action: 'REMOVE',
-          previous_owner: item.title,
-          next_owner: null,
-          previous_hash: item.sha256.slice(20, 60),
-          next_hash: null,
-          reason: '卸载子模组代码',
-          backup_required: true,
-        },
-      ],
-      backups_required: 2,
-      bytes_required: 0,
-      warnings: ['卸载会直接删除当前文件，不恢复安装前备份；备份快照仍保留在本地供人工恢复。'],
-    };
+  const handleStartUninstallPlan = async (item: InstalledItem) => {
+    if (!activeInstallation.is_valid || !item.managed_operation_id) {
+      showToast('该模组没有可追溯的真实安装记录，或 MAS 目录尚未验证。');
+      return;
+    }
+    if (installingRef.current) return;
+    installingRef.current = true;
+    try {
+      await SetMASRoot(activeInstallation.path_hint);
+      const preview = await PreviewUninstall(item.managed_operation_id);
+      const uninstallPlan: Plan = {
+        plan_id: preview.plan_id,
+        kind: 'uninstall',
+        installation_id: activeInstallation.id,
+        mod_id: item.mod_id,
+        mod_title: item.title,
+        version_id: item.installed_version_id,
+        version_str: item.installed_version,
+        expires_at: new Date(Date.now() + 300000).toISOString(),
+        dependency_blockers: [],
+        semantic_blockers: [],
+        changes: [],
+        backups_required: 0,
+        bytes_required: 0,
+        warnings: [],
+      };
 
-    setCurrentPlan(uninstallPlan);
+      setCurrentPlan(mapPlanPreview(preview, { ...uninstallPlan, warnings: [], backend_operation_id: preview.plan_id }));
+    } catch (error) {
+      showToast(`卸载预览失败：${String(error)}`);
+    } finally {
+      installingRef.current = false;
+    }
   };
 
   // Handler: Start Repair Plan
@@ -295,7 +295,8 @@ export default function App() {
   };
 
   // Handler: Apply Plan (Atomic write transaction)
-  const handleApplyPlan = async (plan: Plan, archive?: { blob: Blob; sha256: string }) => {
+  const handleApplyPlan = async (plan: Plan) => {
+    if (installingRef.current) return;
     setCurrentPlan(null);
     if (plan.kind === 'uninstall') {
       const installed = installedMods.find((item) => item.mod_id === plan.mod_id);
@@ -304,30 +305,33 @@ export default function App() {
         return;
       }
       try {
-        await SetMASRoot(activeInstallation.path_hint);
-        const uninstallOperationId = `uninstall_${plan.mod_id}_${Date.now()}`;
-        await Uninstall(installed.managed_operation_id, uninstallOperationId);
+        if (isGameRunning || plan.installation_id !== activeInstallation.id) throw new Error('游戏正在运行或实例已变更，请重新预览。');
+        const uninstallOperationId = plan.backend_operation_id || plan.plan_id;
+        installingRef.current = true;
+        await ExecutePlan({ plan_id: plan.plan_id, confirmed: true });
         setInstalledMods((prev) => prev.filter((item) => item.mod_id !== plan.mod_id));
         setOperations((prev) => [{
           operation_id: uninstallOperationId, installation_id: plan.installation_id,
           mod_id: plan.mod_id, mod_title: plan.mod_title, version_id: plan.version_id,
           version_str: plan.version_str, kind: 'uninstall', state: 'committed',
-          progress: { stage: '已删除当前文件，未恢复安装前备份', processed_files: plan.changes.length,
+          progress: { stage: '卸载完成，已恢复原文件或下层版本', processed_files: plan.changes.length,
             total_files: plan.changes.length, bytes_processed: 0, total_bytes: 0, percent: 100 },
           created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
         }, ...prev]);
-        showToast(`${plan.mod_title} 已通过真实 Wails 卸载，当前文件已删除。`);
+        showToast(`${plan.mod_title} 已卸载，恢复原文件 ${plan.summary?.restores_original || 0} 个，下层文件 ${plan.summary?.restores_layer || 0} 个。`);
       } catch (error) {
         showToast(`真实卸载失败：${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        installingRef.current = false;
       }
       return;
     }
-    if (archive) {
+    if (plan.backend_operation_id) {
       try {
-        const encoded = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.onerror = () => reject(reader.error); reader.readAsDataURL(archive.blob); });
-        const operationId = `op_${plan.kind}_${plan.mod_id}_${Date.now()}`;
-        const result = await ApplyArchive({ operation_id: operationId, archive_base64: encoded, expected_sha256: archive.sha256,
-          mod_id: plan.mod_id, version_id: plan.version_id, version: plan.version_str, title: plan.mod_title, category: plan.category || 'submod' });
+        if (isGameRunning || plan.installation_id !== activeInstallation.id) throw new Error('游戏正在运行或实例已变更，请重新预览。');
+        const operationId = plan.backend_operation_id;
+        installingRef.current = true;
+        const result = await ExecutePlan({ plan_id: plan.plan_id, confirmed: true });
         setOperations((prev) => [{
           operation_id: operationId, installation_id: plan.installation_id,
           mod_id: plan.mod_id, mod_title: plan.mod_title, version_id: plan.version_id,
@@ -350,105 +354,16 @@ export default function App() {
             installed_version_id: plan.version_id, latest_version: plan.version_str,
             latest_version_id: plan.version_id, has_update: false, priority: 50, is_managed: true,
             files_count: result.files, size_bytes: plan.bytes_required, installed_at: new Date().toISOString(),
-            sha256: archive.sha256, integrity_status: 'intact', managed_operation_id: operationId,
+            sha256: plan.archive_sha256 || '', integrity_status: 'intact', managed_operation_id: operationId,
           }];
         });
         showToast(`已通过 Wails Go 安装核心写入 ${result.files} 个文件。`);
         return;
       } catch (error) { showToast(`真实安装失败：${error instanceof Error ? error.message : String(error)}`); return; }
+      finally { installingRef.current = false; }
     }
 
-    // Create active operation in list for non-archive UI operations.
-    const newOpId = `op_${plan.kind}_${plan.mod_id}_${Date.now().toString().slice(-4)}`;
-    const newOperation: Operation = {
-      operation_id: newOpId,
-      installation_id: plan.installation_id,
-      mod_id: plan.mod_id,
-      mod_title: plan.mod_title,
-      version_id: plan.version_id,
-      version_str: plan.version_str,
-      kind: plan.kind,
-      state: 'writing',
-      progress: {
-        stage: '正在原子写入目标文件并校验写入哈希...',
-        processed_files: 2,
-        total_files: plan.changes.length,
-        bytes_processed: plan.bytes_required,
-        total_bytes: plan.bytes_required,
-        percent: 75,
-      },
-      backup_id: plan.backups_required > 0 ? `bkp_${plan.mod_id}_auto` : undefined,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    setOperations((prev) => [newOperation, ...prev]);
-    showToast(`开始执行写入事务 [${newOpId}]...`);
-
-    // Simulate completion
-    setTimeout(() => {
-      setOperations((prev) =>
-        prev.map((o) =>
-          o.operation_id === newOpId
-            ? {
-                ...o,
-                state: 'committed',
-                progress: {
-                  ...o.progress,
-                  stage: '事务已完全提交至持久化 Ledger',
-                  processed_files: plan.changes.length,
-                  percent: 100,
-                },
-              }
-            : o
-        )
-      );
-
-      if (plan.kind === 'uninstall') {
-        setInstalledMods((prev) => prev.filter((i) => i.mod_id !== plan.mod_id));
-        showToast(`${plan.mod_title} 已成功安全卸载并归档快照`);
-      } else {
-        // Install or Update
-        setInstalledMods((prev) => {
-          const exists = prev.find((i) => i.mod_id === plan.mod_id);
-          if (exists) {
-            return prev.map((i) =>
-              i.mod_id === plan.mod_id
-                ? {
-                    ...i,
-                    installed_version: plan.version_str,
-                    installed_version_id: plan.version_id,
-                    has_update: false,
-                    integrity_status: 'intact',
-                  }
-                : i
-            );
-          } else {
-            const newInstalled: InstalledItem = {
-              mod_id: plan.mod_id,
-              title: plan.mod_title,
-              summary: '已通过 SubmodHub 验证安装',
-              author_name: '已签约作者',
-              category: 'submod',
-              installed_version: plan.version_str,
-              installed_version_id: plan.version_id,
-              latest_version: plan.version_str,
-              latest_version_id: plan.version_id,
-              has_update: false,
-              priority: 50,
-              is_managed: true,
-              files_count: plan.changes.length,
-              size_bytes: plan.bytes_required,
-              installed_at: new Date().toISOString(),
-              sha256: '9a87d46e38b3a0f18835b8df838520cf8126b4859a4bb38ca094f31c771fa109',
-              integrity_status: 'intact',
-            };
-            return [...prev, newInstalled];
-          }
-        });
-        showToast(`${plan.mod_title} ${plan.version_str} 安装完成并成功登记！`);
-      }
-    }, 1500);
+    showToast('执行计划缺少真实后端预览，请重新预览。');
   };
 
   // Handler: Recover Operation

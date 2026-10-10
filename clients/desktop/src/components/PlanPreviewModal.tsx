@@ -2,18 +2,12 @@ import React, { useState, useEffect } from 'react';
 import {
   X,
   ShieldAlert,
-  ShieldCheck,
   AlertTriangle,
-  HardDrive,
   Clock,
   ArrowRight,
   FileCheck,
   CheckCircle2,
   Lock,
-  FilePlus,
-  FileEdit,
-  Trash2,
-  Undo2,
 } from 'lucide-react';
 import { Plan, Installation } from '../types/client';
 
@@ -33,6 +27,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
   onApplyPlan,
 }) => {
   const [timeLeft, setTimeLeft] = useState(300); // 5 minutes validity countdown
+  const [overwriteConfirmed, setOverwriteConfirmed] = useState(false);
 
   useEffect(() => {
     if (!plan) return;
@@ -46,16 +41,22 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
 
   const hasDependencyBlockers = plan.dependency_blockers.length > 0;
   const hasSemanticBlockers = plan.semantic_blockers.length > 0;
+  const hasBackendBlockers = (plan.blockers?.length ?? 0) > 0;
   const isBlockedByGame = isGameRunning;
   const isInvalidRoot = !activeInstallation.is_valid || activeInstallation.permission_state !== 'authorized';
-  const isInsufficientSpace = plan.bytes_required > activeInstallation.disk_available_bytes;
+  const isInsufficientSpace = activeInstallation.disk_available_bytes != null && plan.bytes_required > activeInstallation.disk_available_bytes;
+  const isExpired = timeLeft <= 0;
+  const hasOverwrites = plan.changes.some((c) => c.action === 'OVERWRITE') || Boolean(plan.risks?.some((r) => r.type === 'overwriting_external_file'));
 
   const canConfirm =
     !hasDependencyBlockers &&
     !hasSemanticBlockers &&
+    !hasBackendBlockers &&
     !isBlockedByGame &&
     !isInvalidRoot &&
-    !isInsufficientSpace;
+    !isInsufficientSpace &&
+    !isExpired &&
+    (!hasOverwrites || overwriteConfirmed);
 
   const formatBytes = (bytes: number) => {
     if (bytes >= 1024 * 1024) {
@@ -96,6 +97,12 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
             还原 (RESTORE)
           </span>
         );
+      case 'METADATA_ONLY':
+        return (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700 font-mono">
+            仅移归属 (METADATA)
+          </span>
+        );
       default:
         return null;
     }
@@ -124,9 +131,9 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
             <div className="flex items-center gap-2 text-xs text-neutral-400 mt-1 font-mono">
               <span>规划计划单据 ID: {plan.plan_id}</span>
               <span aria-hidden="true">·</span>
-              <span className="flex items-center gap-1 text-amber-400">
+              <span className={`flex items-center gap-1 ${isExpired ? 'text-rose-400 font-bold' : 'text-amber-400'}`}>
                 <Clock className="w-3.5 h-3.5" />
-                <span>计划有效期剩余: {formatSeconds(timeLeft)}</span>
+                <span>{isExpired ? '计划已过期，请重新预览' : `计划有效期剩余: ${formatSeconds(timeLeft)}`}</span>
               </span>
             </div>
           </div>
@@ -165,14 +172,27 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
           <div>
             <span className="text-neutral-400 block text-[11px]">可用磁盘剩余空间</span>
             <span className="font-mono text-emerald-400 tabular-nums">
-              {(activeInstallation.disk_available_bytes / (1024 * 1024 * 1024)).toFixed(1)} GB
+              {activeInstallation.disk_available_bytes != null
+                ? `${(activeInstallation.disk_available_bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+                : '未知'}
             </span>
           </div>
         </div>
 
+        {/* Plan Summary Counters */}
+        {plan.summary && (
+          <div className="px-4 py-2 bg-neutral-950/90 border-b border-neutral-800/80 flex flex-wrap items-center gap-4 text-xs font-mono">
+            <span className="text-sky-300">恢复原文件: {plan.summary.restores_original}</span>
+            <span className="text-emerald-300">恢复活动模组: {plan.summary.restores_layer}</span>
+            <span className="text-neutral-400">仅调整归属: {plan.summary.metadata_only}</span>
+            <span className="text-rose-300">删除模组新增: {plan.summary.deletes_added}</span>
+            <span className="text-amber-300">新建写入: {plan.summary.writes_new}</span>
+          </div>
+        )}
+
         {/* Scrollable inspection area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* CRITICAL BLOCKERS (Section 5 Contract) */}
+          {/* CRITICAL BLOCKERS */}
           {/* 1. Game Running Blocker */}
           {isGameRunning && (
             <div className="p-3.5 rounded-lg bg-amber-950/80 border border-amber-700/80 flex items-start gap-3 text-xs text-amber-200">
@@ -189,7 +209,24 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
             </div>
           )}
 
-          {/* 2. Dependency Missing Blocker */}
+          {/* 2. Backend Blocker */}
+          {hasBackendBlockers && (
+            <div className="p-3.5 rounded-lg bg-rose-950/80 border border-rose-800 flex items-start gap-3 text-xs text-rose-200">
+              <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold text-rose-300">
+                  阻断警告: 事务校验阻断 [plan_blocked]
+                </div>
+                <div className="mt-1 space-y-1 font-mono">
+                  {plan.blockers?.map((blk, idx) => (
+                    <div key={idx} className="text-rose-200/90">• {blk}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3. Dependency Missing Blocker */}
           {hasDependencyBlockers && (
             <div className="p-3.5 rounded-lg bg-rose-950/80 border border-rose-800 flex items-start gap-3 text-xs text-rose-200">
               <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
@@ -208,7 +245,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
             </div>
           )}
 
-          {/* 3. Semantic Conflict Blocker */}
+          {/* 4. Semantic Conflict Blocker */}
           {hasSemanticBlockers && (
             <div className="p-3.5 rounded-lg bg-rose-950/80 border border-rose-800 flex items-start gap-3 text-xs text-rose-200">
               <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
@@ -224,6 +261,25 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                   ))}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Overwrite Confirmation Checkbox */}
+          {hasOverwrites && (
+            <div className="p-3 rounded-lg bg-amber-950/60 border border-amber-800/80 flex items-center justify-between text-xs text-amber-200">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>本操作将覆盖部分已有文件或游戏原文件，请知悉并明确确认。</span>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer font-medium select-none text-amber-300 bg-amber-900/40 px-2.5 py-1 rounded border border-amber-700/60 hover:bg-amber-900/60 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={overwriteConfirmed}
+                  onChange={(e) => setOverwriteConfirmed(e.target.checked)}
+                  className="rounded text-amber-500 focus:ring-amber-500 bg-neutral-900 border-neutral-700"
+                />
+                <span>我确认覆盖已有文件</span>
+              </label>
             </div>
           )}
 
@@ -295,7 +351,17 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               <span className="text-rose-400 font-medium">
                 {isGameRunning
                   ? '写入受阻：MAS 进程正在运行，请退出游戏后解除锁定'
-                  : '写入受阻：存在未解决的依赖或语义冲突'}
+                  : isInvalidRoot
+                  ? '写入受阻：MAS 根目录无效或缺少写入权限'
+                  : isInsufficientSpace
+                  ? '写入受阻：磁盘可用空间不足以容纳安装包'
+                  : hasBackendBlockers
+                  ? `写入受阻：后端校验阻断 (${plan.blockers?.join('; ')})`
+                  : isExpired
+                  ? '计划已过期，请关闭重新预览'
+                  : hasOverwrites && !overwriteConfirmed
+                  ? '写入受阻：请勾选确认覆盖已有文件'
+                  : '写入受阻：存在阻断项或未解决的依赖/语义冲突'}
               </span>
             ) : (
               <span className="text-emerald-400 font-medium">

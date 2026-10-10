@@ -24,7 +24,7 @@ func TestApplyAndUninstallRestoresExternalFile(t *testing.T) {
 	if string(got) != "managed" {
 		t.Fatalf("got %q", got)
 	}
-	if err := i.Apply(Operation{ID: "op2", Changes: []Change{{Path: "game/Submods/demo.rpy", Remove: true, RestoreBackup: true, ExpectedSHA256: hashBytes([]byte("managed"))}}}); err != nil {
+	if err := i.Uninstall("op1", "op2"); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = os.ReadFile(target)
@@ -126,15 +126,18 @@ func TestUninstallCommittedOperation(t *testing.T) {
 	if err := i.Uninstall("install", "install_uninstall"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(old); !os.IsNotExist(err) {
-		t.Fatalf("old file still exists: %v", err)
+	// Overwritten game original file MUST be restored to "before"
+	got, err := os.ReadFile(old)
+	if err != nil || string(got) != "before" {
+		t.Fatalf("old file was not restored to before: got %q err=%v", got, err)
 	}
+	// New file (added by mod) must be deleted
 	if _, err := os.Stat(filepath.Join(root, "game", "new.txt")); !os.IsNotExist(err) {
 		t.Fatalf("new file still exists: %v", err)
 	}
 }
 
-func TestUninstallDeletesPreviousFileInsteadOfRestoringBackup(t *testing.T) {
+func TestUninstallRestoresPreviousFileInsteadOfDeleting(t *testing.T) {
 	root := t.TempDir()
 	state := filepath.Join(t.TempDir(), "state")
 	p := filepath.Join(root, "game", "old.txt")
@@ -147,12 +150,13 @@ func TestUninstallDeletesPreviousFileInsteadOfRestoringBackup(t *testing.T) {
 	if err := i.Uninstall("install", "uninstall"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(p); !os.IsNotExist(err) {
-		t.Fatalf("file was not deleted: %v", err)
+	got, err := os.ReadFile(p)
+	if err != nil || string(got) != "before" {
+		t.Fatalf("file was not restored to before: got %q, err=%v", got, err)
 	}
 }
 
-func TestUninstallDeletesDriftedFile(t *testing.T) {
+func TestUninstallBlocksOnDriftedFile(t *testing.T) {
 	root := t.TempDir()
 	state := filepath.Join(t.TempDir(), "state")
 	p := filepath.Join(root, "game", "drift.txt")
@@ -163,10 +167,12 @@ func TestUninstallDeletesDriftedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = os.WriteFile(p, []byte("user change"), 0o644)
-	if err := i.Uninstall("install-drift", "uninstall-drift"); err != nil {
-		t.Fatal(err)
+	err := i.Uninstall("install-drift", "uninstall-drift")
+	if err == nil || (!IsCode(err, "external_change") && !IsCode(err, "plan_blocked")) {
+		t.Fatalf("expected drift to be blocked, got %v", err)
 	}
-	if _, err := os.Stat(p); !os.IsNotExist(err) {
-		t.Fatalf("drifted file was not deleted: %v", err)
+	got, _ := os.ReadFile(p)
+	if string(got) != "user change" {
+		t.Fatalf("expected user change preserved, got %q", got)
 	}
 }

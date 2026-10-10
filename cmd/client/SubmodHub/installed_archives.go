@@ -70,10 +70,10 @@ func (s *DesktopService) saveInstalledArchives(receipts []InstalledArchive) erro
 	return nil
 }
 
-func (s *DesktopService) recordInstalledArchive(request ArchiveInstallRequest, report packagezip.Report, hash string, size int64) error {
+func (s *DesktopService) projectedInstalledArchives(request ArchiveInstallRequest, report packagezip.Report, hash string, size int64) ([]InstalledArchive, error) {
 	receipts, err := s.ListInstalledArchives()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	dirs := map[string]bool{}
 	for _, file := range report.Files {
@@ -93,23 +93,53 @@ func (s *DesktopService) recordInstalledArchive(request ArchiveInstallRequest, r
 			next = append(next, receipt)
 		}
 	}
-	next = append(next, InstalledArchive{ModID: request.ModID, VersionID: request.VersionID, Version: request.Version, Title: request.Title, OperationID: request.OperationID, Files: len(report.Files), SizeBytes: size, SHA256: hash, InstalledAt: time.Now().UTC(), SubmodDirs: submodDirs})
-	return s.saveInstalledArchives(next)
+	next = append(next, InstalledArchive{
+		ModID:       request.ModID,
+		VersionID:   request.VersionID,
+		Version:     request.Version,
+		Title:       request.Title,
+		OperationID: request.OperationID,
+		Files:       len(report.Files),
+		SizeBytes:   size,
+		SHA256:      hash,
+		InstalledAt: time.Now().UTC(),
+		SubmodDirs:  submodDirs,
+	})
+	return next, nil
 }
 
-func (s *DesktopService) removeInstalledArchive(operationID string) error {
+func (s *DesktopService) projectedRemoveInstalledArchive(targetID string) ([]InstalledArchive, error) {
 	receipts, err := s.ListInstalledArchives()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	next := make([]InstalledArchive, 0, len(receipts))
 	for _, receipt := range receipts {
-		if receipt.OperationID != operationID {
+		if receipt.OperationID != targetID && receipt.ModID != targetID {
 			next = append(next, receipt)
 		}
 	}
-	if len(next) == len(receipts) {
-		return nil
+	return next, nil
+}
+
+func (s *DesktopService) recordInstalledArchive(request ArchiveInstallRequest, report packagezip.Report, hash string, size int64) error {
+	next, err := s.projectedInstalledArchives(request, report, hash, size)
+	if err != nil {
+		return err
+	}
+	return s.saveInstalledArchives(next)
+}
+
+func (s *DesktopService) removeInstalledArchive(targetID string) error {
+	next, err := s.projectedRemoveInstalledArchive(targetID)
+	if err != nil {
+		return err
+	}
+	if len(next) == 0 {
+		receipts, _ := s.ListInstalledArchives()
+		if len(receipts) == 0 {
+			return nil
+		}
 	}
 	return s.saveInstalledArchives(next)
 }

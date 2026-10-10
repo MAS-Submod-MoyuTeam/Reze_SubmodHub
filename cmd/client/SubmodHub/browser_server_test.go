@@ -1,6 +1,9 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -39,3 +42,67 @@ func TestBrowserServiceUsesDesktopInstanceState(t *testing.T) {
 }
 
 func strconvQuote(value string) string { data, _ := json.Marshal(value); return string(data) }
+
+func TestBrowserServicePlanEndpoints(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "game", "Submods"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	service := &DesktopService{configPath: filepath.Join(t.TempDir(), "instances.json")}
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+	handler := browserServiceHandler(service)
+
+	// Create test zip base64
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	entry, _ := w.Create("game/Submods/browser_test.rpy")
+	_, _ = entry.Write([]byte("test"))
+	_ = w.Close()
+	b64 := base64.StdEncoding.EncodeToString(buf.Bytes())
+
+	// 1. PreviewArchive over HTTP
+	reqBody := `{"args":[{"operation_id":"op_b_test","mod_id":"mod_b","archive_base64":"` + b64 + `"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/PreviewArchive", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PreviewArchive HTTP failed: %d %s", rec.Code, rec.Body.String())
+	}
+	var preview PlanResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if preview.PlanID == "" || len(preview.Actions) != 1 {
+		t.Fatalf("unexpected preview: %+v", preview)
+	}
+
+	// 2. ExecutePlan over HTTP
+	execBody := `{"args":[{"plan_id":"` + preview.PlanID + `","confirmed":true}]}`
+	req = httptest.NewRequest(http.MethodPost, "/local/ExecutePlan", strings.NewReader(execBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ExecutePlan HTTP failed: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// 3. PreviewUninstall over HTTP
+	unBody := `{"args":["mod_b"]}`
+	req = httptest.NewRequest(http.MethodPost, "/local/PreviewUninstall", strings.NewReader(unBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PreviewUninstall HTTP failed: %d %s", rec.Code, rec.Body.String())
+	}
+	var unPreview PlanResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &unPreview); err != nil {
+		t.Fatal(err)
+	}
+	if unPreview.Kind != "uninstall" || len(unPreview.Actions) != 1 {
+		t.Fatalf("unexpected unPreview: %+v", unPreview)
+	}
+}

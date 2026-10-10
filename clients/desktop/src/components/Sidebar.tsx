@@ -134,7 +134,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span>当前存储空间</span>
             </span>
             <span className="font-mono text-[11px] text-neutral-300 tabular-nums">
-              {formatBytes(activeInstallation.disk_available_bytes)} 可用
+              {activeInstallation.disk_available_bytes != null ? `${formatBytes(activeInstallation.disk_available_bytes)} 可用` : '容量未知'}
             </span>
           </div>
           <div className="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden">

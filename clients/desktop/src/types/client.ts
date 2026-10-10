@@ -89,7 +89,7 @@ export interface Installation {
   mas_version: string;
   is_valid: boolean;
   is_running: boolean;
-  disk_available_bytes: number;
+  disk_available_bytes?: number | null;
   last_validated_at: string;
 }
 
@@ -97,7 +97,7 @@ export type PlanKind = 'install' | 'update' | 'uninstall' | 'repair';
 
 export interface PlanChange {
   target_path: string;
-  action: 'CREATE' | 'OVERWRITE' | 'REMOVE' | 'RESTORE';
+  action: 'CREATE' | 'OVERWRITE' | 'REMOVE' | 'RESTORE' | 'METADATA_ONLY';
   previous_owner?: string | null;
   next_owner?: string | null;
   previous_hash?: string | null;
@@ -107,6 +107,8 @@ export interface PlanChange {
 }
 
 export interface Plan {
+  backend_operation_id?: string;
+  archive_sha256?: string;
   category?: 'submod' | 'spritepack';
   plan_id: string;
   kind: PlanKind;
@@ -133,6 +135,9 @@ export interface Plan {
   backups_required: number;
   bytes_required: number;
   warnings: string[];
+  summary?: { restores_original: number; restores_layer: number; metadata_only: number; deletes_added: number; writes_new: number };
+  blockers?: string[];
+  risks?: Array<{ type: string; path?: string; description: string }>;
 }
 
 export type OperationState =
