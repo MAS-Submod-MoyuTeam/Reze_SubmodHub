@@ -374,7 +374,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                       <th className="py-2.5 px-4">模组名称 / 作者</th>
                       <th className="py-2.5 px-3">已装版本</th>
                       <th className="py-2.5 px-3">最新版本</th>
-                      <th className="py-2.5 px-3">图层优先级</th>
+                      <th className="py-2.5 px-3">优先级</th>
                       <th className="py-2.5 px-3">文件与占用</th>
                       <th className="py-2.5 px-3">完整性</th>
                       <th className="py-2.5 px-4 text-right">操作</th>
@@ -412,10 +412,10 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           )}
                         </td>
 
-                        {/* Layer Priority */}
+                        {/* Priority */}
                         <td className="py-3 px-3 font-mono text-neutral-300">
                           <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-xs">
-                            Layer {item.priority}
+                            优先级 {item.priority}
                           </span>
                         </td>
 

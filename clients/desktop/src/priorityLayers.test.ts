@@ -8,6 +8,7 @@ import {
   areDraftPrioritiesEqual,
   canApplyPriorityPlan,
   isAllowedNavTab,
+  comparePriorityDisplay,
 } from './priorityLayers.js';
 
 test('validatePriorityInput rejects non-integers, floats, and dirty strings', () => {
@@ -403,4 +404,101 @@ test('isAllowedNavTab allows supported navigation tabs including priority', () =
   assert.equal(isAllowedNavTab('unknown'), false);
 });
 
+test('comparePriorityDisplay sorts mods by priority descending then order descending', () => {
+  const modA = { priority: 50, order: 1, mod_id: 'mod_a', installation_id: 'inst_a' };
+  const modB = { priority: 50, order: 2, mod_id: 'mod_b', installation_id: 'inst_b' };
+  const modC = { priority: 80, order: 0, mod_id: 'mod_c', installation_id: 'inst_c' };
 
+  // Expect C (prio 80), then B (prio 50, order 2), then A (prio 50, order 1)
+  const input = [modA, modB, modC];
+  const sorted = [...input].sort(comparePriorityDisplay);
+  assert.deepEqual(sorted, [modC, modB, modA]);
+
+  // Immutability: original array not modified
+  assert.deepEqual(input, [modA, modB, modC]);
+
+  // Negative priorities
+  const modD = { priority: -10, order: 5, mod_id: 'mod_d', installation_id: 'inst_d' };
+  const modE = { priority: -5, order: 1, mod_id: 'mod_e', installation_id: 'inst_e' };
+  const sortedNegative = [modD, modE].sort(comparePriorityDisplay);
+  assert.deepEqual(sortedNegative, [modE, modD]);
+
+  // Empty array
+  assert.deepEqual([].sort(comparePriorityDisplay), []);
+
+  // Stability: repeated sort remains identical
+  const repeated1 = [...sorted].sort(comparePriorityDisplay);
+  const repeated2 = [...repeated1].sort(comparePriorityDisplay);
+  assert.deepEqual(repeated1, repeated2);
+});
+
+test('comparePriorityDisplay breaks ties with ModID, InstallationID and Unicode IDs matching Go compareLayers descending', () => {
+  // 1. ModID tie-break when priority and order are equal
+  const alpha = { priority: 50, order: 2, mod_id: 'mod_alpha', installation_id: 'inst_1' };
+  const beta = { priority: 50, order: 2, mod_id: 'mod_beta', installation_id: 'inst_2' };
+  // In Go compareLayers ascending: mod_alpha < mod_beta, so mod_beta is ActiveLayer (winner).
+  // For descending display, winner mod_beta must come first!
+  const sortedMods = [alpha, beta].sort(comparePriorityDisplay);
+  assert.deepEqual(sortedMods, [beta, alpha]);
+
+  // 2. Unicode ModID tie-break: '模组_甲' (UTF-8 0xE7 0x94 0xB2) vs '模组_乙' (UTF-8 0xE4 0xB9 0x99)
+  const uniA = { priority: 50, order: 2, mod_id: '模组_乙', installation_id: 'inst_u1' };
+  const uniB = { priority: 50, order: 2, mod_id: '模组_甲', installation_id: 'inst_u2' };
+  // In Go compareLayers ascending: uniA < uniB, uniB is winner.
+  // In descending display, uniB must come first!
+  const sortedUnicode = [uniA, uniB].sort(comparePriorityDisplay);
+  assert.deepEqual(sortedUnicode, [uniB, uniA]);
+
+  // 3. InstallationID tie-break when priority, order, and mod_id are equal
+  const inst1 = { priority: 50, order: 2, mod_id: 'same_mod', installation_id: 'inst_01' };
+  const inst2 = { priority: 50, order: 2, mod_id: 'same_mod', installation_id: 'inst_02' };
+  // In Go compareLayers ascending: inst_01 < inst_02, inst_02 is winner.
+  // In descending display, inst_02 must come first!
+  const sortedInst = [inst1, inst2].sort(comparePriorityDisplay);
+  assert.deepEqual(sortedInst, [inst2, inst1]);
+});
+
+test('comparePriorityDisplay on path layers places active_owner at top for shared and conflict paths', () => {
+  // Shared path (identical hash across layers)
+  const sharedPath = {
+    path: 'game/shared.rpy',
+    active_owner: 'mod_c',
+    layers: [
+      { priority: 50, order: 1, mod_id: 'mod_a', installation_id: 'inst_a', hash: 'same_hash' },
+      { priority: 50, order: 2, mod_id: 'mod_b', installation_id: 'inst_b', hash: 'same_hash' },
+      { priority: 80, order: 0, mod_id: 'mod_c', installation_id: 'inst_c', hash: 'same_hash' },
+    ],
+  };
+
+  const sortedSharedLayers = [...sharedPath.layers].sort(comparePriorityDisplay);
+  assert.equal(sortedSharedLayers[0].mod_id, sharedPath.active_owner);
+  assert.equal(sortedSharedLayers[0].mod_id, 'mod_c');
+
+  // Conflict path (different hashes across layers)
+  const conflictPath = {
+    path: 'game/conflict.rpy',
+    active_owner: 'mod_c',
+    layers: [
+      { priority: 50, order: 1, mod_id: 'mod_a', installation_id: 'inst_a', hash: 'hash_a' },
+      { priority: 50, order: 2, mod_id: 'mod_b', installation_id: 'inst_b', hash: 'hash_b' },
+      { priority: 80, order: 0, mod_id: 'mod_c', installation_id: 'inst_c', hash: 'hash_c' },
+    ],
+  };
+
+  const sortedConflictLayers = [...conflictPath.layers].sort(comparePriorityDisplay);
+  assert.equal(sortedConflictLayers[0].mod_id, conflictPath.active_owner);
+  assert.equal(sortedConflictLayers[0].mod_id, 'mod_c');
+
+  // Equal priority conflict where later installed B(50,2) wins over A(50,1)
+  const tiePath = {
+    path: 'game/tie.rpy',
+    active_owner: 'mod_b',
+    layers: [
+      { priority: 50, order: 1, mod_id: 'mod_a', installation_id: 'inst_a', hash: 'hash_a' },
+      { priority: 50, order: 2, mod_id: 'mod_b', installation_id: 'inst_b', hash: 'hash_b' },
+    ],
+  };
+  const sortedTieLayers = [...tiePath.layers].sort(comparePriorityDisplay);
+  assert.equal(sortedTieLayers[0].mod_id, tiePath.active_owner);
+  assert.equal(sortedTieLayers[0].mod_id, 'mod_b');
+});

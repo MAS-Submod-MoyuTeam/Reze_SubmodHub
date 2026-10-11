@@ -11,7 +11,7 @@ test('backend preview replaces mock actions and carries restoration counts and b
     bytes_required: 100, warnings: [], backend_operation_id: 'op', archive_sha256: 'archive',
   };
   const preview = {
-    plan_id: 'backend-plan', root: 'mas', generation: 1, kind: 'uninstall', target_id: 'mod', mod_title: 'Mod', version: '1',
+    plan_id: 'backend-plan', root: 'mas', generation: 1, kind: 'uninstall', target_id: 'mod', mod_title: 'Mod', version: '1', priority: 0,
     actions: [{ path: 'game/original.rpy', action: 'RESTORE', current_source: 'mod', target_source: 'original',
       current_hash: 'after', target_hash: 'before', current_exists: true, target_exists: true,
       backup_required: true, reason: 'restore original' }],
@@ -39,7 +39,7 @@ test('plan preview treats unknown disk space as non-blocking but respects real i
     bytes_required: 1048576, warnings: [],
   };
   const preview = {
-    plan_id: 'backend-plan', root: 'mas', generation: 1, kind: 'install', target_id: 'mod', mod_title: 'Mod', version: '1',
+    plan_id: 'backend-plan', root: 'mas', generation: 1, kind: 'install', target_id: 'mod', mod_title: 'Mod', version: '1', priority: 0,
     actions: [{ path: 'game/submods/a.rpy', action: 'CREATE', current_source: '(无)', target_source: 'Mod',
       current_hash: '', target_hash: 'h1', current_exists: false, target_exists: true, backup_required: false, reason: 'new' }],
     blockers: [], risks: [],
@@ -85,7 +85,6 @@ test('mapPlanPreview preserves priority from preview or metadata', () => {
     actions: [], blockers: [], risks: [],
     summary: { restores_original: 0, restores_layer: 0, metadata_only: 0, deletes_added: 0, writes_new: 0 },
   };
-  const planFromMetadata = mapPlanPreview(previewWithoutPrio, metadataWithPrio);
+  const planFromMetadata = mapPlanPreview(previewWithoutPrio as any, metadataWithPrio);
   assert.equal(planFromMetadata.priority, 50);
 });
-

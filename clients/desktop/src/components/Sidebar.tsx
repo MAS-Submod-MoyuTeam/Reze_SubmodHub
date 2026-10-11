@@ -56,7 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'priority' as ActiveTab,
-      label: '图层与优先级',
+      label: '模组优先级',
       icon: Layers,
       hint: '调整模组覆盖次序与冲突检测',
     },

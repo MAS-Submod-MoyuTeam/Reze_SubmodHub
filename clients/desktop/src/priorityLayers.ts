@@ -11,6 +11,32 @@ export interface PriorityValidationResult {
   error?: string;
 }
 
+export interface PriorityDisplayEntry {
+  priority: number;
+  order: number;
+  mod_id: string;
+  installation_id: string;
+}
+
+export function compareGoStringsDescending(first: string, second: string): number {
+  const encoder = new TextEncoder();
+  const firstBytes = encoder.encode(first);
+  const secondBytes = encoder.encode(second);
+  for (let index = 0; index < Math.min(firstBytes.length, secondBytes.length); index++) {
+    if (firstBytes[index] !== secondBytes[index]) return secondBytes[index] - firstBytes[index];
+  }
+  return secondBytes.length - firstBytes.length;
+}
+
+export function comparePriorityDisplay(first: PriorityDisplayEntry, second: PriorityDisplayEntry): number {
+  return (
+    second.priority - first.priority ||
+    second.order - first.order ||
+    compareGoStringsDescending(first.mod_id, second.mod_id) ||
+    compareGoStringsDescending(first.installation_id, second.installation_id)
+  );
+}
+
 /**
  * Validates a priority string or number strictly as an integer.
  * Rejects floats (e.g. "1.5"), trailing characters (e.g. "1abc"), NaN, and empty strings.
@@ -155,7 +181,7 @@ export function formatPriorityPlanActions(
       act.target_hash !== '' &&
       act.current_hash.toLowerCase() === act.target_hash.toLowerCase();
 
-    let displayReason = act.reason || '优先级生效层切换';
+    let displayReason = act.reason || '优先级生效模组切换';
     if (isSameHash) {
       displayReason = '归属模组切换（文件内容完全一致，无需重新写盘）';
     }

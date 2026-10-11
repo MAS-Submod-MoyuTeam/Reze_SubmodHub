@@ -60,7 +60,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
 
         <div className="p-4 space-y-4 text-xs">
           <div className="p-3 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-300 leading-relaxed">
-            将当前散落于 MAS 目录内的未托管脚本/素材封包并纳入 SubmodHub 的持久化 Ledger。收养后该模组将受版本控制、支持冲突计算与图层优先级调节。
+            将当前散落于 MAS 目录内的未托管脚本/素材封包并纳入 SubmodHub 的持久化 Ledger。收养后该模组将受版本控制、支持冲突计算与模组优先级调节。
           </div>
 
           {/* Form fields */}
@@ -118,12 +118,10 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
 
               <div>
                 <label className="text-neutral-300 font-medium block mb-1">
-                  初始图层优先级 (Layer 0~100)
+                  初始优先级
                 </label>
                 <input
                   type="number"
-                  min="0"
-                  max="100"
                   value={priority}
                   onChange={(e) => setPriority(parseInt(e.target.value) || 0)}
                   className="w-full px-3 py-1.5 bg-neutral-950 border border-neutral-700 rounded-lg text-neutral-200 font-mono focus:outline-hidden focus:border-neutral-500"

@@ -1,14 +1,13 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"time"
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	core "github.com/reze/submodhub/internal/install"
 	packagezip "github.com/reze/submodhub/internal/package"
@@ -605,7 +605,7 @@ func (s *DesktopService) PreviewUninstallWithOpID(targetID, uninstallOpID string
 			reason = "移除模组新增文件"
 		case core.ActionMetadataOnly:
 			actionType = "METADATA_ONLY"
-			reason = "仅移除归属，保留高层文件"
+			reason = "仅移除归属，保留更高优先级文件"
 		}
 
 		cSrc := resolveSourceTitle(a.CurrentSource, manifest)
@@ -722,7 +722,7 @@ func (s *DesktopService) PreviewPriority(priorities map[string]int) (PlanResult,
 		Generation: plan.Generation,
 		Kind:       "priority",
 		TargetID:   "priority_adjustment",
-		ModTitle:   "模组图层与覆盖优先级调整",
+		ModTitle:   "模组优先级调整",
 		Version:    "",
 		Actions:    actions,
 		Blockers:   plan.Blockers,
@@ -849,7 +849,6 @@ func (s *DesktopService) Uninstall(operationID, uninstallOperationID string) (st
 	}
 	return res.State, nil
 }
-
 
 func (s *DesktopService) resolveSourceTitle(src string, manifest *core.Manifest) string {
 	title := resolveSourceTitle(src, manifest)

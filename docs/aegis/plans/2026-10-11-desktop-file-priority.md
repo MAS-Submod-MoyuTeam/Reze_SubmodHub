@@ -246,7 +246,7 @@ Get-FileHash bin/submodhub.exe -Algorithm SHA256
   - 对齐 `clients/desktop/src/wails.ts` 与生成 bindings 的 `PriorityOverview`、`PriorityPathEntry`、`PriorityLayerInfo` nullable slice 类型。
   - `PriorityLayersView.tsx` 中 `data.mods` 增加空安全容错处理，消除 TypeScript 类型检查错误。
   - 清理 `App.tsx` 中的 `INITIAL_INSTALLATIONS` 回退与 `INITIAL_EXTERNAL_DRIFT` 原型数据，未连接 MAS 实例时使用干净的空状态 `UNVERIFIED_INSTALLATION`。
-  - 优先级图层、已安装模组（`ScanLocalSubmods` + `ListInstalledArchives`）、实例管理（`ListMASInstances` 等）和文件检查（`ListInstalledModFiles`）全部直连真实 Wails bindings 与 Go 后端权威数据。
+  - 模组优先级、已安装模组（`ScanLocalSubmods` + `ListInstalledArchives`）、实例管理（`ListMASInstances` 等）和文件检查（`ListInstalledModFiles`）全部直连真实 Wails bindings 与 Go 后端权威数据。
   - 边界说明：模组云端目录目前依赖在线 API（失败时显示错误/空列表）；操作历史记录（OperationsView）目前仅在客户端内存会话暂存，尚未接入本地持久化库。
 
 - **Task 9（优先级 UI 原生客户端验收）工程与构建验证通过，人工 GUI Smoke 待桌面执行**：
@@ -255,4 +255,4 @@ Get-FileHash bin/submodhub.exe -Algorithm SHA256
   - 客户端二进制构建：`wails3 build` 成功完成 bindings 校验、前端打包、Windows syso 生成及二进制 native 编译。
   - 产物 SHA-256：`8158D4D47E45E8BE3A27D84F06BE908BAE58C055960057785AD3D004CE71D697`（`cmd/client/SubmodHub/bin/submodhub.exe`，12,308,480 bytes）。
   - 进程执行验证：通过 PowerShell 启动 `submodhub.exe`，进程成功运行（WebView2 运行时拉起）并在测试后正常退出。
-  - 未验项与交接要求：因命令行环境缺少交互式桌面显示会话，针对 Windows 原生窗口的人工完整 Smoke（打开界面 -> 手动连接临时 MAS 目录 -> 在优先级图层拖拽/调整 -> 观察磁盘文件与界面徽章 -> 退出重启验证）需由开发者在桌面环境下进行人工操作复核。
+  - 未验项与交接要求：因命令行环境缺少交互式桌面显示会话，针对 Windows 原生窗口的人工完整 Smoke（打开界面 -> 手动连接临时 MAS 目录 -> 在模组优先级页面调整 -> 观察磁盘文件与界面徽章 -> 退出重启验证）需由开发者在桌面环境下进行人工操作复核。

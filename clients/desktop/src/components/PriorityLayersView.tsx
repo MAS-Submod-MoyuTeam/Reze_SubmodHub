@@ -32,6 +32,7 @@ import {
   formatPriorityPlanActions,
   canApplyPriorityPlan,
   FormattedPriorityDiff,
+  comparePriorityDisplay,
 } from '../priorityLayers';
 
 export interface PriorityLayersViewProps {
@@ -120,7 +121,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
         setPreviewError(null);
       } catch (err: any) {
         if (!trackerRef.current.isResponseValid(token)) return;
-        const msg = err?.message || String(err) || '读取优先级图层总览失败';
+        const msg = err?.message || String(err) || '读取模组优先级总览失败';
         setOverviewError(msg);
       } finally {
         if (trackerRef.current.isResponseValid(token)) {
@@ -179,10 +180,10 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
     return [...managedModList].sort((a, b) => {
       const prioA = draftPriorities[a.mod_id] ?? a.priority;
       const prioB = draftPriorities[b.mod_id] ?? b.priority;
-      if (prioB !== prioA) {
-        return prioB - prioA;
-      }
-      return a.order - b.order;
+      return comparePriorityDisplay(
+        { ...a, priority: prioA },
+        { ...b, priority: prioB }
+      );
     });
   }, [managedModList, draftPriorities]);
 
@@ -330,7 +331,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
         confirmed: true,
       });
 
-      showToast('新图层优先级配置已成功应用并写入 MAS 磁盘');
+      showToast('新模组优先级配置已成功应用并写入 MAS 磁盘');
 
       // Refresh authoritative data
       try {
@@ -435,7 +436,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-emerald-400" />
             <h2 className="text-sm font-bold text-neutral-100">
-              模组文件覆盖与图层优先级 (Priority Layers)
+              模组优先级
             </h2>
             {overview && (
               <span className="text-[11px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 font-mono">
@@ -444,7 +445,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
             )}
           </div>
           <p className="text-xs text-neutral-400 mt-0.5">
-            管理 MAS 同名文件与图层的覆盖优先级。在发生同名资源竞争时，数值越大越优先生效写入磁盘；较低优先级的图层由系统安全封存，待高优先级模组卸载或调整时自动恢复。
+            管理 MAS 同名文件的覆盖优先级。数值越大越优先生效；同优先级时后安装的模组优先生效。未生效文件会保留，卸载或调整优先级后可恢复。
           </p>
         </div>
 
@@ -496,14 +497,14 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
         </div>
       </div>
 
-      {/* Main split view: Priority Stack on Left, Live Diff Preview / Conflicts on Right */}
+      {/* Main split view: Mod Priority List on Left, Live Diff Preview / Conflicts on Right */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
-        {/* Left Column: Stack (7 cols) */}
+        {/* Left Column: Mods (7 cols) */}
         <div className="lg:col-span-7 border-r border-neutral-800 flex flex-col overflow-hidden">
           <div className="p-3 border-b border-neutral-800 bg-neutral-900/30 flex items-center justify-between text-xs text-neutral-400">
             <span className="flex items-center gap-1.5 font-medium text-neutral-300">
               <Sliders className="w-3.5 h-3.5 text-neutral-400" />
-              当前图层堆叠 (由高至低生效)
+              当前模组优先级（由高至低生效）
             </span>
             <span className="font-mono text-[11px]">
               {hasChanges ? (
@@ -520,7 +521,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
             {loadingOverview && !overview && (
               <div className="h-64 flex flex-col items-center justify-center text-neutral-500 text-xs gap-2">
                 <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
-                <span>正在加载实例图层与覆盖关系...</span>
+                <span>正在加载实例模组优先级与覆盖关系...</span>
               </div>
             )}
 
@@ -545,7 +546,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                 <Layers className="w-8 h-8 text-neutral-600 mb-1" />
                 <p className="font-medium text-neutral-400">当前 MAS 实例暂无受管模组</p>
                 <p className="text-[11px] text-neutral-500 max-w-sm">
-                  仅由 SubmodHub 托管安装的模组参与覆盖图层管理。请先从模组目录安装模组。
+                  仅由 SubmodHub 托管安装的模组参与模组优先级管理。请先从模组目录安装模组。
                 </p>
               </div>
             )}
@@ -780,7 +781,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                       </div>
                     </div>
                     <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-800">
-                      <div className="text-[11px] text-neutral-400">还原下层</div>
+                      <div className="text-[11px] text-neutral-400">恢复活动模组</div>
                       <div className="text-sm font-mono font-bold text-sky-400 mt-0.5">
                         {previewPlan.summary.restores_layer || 0}
                       </div>
@@ -912,18 +913,18 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                           <span className="text-neutral-200 font-semibold">{modTitleMap[pe.active_owner] || pe.active_owner || '无'}</span>
                         </span>
                         <span className="text-[10px] text-neutral-500 font-mono">
-                          {pe.layers?.length || 0} 个图层竞争
+                          {pe.layers?.length || 0} 个模组参与覆盖
                         </span>
                       </div>
 
                       {pe.layers && pe.layers.length > 0 && (
                         <div className="bg-neutral-950 p-2 rounded border border-neutral-800/80 space-y-1 font-mono text-[10px]">
                           <div className="text-neutral-500 text-[9px] uppercase tracking-wider mb-1">
-                            参与图层堆栈 (顶层先生效)
+                            参与模组（由高至低生效）
                           </div>
-                          {pe.layers.map((layer, lIdx) => (
+                          {[...(pe.layers ?? [])].sort(comparePriorityDisplay).map((layer, lIdx) => (
                             <div
-                              key={lIdx}
+                              key={layer.installation_id || lIdx}
                               className={`flex items-center justify-between py-0.5 px-1 rounded ${
                                 layer.mod_id === pe.active_owner
                                   ? 'bg-emerald-950/40 text-emerald-300 font-bold'
@@ -931,9 +932,9 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                               }`}
                             >
                               <span>
-                                #{lIdx + 1} {modTitleMap[layer.mod_id] || layer.mod_id}
+                                #{lIdx + 1} {modTitleMap[layer.mod_id] || layer.mod_id || layer.installation_id}
                               </span>
-                              <span>Layer {layer.priority}</span>
+                              <span>优先级 {layer.priority}</span>
                             </div>
                           ))}
                         </div>

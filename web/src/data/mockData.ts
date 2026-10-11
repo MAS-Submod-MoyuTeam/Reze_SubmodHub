@@ -136,7 +136,7 @@ Auto-Atmosphere 是一个纯静态资源与着色器优化的视觉 Submod，通
     title: 'Spacious Room & Desk Plushies (教室改造与桌宠软偶)',
     summary: '为莫妮卡的书桌摆放手办、迷你玩偶和暖心马克杯，支持自定义墙面挂画与植物架。',
     description: `## 模组介绍
-让太空教室更加温馨！本模组重构了桌前图层叠加顺序，允许你在莫妮卡手边摆放不同季节的盆栽、书籍和 Q 版毛绒玩偶。`,
+让太空教室更加温馨！本模组重构了桌前物件显示顺序，允许你在莫妮卡手边摆放不同季节的盆栽、书籍和 Q 版毛绒玩偶。`,
     author: {
       id: 'user_monika_fan',
       display_name: '莫妮卡守望者',
