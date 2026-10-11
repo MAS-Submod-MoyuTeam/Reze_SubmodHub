@@ -1,4 +1,9 @@
-import React, { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from 'react';
+
+// Polyfill import.meta.env in non-Vite environments (e.g. Node.js unit tests)
+if (!(import.meta as any).env) {
+  (import.meta as any).env = {};
+}
 import {
   User,
   UserRole,
@@ -9,6 +14,7 @@ import {
   AuditLog,
   Installation,
   InstalledMod,
+  InstalledFileList,
   InstallationPlan,
   OperationLog,
   DownloadDescriptor,
@@ -19,6 +25,7 @@ import {
   INITIAL_AUDIT_LOGS,
   INITIAL_INSTALLATIONS,
   INITIAL_INSTALLED_MODS,
+  MOCK_INSTALLED_FILES,
 } from '../data/mockData';
 import { fetchDownloadDescriptor, fetchPublishedCatalog, fetchPublishedVersions } from '../../../ui/catalog-api';
 import { loginFlarum as loginFlarumRequest, logout as logoutRequest, readSession, Session } from '../../../ui/auth-api';
@@ -123,6 +130,9 @@ interface AppContextType {
   simulateExternalChange: (filePath: string) => void;
   adoptUnmanagedMod: (modId: string) => void;
   clearCurrentPlan: () => void;
+  // File List Inspection
+  getInstalledModFiles: (modId: string, bypassCache?: boolean) => Promise<InstalledFileList>;
+  clearFileListCache: (targetModId?: string) => void;
 
   // Notifications
   toasts: Toast[];
@@ -160,6 +170,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Client Companion Simulator State
   const [installations, setInstallations] = useState<Installation[]>(INITIAL_INSTALLATIONS);
   const [activeInstallationId, setActiveInstallationId] = useState<string>(INITIAL_INSTALLATIONS[0].id);
+  const fileListCacheRef = useRef<Record<string, InstalledFileList>>({});
+
+  const clearFileListCache = useCallback((targetModId?: string) => {
+    if (!targetModId) {
+      fileListCacheRef.current = {};
+      return;
+    }
+    const next: Record<string, InstalledFileList> = {};
+    for (const [k, v] of Object.entries(fileListCacheRef.current)) {
+      if (!k.endsWith(':' + targetModId)) {
+        next[k] = v;
+      }
+    }
+    fileListCacheRef.current = next;
+  }, []);
+
+  const handleSetActiveInstallationId = useCallback((id: string) => {
+    setActiveInstallationId(id);
+    clearFileListCache();
+  }, [clearFileListCache]);
+
+  const getInstalledModFiles = useCallback(
+    async (modId: string, bypassCache: boolean = false): Promise<InstalledFileList> => {
+      const cacheKey = activeInstallationId + ':' + modId;
+      if (!bypassCache && fileListCacheRef.current[cacheKey]) {
+        return fileListCacheRef.current[cacheKey];
+      }
+      try {
+        if (typeof window !== 'undefined' && (window as any).DesktopService?.ListInstalledModFiles) {
+          const res = await (window as any).DesktopService.ListInstalledModFiles(activeInstallationId, modId);
+          if (res) {
+            fileListCacheRef.current[cacheKey] = res;
+            return res;
+          }
+        }
+      } catch (err: any) {
+        throw err;
+      }
+      const mock = MOCK_INSTALLED_FILES[modId];
+      if (mock) {
+        const cloned: InstalledFileList = {
+          ...mock,
+          installation_id: activeInstallationId,
+        };
+        fileListCacheRef.current[cacheKey] = cloned;
+        return cloned;
+      }
+      const notFoundErr: any = new Error('未找到模组 ' + modId + ' 的安装文件清单');
+      notFoundErr.code = 'not_found';
+      throw notFoundErr;
+    },
+    [activeInstallationId]
+  );
   const [installedMods, setInstalledMods] = useState<InstalledMod[]>(INITIAL_INSTALLED_MODS);
   const [currentPlan, setCurrentPlan] = useState<InstallationPlan | null>(null);
   const [operations, setOperations] = useState<OperationLog[]>([]);
@@ -1158,6 +1221,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...prev.filter((item) => item.mod_id !== plan.mod_id),
       ]);
 
+      clearFileListCache(plan.mod_id);
       setCurrentPlan(null);
       showToast('success', `模组 [${mod?.title}] 安装成功并已提交事务！`);
     },
@@ -1198,6 +1262,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const adoptUnmanagedMod = useCallback(
     (modId: string) => {
+      clearFileListCache(modId);
       setInstalledMods((prev) =>
         prev.map((m) => (m.mod_id === modId ? { ...m, is_managed: true, version: '1.0.0 (已收养托管)' } : m))
       );
@@ -1318,7 +1383,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       editVersion,
       installations,
       activeInstallationId,
-      setActiveInstallationId,
+      setActiveInstallationId: handleSetActiveInstallationId,
+      getInstalledModFiles,
+      clearFileListCache,
       installedMods,
       currentPlan,
       operations,
@@ -1375,6 +1442,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       editVersion,
       installations,
       activeInstallationId,
+      handleSetActiveInstallationId,
+      getInstalledModFiles,
+      clearFileListCache,
       installedMods,
       currentPlan,
       operations,

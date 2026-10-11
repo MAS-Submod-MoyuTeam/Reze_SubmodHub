@@ -271,6 +271,41 @@ export interface OperationLog {
   updated_at: string;
 }
 
+export interface InstalledFileEntry {
+  path: string;
+  canonical_path: string;
+  size_bytes: number;
+  sha256: string;
+  active: boolean;
+  drifted: boolean;
+  owner: string;
+  version_id: string;
+  operation_id: string;
+  layer_order: number;
+  original_exists: boolean;
+}
+
+export interface InstalledFileSummary {
+  total_files: number;
+  active_files: number;
+  drifted_files: number;
+  overridden_files: number;
+  total_size_bytes: number;
+}
+
+export interface InstalledFileList {
+  installation_id: string;
+  mod_id: string;
+  version_id: string;
+  version: string;
+  title: string;
+  managed: boolean;
+  installed_at: string;
+  files: InstalledFileEntry[];
+  summary: InstalledFileSummary;
+  next_cursor?: string;
+}
+
 export interface InstalledMod {
   id: string;
   mod_id: string;
@@ -305,7 +340,9 @@ export type ContractErrorCode =
   | 'operation_recoverable'
   | 'backup_missing'
   | 'offline'
-  | 'download_hash_mismatch';
+  | 'download_hash_mismatch'
+  | 'not_found'
+  | 'manifest_corrupt';
 
 export interface ErrorDisplayConfig {
   code: ContractErrorCode;

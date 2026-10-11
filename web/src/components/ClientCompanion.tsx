@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Installation, InstallationPlan } from '../types/submodhub';
 import { formatVersionLabel } from './versionHistory';
+import { InstalledFileList } from './InstalledFileList';
+import { InstalledMod } from '../types/submodhub';
 import {
   Laptop,
   Smartphone,
@@ -41,6 +43,7 @@ export const ClientCompanion: React.FC = () => {
   const [activeClientTab, setActiveClientTab] = useState<'installations' | 'installed' | 'operations' | 'plan'>('installed');
   const [selectedPriorityModId, setSelectedPriorityModId] = useState<string | null>(null);
   const [priorityDelta, setPriorityDelta] = useState<number>(0);
+  const [selectedFileListMod, setSelectedFileListMod] = useState<InstalledMod | null>(null);
 
   const activeInstallation = installations.find((i) => i.id === activeInstallationId) || installations[0];
 
@@ -208,6 +211,13 @@ export const ClientCompanion: React.FC = () => {
                         </button>
                       )}
                       <button
+                        onClick={() => setSelectedFileListMod(mod)}
+                        className="px-2.5 py-1 text-xs text-neutral-700 hover:bg-neutral-100 rounded border border-neutral-200 flex items-center gap-1"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5 text-neutral-500" />
+                        文件清单
+                      </button>
+                      <button
                         onClick={() => {
                           showToast('info', `优先级调整预览 (PreviewPriority)：将模组 ${mod.title} 优先级设为 ${mod.priority + 10}，正在计算哪些文件会发生生效层切换...`);
                         }}
@@ -226,13 +236,22 @@ export const ClientCompanion: React.FC = () => {
                     </>
                   ) : (
                     /* Unmanaged mod: Explicit Adoption workflow as per spec */
-                    <button
-                      onClick={() => adoptUnmanagedMod(mod.mod_id)}
-                      className="px-3 py-1 text-xs font-medium text-amber-900 bg-amber-50 hover:bg-amber-100 rounded border border-amber-200 flex items-center gap-1"
-                    >
-                      <ShieldCheck className="w-3.5 h-3.5 text-amber-700" />
-                      显式收养至托管系统
-                    </button>
+                    <>
+                      <button
+                        onClick={() => setSelectedFileListMod(mod)}
+                        className="px-3 py-1 text-xs font-medium text-neutral-700 bg-neutral-50 hover:bg-neutral-100 rounded border border-neutral-200 flex items-center gap-1"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5 text-neutral-500" />
+                        查看检测文件
+                      </button>
+                      <button
+                        onClick={() => adoptUnmanagedMod(mod.mod_id)}
+                        className="px-3 py-1 text-xs font-medium text-amber-900 bg-amber-50 hover:bg-amber-100 rounded border border-amber-200 flex items-center gap-1"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-700" />
+                        显式收养至托管系统
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -580,6 +599,12 @@ export const ClientCompanion: React.FC = () => {
             })}
           </div>
         </div>
+      )}
+    {selectedFileListMod && (
+        <InstalledFileList
+          mod={selectedFileListMod}
+          onClose={() => setSelectedFileListMod(null)}
+        />
       )}
     </div>
   );

@@ -1,3 +1,4 @@
+import React from 'react';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';

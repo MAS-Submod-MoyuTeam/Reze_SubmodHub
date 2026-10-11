@@ -45,6 +45,12 @@ func browserServiceHandler(service *DesktopService) http.Handler {
 			result, err = service.ScanInstalledSpritepacks()
 		case "GetMASStatus":
 			result, err = service.GetMASStatus()
+		case "ListInstalledModFiles":
+			var installationID, modID string
+			if err = arg(0, &installationID); err == nil {
+				_ = arg(1, &modID)
+				result, err = service.ListInstalledModFiles(installationID, modID)
+			}
 		case "AddMASInstance":
 			var label, root string
 			if err = arg(0, &label); err == nil {

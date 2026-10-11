@@ -82,6 +82,25 @@ func (i *Installer) LoadManifest() (*Manifest, error) {
 	return LoadManifest(manifestPath)
 }
 
+func (i *Installer) ListInstalledModFiles(installationID, modID string) (*InstalledFileList, error) {
+	return i.ListInstalledModFilesPaged(installationID, modID, "", 0)
+}
+
+func (i *Installer) ListInstalledModFilesPaged(installationID, modID string, cursor string, limit int) (*InstalledFileList, error) {
+	if i == nil || i.root == "" {
+		return nil, &Error{Code: "invalid_mas_root", Err: errors.New("mas root is not configured")}
+	}
+	fi, err := os.Stat(i.root)
+	if err != nil || !fi.IsDir() {
+		return nil, &Error{Code: "invalid_mas_root", Err: errors.New("mas root is not a directory or inaccessible")}
+	}
+	manifest, err := i.LoadManifest()
+	if err != nil {
+		return nil, &Error{Code: "manifest_corrupt", Err: err}
+	}
+	return manifest.ListInstalledFilesPaged(installationID, modID, i.root, cursor, limit)
+}
+
 func hashBytes(b []byte) string {
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])

@@ -835,3 +835,15 @@ func (s *DesktopService) ReleaseArchive(archiveID string) error {
 	}
 	return nil
 }
+
+func (s *DesktopService) ListInstalledModFiles(installationID, modID string) (*core.InstalledFileList, error) {
+	if s.root == "" {
+		return nil, &core.Error{Code: "invalid_mas_root", Err: errors.New("mas_root_not_configured")}
+	}
+	if s.core == nil {
+		if _, err := s.SetMASRoot(s.root); err != nil {
+			return nil, err
+		}
+	}
+	return s.core.ListInstalledModFiles(installationID, modID)
+}

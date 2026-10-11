@@ -109,6 +109,7 @@
 | `PreviewPriority` | 实例、`mod_id -> priority` | 改变生效层的路径与潜在冲突 |
 | `ApplyPlan` | `plan_id` | `operation_id,status` |
 | `ListInstalled` | 安装实例 | 托管版本、未托管检测结果、更新状态 |
+| `ListInstalledModFiles` | `installation_id, mod_id` [, `cursor, limit`] | `InstalledFileList`：只读文件清单、哈希、生效状态、外部漂移标志与统计摘要；不读取文件内容，不修改状态 |
 | `ListOperations` / `GetOperation` | 实例/操作 ID | 阶段、逐文件进度、阻断信息与恢复选项 |
 | `RecoverOperation` / `RestoreBackup` | 实例、操作/备份 ID | `operation_id,status` |
 | `ExportLogs` | 可选操作 ID | 本地导出文件位置 |
@@ -128,6 +129,7 @@
 | `invalid_transition`, `idempotency_conflict` | 刷新提交状态，避免重复提交 |
 | `dependency_missing`, `version_incompatible`, `semantic_conflict` | 阻断安装，展示受影响模组/文件 |
 | `permission_lost`, `invalid_mas_root` | Android 前者打开系统“所有文件访问权限”页并在返回后刷新，后者报告固定 MAS 根目录无效；Windows 可重新选择目录 |
+| `not_found`, `manifest_corrupt` | 提示模组未安装或 manifest 损坏，引导刷新状态或重新扫描，不伪装成空文件 |
 | `game_running`, `insufficient_space` | 停止写入，说明可恢复条件 |
 | `external_change` | 展示路径及预期/当前哈希，禁止自动覆盖 |
 | `operation_recoverable`, `backup_missing` | 进入恢复流程或报告无法自动恢复的原因 |
