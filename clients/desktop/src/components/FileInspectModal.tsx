@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, FileCode2, ShieldCheck, HardDrive, CheckCircle2 } from 'lucide-react';
 import { InstalledItem } from '../types/client';
+import { ListInstalledModFiles, ScanLocalSubmods } from '../wails';
+import { loadInstalledFiles, type InspectedFile } from '../installedFiles';
 
 interface FileInspectModalProps {
   item: InstalledItem | null;
@@ -8,36 +10,25 @@ interface FileInspectModalProps {
 }
 
 export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClose }) => {
-  if (!item) return null;
+  const [files, setFiles] = useState<InspectedFile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // Generate simulated file list based on item
-  const files = item.unmanaged_paths
-    ? item.unmanaged_paths.map((p) => ({
-        path: p,
-        size_bytes: 18400,
-        sha256: item.sha256,
-        status: 'intact',
-      }))
-    : [
-        {
-          path: `game/submods/${item.submod_dir_name || item.mod_id}/header.rpy`,
-          size_bytes: 28400,
-          sha256: '9a87d46e38b3a0f18835b8df838520cf8126b4859a4bb38ca094f31c771fa109',
-          status: 'intact',
-        },
-        {
-          path: `game/submods/${item.submod_dir_name || item.mod_id}/main.rpy`,
-          size_bytes: 142000,
-          sha256: '38a902bf8910a8b901fc883901af88290192c39281a8902ef8910acb88301893',
-          status: item.integrity_status === 'modified' ? 'modified' : 'intact',
-        },
-        {
-          path: `game/submods/${item.submod_dir_name || item.mod_id}/assets/manifest.json`,
-          size_bytes: 3200,
-          sha256: '8830189338a902bf8910a8b901fc883901fa88290192c39281a8902ef8910acb',
-          status: 'intact',
-        },
-      ];
+  useEffect(() => {
+    let cancelled = false;
+    setFiles([]);
+    setError('');
+    setLoading(true);
+    if (item) {
+      loadInstalledFiles(item, { list: ListInstalledModFiles, scan: ScanLocalSubmods })
+        .then((result) => { if (!cancelled) setFiles(result); })
+        .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason)); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    }
+    return () => { cancelled = true; };
+  }, [item]);
+
+  if (!item) return null;
 
   const formatBytes = (bytes: number) => {
     if (bytes >= 1024 * 1024) {
@@ -69,8 +60,12 @@ export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClos
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs">
           <div className="text-neutral-400 font-sans text-xs mb-2">
-            当前 MAS 实例硬盘中属于该模组的物理文件清单及哈希：
+            {item.is_managed ? '当前 MAS 实例安装清单及记录哈希（状态已与磁盘核对）：' : '当前 MAS 实例磁盘扫描结果（未托管文件无安装基线）：'}
           </div>
+
+          {loading && <div role="status" className="text-neutral-400">正在读取真实文件清单…</div>}
+          {error && <div role="alert" className="text-amber-400">加载文件清单失败：{error}</div>}
+          {!loading && !error && files.length === 0 && <div className="text-neutral-400">该模组没有文件记录</div>}
 
           <div className="border border-neutral-800 rounded-lg overflow-hidden">
             <table className="w-full text-left">
@@ -83,15 +78,15 @@ export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClos
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800/60 bg-neutral-900/40">
-                {files.map((f, i) => (
-                  <tr key={i} className="hover:bg-neutral-800/30">
+                {files.map((f) => (
+                  <tr key={f.path} className="hover:bg-neutral-800/30">
                     <td className="py-2 px-3 text-neutral-200 truncate max-w-sm" title={f.path}>
                       {f.path}
                     </td>
                     <td className="py-2 px-3 text-right text-neutral-300 tabular-nums">
                       {formatBytes(f.size_bytes)}
                     </td>
-                    <td className="py-2 px-3 text-neutral-400 text-[10px]">
+                    <td className="py-2 px-3 text-neutral-400 text-[10px]" title={f.sha256}>
                       {f.sha256.substring(0, 16)}...
                     </td>
                     <td className="py-2 px-3">
@@ -102,7 +97,7 @@ export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClos
                         </span>
                       ) : (
                         <span className="text-amber-400 text-[11px] flex items-center gap-1 font-sans">
-                          <span>已篡改</span>
+                          <span>{f.status === 'overridden' ? '被覆盖' : f.status === 'unmanaged' ? '未托管' : '已修改或缺失'}</span>
                         </span>
                       )}
                     </td>

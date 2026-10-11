@@ -803,6 +803,7 @@ export default function App() {
       {/* 7. File Inspection Modal */}
       {inspectTarget && (
         <FileInspectModal
+          key={`${activeInstallationId}:${inspectTarget.mod_id}`}
           item={inspectTarget}
           onClose={() => setInspectTarget(null)}
         />

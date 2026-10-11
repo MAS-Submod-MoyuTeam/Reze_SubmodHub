@@ -22,6 +22,7 @@ export const SetMASRoot = (root: string) => invoke('SetMASRoot', () => native.Se
 export const GetMASStatus = () => invoke('GetMASStatus', () => native.GetMASStatus());
 export const ScanLocalSubmods = () => invoke('ScanLocalSubmods', () => native.ScanLocalSubmods());
 export const ListInstalledArchives = () => invoke('ListInstalledArchives', () => native.ListInstalledArchives());
+export const ListInstalledModFiles = (installationID: string, modID: string) => invoke('ListInstalledModFiles', () => native.ListInstalledModFiles(installationID, modID), [installationID, modID]);
 export const ScanInstalledSpritepacks = () => invoke('ScanInstalledSpritepacks', () => native.ScanInstalledSpritepacks());
 export const CreateSpriteGift = (file: string) => invoke('CreateSpriteGift', () => native.CreateSpriteGift(file), [file]);
 export const DeleteSpritepack = (file: string) => invoke('DeleteSpritepack', () => native.DeleteSpritepack(file), [file]);

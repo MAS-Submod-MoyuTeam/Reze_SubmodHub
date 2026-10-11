@@ -7,6 +7,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as install$0 from "../../internal/install/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 export function AddMASInstance(label: string, root: string): $CancellablePromise<$models.MASInstancesState> {
@@ -59,6 +63,10 @@ export function LaunchMASInstance(id: string): $CancellablePromise<void> {
 
 export function ListInstalledArchives(): $CancellablePromise<$models.InstalledArchive[] | null> {
     return $Call.ByID(2310294626);
+}
+
+export function ListInstalledModFiles(installationID: string, modID: string): $CancellablePromise<install$0.InstalledFileList | null> {
+    return $Call.ByID(491608010, installationID, modID);
 }
 
 export function ListMASInstances(): $CancellablePromise<$models.MASInstancesState> {
