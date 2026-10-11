@@ -139,3 +139,91 @@ Playwright 验证浏览器模式，原生 Wails 至少人工 smoke 一轮。测�
 - 每个 agent 交付修改文件、契约变化、测试命令及结果、未解决项；编译通过不代替磁盘验收。
 - 协调者审阅旧数据兼容和 bindings，全部验收后宣布完成。
 - 如改变 manifest，先给兼容读取及回滚策略；禁止删用户状态目录来回滚。
+
+## Wails PC UI 接线补充计划
+
+### 背景与问题确认
+
+提交 `4da537664d0e345b2c8f802ab07be87ce103ce0d` 已经修改了 `clients/desktop` 下的 PC 前端，包括 `App.tsx`、`PriorityLayersView.tsx`、优先级逻辑和 Wails API 封装。但当前 Windows Wails 构建入口实际使用的是 `cmd/client/SubmodHub/frontend`，其 `src/main.ts` 仍是旧的单页 MAS 目录验证界面，仅调用 `SetMASRoot` 和 `GetMASStatus`。
+
+因此，当前 `wails3 build` 虽然能够成功生成 Windows 可执行文件，但不会包含 `clients/desktop` 中的完整 PC UI，也不会包含提交中新增的优先级管理页面体验。本补充计划的目标是修复构建链路，而不是重新设计已存在的 PC UI。
+
+### 目标
+
+- 让 Wails Windows 客户端真正加载 `clients/desktop/src/App.tsx` 及其组件。
+- 保留当前生成 bindings 目录作为 Wails API 的唯一来源，不手写生成文件。
+- 接通已有的实例管理、模组扫描、安装/更新/卸载、事务执行和优先级管理接口。
+- 保留浏览器模式与原生 Wails 模式的参数和错误语义一致性。
+- 生成的 `submodhub.exe` 启动后显示完整 PC 客户端，而不是旧的目录验证单页。
+
+### 实施任务
+
+#### Task 6：统一 Wails 前端入口
+
+1. 将 Wails Vite 构建入口切换到 `clients/desktop/src/main.tsx` 和 `clients/desktop/src/App.tsx`。
+2. 保留 `cmd/client/SubmodHub/frontend` 作为 Wails 构建目录、bindings 输出目录和构建壳。
+3. 停用 `cmd/client/SubmodHub/frontend/src/main.ts` 中旧的 DOM 单页逻辑，避免构建时继续引用 `SetMASRoot` / `GetMASStatus` 的旧界面。
+4. 保证 `@wails-bindings` alias 指向 `cmd/client/SubmodHub/frontend/bindings/github.com/reze/submodhub/cmd/client`。
+5. 保证 `clients/desktop` 的 `components/`、`types/`、`data/`、工具模块、CSS 和静态资源都能被 Wails 构建解析。
+
+验收：在 Wails frontend 目录执行生产构建后，产物入口包含 React 应用，且不再依赖旧的 `frontend/src/main.ts` DOM 元素选择器。
+
+#### Task 7：统一依赖与 Vite 配置
+
+1. 对齐 React、React DOM、Tailwind、Lucide、Vite、TypeScript 和 `@wailsio/runtime` 的解析版本。
+2. 明确依赖安装目录和 lockfile 所属，避免 `clients/desktop` 与 Wails frontend 各自解析出不兼容版本。
+3. 合并或同步两个 Vite 配置中的 plugins、alias、静态资源路径和 Wails runtime 配置。
+4. 处理 `__dirname` 的 Vite native config loader 警告，确保构建配置在 Windows 下稳定运行。
+5. 不新增第二套生产页面，不复制 `App.tsx` 或 `PriorityLayersView.tsx` 到 Wails frontend。
+
+验收：同一套 React 页面可以通过浏览器开发模式和 Wails production build 编译；构建不出现模块解析错误、bindings alias 错误或资源 404。
+
+#### Task 8：接通 Wails API 与页面状态
+
+1. 复核 `clients/desktop/src/wails.ts` 的所有函数与当前生成 bindings 的签名、参数和返回值。
+2. 缺少接口时仅在现有 Wails service、browser server 或 bindings 生成链路中最小补齐，不直接在前端伪造数据。
+3. 将初始 MAS 实例、已安装模组、操作记录、文件详情和优先级概览改为从后端读取。
+4. 删除生产路径中的 mock 数据回退、示例预览、固定优先级和虚假成功 toast。
+5. 实例切换、安装、更新、卸载和优先级应用后重新读取后端权威状态。
+6. 区分后端应用失败、应用成功但刷新失败、实例未连接和过期请求返回。
+
+验收：页面显示的数据与后端返回值一致；刷新或重启客户端后不会恢复到 mock 数据或旧的前端临时状态。
+
+#### Task 9：优先级 UI 原生客户端验收
+
+1. 保留提交中 `PriorityLayersView` 的真实读取、草稿、预览、应用和刷新流程。
+2. 确认优先级应用继续经过后端计划校验、generation 校验、漂移检查、锁和事务执行。
+3. 验证优先级页面的空状态、加载、错误、阻断、应用中和刷新失败状态。
+4. 验证安装、覆盖详情和优先级页面对同一模组的优先级值一致。
+5. 使用临时 MAS 目录启动构建出的 Windows 客户端，完成一轮人工 smoke test。
+
+验收至少包括：客户端启动显示完整 PC UI；MAS 目录可连接；已安装模组可读取；优先级页面可加载；优先级预览不写盘；确认应用后磁盘赢家变化；应用失败不显示成功；重启后页面与磁盘状态一致。
+
+### 构建与验证命令
+
+```powershell
+# 前端逻辑测试
+Set-Location clients/desktop
+npx tsx --test src/priorityLayers.test.ts src/installedFiles.test.ts src/planPreview.test.ts
+npm run lint
+
+# Wails 前端生产构建
+Set-Location ../../cmd/client/SubmodHub/frontend
+npm run build
+
+# Wails Windows 客户端构建
+Set-Location ..
+wails3 build
+
+# 产物检查
+Get-Item bin/submodhub.exe
+Get-FileHash bin/submodhub.exe -Algorithm SHA256
+```
+
+### 完成定义
+
+- `cmd/client/SubmodHub/bin/submodhub.exe` 启动后使用 `clients/desktop` 的完整 PC UI。
+- Wails 构建不再使用旧的目录验证单页作为生产入口。
+- 页面 API 全部通过真实 bindings 或现有服务调用，生产环境不依赖 mock 回退。
+- 优先级页面、安装列表和文件详情使用同一套后端权威数据。
+- 前端测试、Wails frontend 构建和 Windows 客户端构建均有实际命令输出作为验收证据。
