@@ -6,7 +6,7 @@ export {
     DesktopService
 };
 
-export type {
+export {
     ArchiveInstallRequest,
     ArchiveInstallResult,
     ExecutePlanRequest,

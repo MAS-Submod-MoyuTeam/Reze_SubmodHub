@@ -48,6 +48,7 @@ type ArchiveInstallRequest struct {
 	Version       string `json:"version"`
 	Title         string `json:"title"`
 	Author        string `json:"author,omitempty"`
+	Priority      int    `json:"priority,omitempty"`
 }
 
 type ArchiveInstallResult struct {
@@ -433,6 +434,7 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 		VersionID:      request.VersionID,
 		Version:        request.Version,
 		Title:          request.Title,
+		Priority:       request.Priority,
 		Files:          plannedFiles,
 	})
 	if err != nil {
@@ -638,6 +640,81 @@ func (s *DesktopService) PreviewUninstallWithOpID(targetID, uninstallOpID string
 		Actions:    actions,
 		Blockers:   plan.Blockers,
 		Risks:      risks,
+		Summary: PlanPreviewSummary{
+			RestoresOriginal: plan.Summary.RestoresOriginal,
+			RestoresLayer:    plan.Summary.RestoresLayer,
+			MetadataOnly:     plan.Summary.MetadataOnly,
+			DeletesAdded:     plan.Summary.DeletesAdded,
+			WritesNew:        plan.Summary.WritesNew,
+		},
+	}, nil
+}
+
+func (s *DesktopService) GetPriorityOverview() (*core.PriorityOverview, error) {
+	if s.core == nil {
+		if _, err := s.SetMASRoot(s.root); err != nil {
+			return nil, err
+		}
+	}
+	return s.core.GetPriorityOverview()
+}
+
+func (s *DesktopService) PreviewPriority(priorities map[string]int) (PlanResult, error) {
+	if s.core == nil {
+		if _, err := s.SetMASRoot(s.root); err != nil {
+			return PlanResult{}, err
+		}
+	}
+	manifest, err := s.core.LoadManifest()
+	if err != nil {
+		return PlanResult{}, err
+	}
+	plan, err := core.PlanPriority(manifest, s.root, s.core.GetBlobs(), core.PriorityChangeRequest{
+		Priorities: priorities,
+	})
+	if err != nil {
+		return PlanResult{}, err
+	}
+	s.activePlan = plan
+	s.activePlanRequest = priorities
+	s.activePlanArchiveID = ""
+	s.activePlanArchive = nil
+
+	actions := make([]PlanPreviewAction, 0, len(plan.Actions))
+	for _, act := range plan.Actions {
+		actionStr := "OVERWRITE"
+		reasonStr := "priority stack change"
+		if act.Action == core.ActionMetadataOnly {
+			actionStr = "METADATA_ONLY"
+			reasonStr = "priority owner change (identical content)"
+		} else if act.Action == core.ActionRestoreLayer {
+			actionStr = "OVERWRITE"
+		}
+		actions = append(actions, PlanPreviewAction{
+			Path:           act.Path,
+			Action:         actionStr,
+			CurrentSource:  act.CurrentSource,
+			TargetSource:   act.TargetSource,
+			CurrentHash:    act.CurrentHash,
+			TargetHash:     act.TargetHash,
+			CurrentExists:  act.CurrentExists,
+			TargetExists:   act.TargetExists,
+			BackupRequired: false,
+			Reason:         reasonStr,
+		})
+	}
+
+	return PlanResult{
+		PlanID:     plan.PlanID,
+		Root:       s.root,
+		Generation: plan.Generation,
+		Kind:       "priority",
+		TargetID:   "priority_adjustment",
+		ModTitle:   "模组图层与覆盖优先级调整",
+		Version:    "",
+		Actions:    actions,
+		Blockers:   plan.Blockers,
+		Risks:      []PlanPreviewRisk{},
 		Summary: PlanPreviewSummary{
 			RestoresOriginal: plan.Summary.RestoresOriginal,
 			RestoresLayer:    plan.Summary.RestoresLayer,

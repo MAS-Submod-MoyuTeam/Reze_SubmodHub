@@ -74,6 +74,7 @@ type InstallOperation struct {
 	VersionID      string
 	Version        string
 	Title          string
+	Priority       int
 	Files          []PlannedFile
 }
 
@@ -105,10 +106,16 @@ func PlanInstall(m *Manifest, root string, blobs *BlobStore, op InstallOperation
 	}
 
 	order := projManifest.NextOrder
+	priority := op.Priority
 	// Check if this installation already existed (e.g. updating same mod)
 	existingInst, isUpdate := projManifest.Installations[instID]
-	if isUpdate && existingInst.Order > 0 {
-		order = existingInst.Order
+	if isUpdate {
+		if existingInst.Order > 0 {
+			order = existingInst.Order
+		}
+		if op.Priority == 0 && existingInst.Priority != 0 {
+			priority = existingInst.Priority
+		}
 	} else {
 		projManifest.NextOrder++
 	}
@@ -212,6 +219,7 @@ func PlanInstall(m *Manifest, root string, blobs *BlobStore, op InstallOperation
 			VersionID:      op.VersionID,
 			OperationID:    op.OperationID,
 			Order:          order,
+			Priority:       priority,
 			Hash:           targetHashHex,
 			Mode:           0o644,
 		}
@@ -388,6 +396,7 @@ func PlanInstall(m *Manifest, root string, blobs *BlobStore, op InstallOperation
 		Title:          op.Title,
 		OperationID:    op.OperationID,
 		Order:          order,
+		Priority:       priority,
 		Paths:          installedPaths,
 		InstalledAt:    time.Now().UTC(),
 	}

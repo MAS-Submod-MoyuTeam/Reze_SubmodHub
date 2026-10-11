@@ -32,6 +32,8 @@ export const CancelStage = (operationID: string) => invoke('CancelStage', () => 
 export const ReleaseArchive = (archiveID: string) => invoke('ReleaseArchive', () => native.ReleaseArchive(archiveID), [archiveID]);
 export const PreviewArchive = (request: Parameters<typeof native.PreviewArchive>[0]) => invoke('PreviewArchive', () => native.PreviewArchive(request), [request]);
 export const PreviewUninstall = (targetID: string) => invoke('PreviewUninstall', () => native.PreviewUninstall(targetID), [targetID]);
+export const GetPriorityOverview = () => invoke('GetPriorityOverview', () => native.GetPriorityOverview());
+export const PreviewPriority = (priorities: Record<string, number>) => invoke('PreviewPriority', () => native.PreviewPriority(priorities), [priorities]);
 export const ExecutePlan = (request: Parameters<typeof native.ExecutePlan>[0]) => invoke('ExecutePlan', () => native.ExecutePlan(request), [request]);
 export const ApplyArchive = (request: Parameters<typeof native.ApplyArchive>[0]) => invoke('ApplyArchive', () => native.ApplyArchive(request), [request]);
 export const Uninstall = (operationID: string, uninstallID: string) => invoke('Uninstall', () => native.Uninstall(operationID, uninstallID), [operationID, uninstallID]);
@@ -41,4 +43,41 @@ export const BrowseMASDirectory = () => browserMode ? Promise.reject(new Error('
 export type LocalSubmod = { directory: string; name: string; author?: string; version: string; files: Array<{ path: string; sha256: string; size: number }> };
 export type MASInstancesState = { instances: Array<{ id: string; label: string; root: string; status: { valid: boolean; game_exists: boolean; submods: number; available_bytes?: number } }>; active_id: string };
 export type Spritepack = { file: string; name: string; author: string; kind: string; group: string; giftname: string; complete: boolean; missing: string[]; preview: string };
-export type InstalledArchive = { mod_id: string; version_id: string; version: string; title: string; author?: string; category?: string; operation_id: string; files: number; size_bytes: number; sha256: string; installed_at: string; submod_dirs: string[] };
+export type InstalledArchive = { mod_id: string; version_id: string; version: string; title: string; author?: string; category?: string; operation_id: string; priority: number; files: number; size_bytes: number; sha256: string; installed_at: string; submod_dirs: string[] };
+
+export type PriorityModInfo = {
+  installation_id: string;
+  mod_id: string;
+  title: string;
+  version: string;
+  priority: number;
+  order: number;
+  total_files: number;
+  active_files: number;
+  overridden_files: number;
+};
+
+export type PriorityLayerInfo = {
+  installation_id: string;
+  mod_id: string;
+  priority: number;
+  order: number;
+  hash: string;
+};
+
+export type PriorityPathEntry = {
+  path: string;
+  key: string;
+  active_owner: string;
+  active_hash: string;
+  drifted: boolean;
+  original_exists: boolean;
+  original_hash?: string;
+  layers: PriorityLayerInfo[];
+};
+
+export type PriorityOverview = {
+  generation: number;
+  mods: PriorityModInfo[];
+  paths: PriorityPathEntry[];
+};

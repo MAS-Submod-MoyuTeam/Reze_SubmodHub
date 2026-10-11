@@ -20,6 +20,7 @@ type InstalledArchive struct {
 	Author      string    `json:"author,omitempty"`
 	Category    string    `json:"category,omitempty"`
 	OperationID string    `json:"operation_id"`
+	Priority    int       `json:"priority"`
 	Files       int       `json:"files"`
 	SizeBytes   int64     `json:"size_bytes"`
 	SHA256      string    `json:"sha256"`
@@ -47,7 +48,23 @@ func (s *DesktopService) ListInstalledArchives() ([]InstalledArchive, error) {
 		return nil, err
 	}
 	if receipts == nil {
-		return []InstalledArchive{}, nil
+		receipts = []InstalledArchive{}
+	}
+	if s.core != nil {
+		if manifest, mErr := s.core.LoadManifest(); mErr == nil && manifest != nil {
+			for i := range receipts {
+				if inst := manifest.Installations[receipts[i].ModID]; inst != nil {
+					receipts[i].Priority = inst.Priority
+				} else {
+					for _, cand := range manifest.Installations {
+						if cand.ModID == receipts[i].ModID {
+							receipts[i].Priority = cand.Priority
+							break
+						}
+					}
+				}
+			}
+		}
 	}
 	return receipts, nil
 }
@@ -95,7 +112,14 @@ func (s *DesktopService) projectedInstalledArchives(request ArchiveInstallReques
 			next = append(next, receipt)
 		}
 	}
+	prio := request.Priority
+	for _, cur := range receipts {
+		if cur.ModID == request.ModID && prio == 0 && cur.Priority != 0 {
+			prio = cur.Priority
+		}
+	}
 	next = append(next, InstalledArchive{
+		Priority:    prio,
 		ModID:       request.ModID,
 		VersionID:   request.VersionID,
 		Version:     request.Version,

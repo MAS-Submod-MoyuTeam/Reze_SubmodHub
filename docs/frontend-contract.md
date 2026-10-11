@@ -106,8 +106,9 @@
 | `RefreshCatalog` / `GetMod` | 筛选/ID | 与 Web 公共 DTO 一致，附缓存时间/离线状态 |
 | `DownloadVersion` | `version_id` | `operation_id`；校验下载大小与哈希 |
 | `PreviewInstall` / `PreviewUpdate` / `PreviewUninstall` | 安装实例、版本 | `Plan`；无文件写入 |
-| `PreviewPriority` | 实例、`mod_id -> priority` | 改变生效层的路径与潜在冲突 |
-| `ApplyPlan` | `plan_id` | `operation_id,status` |
+| GetPriorityOverview | 安装实例 | PriorityOverview：只读权威模组列表、优先级、生效/覆盖/总文件数统计及全部多模组共享冲突路径与当前赢家 |
+| PreviewPriority | 实例、mod_id -> priority | PlanResult：只读预览受影响的覆盖路径、赢家切换、同哈希归属说明与阻断项；不写盘 |
+| ExecutePlan / ApplyPlan | plan_id | operation_id,status：事务应用优先级与文件写盘，原子同步更新 manifest 与 installed-archives |
 | `ListInstalled` | 安装实例 | 托管版本、未托管检测结果、更新状态 |
 | `ListInstalledModFiles` | `installation_id, mod_id` [, `cursor, limit`] | `InstalledFileList`：只读文件清单、哈希、生效状态、外部漂移标志与统计摘要；不读取文件内容，不修改状态 |
 | `ListOperations` / `GetOperation` | 实例/操作 ID | 阶段、逐文件进度、阻断信息与恢复选项 |

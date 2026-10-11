@@ -3,7 +3,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -14,11 +14,15 @@ import * as install$0 from "../../internal/install/models.js";
 import * as $models from "./models.js";
 
 export function AddMASInstance(label: string, root: string): $CancellablePromise<$models.MASInstancesState> {
-    return $Call.ByID(4064119060, label, root);
+    return $Call.ByID(4064119060, label, root).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
 
 export function ApplyArchive(request: $models.ArchiveInstallRequest): $CancellablePromise<$models.ArchiveInstallResult> {
-    return $Call.ByID(2557078979, request);
+    return $Call.ByID(2557078979, request).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 export function ApplyFile(request: $models.InstallRequest): $CancellablePromise<string> {
@@ -38,11 +42,15 @@ export function CreateSpriteGift(file: string): $CancellablePromise<string> {
 }
 
 export function DeleteSpritepack(file: string): $CancellablePromise<$models.SpritepackDeleteResult> {
-    return $Call.ByID(856149942, file);
+    return $Call.ByID(856149942, file).then(($result: any) => {
+        return $$createType2($result);
+    });
 }
 
 export function ExecutePlan(request: $models.ExecutePlanRequest): $CancellablePromise<$models.ArchiveInstallResult> {
-    return $Call.ByID(628431563, request);
+    return $Call.ByID(628431563, request).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 export function GetAPIURL(): $CancellablePromise<string> {
@@ -50,39 +58,67 @@ export function GetAPIURL(): $CancellablePromise<string> {
 }
 
 export function GetMASStatus(): $CancellablePromise<$models.MASStatus> {
-    return $Call.ByID(767909844);
+    return $Call.ByID(767909844).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+export function GetPriorityOverview(): $CancellablePromise<install$0.PriorityOverview | null> {
+    return $Call.ByID(3148207608).then(($result: any) => {
+        return $$createType5($result);
+    });
 }
 
 export function GetStageProgress(operationID: string): $CancellablePromise<$models.StageProgress> {
-    return $Call.ByID(546730124, operationID);
+    return $Call.ByID(546730124, operationID).then(($result: any) => {
+        return $$createType6($result);
+    });
 }
 
 export function LaunchMASInstance(id: string): $CancellablePromise<void> {
     return $Call.ByID(1011314150, id);
 }
 
-export function ListInstalledArchives(): $CancellablePromise<$models.InstalledArchive[] | null> {
-    return $Call.ByID(2310294626);
+export function ListInstalledArchives(): $CancellablePromise<$models.InstalledArchive[]> {
+    return $Call.ByID(2310294626).then(($result: any) => {
+        return $$createType8($result);
+    });
 }
 
 export function ListInstalledModFiles(installationID: string, modID: string): $CancellablePromise<install$0.InstalledFileList | null> {
-    return $Call.ByID(491608010, installationID, modID);
+    return $Call.ByID(491608010, installationID, modID).then(($result: any) => {
+        return $$createType10($result);
+    });
 }
 
 export function ListMASInstances(): $CancellablePromise<$models.MASInstancesState> {
-    return $Call.ByID(1233296036);
+    return $Call.ByID(1233296036).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
 
 export function PreviewArchive(request: $models.ArchiveInstallRequest): $CancellablePromise<$models.PlanResult> {
-    return $Call.ByID(1878777463, request);
+    return $Call.ByID(1878777463, request).then(($result: any) => {
+        return $$createType11($result);
+    });
+}
+
+export function PreviewPriority(priorities: { [_ in string]?: number }): $CancellablePromise<$models.PlanResult> {
+    return $Call.ByID(1682193823, priorities).then(($result: any) => {
+        return $$createType11($result);
+    });
 }
 
 export function PreviewUninstall(targetID: string): $CancellablePromise<$models.PlanResult> {
-    return $Call.ByID(809378571, targetID);
+    return $Call.ByID(809378571, targetID).then(($result: any) => {
+        return $$createType11($result);
+    });
 }
 
 export function PreviewUninstallWithOpID(targetID: string, uninstallOpID: string): $CancellablePromise<$models.PlanResult> {
-    return $Call.ByID(2695786689, targetID, uninstallOpID);
+    return $Call.ByID(2695786689, targetID, uninstallOpID).then(($result: any) => {
+        return $$createType11($result);
+    });
 }
 
 export function Recover(operationID: string): $CancellablePromise<void> {
@@ -94,19 +130,27 @@ export function ReleaseArchive(archiveID: string): $CancellablePromise<void> {
 }
 
 export function RemoveMASInstance(id: string): $CancellablePromise<$models.MASInstancesState> {
-    return $Call.ByID(3113281931, id);
+    return $Call.ByID(3113281931, id).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
 
-export function ScanInstalledSpritepacks(): $CancellablePromise<$models.Spritepack[] | null> {
-    return $Call.ByID(3856932559);
+export function ScanInstalledSpritepacks(): $CancellablePromise<$models.Spritepack[]> {
+    return $Call.ByID(3856932559).then(($result: any) => {
+        return $$createType13($result);
+    });
 }
 
-export function ScanLocalSubmods(): $CancellablePromise<$models.LocalSubmod[] | null> {
-    return $Call.ByID(1364442018);
+export function ScanLocalSubmods(): $CancellablePromise<$models.LocalSubmod[]> {
+    return $Call.ByID(1364442018).then(($result: any) => {
+        return $$createType15($result);
+    });
 }
 
 export function SelectMASInstance(id: string): $CancellablePromise<$models.MASInstancesState> {
-    return $Call.ByID(3424323131, id);
+    return $Call.ByID(3424323131, id).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
 
 export function SetAPIURL(apiURL: string): $CancellablePromise<void> {
@@ -114,13 +158,36 @@ export function SetAPIURL(apiURL: string): $CancellablePromise<void> {
 }
 
 export function SetMASRoot(root: string): $CancellablePromise<$models.MASStatus> {
-    return $Call.ByID(958382738, root);
+    return $Call.ByID(958382738, root).then(($result: any) => {
+        return $$createType3($result);
+    });
 }
 
 export function StageArchive(request: $models.StageArchiveRequest): $CancellablePromise<$models.StagedArchiveInfo> {
-    return $Call.ByID(1671860989, request);
+    return $Call.ByID(1671860989, request).then(($result: any) => {
+        return $$createType16($result);
+    });
 }
 
 export function Uninstall(operationID: string, uninstallOperationID: string): $CancellablePromise<string> {
     return $Call.ByID(3087482905, operationID, uninstallOperationID);
 }
+
+// Private type creation functions
+const $$createType0 = $models.MASInstancesState.createFrom;
+const $$createType1 = $models.ArchiveInstallResult.createFrom;
+const $$createType2 = $models.SpritepackDeleteResult.createFrom;
+const $$createType3 = $models.MASStatus.createFrom;
+const $$createType4 = install$0.PriorityOverview.createFrom;
+const $$createType5 = $Create.Nullable($$createType4);
+const $$createType6 = $models.StageProgress.createFrom;
+const $$createType7 = $models.InstalledArchive.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = install$0.InstalledFileList.createFrom;
+const $$createType10 = $Create.Nullable($$createType9);
+const $$createType11 = $models.PlanResult.createFrom;
+const $$createType12 = $models.Spritepack.createFrom;
+const $$createType13 = $Create.Array($$createType12);
+const $$createType14 = $models.LocalSubmod.createFrom;
+const $$createType15 = $Create.Array($$createType14);
+const $$createType16 = $models.StagedArchiveInfo.createFrom;

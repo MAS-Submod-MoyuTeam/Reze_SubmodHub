@@ -111,7 +111,7 @@ export default function App() {
           mod_id: receipt.mod_id, title: receipt.title, summary: '已通过 SubmodHub 安装',
           author_name: authorName, category: (receipt.category as any) || catMod?.category || 'submod', installed_version: receipt.version,
           installed_version_id: receipt.version_id, latest_version: catMod?.latest_version || receipt.version,
-          latest_version_id: catMod?.latest_version_id || receipt.version_id, has_update: false, priority: 50,
+          latest_version_id: catMod?.latest_version_id || receipt.version_id, has_update: false, priority: receipt.priority ?? 0,
           is_managed: true, files_count: receipt.files, size_bytes: receipt.size_bytes,
           installed_at: receipt.installed_at ? new Date(receipt.installed_at).toISOString() : new Date().toISOString(), sha256: receipt.sha256,
           integrity_status: 'unknown', managed_operation_id: receipt.operation_id,
@@ -431,7 +431,7 @@ export default function App() {
             mod_id: plan.mod_id, title: plan.mod_title, summary: '已通过 SubmodHub 验证安装',
             author_name: authorName, category: plan.category || 'submod', installed_version: plan.version_str,
             installed_version_id: plan.version_id, latest_version: plan.version_str,
-            latest_version_id: plan.version_id, has_update: false, priority: 50, is_managed: true,
+            latest_version_id: plan.version_id, has_update: false, priority: 0, is_managed: true,
             files_count: result.files, size_bytes: plan.bytes_required, installed_at: new Date().toISOString(),
             sha256: plan.archive_sha256 || '', integrity_status: 'intact', managed_operation_id: operationId,
           }];
@@ -510,16 +510,6 @@ export default function App() {
   // Handler: Export Logs
   const handleExportLogs = (opId?: string) => {
     showToast(`诊断日志已导出至本地文件: C:\\Users\\User\\AppData\\Roaming\\SubmodHub\\logs\\export_${Date.now()}.log`);
-  };
-
-  // Handler: Priority Changes
-  const handleApplyNewPriorities = (newPriorities: Record<string, number>) => {
-    setInstalledMods((prev) =>
-      prev.map((m) =>
-        newPriorities[m.mod_id] !== undefined ? { ...m, priority: newPriorities[m.mod_id] } : m
-      )
-    );
-    showToast('新图层优先级配置已成功生效并写入 MAS 图层映射表');
   };
 
   // Handler: Adopt Unmanaged Mod
@@ -718,7 +708,9 @@ export default function App() {
           {activeTab === 'priority' && (
             <PriorityLayersView
               installedMods={installedMods}
-              onApplyNewPriorities={handleApplyNewPriorities}
+              currentInstanceId={activeInstallationId}
+              onRefreshInstalled={scanLocalSubmods}
+              showToast={showToast}
             />
           )}
 

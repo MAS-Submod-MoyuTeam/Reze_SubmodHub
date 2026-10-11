@@ -24,6 +24,7 @@ type LayerRecord struct {
 	VersionID      string `json:"version_id,omitempty"`
 	OperationID    string `json:"operation_id,omitempty"`
 	Order          int64  `json:"order"`
+	Priority       int    `json:"priority"`
 	Hash           string `json:"hash"`
 	Mode           uint32 `json:"mode,omitempty"`
 }
@@ -50,6 +51,7 @@ type InstallationRecord struct {
 	Title          string    `json:"title,omitempty"`
 	OperationID    string    `json:"operation_id"`
 	Order          int64     `json:"order"`
+	Priority       int       `json:"priority"`
 	Paths          []string  `json:"paths"` // canonical keys
 	InstalledAt    time.Time `json:"installed_at"`
 }
@@ -166,11 +168,24 @@ func (m *Manifest) RecordLayer(displayPath, key string, orig OriginalRecord, lay
 		rec.Layers = append(rec.Layers, layer)
 	}
 
-	// Sort layers by Order ascending
+	// Sort layers by priority and order ascending
 	sort.Slice(rec.Layers, func(i, j int) bool {
-		return rec.Layers[i].Order < rec.Layers[j].Order
+		return compareLayers(rec.Layers[i], rec.Layers[j])
 	})
 	return nil
+}
+
+func compareLayers(a, b LayerRecord) bool {
+	if a.Priority != b.Priority {
+		return a.Priority < b.Priority
+	}
+	if a.Order != b.Order {
+		return a.Order < b.Order
+	}
+	if a.ModID != b.ModID {
+		return a.ModID < b.ModID
+	}
+	return a.InstallationID < b.InstallationID
 }
 
 // RemoveLayer removes the layer for installationID from key.

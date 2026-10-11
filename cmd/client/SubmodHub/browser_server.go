@@ -45,6 +45,8 @@ func browserServiceHandler(service *DesktopService) http.Handler {
 			result, err = service.ScanInstalledSpritepacks()
 		case "GetMASStatus":
 			result, err = service.GetMASStatus()
+		case "GetPriorityOverview":
+			result, err = service.GetPriorityOverview()
 		case "ListInstalledModFiles":
 			var installationID, modID string
 			if err = arg(0, &installationID); err == nil {
@@ -110,6 +112,11 @@ func browserServiceHandler(service *DesktopService) http.Handler {
 			err = arg(0, &value)
 			if err == nil {
 				result, err = service.PreviewArchive(value)
+			}
+		case "PreviewPriority":
+			var priorities map[string]int
+			if err = arg(0, &priorities); err == nil {
+				result, err = service.PreviewPriority(priorities)
 			}
 		case "PreviewUninstall":
 			var value string
