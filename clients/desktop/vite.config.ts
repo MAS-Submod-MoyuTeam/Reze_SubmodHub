@@ -3,13 +3,15 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+const currentDir = import.meta.dirname ?? path.resolve('.');
+
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
-        '@wails-bindings': path.resolve(__dirname, '../../cmd/client/SubmodHub/frontend/bindings/github.com/reze/submodhub/cmd/client'),
+        '@': path.resolve(currentDir, '.'),
+        '@wails-bindings': path.resolve(currentDir, '../../cmd/client/SubmodHub/frontend/bindings/github.com/reze/submodhub/cmd/client'),
       },
     },
     server: {

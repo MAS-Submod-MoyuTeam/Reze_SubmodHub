@@ -118,6 +118,7 @@ export interface Plan {
   author_name?: string;
   version_id: string;
   version_str: string;
+  priority?: number;
   expires_at: string;
   dependency_blockers: Array<{
     mod_id: string;

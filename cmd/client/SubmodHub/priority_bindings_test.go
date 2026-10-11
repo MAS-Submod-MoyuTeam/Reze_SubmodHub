@@ -91,8 +91,11 @@ func TestDesktopServicePriorityEndToEnd(t *testing.T) {
 	if len(preview.Actions) != 1 {
 		t.Fatalf("expected 1 action, got %d", len(preview.Actions))
 	}
-	if preview.Actions[0].TargetSource != "mod_a" {
-		t.Fatalf("expected target source mod_a, got %s", preview.Actions[0].TargetSource)
+	if preview.Actions[0].TargetSource != "Mod A" {
+		t.Fatalf("expected target source Mod A, got %s", preview.Actions[0].TargetSource)
+	}
+	if preview.Actions[0].CurrentSource != "Mod B" {
+		t.Fatalf("expected current source Mod B, got %s", preview.Actions[0].CurrentSource)
 	}
 
 	// Disk must still be Mod B before execute
@@ -135,3 +138,78 @@ func TestDesktopServicePriorityEndToEnd(t *testing.T) {
 		t.Fatalf("expected mod A content after restart, got %s", gotRestart)
 	}
 }
+
+func TestPreviewArchiveRecommendedPriorityPropagation(t *testing.T) {
+	root := t.TempDir()
+	safeCleanupDir(t, root)
+	_ = os.MkdirAll(filepath.Join(root, "game"), 0755)
+
+	service := NewDesktopService()
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	zipData := createPriorityTestZip("game/Submods/my_mod/test.rpy", "# Submod test\n")
+
+	// 1. PreviewArchive with recommended priority 55
+	preview, err := service.PreviewArchive(ArchiveInstallRequest{
+		OperationID:   "op_install_prio",
+		ModID:         "mod_custom",
+		VersionID:     "v1",
+		Version:       "1.0.0",
+		Title:         "Custom Mod",
+		Priority:      55,
+		ArchiveBase64: zipData,
+	})
+	if err != nil {
+		t.Fatalf("PreviewArchive failed: %v", err)
+	}
+	if preview.Priority != 55 {
+		t.Fatalf("expected PlanResult.Priority 55, got %d", preview.Priority)
+	}
+
+	// 2. ExecutePlan
+	res, err := service.ExecutePlan(ExecutePlanRequest{
+		PlanID:    preview.PlanID,
+		Confirmed: true,
+	})
+	if err != nil || res.State != "committed" {
+		t.Fatalf("ExecutePlan failed: %+v %v", res, err)
+	}
+
+	// 3. Overview should reflect 55
+	overview, err := service.GetPriorityOverview()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(overview.Mods) != 1 || overview.Mods[0].Priority != 55 {
+		t.Fatalf("expected overview priority 55, got %+v", overview.Mods)
+	}
+
+	// 4. Installed receipts should reflect 55
+	receipts, err := service.ListInstalledArchives()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) != 1 || receipts[0].Priority != 55 {
+		t.Fatalf("expected receipt priority 55, got %+v", receipts)
+	}
+
+	// 5. Preview update with Priority: 0 should retain existing priority 55
+	updatePreview, err := service.PreviewArchive(ArchiveInstallRequest{
+		OperationID:   "op_update_prio",
+		ModID:         "mod_custom",
+		VersionID:     "v2",
+		Version:       "2.0.0",
+		Title:         "Custom Mod",
+		Priority:      0,
+		ArchiveBase64: zipData,
+	})
+	if err != nil {
+		t.Fatalf("update PreviewArchive failed: %v", err)
+	}
+	if updatePreview.Priority != 55 {
+		t.Fatalf("expected update PlanResult.Priority to retain 55, got %d", updatePreview.Priority)
+	}
+}
+

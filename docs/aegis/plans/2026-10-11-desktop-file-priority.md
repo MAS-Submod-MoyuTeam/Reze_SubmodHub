@@ -160,13 +160,14 @@ Playwright 验证浏览器模式，原生 Wails 至少人工 smoke 一轮。测�
 
 #### Task 6：统一 Wails 前端入口
 
-1. 将 Wails Vite 构建入口切换到 `clients/desktop/src/main.tsx` 和 `clients/desktop/src/App.tsx`。
+1. 将 Wails Vite 构建入口切换到 `clients/desktop/src/main.tsx` 和 `clients/desktop/src/App.tsx`（Vite root 设为 `clients/desktop`）。
 2. 保留 `cmd/client/SubmodHub/frontend` 作为 Wails 构建目录、bindings 输出目录和构建壳。
-3. 停用 `cmd/client/SubmodHub/frontend/src/main.ts` 中旧的 DOM 单页逻辑，避免构建时继续引用 `SetMASRoot` / `GetMASStatus` 的旧界面。
-4. 保证 `@wails-bindings` alias 指向 `cmd/client/SubmodHub/frontend/bindings/github.com/reze/submodhub/cmd/client`。
-5. 保证 `clients/desktop` 的 `components/`、`types/`、`data/`、工具模块、CSS 和静态资源都能被 Wails 构建解析。
+3. `cmd/client/SubmodHub/frontend/index.html` 明确统一引入 `/src/main.tsx`，与 `clients/desktop/index.html` 入口完全一致；停用并删除旧的 `main.ts` DOM 单页脚本。
+4. 在 `cmd/client/SubmodHub/frontend/src/main.tsx` 保留兼容代理存根，避免任何直接引用该目录的工具链找不到入口。
+5. 保证 `@wails-bindings` alias 指向 `cmd/client/SubmodHub/frontend/bindings/github.com/reze/submodhub/cmd/client`。
+6. 保证 `clients/desktop` 的 `components/`、`types/`、`data/`、工具模块、CSS 和静态资源都能被 Wails 构建解析。
 
-验收：在 Wails frontend 目录执行生产构建后，产物入口包含 React 应用，且不再依赖旧的 `frontend/src/main.ts` DOM 元素选择器。
+验收：在 Wails frontend 目录执行生产构建后，产物入口包含 React 应用，HTML 脚本标签与文件实际名称统一为 `/src/main.tsx`，且不再依赖旧的 `frontend/src/main.ts` DOM 元素选择器。
 
 #### Task 7：统一依赖与 Vite 配置
 
@@ -227,3 +228,31 @@ Get-FileHash bin/submodhub.exe -Algorithm SHA256
 - 页面 API 全部通过真实 bindings 或现有服务调用，生产环境不依赖 mock 回退。
 - 优先级页面、安装列表和文件详情使用同一套后端权威数据。
 - 前端测试、Wails frontend 构建和 Windows 客户端构建均有实际命令输出作为验收证据。
+
+### 接线实施与验收记录（2026-10-11）
+
+- **Task 6（统一 Wails 前端入口）完成**：
+  - Wails 构建入口统一指向 `clients/desktop`（Vite root 指向 `clients/desktop`，使用 `clients/desktop/index.html` 与 `src/main.tsx`）。
+  - `cmd/client/SubmodHub/frontend/index.html` 同步将脚本入口显式对齐为 `<script type="module" src="/src/main.tsx"></script>`，消除了原先依赖未声明扩展名推导的 `/src/main.ts`。
+  - 删除旧 `main.ts` DOM 脚本，提供统一的 `frontend/src/main.tsx` 存根转发，两处 HTML 与入口规范保持一致。
+  - `@wails-bindings` alias 稳定映射至 `cmd/client/SubmodHub/frontend/bindings/github.com/reze/submodhub/cmd/client`。
+
+- **Task 7（统一依赖与 Vite 配置）完成**：
+  - `cmd/client/SubmodHub/frontend/package.json` 对齐 React 19、Tailwind 4、Lucide、@wailsio/runtime、TypeScript 5.8 及 Markdown 依赖。
+  - 修复 `vite.config.ts` 中的 `__dirname` 警告，替换为 `import.meta.dirname`。
+  - `clients/desktop` 与 `frontend` 双通道 `npm run lint` 和 `npm run build` 均 0 错误无警告通过。
+
+- **Task 8（接通 Wails API 与页面状态）核心完成，明确边界**：
+  - 对齐 `clients/desktop/src/wails.ts` 与生成 bindings 的 `PriorityOverview`、`PriorityPathEntry`、`PriorityLayerInfo` nullable slice 类型。
+  - `PriorityLayersView.tsx` 中 `data.mods` 增加空安全容错处理，消除 TypeScript 类型检查错误。
+  - 清理 `App.tsx` 中的 `INITIAL_INSTALLATIONS` 回退与 `INITIAL_EXTERNAL_DRIFT` 原型数据，未连接 MAS 实例时使用干净的空状态 `UNVERIFIED_INSTALLATION`。
+  - 优先级图层、已安装模组（`ScanLocalSubmods` + `ListInstalledArchives`）、实例管理（`ListMASInstances` 等）和文件检查（`ListInstalledModFiles`）全部直连真实 Wails bindings 与 Go 后端权威数据。
+  - 边界说明：模组云端目录目前依赖在线 API（失败时显示错误/空列表）；操作历史记录（OperationsView）目前仅在客户端内存会话暂存，尚未接入本地持久化库。
+
+- **Task 9（优先级 UI 原生客户端验收）工程与构建验证通过，人工 GUI Smoke 待桌面执行**：
+  - 逻辑单元测试：`priorityLayers.test.ts`、`installedFiles.test.ts`、`planPreview.test.ts` 共 17 项全数通过。
+  - 后端端到端覆盖测试：`go test ./cmd/client`（含 `priority_bindings_test.go`）使用临时 MAS 目录实测验证：Mod A/B 安装冲突、优先级预览不写盘、应用后磁盘赢家切换、服务重启后持久化。
+  - 客户端二进制构建：`wails3 build` 成功完成 bindings 校验、前端打包、Windows syso 生成及二进制 native 编译。
+  - 产物 SHA-256：`8158D4D47E45E8BE3A27D84F06BE908BAE58C055960057785AD3D004CE71D697`（`cmd/client/SubmodHub/bin/submodhub.exe`，12,308,480 bytes）。
+  - 进程执行验证：通过 PowerShell 启动 `submodhub.exe`，进程成功运行（WebView2 运行时拉起）并在测试后正常退出。
+  - 未验项与交接要求：因命令行环境缺少交互式桌面显示会话，针对 Windows 原生窗口的人工完整 Smoke（打开界面 -> 手动连接临时 MAS 目录 -> 在优先级图层拖拽/调整 -> 观察磁盘文件与界面徽章 -> 退出重启验证）需由开发者在桌面环境下进行人工操作复核。

@@ -127,6 +127,7 @@ export interface PlanResult {
     "target_id": string;
     "mod_title": string;
     "version": string;
+    "priority": number;
     "actions": PlanPreviewAction[] | null;
     "blockers": string[] | null;
     "risks": PlanPreviewRisk[] | null;

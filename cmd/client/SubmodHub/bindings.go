@@ -106,6 +106,7 @@ type PlanResult struct {
 	TargetID   string              `json:"target_id"`
 	ModTitle   string              `json:"mod_title"`
 	Version    string              `json:"version"`
+	Priority   int                 `json:"priority"`
 	Actions    []PlanPreviewAction `json:"actions"`
 	Blockers   []string            `json:"blockers"`
 	Risks      []PlanPreviewRisk   `json:"risks"`
@@ -514,6 +515,13 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 		})
 	}
 
+	priorityVal := request.Priority
+	if plan.NewManifest != nil {
+		if inst, ok := plan.NewManifest.Installations[request.ModID]; ok {
+			priorityVal = inst.Priority
+		}
+	}
+
 	return PlanResult{
 		PlanID:     plan.PlanID,
 		Root:       s.root,
@@ -522,6 +530,7 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 		TargetID:   request.ModID,
 		ModTitle:   request.Title,
 		Version:    request.Version,
+		Priority:   priorityVal,
 		Actions:    actions,
 		Blockers:   plan.Blockers,
 		Risks:      risks,
@@ -690,11 +699,14 @@ func (s *DesktopService) PreviewPriority(priorities map[string]int) (PlanResult,
 		} else if act.Action == core.ActionRestoreLayer {
 			actionStr = "OVERWRITE"
 		}
+		cSrc := s.resolveSourceTitle(act.CurrentSource, manifest)
+		tSrc := s.resolveSourceTitle(act.TargetSource, manifest)
+
 		actions = append(actions, PlanPreviewAction{
 			Path:           act.Path,
 			Action:         actionStr,
-			CurrentSource:  act.CurrentSource,
-			TargetSource:   act.TargetSource,
+			CurrentSource:  cSrc,
+			TargetSource:   tSrc,
 			CurrentHash:    act.CurrentHash,
 			TargetHash:     act.TargetHash,
 			CurrentExists:  act.CurrentExists,
@@ -838,6 +850,23 @@ func (s *DesktopService) Uninstall(operationID, uninstallOperationID string) (st
 	return res.State, nil
 }
 
+
+func (s *DesktopService) resolveSourceTitle(src string, manifest *core.Manifest) string {
+	title := resolveSourceTitle(src, manifest)
+	if title != src {
+		return title
+	}
+	if receipts, err := s.ListInstalledArchives(); err == nil {
+		for _, rec := range receipts {
+			if rec.ModID == src || rec.OperationID == src {
+				if rec.Title != "" {
+					return rec.Title
+				}
+			}
+		}
+	}
+	return src
+}
 
 func resolveSourceTitle(src string, manifest *core.Manifest) string {
 	if src == "original" || src == "" {

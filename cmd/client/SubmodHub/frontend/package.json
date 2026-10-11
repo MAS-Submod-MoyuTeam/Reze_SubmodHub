@@ -7,13 +7,16 @@
     "dev": "vite",
     "build:dev": "vite build --minify false --mode development",
     "build": "vite build --mode production",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@wailsio/runtime": "latest",
-    "lucide-react": "^1.52.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "@wailsio/runtime": "^3.0.0-beta.27",
+    "lucide-react": "^0.546.0",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -21,7 +24,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "tailwindcss": "^4.3.3",
-    "typescript": "^4.9.5",
-    "vite": "^8.0.5"
+    "typescript": "^5.8.2",
+    "vite": "^8.3.2"
   }
 }

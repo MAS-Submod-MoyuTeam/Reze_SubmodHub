@@ -73,11 +73,11 @@ export type PriorityPathEntry = {
   drifted: boolean;
   original_exists: boolean;
   original_hash?: string;
-  layers: PriorityLayerInfo[];
+  layers: PriorityLayerInfo[] | null;
 };
 
 export type PriorityOverview = {
   generation: number;
-  mods: PriorityModInfo[];
-  paths: PriorityPathEntry[];
+  mods: PriorityModInfo[] | null;
+  paths: PriorityPathEntry[] | null;
 };

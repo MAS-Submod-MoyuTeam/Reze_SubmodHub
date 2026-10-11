@@ -99,7 +99,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
         if (data) {
           setOverview(data);
           const baseMap: Record<string, number> = {};
-          data.mods.forEach((m) => {
+          (data.mods || []).forEach((m) => {
             baseMap[m.mod_id] = m.priority;
           });
           setBaselinePriorities(baseMap);
@@ -347,6 +347,29 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
     }
   };
 
+  // Title map to resolve mod_id / installation_id to display title
+  const modTitleMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (overview?.mods) {
+      for (const m of overview.mods) {
+        if (m.mod_id && m.title) {
+          map[m.mod_id] = m.title;
+        }
+        if (m.installation_id && m.title) {
+          map[m.installation_id] = m.title;
+        }
+      }
+    }
+    if (installedMods) {
+      for (const m of installedMods) {
+        if (m.mod_id && m.title) {
+          map[m.mod_id] = m.title;
+        }
+      }
+    }
+    return map;
+  }, [overview, installedMods]);
+
   // Filtered conflicting paths in overview
   const filteredPaths = useMemo(() => {
     if (!overview || !overview.paths) return [];
@@ -355,15 +378,16 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
     return overview.paths.filter(
       (p) =>
         p.path.toLowerCase().includes(query) ||
-        p.active_owner.toLowerCase().includes(query)
+        p.active_owner.toLowerCase().includes(query) ||
+        (modTitleMap[p.active_owner] && modTitleMap[p.active_owner].toLowerCase().includes(query))
     );
-  }, [overview, pathSearchQuery]);
+  }, [overview, pathSearchQuery, modTitleMap]);
 
   // Formatted diffs for right preview pane
   const formattedActions: FormattedPriorityDiff[] = useMemo(() => {
     if (!previewPlan || !previewPlan.actions) return [];
-    return formatPriorityPlanActions(previewPlan.actions);
-  }, [previewPlan]);
+    return formatPriorityPlanActions(previewPlan.actions, modTitleMap);
+  }, [previewPlan, modTitleMap]);
 
   const hasBlockers = Boolean(previewPlan?.blockers && previewPlan.blockers.length > 0);
 
@@ -885,7 +909,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                       <div className="text-neutral-400 flex items-center justify-between">
                         <span>
                           当前生效归属:{' '}
-                          <span className="text-neutral-200 font-semibold">{pe.active_owner || '无'}</span>
+                          <span className="text-neutral-200 font-semibold">{modTitleMap[pe.active_owner] || pe.active_owner || '无'}</span>
                         </span>
                         <span className="text-[10px] text-neutral-500 font-mono">
                           {pe.layers?.length || 0} 个图层竞争
@@ -907,7 +931,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                               }`}
                             >
                               <span>
-                                #{lIdx + 1} {layer.mod_id}
+                                #{lIdx + 1} {modTitleMap[layer.mod_id] || layer.mod_id}
                               </span>
                               <span>Layer {layer.priority}</span>
                             </div>

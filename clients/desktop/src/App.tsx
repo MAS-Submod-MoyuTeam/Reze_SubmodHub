@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { mapPlanPreview } from './planPreview';
+import { isAllowedNavTab } from './priorityLayers';
 import { TitleBar } from './components/TitleBar';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { CatalogView } from './components/CatalogView';
@@ -11,11 +12,6 @@ import { OperationsView } from './components/OperationsView';
 import { InstancesView } from './components/InstancesView';
 import { AdoptModal } from './components/AdoptModal';
 import { FileInspectModal } from './components/FileInspectModal';
-import {
-  INITIAL_INSTALLATIONS,
-  INITIAL_EXTERNAL_DRIFT,
-  MOCK_MOD_VERSIONS,
-} from './data/mockData';
 import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
 import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
 import {
@@ -28,13 +24,22 @@ import {
   PlanChange,
 } from './types/client';
 
+const UNVERIFIED_INSTALLATION: Installation = {
+  id: 'unverified',
+  label: '尚未连接 MAS',
+  platform: 'windows',
+  path_hint: '',
+  permission_state: 'pending',
+  mas_version: '',
+  is_valid: false,
+  is_running: false,
+  disk_available_bytes: null,
+  last_validated_at: '',
+};
+
 export default function App() {
   // Installations
-  const [installations, setInstallations] = useState<Installation[]>([{
-    ...INITIAL_INSTALLATIONS[0], id: 'unverified', label: '尚未连接 MAS', path_hint: '',
-    permission_state: 'pending', mas_version: '', is_valid: false, is_running: false,
-    disk_available_bytes: 0, last_validated_at: '',
-  }]);
+  const [installations, setInstallations] = useState<Installation[]>([UNVERIFIED_INSTALLATION]);
   const [activeInstallationId, setActiveInstallationId] = useState<string>('unverified');
 
   // Navigation
@@ -144,7 +149,7 @@ export default function App() {
       disk_available_bytes: item.status.available_bytes !== undefined ? item.status.available_bytes : null,
       last_validated_at: new Date().toISOString(),
     }));
-    setInstallations(items.length ? items : [{ ...INITIAL_INSTALLATIONS[0], id: 'unverified', label: '尚未连接 MAS', path_hint: '', permission_state: 'pending', mas_version: '', is_valid: false, is_running: false, disk_available_bytes: null, last_validated_at: '' }]);
+    setInstallations(items.length ? items : [UNVERIFIED_INSTALLATION]);
     setActiveInstallationId(state.active_id || 'unverified');
     setInstalledMods([]);
     setSpritepacks([]);
@@ -182,8 +187,8 @@ export default function App() {
   }, [catalogMods]);
 
   const activeInstallation = installations.find((i) => i.id === activeInstallationId) || {
-    ...INITIAL_INSTALLATIONS[0], id: 'unverified', label: '尚未选择 MAS', path_hint: '',
-    permission_state: 'pending' as const, is_valid: false,
+    ...UNVERIFIED_INSTALLATION,
+    label: '尚未选择 MAS',
   };
 
   const unmanagedCount = installedMods.filter((m) => !m.is_managed).length;
@@ -279,6 +284,8 @@ export default function App() {
       setArchiveProgress(null);
 
       await SetMASRoot(activeInstallation.path_hint);
+      const existing = installedMods.find((item) => item.mod_id === mod.id);
+      const targetPriority = existing?.priority ? existing.priority : (mod.recommended_priority || 0);
       const preview = await PreviewArchive({
         operation_id: operationId,
         archive_id: staged.archive_id,
@@ -289,12 +296,13 @@ export default function App() {
         title: mod.title,
         author: mod.author?.display_name || "",
         category: mod.category,
+        priority: targetPriority,
       });
       setCurrentPlan(mapPlanPreview(preview, {
         backend_operation_id: operationId,
         archive_sha256: staged.sha256,
         plan_id: `install_${mod.id}_${Date.now()}`,
-        kind: installedMods.some((item) => item.mod_id === mod.id) ? 'update' : 'install',
+        kind: existing ? 'update' : 'install',
         installation_id: activeInstallation.id,
         mod_id: mod.id,
         mod_title: mod.title,
@@ -302,6 +310,7 @@ export default function App() {
         category: mod.category,
         version_id: version.id,
         version_str: version.version,
+        priority: targetPriority,
         expires_at: new Date(Date.now() + 300000).toISOString(),
         dependency_blockers: [],
         semantic_blockers: [],
@@ -420,18 +429,20 @@ export default function App() {
             || catalogMods.find((item) => item.id === plan.mod_id)?.author?.display_name
             || exists?.author_name
             || '未知作者';
+          const nextPriority = plan.priority ?? (exists?.priority ?? 0);
           if (exists) return prev.map((item) => item.mod_id === plan.mod_id ? {
             ...item, installed_version: plan.version_str, installed_version_id: plan.version_id,
             latest_version: plan.version_str, latest_version_id: plan.version_id,
             author_name: authorName,
             has_update: false, integrity_status: 'intact', is_managed: true,
             managed_operation_id: operationId, files_count: result.files,
+            priority: nextPriority,
           } : item);
           return [...prev, {
             mod_id: plan.mod_id, title: plan.mod_title, summary: '已通过 SubmodHub 验证安装',
             author_name: authorName, category: plan.category || 'submod', installed_version: plan.version_str,
             installed_version_id: plan.version_id, latest_version: plan.version_str,
-            latest_version_id: plan.version_id, has_update: false, priority: 0, is_managed: true,
+            latest_version_id: plan.version_id, has_update: false, priority: nextPriority, is_managed: true,
             files_count: result.files, size_bytes: plan.bytes_required, installed_at: new Date().toISOString(),
             sha256: plan.archive_sha256 || '', integrity_status: 'intact', managed_operation_id: operationId,
           }];
@@ -564,49 +575,6 @@ export default function App() {
     catch (error) { showToast(`重新检查失败：${String(error)}`); }
   };
 
-  // Scenario Toggles
-  const handleToggleGameRunning = () => {
-    setIsGameRunning((prev) => {
-      const next = !prev;
-      showToast(next ? '已模拟触发: MAS 正在运行中 (文件写入物理锁定)' : '已模拟解除: MAS 已退出 (就绪状态)');
-      return next;
-    });
-  };
-
-  const handleToggleOffline = () => {
-    setIsOffline((prev) => {
-      const next = !prev;
-      showToast(next ? '已切换至: 离线只读缓存模式' : '已恢复: 云端 API v1 在线模式');
-      return next;
-    });
-  };
-
-  const handleToggleExternalDrift = () => {
-    if (externalDrift) {
-      setExternalDrift(null);
-      showToast('已清除哈希漂移模拟状态');
-    } else {
-      setExternalDrift(INITIAL_EXTERNAL_DRIFT);
-      showToast('已模拟注入: external_change 文件哈希漂移异常');
-    }
-  };
-
-  const handleToggleDependencyBlocker = () => {
-    setHasDependencyBlocker((prev) => {
-      const next = !prev;
-      showToast(next ? '已开启依赖缺失模拟: 安装雨中记忆将触发 dependency_missing 阻断' : '已关闭依赖缺失模拟');
-      return next;
-    });
-  };
-
-  const handleResetAllScenarios = () => {
-    setIsGameRunning(false);
-    setIsOffline(false);
-    setHasDependencyBlocker(false);
-    setExternalDrift(null);
-    showToast('已重置所有异常场景，恢复标准就绪工作流');
-  };
-
   return (
     <div className="flex flex-col h-screen w-screen bg-neutral-950 text-neutral-100 overflow-hidden font-sans">
       {/* 1. PC Native Title Bar */}
@@ -641,8 +609,11 @@ export default function App() {
         <Sidebar
           activeTab={activeTab}
           onSelectTab={(tab) => {
-            if (tab === 'catalog' || tab === 'instances' || tab === 'installed') setActiveTab(tab);
-            else showToast('本地安装、恢复和优先级服务尚未接入。');
+            if (isAllowedNavTab(tab)) {
+              setActiveTab(tab);
+            } else {
+              showToast('本地恢复历史服务尚未接入。');
+            }
           }}
           activeInstallation={activeInstallation}
           installedCount={installedMods.filter((m) => m.is_managed).length}

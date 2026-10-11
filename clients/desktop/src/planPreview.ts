@@ -6,6 +6,9 @@ export function mapPlanPreview(preview: Awaited<ReturnType<typeof PreviewArchive
     ...metadata,
     plan_id: preview.plan_id,
     kind: preview.kind as Plan['kind'],
+    priority: (preview as { priority?: number }).priority !== undefined
+      ? (preview as { priority?: number }).priority
+      : metadata.priority,
     changes: (preview.actions || []).map((action) => ({
       target_path: action.path,
       action: action.action as PlanChange['action'],

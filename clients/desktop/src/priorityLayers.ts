@@ -1,3 +1,10 @@
+/**
+ * Determines whether a navigation tab is supported and enabled in the desktop client.
+ */
+export function isAllowedNavTab(tab: string): boolean {
+  return tab === 'catalog' || tab === 'instances' || tab === 'installed' || tab === 'priority';
+}
+
 export interface PriorityValidationResult {
   valid: boolean;
   value?: number;
@@ -139,7 +146,8 @@ export function formatPriorityPlanActions(
     current_hash: string;
     target_hash: string;
     reason?: string;
-  }>
+  }>,
+  titleMap?: Record<string, string>
 ): FormattedPriorityDiff[] {
   return actions.map((act) => {
     const isSameHash =
@@ -152,11 +160,17 @@ export function formatPriorityPlanActions(
       displayReason = '归属模组切换（文件内容完全一致，无需重新写盘）';
     }
 
+    const prevRaw = act.current_source || '无';
+    const nextRaw = act.target_source || '无';
+
+    const previousWinner = (titleMap && titleMap[prevRaw]) ? titleMap[prevRaw] : prevRaw;
+    const nextWinner = (titleMap && titleMap[nextRaw]) ? titleMap[nextRaw] : nextRaw;
+
     return {
       path: act.path,
       action: act.action,
-      previousWinner: act.current_source || '无',
-      nextWinner: act.target_source || '无',
+      previousWinner,
+      nextWinner,
       isSameHashTransfer: isSameHash,
       reason: displayReason,
     };

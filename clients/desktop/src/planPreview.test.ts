@@ -61,3 +61,31 @@ test('plan preview treats unknown disk space as non-blocking but respects real i
   const isInsufficientWhenSmall = 500 != null && plan.bytes_required > 500;
   assert.equal(isInsufficientWhenSmall, true);
 });
+
+test('mapPlanPreview preserves priority from preview or metadata', () => {
+  const metadataWithPrio: Plan = {
+    plan_id: 'p1', kind: 'install', installation_id: 'mas', mod_id: 'mod',
+    mod_title: 'Mod', version_id: 'v1', version_str: '1', priority: 50, expires_at: '',
+    dependency_blockers: [], semantic_blockers: [], changes: [], backups_required: 0,
+    bytes_required: 100, warnings: [],
+  };
+  const previewWithPrio = {
+    plan_id: 'backend-plan', root: 'mas', generation: 1, kind: 'install', target_id: 'mod', mod_title: 'Mod', version: '1',
+    priority: 60, actions: [], blockers: [], risks: [],
+    summary: { restores_original: 0, restores_layer: 0, metadata_only: 0, deletes_added: 0, writes_new: 0 },
+  };
+
+  // When preview has priority, it takes precedence
+  const planFromPreview = mapPlanPreview(previewWithPrio, metadataWithPrio);
+  assert.equal(planFromPreview.priority, 60);
+
+  // When preview lacks priority, fallback to metadata priority
+  const previewWithoutPrio = {
+    plan_id: 'backend-plan-2', root: 'mas', generation: 1, kind: 'install', target_id: 'mod', mod_title: 'Mod', version: '1',
+    actions: [], blockers: [], risks: [],
+    summary: { restores_original: 0, restores_layer: 0, metadata_only: 0, deletes_added: 0, writes_new: 0 },
+  };
+  const planFromMetadata = mapPlanPreview(previewWithoutPrio, metadataWithPrio);
+  assert.equal(planFromMetadata.priority, 50);
+});
+

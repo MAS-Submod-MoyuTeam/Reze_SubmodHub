@@ -7,6 +7,7 @@ import {
   formatPriorityPlanActions,
   areDraftPrioritiesEqual,
   canApplyPriorityPlan,
+  isAllowedNavTab,
 } from './priorityLayers.js';
 
 test('validatePriorityInput rejects non-integers, floats, and dirty strings', () => {
@@ -289,6 +290,14 @@ test('formatPriorityPlanActions annotates same-hash transfers vs content replace
 
   assert.equal(formatted[1].isSameHashTransfer, true);
   assert.ok(formatted[1].reason.includes('归属模组切换'));
+
+  // Test with titleMap resolving mod_id to mod display title
+  const formattedWithTitles = formatPriorityPlanActions(actions, {
+    mod_b: 'Mod B Title',
+    mod_a: 'Mod A Title',
+  });
+  assert.equal(formattedWithTitles[0].previousWinner, 'Mod B Title');
+  assert.equal(formattedWithTitles[0].nextWinner, 'Mod A Title');
 });
 
 test('areDraftPrioritiesEqual checks key count and values', () => {
@@ -384,4 +393,14 @@ test('canApplyPriorityPlan enforces preview-first and blocks bypass', () => {
   });
   assert.equal(res.canApply, false);
 });
+
+test('isAllowedNavTab allows supported navigation tabs including priority', () => {
+  assert.equal(isAllowedNavTab('catalog'), true);
+  assert.equal(isAllowedNavTab('instances'), true);
+  assert.equal(isAllowedNavTab('installed'), true);
+  assert.equal(isAllowedNavTab('priority'), true);
+  assert.equal(isAllowedNavTab('operations'), false);
+  assert.equal(isAllowedNavTab('unknown'), false);
+});
+
 
