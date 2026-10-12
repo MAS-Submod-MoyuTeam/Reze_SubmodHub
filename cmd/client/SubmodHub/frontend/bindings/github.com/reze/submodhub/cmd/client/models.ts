@@ -84,6 +84,48 @@ export interface MASStatus {
     "available_bytes": number;
 }
 
+export interface OperationDetail {
+    "operation_id": string;
+    "installation_id": string;
+    "target_installation_id"?: string;
+    "mod_id": string;
+    "mod_title": string;
+    "version_id": string;
+    "version_str": string;
+    "kind": string;
+
+    /**
+     * committed, rolled_back, needs_manual_recovery, recoverable, planned, applying...
+     */
+    "state": string;
+    "phase": string;
+    "progress": OperationProgress;
+    "error"?: OperationError | null;
+    "conflict_path"?: string;
+    "expected_hash"?: string;
+    "actual_hash"?: string;
+    "backup_id"?: string;
+    "can_rollback": boolean;
+    "created_at": string;
+    "updated_at": string;
+}
+
+export interface OperationError {
+    "code": string;
+    "message": string;
+    "details"?: { [_ in string]?: any } | null;
+}
+
+export interface OperationProgress {
+    "stage": string;
+    "current_file"?: string;
+    "processed_files": number;
+    "total_files": number;
+    "bytes_processed": number;
+    "total_bytes": number;
+    "percent": number;
+}
+
 export interface PlanPreviewAction {
     "path": string;
 

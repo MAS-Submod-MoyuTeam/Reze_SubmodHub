@@ -2,7 +2,7 @@
  * Determines whether a navigation tab is supported and enabled in the desktop client.
  */
 export function isAllowedNavTab(tab: string): boolean {
-  return tab === 'catalog' || tab === 'instances' || tab === 'installed' || tab === 'priority';
+  return tab === 'catalog' || tab === 'instances' || tab === 'installed' || tab === 'priority' || tab === 'operations';
 }
 
 export interface PriorityValidationResult {

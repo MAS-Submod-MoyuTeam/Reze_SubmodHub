@@ -53,6 +53,10 @@ export function GetMASStatus(): $CancellablePromise<$models.MASStatus> {
     return $Call.ByID(767909844);
 }
 
+export function GetOperation(operationID: string): $CancellablePromise<$models.OperationDetail | null> {
+    return $Call.ByID(3202483684, operationID);
+}
+
 export function GetPriorityOverview(): $CancellablePromise<install$0.PriorityOverview | null> {
     return $Call.ByID(3148207608);
 }
@@ -77,6 +81,10 @@ export function ListMASInstances(): $CancellablePromise<$models.MASInstancesStat
     return $Call.ByID(1233296036);
 }
 
+export function ListOperations(): $CancellablePromise<$models.OperationDetail[] | null> {
+    return $Call.ByID(3166334435);
+}
+
 export function PreviewArchive(request: $models.ArchiveInstallRequest): $CancellablePromise<$models.PlanResult> {
     return $Call.ByID(1878777463, request);
 }
@@ -93,18 +101,6 @@ export function PreviewUninstallWithOpID(targetID: string, uninstallOpID: string
     return $Call.ByID(2695786689, targetID, uninstallOpID);
 }
 
-export function ListOperations(): $CancellablePromise<any> {
-    return $Call.ByName("main.DesktopService.ListOperations");
-}
-
-export function GetOperation(operationID: string): $CancellablePromise<any> {
-    return $Call.ByName("main.DesktopService.GetOperation", operationID);
-}
-
-export function RollbackOperation(operationID: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.RollbackOperation", operationID);
-}
-
 export function Recover(operationID: string): $CancellablePromise<void> {
     return $Call.ByID(1449242715, operationID);
 }
@@ -115,6 +111,10 @@ export function ReleaseArchive(archiveID: string): $CancellablePromise<void> {
 
 export function RemoveMASInstance(id: string): $CancellablePromise<$models.MASInstancesState> {
     return $Call.ByID(3113281931, id);
+}
+
+export function RollbackOperation(operationID: string): $CancellablePromise<void> {
+    return $Call.ByID(1120775822, operationID);
 }
 
 export function ScanInstalledSpritepacks(): $CancellablePromise<$models.Spritepack[] | null> {

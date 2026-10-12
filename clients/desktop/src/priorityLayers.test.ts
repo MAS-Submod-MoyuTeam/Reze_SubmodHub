@@ -395,12 +395,12 @@ test('canApplyPriorityPlan enforces preview-first and blocks bypass', () => {
   assert.equal(res.canApply, false);
 });
 
-test('isAllowedNavTab allows supported navigation tabs including priority', () => {
+test('isAllowedNavTab allows supported navigation tabs including operations', () => {
   assert.equal(isAllowedNavTab('catalog'), true);
   assert.equal(isAllowedNavTab('instances'), true);
   assert.equal(isAllowedNavTab('installed'), true);
   assert.equal(isAllowedNavTab('priority'), true);
-  assert.equal(isAllowedNavTab('operations'), false);
+  assert.equal(isAllowedNavTab('operations'), true);
   assert.equal(isAllowedNavTab('unknown'), false);
 });
 
