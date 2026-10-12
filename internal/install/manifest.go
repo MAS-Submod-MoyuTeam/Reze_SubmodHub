@@ -3,7 +3,6 @@ package install
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -226,19 +225,11 @@ func (m *Manifest) Clone() *Manifest {
 }
 
 func (m *Manifest) Save(path string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := path + fmt.Sprintf(".tmp.%d", time.Now().UnixNano())
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return err
-	}
-	return safeAtomicRename(tmp, path)
+	return writeAtomicFile(path, b, 0o644)
 }
 
 func LoadManifest(path string) (*Manifest, error) {

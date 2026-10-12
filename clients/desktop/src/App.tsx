@@ -13,7 +13,8 @@ import { InstancesView } from './components/InstancesView';
 import { AdoptModal } from './components/AdoptModal';
 import { FileInspectModal } from './components/FileInspectModal';
 import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
-import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
+import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, RollbackOperation, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
+import { INITIAL_OPERATIONS } from './data/mockData';
 import { createInstalledLoadCoordinator, LoadingStatus } from './installedLoading';
 import {
   Installation,
@@ -58,6 +59,7 @@ export default function App() {
 
   // Installed scan loading state
   const loadCoordinatorRef = useRef(createInstalledLoadCoordinator());
+  const operationsRequestIdRef = useRef(0);
   const [modsLoadingStatus, setModsLoadingStatus] = useState<LoadingStatus>('idle');
   const [modsError, setModsError] = useState<string | null>(null);
   const [isModsInitialLoading, setIsModsInitialLoading] = useState(false);
@@ -211,6 +213,33 @@ export default function App() {
     }
   };
 
+  const refreshOperations = async (expectedInstId?: string) => {
+    const targetInstId = expectedInstId ?? activeInstallationIdRef.current;
+    const reqId = ++operationsRequestIdRef.current;
+    try {
+      const ops = await ListOperations();
+      if (reqId !== operationsRequestIdRef.current || (targetInstId && activeInstallationIdRef.current !== targetInstId)) {
+        return;
+      }
+      if (Array.isArray(ops) && ops.length > 0) {
+        setOperations(ops);
+        return;
+      }
+      if (import.meta.env.VITE_BROWSER_MODE === '1') {
+        setOperations(INITIAL_OPERATIONS);
+      } else {
+        setOperations(ops || []);
+      }
+    } catch {
+      if (reqId !== operationsRequestIdRef.current || (targetInstId && activeInstallationIdRef.current !== targetInstId)) {
+        return;
+      }
+      if (import.meta.env.VITE_BROWSER_MODE === '1') {
+        setOperations(INITIAL_OPERATIONS);
+      }
+    }
+  };
+
   const syncInstances = (state: MASInstancesState) => {
     const items: Installation[] = state.instances.map((item) => ({
       id: item.id, label: item.label, platform: 'windows', path_hint: item.root,
@@ -236,6 +265,7 @@ export default function App() {
     if (state.active_id) {
       void scanLocalSubmods(state.active_id);
       void refreshSpritepacks(state.active_id);
+      void refreshOperations(state.active_id);
     }
   };
 
@@ -243,6 +273,7 @@ export default function App() {
     void loadCatalog();
     void ListMASInstances().then((state) => syncInstances(state as MASInstancesState))
       .catch((error) => showToast(`实例列表读取失败：${String(error)}`));
+    void refreshOperations();
   }, []);
 
   useEffect(() => {
@@ -483,21 +514,15 @@ export default function App() {
         if (activeInstallationIdRef.current !== targetInstId) {
           return;
         }
+        await refreshOperations(targetInstId);
         setInstalledMods((prev) => prev.filter((item) => item.mod_id !== plan.mod_id));
         void scanLocalSubmods(targetInstId, { forced: true });
-        setOperations((prev) => [{
-          operation_id: uninstallOperationId, installation_id: targetInstId,
-          mod_id: plan.mod_id, mod_title: plan.mod_title, version_id: plan.version_id,
-          version_str: plan.version_str, kind: 'uninstall', state: 'committed',
-          progress: { stage: '卸载完成，已恢复原文件或下层版本', processed_files: plan.changes.length,
-            total_files: plan.changes.length, bytes_processed: 0, total_bytes: 0, percent: 100 },
-          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-        }, ...prev]);
         showToast(`${plan.mod_title} 已卸载，恢复原文件 ${plan.summary?.restores_original || 0} 个，下层文件 ${plan.summary?.restores_layer || 0} 个。`);
       } catch (error) {
         if (activeInstallationIdRef.current === targetInstId) {
           showToast(`真实卸载失败：${error instanceof Error ? error.message : String(error)}`);
         }
+        await refreshOperations(targetInstId);
       } finally {
         installingRef.current = false;
       }
@@ -513,15 +538,8 @@ export default function App() {
         if (activeInstallationIdRef.current !== targetInstId) {
           return;
         }
+        await refreshOperations(targetInstId);
         void scanLocalSubmods(targetInstId, { forced: true });
-        setOperations((prev) => [{
-          operation_id: operationId, installation_id: targetInstId,
-          mod_id: plan.mod_id, mod_title: plan.mod_title, version_id: plan.version_id,
-          version_str: plan.version_str, kind: plan.kind, state: 'committed',
-          progress: { stage: `真实归档已写入 ${result.files} 个文件`, processed_files: result.files,
-            total_files: result.files, bytes_processed: plan.bytes_required, total_bytes: plan.bytes_required, percent: 100 },
-          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-        }, ...prev]);
         setInstalledMods((prev) => {
           const exists = prev.find((item) => item.mod_id === plan.mod_id);
           const authorName = plan.author_name
@@ -552,6 +570,7 @@ export default function App() {
         if (activeInstallationIdRef.current === targetInstId) {
           showToast(`真实安装失败：${error instanceof Error ? error.message : String(error)}`);
         }
+        await refreshOperations(targetInstId);
         return;
       } finally {
         installingRef.current = false;
@@ -561,55 +580,32 @@ export default function App() {
     showToast('执行计划缺少真实后端预览，请重新预览。');
   };
 
-  // Handler: Recover Operation
-  const handleRecoverOperation = (opId: string) => {
-    showToast(`正在从断点恢复操作 [${opId}]...`);
-    setTimeout(() => {
-      setOperations((prev) =>
-        prev.map((o) =>
-          o.operation_id === opId
-            ? {
-                ...o,
-                state: 'committed',
-                error: undefined,
-                progress: {
-                  stage: '恢复后原子写入成功，已完成提交',
-                  processed_files: o.progress.total_files,
-                  total_files: o.progress.total_files,
-                  bytes_processed: o.progress.total_bytes,
-                  total_bytes: o.progress.total_bytes,
-                  percent: 100,
-                },
-              }
-            : o
-        )
-      );
+  // Handler: Recover / Safe Rollback Operation
+  const handleRecoverOperation = async (opId: string) => {
+    showToast(`正在安全回滚操作 [${opId}]...`);
+    try {
+      await RollbackOperation(opId);
+      showToast(`操作 [${opId}] 已安全回滚`);
+      await refreshOperations(activeInstallationIdRef.current);
       setExternalDrift(null);
-      showToast('操作恢复完成，状态已持久化');
-    }, 1200);
+    } catch (err: any) {
+      showToast(`回滚失败：${err.message || String(err)}`);
+      await refreshOperations(activeInstallationIdRef.current);
+    }
   };
 
   // Handler: Restore Backup
-  const handleRestoreBackup = (opId: string, backupId?: string) => {
+  const handleRestoreBackup = async (opId: string, backupId?: string) => {
     showToast(`正在从备份快照 [${backupId || 'snapshot'}] 执行完全还原...`);
-    setTimeout(() => {
-      setOperations((prev) =>
-        prev.map((o) =>
-          o.operation_id === opId
-            ? {
-                ...o,
-                state: 'rolled_back',
-                progress: {
-                  ...o.progress,
-                  stage: '已从快照安全回滚至修改前状态',
-                },
-              }
-            : o
-        )
-      );
+    try {
+      await RollbackOperation(opId);
+      showToast(`操作 [${opId}] 已从快照安全还原`);
+      await refreshOperations();
       setExternalDrift(null);
-      showToast('快照还原完成，MAS 目录已复原');
-    }, 1000);
+    } catch (err: any) {
+      showToast(`还原失败：${err.message || String(err)}`);
+      await refreshOperations();
+    }
   };
 
   // Handler: Resolve Hash Drift

@@ -125,7 +125,7 @@ func TestRollbackJournalRejectsDrift(t *testing.T) {
 	if err != nil || string(data) != "external" {
 		t.Fatalf("external content overwritten: %q, %v", data, err)
 	}
-	if journal.Phase != "prepared" {
-		t.Fatal("journal evidence changed")
+	if journal.Phase != TxPhaseNeedsManualRecovery {
+		t.Fatalf("expected journal to enter needs_manual_recovery, got %q", journal.Phase)
 	}
 }

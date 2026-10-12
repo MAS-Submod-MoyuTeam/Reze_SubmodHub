@@ -1,4 +1,5 @@
 import * as native from '@wails-bindings/desktopservice.js';
+import type { Operation } from './types/client';
 
 const browserMode = import.meta.env.VITE_BROWSER_MODE === '1';
 
@@ -38,6 +39,9 @@ export const ExecutePlan = (request: Parameters<typeof native.ExecutePlan>[0]) =
 export const ApplyArchive = (request: Parameters<typeof native.ApplyArchive>[0]) => invoke('ApplyArchive', () => native.ApplyArchive(request), [request]);
 export const Uninstall = (operationID: string, uninstallID: string) => invoke('Uninstall', () => native.Uninstall(operationID, uninstallID), [operationID, uninstallID]);
 export const Recover = (operationID: string) => invoke('Recover', () => native.Recover(operationID), [operationID]);
+export const ListOperations = () => invoke<Operation[]>('ListOperations', () => (native as any).ListOperations ? (native as any).ListOperations() : Promise.resolve([]));
+export const GetOperation = (operationID: string) => invoke<Operation>('GetOperation', () => (native as any).GetOperation ? (native as any).GetOperation(operationID) : Promise.reject(new Error('not_implemented')), [operationID]);
+export const RollbackOperation = (operationID: string) => invoke<void>('RollbackOperation', () => (native as any).RollbackOperation ? (native as any).RollbackOperation(operationID) : (native as any).Recover(operationID), [operationID]);
 export const BrowseMASDirectory = () => browserMode ? Promise.reject(new Error('浏览器模式请手动输入 MAS 根目录')) : native.BrowseMASDirectory();
 
 export type LocalSubmod = { directory: string; name: string; author?: string; version: string; files: Array<{ path: string; sha256: string; size: number }> };

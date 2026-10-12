@@ -53,6 +53,10 @@ type Plan struct {
 	OperationType        string       `json:"operation_type"`
 	TargetInstallationID string       `json:"target_installation_id"`
 	OperationID          string       `json:"operation_id"`
+	ModID                string       `json:"mod_id,omitempty"`
+	ModTitle             string       `json:"mod_title,omitempty"`
+	VersionID            string       `json:"version_id,omitempty"`
+	Version              string       `json:"version,omitempty"`
 	Actions              []PlanAction `json:"actions"`
 	Blockers             []string     `json:"blockers"`
 	Risks                []PlanRisk   `json:"risks"`
@@ -120,13 +124,22 @@ func PlanInstall(m *Manifest, root string, blobs *BlobStore, op InstallOperation
 		projManifest.NextOrder++
 	}
 
+	opType := "install"
+	if isUpdate {
+		opType = "update"
+	}
+
 	plan := &Plan{
 		PlanID:               planID,
 		Root:                 root,
 		Generation:           projManifest.Generation,
-		OperationType:        "install",
+		OperationType:        opType,
 		TargetInstallationID: instID,
 		OperationID:          op.OperationID,
+		ModID:                op.ModID,
+		ModTitle:             op.Title,
+		VersionID:            op.VersionID,
+		Version:              op.Version,
 		Actions:              make([]PlanAction, 0, len(op.Files)),
 		Blockers:             make([]string, 0),
 		Risks:                make([]PlanRisk, 0),
@@ -437,6 +450,10 @@ func PlanUninstall(m *Manifest, root string, blobs *BlobStore, targetID, uninsta
 		OperationType:        "uninstall",
 		TargetInstallationID: inst.InstallationID,
 		OperationID:          uninstallOpID,
+		ModID:                inst.ModID,
+		ModTitle:             inst.Title,
+		VersionID:            inst.VersionID,
+		Version:              inst.Version,
 		Actions:              make([]PlanAction, 0, len(inst.Paths)),
 		Blockers:             make([]string, 0),
 		Risks:                make([]PlanRisk, 0),

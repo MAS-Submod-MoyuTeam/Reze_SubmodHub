@@ -23,7 +23,7 @@ interface OperationsViewProps {
   operations: Operation[];
   externalDrift: ExternalChangeDrift | null;
   onRecoverOperation: (opId: string) => void;
-  onRestoreBackup: (opId: string, backupId?: string) => void;
+  onRestoreBackup?: (opId: string, backupId?: string) => void;
   onResolveDrift: (driftId: string, action: 'keep_local' | 'overwrite_with_backup') => void;
   onExportLogs: (opId?: string) => void;
 }
@@ -68,8 +68,15 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
       case 'recoverable':
         return (
           <span className="text-[11px] px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/60 font-mono flex items-center gap-1 animate-pulse">
-            <PauseCircle className="w-3.5 h-3.5" />
-            <span>recoverable (挂起待恢复)</span>
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>recoverable (待回滚)</span>
+          </span>
+        );
+      case 'needs_manual_recovery':
+        return (
+          <span className="text-[11px] px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800/60 font-mono flex items-center gap-1">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>needs_manual_recovery (需人工处理)</span>
           </span>
         );
       case 'blocked':
@@ -307,31 +314,44 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                     {/* Actions */}
                     <td className="py-3 px-4 text-right font-sans">
                       <div className="flex items-center justify-end gap-1.5">
-                        {op.state === 'recoverable' && (
-                          <button
-                            onClick={() => onRecoverOperation(op.operation_id)}
-                            className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs"
-                            title="从持久化状态继续推进操作"
-                          >
-                            恢复执行 (Recover)
-                          </button>
-                        )}
-
-                        {op.backup_id && (
-                          <button
-                            onClick={() => onRestoreBackup(op.operation_id, op.backup_id)}
-                            className="px-2 py-1 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded transition-colors"
-                            title="利用当时生成的快照完全还原游戏文件"
-                          >
-                            还原快照
-                          </button>
+                        {op.state === 'needs_manual_recovery' ? (
+                          <>
+                            {op.can_rollback ? (
+                              <button
+                                onClick={() => onRecoverOperation(op.operation_id)}
+                                className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1"
+                                title="重新校验磁盘冲突；若人工处理已恢复则安全回滚，未解决则由后端防护阻断"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                <span>重新校验并安全回滚</span>
+                              </button>
+                            ) : (
+                              <span
+                                className="px-2 py-1 text-xs text-rose-400 bg-rose-950/60 rounded border border-rose-800/80 font-mono"
+                                title={op.error?.message || '日志或恢复材料损坏，无法自动回滚'}
+                              >
+                                恢复材料损坏
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          (op.can_rollback || op.state === 'recoverable') && (
+                            <button
+                              onClick={() => onRecoverOperation(op.operation_id)}
+                              className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1"
+                              title="安全回滚未完成事务到操作前状态"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>安全回滚</span>
+                            </button>
+                          )
                         )}
 
                         <button
                           onClick={() => setLogModalOp(op)}
                           className="px-2 py-1 text-xs text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded transition-colors"
                         >
-                          日志
+                          详情
                         </button>
                       </div>
                     </td>
@@ -343,14 +363,14 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
         </div>
       </div>
 
-      {/* Log Modal */}
+      {/* Log / Detail Modal */}
       {logModalOp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs select-none">
           <div className="bg-neutral-900 border border-neutral-700 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden shadow-2xl">
             <div className="p-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950">
               <div className="flex items-center gap-2 text-xs font-mono">
                 <Terminal className="w-4 h-4 text-emerald-400" />
-                <span className="text-neutral-200 font-semibold">{logModalOp.operation_id} 执行日志</span>
+                <span className="text-neutral-200 font-semibold">{logModalOp.operation_id} 事务详情与诊断</span>
               </div>
               <button
                 onClick={() => setLogModalOp(null)}
@@ -359,35 +379,70 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                 ✕
               </button>
             </div>
-            <div className="p-4 bg-neutral-950/90 font-mono text-xs text-neutral-300 overflow-y-auto flex-1 space-y-1.5">
-              <div className="text-neutral-400">[2026-10-03 20:10:00.124] [INFO] Operation initialized: {logModalOp.operation_id}</div>
-              <div className="text-neutral-400">[2026-10-03 20:10:00.340] [INFO] Target instance: inst_steam_01 (MAS 0.12.14)</div>
-              <div className="text-neutral-400">[2026-10-03 20:10:01.050] [INFO] Step 1/6: Verifying archive SHA256 integrity: OK</div>
-              <div className="text-neutral-400">[2026-10-03 20:10:02.120] [INFO] Step 2/6: Static scanning passed. AST registrations validated.</div>
-              <div className="text-neutral-400">[2026-10-03 20:10:03.450] [INFO] Step 3/6: Taking snapshot backup -&gt; {logModalOp.backup_id}</div>
-              {logModalOp.error ? (
-                <>
-                  <div className="text-amber-400 font-semibold">
-                    [2026-10-03 20:10:04.210] [WARN] [external_change] Hash drift detected on disk!
-                  </div>
-                  <div className="text-amber-300 pl-4">
-                    Target: game/submods/ExtraPlus/extraplus.rpy
-                  </div>
-                  <div className="text-amber-300 pl-4">
-                    Expected: 38a902bf8910... Measured: e3b0c44298fc...
-                  </div>
-                  <div className="text-amber-400">
-                    [2026-10-03 20:10:04.215] [PAUSE] Operation suspended. State set to recoverable.
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="text-emerald-400">[2026-10-03 20:10:05.100] [INFO] Step 5/6: Atomic file write completed.</div>
-                  <div className="text-emerald-400">[2026-10-03 20:10:05.320] [INFO] Step 6/6: Transaction committed to ledger.</div>
-                </>
+            <div className="p-4 bg-neutral-950/90 font-mono text-xs text-neutral-300 overflow-y-auto flex-1 space-y-2">
+              <div className="text-neutral-400">
+                [时间] 创建: {logModalOp.created_at} | 更新: {logModalOp.updated_at}
+              </div>
+              <div className="text-neutral-400">
+                [模组] {logModalOp.mod_title} ({logModalOp.mod_id}) | 类型: {logModalOp.kind}
+              </div>
+              <div className="text-neutral-300">
+                [状态] 阶段: <span className="text-sky-300">{logModalOp.phase || logModalOp.state}</span> | 状态机: <span className="text-amber-300">{logModalOp.state}</span>
+              </div>
+              <div className="text-neutral-300">
+                [进度] 阶段说明: {logModalOp.progress.stage}
+              </div>
+              <div className="text-neutral-400">
+                [文件] 处理进度: {logModalOp.progress.processed_files} / {logModalOp.progress.total_files} ({logModalOp.progress.percent}%)
+                {logModalOp.progress.current_file && <span> | 最后路径: {logModalOp.progress.current_file}</span>}
+              </div>
+              {logModalOp.backup_id && (
+                <div className="text-neutral-400">
+                  [快照] 备份快照标识: {logModalOp.backup_id}
+                </div>
+              )}
+              {logModalOp.conflict_path && (
+                <div className="text-amber-300">
+                  [冲突] 冲突文件路径: {logModalOp.conflict_path}
+                </div>
+              )}
+              {logModalOp.expected_hash && (
+                <div className="text-neutral-400 pl-4">
+                  期望哈希: {logModalOp.expected_hash}
+                </div>
+              )}
+              {logModalOp.actual_hash && (
+                <div className="text-amber-400 pl-4">
+                  实测哈希: {logModalOp.actual_hash}
+                </div>
+              )}
+              {logModalOp.error && (
+                <div className="p-3 bg-rose-950/40 border border-rose-800/60 rounded-lg text-rose-300 space-y-1">
+                  <div className="font-semibold">[错误代号] {logModalOp.error.code}</div>
+                  <div>[错误详情] {logModalOp.error.message}</div>
+                </div>
+              )}
+              {logModalOp.state === 'needs_manual_recovery' && (
+                <div className="p-3 bg-amber-950/40 border border-amber-800/60 rounded-lg text-amber-200 text-[11px] leading-relaxed">
+                  提示：系统已进入保护性挂起状态。为防止破坏玩家可能手工编辑的文件，请先备份上述冲突文件。若已人工解决外部冲突或还原文件，可点击下方“重新校验并安全回滚”。
+                </div>
               )}
             </div>
-            <div className="p-3 border-t border-neutral-800 bg-neutral-900 flex justify-end">
+            <div className="p-3 border-t border-neutral-800 bg-neutral-900 flex justify-end gap-2">
+              {logModalOp.can_rollback && (
+                <button
+                  onClick={() => {
+                    const id = logModalOp.operation_id;
+                    setLogModalOp(null);
+                    onRecoverOperation(id);
+                  }}
+                  className="px-3 py-1.5 text-xs bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold rounded-lg flex items-center gap-1 transition-colors"
+                  title={logModalOp.state === 'needs_manual_recovery' ? '重新校验磁盘冲突并尝试安全回滚' : '安全回滚'}
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>{logModalOp.state === 'needs_manual_recovery' ? '重新校验并安全回滚' : '安全回滚'}</span>
+                </button>
+              )}
               <button
                 onClick={() => setLogModalOp(null)}
                 className="px-4 py-1.5 text-xs bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg"

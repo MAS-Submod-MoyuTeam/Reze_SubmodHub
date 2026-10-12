@@ -152,17 +152,24 @@ export type OperationState =
   | 'blocked'
   | 'recoverable'
   | 'rolling_back'
-  | 'rolled_back';
+  | 'rolled_back'
+  | 'needs_manual_recovery';
 
 export interface Operation {
   operation_id: string;
   installation_id: string;
+  target_installation_id?: string;
   mod_id: string;
   mod_title: string;
   version_id: string;
   version_str: string;
   kind: PlanKind;
   state: OperationState;
+  phase?: string;
+  can_rollback?: boolean;
+  conflict_path?: string;
+  expected_hash?: string;
+  actual_hash?: string;
   progress: {
     stage: string;
     current_file?: string;

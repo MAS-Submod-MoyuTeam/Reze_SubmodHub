@@ -6,10 +6,40 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 )
+
+const (
+	TxPhasePlanned             = "planned"
+	TxPhasePrepared            = "prepared"
+	TxPhaseApplying            = "applying"
+	TxPhaseCommitting          = "committing"
+	TxPhaseCommitted           = "committed"
+	TxPhaseRolledBack          = "rolled_back"
+	TxPhaseNeedsManualRecovery = "needs_manual_recovery"
+)
+
+func IsValidPhaseTransition(from, to string) bool {
+	switch from {
+	case TxPhasePlanned:
+		return to == TxPhasePrepared || to == TxPhaseRolledBack || to == TxPhaseNeedsManualRecovery
+	case TxPhasePrepared:
+		return to == TxPhaseApplying || to == TxPhaseCommitting || to == TxPhaseRolledBack || to == TxPhaseNeedsManualRecovery
+	case TxPhaseApplying:
+		return to == TxPhaseApplying || to == TxPhaseCommitting || to == TxPhaseRolledBack || to == TxPhaseNeedsManualRecovery
+	case TxPhaseCommitting:
+		return to == TxPhaseCommitted || to == TxPhaseRolledBack || to == TxPhaseNeedsManualRecovery
+	case TxPhaseNeedsManualRecovery:
+		return to == TxPhaseRolledBack || to == TxPhaseNeedsManualRecovery
+	case TxPhaseCommitted, TxPhaseRolledBack:
+		return false
+	default:
+		return false
+	}
+}
 
 type FileBeforeState struct {
 	DisplayPath string `json:"display_path"`
@@ -26,16 +56,73 @@ type FileAfterState struct {
 }
 
 type TxJournal struct {
-	OperationID string                     `json:"operation_id"`
-	PlanID      string                     `json:"plan_id"`
-	Phase       string                     `json:"phase"`
-	BeforeFiles map[string]FileBeforeState `json:"before_files"` // key -> state
-	AfterFiles  map[string]FileAfterState  `json:"after_files"`
-	OldManifest []byte                     `json:"old_manifest,omitempty"`
-	ReceiptPath string                     `json:"receipt_path,omitempty"`
-	OldReceipt  []byte                     `json:"old_receipt,omitempty"`
-	CreatedAt   time.Time                  `json:"created_at"`
-	UpdatedAt   time.Time                  `json:"updated_at"`
+	OperationID          string                     `json:"operation_id"`
+	PlanID               string                     `json:"plan_id"`
+	Phase                string                     `json:"phase"`
+	Kind                 string                     `json:"kind,omitempty"`
+	TargetInstallationID string                     `json:"target_installation_id,omitempty"`
+	ModID                string                     `json:"mod_id,omitempty"`
+	ModTitle             string                     `json:"mod_title,omitempty"`
+	VersionID            string                     `json:"version_id,omitempty"`
+	Version              string                     `json:"version,omitempty"`
+	CurrentStep          int                        `json:"current_step,omitempty"`
+	TotalSteps           int                        `json:"total_steps,omitempty"`
+	LastPath             string                     `json:"last_path,omitempty"`
+	ErrorCode            string                     `json:"error_code,omitempty"`
+	ErrorMessage         string                     `json:"error_message,omitempty"`
+	ExpectedHash         string                     `json:"expected_hash,omitempty"`
+	ActualHash           string                     `json:"actual_hash,omitempty"`
+	BeforeFiles          map[string]FileBeforeState `json:"before_files"` // key -> state
+	AfterFiles           map[string]FileAfterState  `json:"after_files"`
+	OldManifestExisted   bool                       `json:"old_manifest_existed,omitempty"`
+	OldManifest          []byte                     `json:"old_manifest,omitempty"`
+	ReceiptPath          string                     `json:"receipt_path,omitempty"`
+	OldReceiptExisted    bool                       `json:"old_receipt_existed,omitempty"`
+	OldReceipt           []byte                     `json:"old_receipt,omitempty"`
+	CreatedAt            time.Time                  `json:"created_at"`
+	UpdatedAt            time.Time                  `json:"updated_at"`
+}
+
+// HasRecoveryMaterial reports whether the journal contains valid and complete metadata required for rollback.
+func (j *TxJournal) HasRecoveryMaterial() bool {
+	if j == nil {
+		return false
+	}
+	if j.ErrorCode == "transaction_journal_corrupt" || j.ErrorCode == "transaction_recovery_incomplete" {
+		return false
+	}
+	if j.BeforeFiles == nil {
+		return false
+	}
+	if j.OldManifestExisted && len(j.OldManifest) == 0 {
+		return false
+	}
+	if j.ReceiptPath != "" && j.OldReceiptExisted && len(j.OldReceipt) == 0 {
+		return false
+	}
+	return true
+}
+
+type TxDiagnostic struct {
+	OperationID  string    `json:"operation_id"`
+	ErrorCode    string    `json:"error_code"`
+	ErrorMessage string    `json:"error_message"`
+	RawPath      string    `json:"raw_path"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func (j *TxJournal) TransitionTo(to string) error {
+	if !IsValidPhaseTransition(j.Phase, to) {
+		return &Error{
+			Code:        "transaction_invalid_state",
+			OperationID: j.OperationID,
+			Err:         fmt.Errorf("illegal phase transition from %q to %q", j.Phase, to),
+		}
+	}
+	j.Phase = to
+	j.UpdatedAt = time.Now().UTC()
+	return nil
 }
 
 type InstanceLock struct {
@@ -167,7 +254,7 @@ func (tx *TransactionContext) Execute() error {
 
 	journalPath := filepath.Join(journalsDir, tx.plan.OperationID+".json")
 	if _, err := os.Stat(journalPath); err == nil {
-		return &Error{Code: "operation_id_conflict", Err: fmt.Errorf("operation %s already exists", tx.plan.OperationID)}
+		return &Error{Code: "operation_id_conflict", OperationID: tx.plan.OperationID, Err: fmt.Errorf("operation %s already exists", tx.plan.OperationID)}
 	}
 
 	// 1. Re-validate plan under lock: check generation and disk state
@@ -178,8 +265,9 @@ func (tx *TransactionContext) Execute() error {
 	}
 	if curManifest.Generation != tx.plan.Generation {
 		return &Error{
-			Code: "plan_stale",
-			Err:  fmt.Errorf("manifest generation changed since plan: plan=%d current=%d", tx.plan.Generation, curManifest.Generation),
+			Code:        "plan_stale",
+			OperationID: tx.plan.OperationID,
+			Err:         fmt.Errorf("manifest generation changed since plan: plan=%d current=%d", tx.plan.Generation, curManifest.Generation),
 		}
 	}
 
@@ -187,37 +275,53 @@ func (tx *TransactionContext) Execute() error {
 		diskPath := filepath.Join(inst.root, filepath.FromSlash(act.Path))
 		diskHash, hErr := fileHash(diskPath)
 		if hErr != nil && !os.IsNotExist(hErr) {
-			return &Error{Code: "disk_read_error", Path: act.Path, Err: hErr}
+			return &Error{Code: "disk_read_error", OperationID: tx.plan.OperationID, Path: act.Path, Err: hErr}
 		}
 		diskExists := diskHash != ""
 		if diskExists != act.CurrentExists || diskHash != act.CurrentHash {
 			return &Error{
-				Code: "external_change",
-				Path: act.Path,
-				Err:  fmt.Errorf("disk modified since plan: was %s (exists=%v), now %s (exists=%v)", act.CurrentHash, act.CurrentExists, diskHash, diskExists),
+				Code:         "external_change",
+				OperationID:  tx.plan.OperationID,
+				Path:         act.Path,
+				ExpectedHash: act.CurrentHash,
+				ActualHash:   diskHash,
+				Err:          fmt.Errorf("disk modified since plan: was %s (exists=%v), now %s (exists=%v)", act.CurrentHash, act.CurrentExists, diskHash, diskExists),
 			}
 		}
 	}
 
 	// Read old manifest bytes for undo
-	oldManifestBytes, _ := os.ReadFile(manifestPath)
+	oldManifestBytes, mErr := os.ReadFile(manifestPath)
+	oldManifestExisted := mErr == nil
 
 	var oldReceiptBytes []byte
+	oldReceiptExisted := false
 	if tx.receiptPath != "" {
-		oldReceiptBytes, _ = os.ReadFile(tx.receiptPath)
+		var rErr error
+		oldReceiptBytes, rErr = os.ReadFile(tx.receiptPath)
+		oldReceiptExisted = rErr == nil
 	}
 
 	journal := &TxJournal{
-		OperationID: tx.plan.OperationID,
-		PlanID:      tx.plan.PlanID,
-		Phase:       "planned",
-		BeforeFiles: make(map[string]FileBeforeState),
-		AfterFiles:  make(map[string]FileAfterState),
-		OldManifest: oldManifestBytes,
-		ReceiptPath: tx.receiptPath,
-		OldReceipt:  oldReceiptBytes,
-		CreatedAt:   time.Now().UTC(),
-		UpdatedAt:   time.Now().UTC(),
+		OperationID:          tx.plan.OperationID,
+		PlanID:               tx.plan.PlanID,
+		Phase:                TxPhasePlanned,
+		Kind:                 tx.plan.OperationType,
+		TargetInstallationID: tx.plan.TargetInstallationID,
+		ModID:                tx.plan.ModID,
+		ModTitle:             tx.plan.ModTitle,
+		VersionID:            tx.plan.VersionID,
+		Version:              tx.plan.Version,
+		TotalSteps:           len(tx.plan.Actions),
+		BeforeFiles:          make(map[string]FileBeforeState),
+		AfterFiles:           make(map[string]FileAfterState),
+		OldManifestExisted:   oldManifestExisted,
+		OldManifest:          oldManifestBytes,
+		ReceiptPath:          tx.receiptPath,
+		OldReceiptExisted:    oldReceiptExisted,
+		OldReceipt:           oldReceiptBytes,
+		CreatedAt:            time.Now().UTC(),
+		UpdatedAt:            time.Now().UTC(),
 	}
 	tx.journal = journal
 
@@ -250,7 +354,7 @@ func (tx *TransactionContext) Execute() error {
 		}
 	}
 
-	journal.Phase = "prepared"
+	journal.Phase = TxPhasePrepared
 	journal.UpdatedAt = time.Now().UTC()
 	if err := saveJournalFile(journalPath, journal); err != nil {
 		return err
@@ -265,6 +369,14 @@ func (tx *TransactionContext) Execute() error {
 
 		// 3. Apply disk changes
 		for idx, act := range tx.plan.Actions {
+			journal.Phase = TxPhaseApplying
+			journal.CurrentStep = idx
+			journal.LastPath = act.Path
+			journal.UpdatedAt = time.Now().UTC()
+			if err := saveJournalFile(journalPath, journal); err != nil {
+				return err
+			}
+
 			diskPath := filepath.Join(inst.root, filepath.FromSlash(act.Path))
 			switch act.Action {
 			case ActionWrite, ActionRestoreOriginal, ActionRestoreLayer:
@@ -275,16 +387,11 @@ func (tx *TransactionContext) Execute() error {
 				if err := os.MkdirAll(filepath.Dir(diskPath), 0o755); err != nil {
 					return err
 				}
-				tmp := diskPath + fmt.Sprintf(".submodhub.tmp.%d", time.Now().UnixNano())
 				mode := os.FileMode(0o644)
 				if act.Mode != 0 {
 					mode = os.FileMode(act.Mode)
 				}
-				if err := os.WriteFile(tmp, blobData, mode); err != nil {
-					return err
-				}
-				if err := safeAtomicRename(tmp, diskPath); err != nil {
-					_ = os.Remove(tmp)
+				if err := writeAtomicFile(diskPath, blobData, mode); err != nil {
 					return err
 				}
 			case ActionDelete:
@@ -296,6 +403,12 @@ func (tx *TransactionContext) Execute() error {
 				// No disk changes needed
 			}
 
+			journal.CurrentStep = idx + 1
+			journal.UpdatedAt = time.Now().UTC()
+			if err := saveJournalFile(journalPath, journal); err != nil {
+				return err
+			}
+
 			if inst.faultHook != nil {
 				hookName := fmt.Sprintf("after_file_%d", idx+1)
 				if err := inst.faultHook(hookName); err != nil {
@@ -304,7 +417,14 @@ func (tx *TransactionContext) Execute() error {
 			}
 		}
 
-		// 4. Save new manifest with incremented generation
+		// 4. Update manifest
+		journal.Phase = TxPhaseCommitting
+		journal.LastPath = "manifest.json"
+		journal.UpdatedAt = time.Now().UTC()
+		if err := saveJournalFile(journalPath, journal); err != nil {
+			return err
+		}
+
 		if tx.plan.NewManifest != nil {
 			tx.plan.NewManifest.Generation = curManifest.Generation + 1
 			if err := tx.plan.NewManifest.Save(manifestPath); err != nil {
@@ -320,15 +440,14 @@ func (tx *TransactionContext) Execute() error {
 
 		// 5. Update receipt within transaction boundary if configured
 		if tx.receiptPath != "" && tx.newReceiptData != nil {
-			receiptTmp := tx.receiptPath + fmt.Sprintf(".tmp.%d", time.Now().UnixNano())
-			if err := os.MkdirAll(filepath.Dir(tx.receiptPath), 0o755); err != nil {
+			journal.LastPath = tx.receiptPath
+			if err := writeAtomicFile(tx.receiptPath, tx.newReceiptData, 0o600); err != nil {
 				return err
 			}
-			if err := os.WriteFile(receiptTmp, tx.newReceiptData, 0o600); err != nil {
-				return err
-			}
-			if err := safeAtomicRename(receiptTmp, tx.receiptPath); err != nil {
-				_ = os.Remove(receiptTmp)
+		}
+
+		if inst.faultHook != nil {
+			if err := inst.faultHook("after_receipt"); err != nil {
 				return err
 			}
 		}
@@ -340,12 +459,32 @@ func (tx *TransactionContext) Execute() error {
 		}
 
 		// 6. Mark journal committed
-		journal.Phase = "committed"
+		journal.Phase = TxPhaseCommitted
+		journal.CurrentStep = journal.TotalSteps
 		journal.UpdatedAt = time.Now().UTC()
 		return saveJournalFile(journalPath, journal)
 	}()
 
 	if execErr != nil {
+		var appErr *Error
+		if errors.As(execErr, &appErr) {
+			journal.ErrorCode = appErr.Code
+			if appErr.Path != "" {
+				journal.LastPath = appErr.Path
+			}
+			journal.ExpectedHash = appErr.ExpectedHash
+			journal.ActualHash = appErr.ActualHash
+		} else {
+			journal.ErrorCode = "transaction_execution_failed"
+		}
+		journal.ErrorMessage = execErr.Error()
+		journal.UpdatedAt = time.Now().UTC()
+		_ = saveJournalFile(journalPath, journal)
+
+		if inst.crashWithoutRollback {
+			return execErr
+		}
+
 		if rollbackErr := inst.RollbackJournal(journal); rollbackErr != nil {
 			return errors.Join(execErr, rollbackErr)
 		}
@@ -354,20 +493,56 @@ func (tx *TransactionContext) Execute() error {
 	return nil
 }
 
+func writeAtomicFile(destPath string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(destPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	tmpFile, err := os.CreateTemp(dir, ".submodhub.atomic-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmpFile.Name()
+	cleanedUp := false
+	defer func() {
+		if !cleanedUp {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	if _, err := tmpFile.Write(data); err != nil {
+		return err
+	}
+	_ = tmpFile.Chmod(perm)
+	if err := tmpFile.Sync(); err != nil {
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+
+	if err := safeAtomicRename(tmpName, destPath); err != nil {
+		return err
+	}
+	cleanedUp = true
+
+	// Best-effort directory flush on supported platforms
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+
+	return nil
+}
+
 func saveJournalFile(path string, j *TxJournal) error {
 	b, err := json.MarshalIndent(j, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := path + fmt.Sprintf(".tmp.%d", time.Now().UnixNano())
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	if err := safeAtomicRename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
+	return writeAtomicFile(path, b, 0o600)
 }
 
 func cleanEmptyDirs(dir, stopAtRoot string) {
@@ -385,24 +560,177 @@ func cleanEmptyDirs(dir, stopAtRoot string) {
 	}
 }
 
-// RollbackJournal restores disk, manifest, and receipt to their state before the operation.
-func (i *Installer) RollbackJournal(j *TxJournal) error {
-	blobs := i.blobs
+type RecoveryAction string
+
+const (
+	RecoveryActionNone           RecoveryAction = "none"
+	RecoveryActionCommit         RecoveryAction = "commit"
+	RecoveryActionRollback       RecoveryAction = "rollback"
+	RecoveryActionManualRequired RecoveryAction = "manual_required"
+)
+
+// DecideRecovery assesses journal phase and disk state to determine safe recovery action.
+func (i *Installer) DecideRecovery(j *TxJournal) (RecoveryAction, error) {
+	if j == nil {
+		return RecoveryActionNone, nil
+	}
+	if j.Phase == TxPhaseCommitted || j.Phase == TxPhaseRolledBack {
+		return RecoveryActionNone, nil
+	}
+	if !j.HasRecoveryMaterial() {
+		errMsg := j.ErrorMessage
+		if errMsg == "" {
+			errMsg = "recovery material missing or corrupt"
+		}
+		return RecoveryActionManualRequired, &Error{
+			Code:        "transaction_manual_recovery",
+			OperationID: j.OperationID,
+			Path:        j.LastPath,
+			Err:         errors.New(errMsg),
+		}
+	}
+
+	// Default recovery strategy is safe rollback for all uncommitted phases (planned, prepared, applying, committing, needs_manual_recovery).
+	// Preflight check against BeforeFiles and AfterFiles:
 	for key, before := range j.BeforeFiles {
 		_, _, err := CanonicalPath(before.DisplayPath, "")
 		if err != nil {
-			return err
+			return RecoveryActionManualRequired, &Error{
+				Code:        "invalid_path",
+				OperationID: j.OperationID,
+				Path:        before.DisplayPath,
+				Err:         err,
+			}
 		}
-		diskHash, err := fileHash(filepath.Join(i.root, filepath.FromSlash(before.DisplayPath)))
+		if before.Existed {
+			if vErr := i.blobs.Verify(before.Hash); vErr != nil {
+				return RecoveryActionManualRequired, &Error{
+					Code:        "transaction_missing_blob",
+					OperationID: j.OperationID,
+					Path:        before.DisplayPath,
+					Err:         fmt.Errorf("missing blob %s: %w", before.Hash, vErr),
+				}
+			}
+		}
+		diskPath := filepath.Join(i.root, filepath.FromSlash(before.DisplayPath))
+		diskHash, err := fileHash(diskPath)
 		if err != nil && !os.IsNotExist(err) {
-			return err
+			return RecoveryActionManualRequired, &Error{
+				Code:        "disk_read_error",
+				OperationID: j.OperationID,
+				Path:        before.DisplayPath,
+				Err:         err,
+			}
 		}
 		exists := diskHash != ""
 		matchesBefore := exists == before.Existed && (!exists || diskHash == before.Hash)
 		after, hasAfter := j.AfterFiles[key]
 		matchesAfter := hasAfter && exists == after.Exists && (!exists || diskHash == after.Hash)
 		if !matchesBefore && !matchesAfter {
-			return &Error{Code: "external_change", Path: before.DisplayPath, Err: errors.New("rollback blocked: disk matches neither before nor after state")}
+			return RecoveryActionManualRequired, &Error{
+				Code:         "external_change",
+				OperationID:  j.OperationID,
+				Path:         before.DisplayPath,
+				ExpectedHash: before.Hash,
+				ActualHash:   diskHash,
+				Err:          errors.New("rollback blocked: disk matches neither before nor after state"),
+			}
+		}
+	}
+
+	return RecoveryActionRollback, nil
+}
+
+// RollbackJournal restores disk, manifest, and receipt to their state before the operation.
+func (i *Installer) RollbackJournal(j *TxJournal) error {
+	if j == nil {
+		return errors.New("nil journal")
+	}
+	if j.Phase == TxPhaseRolledBack {
+		return nil // idempotent
+	}
+	if j.ErrorCode == "transaction_journal_corrupt" {
+		return &Error{
+			Code:        "transaction_journal_corrupt",
+			OperationID: j.OperationID,
+			Err:         errors.New("cannot rollback corrupted journal: recovery material missing"),
+		}
+	}
+	if j.BeforeFiles == nil {
+		return &Error{
+			Code:        "transaction_recovery_incomplete",
+			OperationID: j.OperationID,
+			Err:         errors.New("cannot rollback journal: recovery material missing"),
+		}
+	}
+
+	blobs := i.blobs
+	journalPath := filepath.Join(i.state, "journals", j.OperationID+".json")
+
+	recordFailure := func(code, path string, err error) error {
+		j.Phase = TxPhaseNeedsManualRecovery
+		j.ErrorCode = code
+		j.ErrorMessage = err.Error()
+		j.LastPath = path
+		var appErr *Error
+		if errors.As(err, &appErr) {
+			if appErr.ExpectedHash != "" {
+				j.ExpectedHash = appErr.ExpectedHash
+			}
+			if appErr.ActualHash != "" {
+				j.ActualHash = appErr.ActualHash
+			}
+		}
+		j.UpdatedAt = time.Now().UTC()
+		_ = saveJournalFile(journalPath, j)
+		return &Error{
+			Code:        code,
+			OperationID: j.OperationID,
+			Path:        path,
+			Err:         err,
+		}
+	}
+
+	// PREFLIGHT: verify all files, hashes, blobs and drift BEFORE touching disk
+	for key, before := range j.BeforeFiles {
+		_, _, err := CanonicalPath(before.DisplayPath, "")
+		if err != nil {
+			return recordFailure("invalid_path", before.DisplayPath, err)
+		}
+
+		if before.Existed {
+			if vErr := blobs.Verify(before.Hash); vErr != nil {
+				return recordFailure("transaction_missing_blob", before.DisplayPath, fmt.Errorf("missing blob %s: %w", before.Hash, vErr))
+			}
+		}
+
+		diskPath := filepath.Join(i.root, filepath.FromSlash(before.DisplayPath))
+		diskHash, err := fileHash(diskPath)
+		if err != nil && !os.IsNotExist(err) {
+			return recordFailure("disk_read_error", before.DisplayPath, err)
+		}
+		exists := diskHash != ""
+		matchesBefore := exists == before.Existed && (!exists || diskHash == before.Hash)
+		after, hasAfter := j.AfterFiles[key]
+		matchesAfter := hasAfter && exists == after.Exists && (!exists || diskHash == after.Hash)
+		if !matchesBefore && !matchesAfter {
+			appErr := &Error{
+				Code:         "external_change",
+				OperationID:  j.OperationID,
+				Path:         before.DisplayPath,
+				ExpectedHash: before.Hash,
+				ActualHash:   diskHash,
+				Err:          errors.New("rollback blocked: disk matches neither before nor after state"),
+			}
+			j.Phase = TxPhaseNeedsManualRecovery
+			j.ErrorCode = "external_change"
+			j.ErrorMessage = appErr.Error()
+			j.LastPath = before.DisplayPath
+			j.ExpectedHash = before.Hash
+			j.ActualHash = diskHash
+			j.UpdatedAt = time.Now().UTC()
+			_ = saveJournalFile(journalPath, j)
+			return appErr
 		}
 	}
 
@@ -412,27 +740,19 @@ func (i *Installer) RollbackJournal(j *TxJournal) error {
 		if before.Existed {
 			data, err := blobs.Get(before.Hash)
 			if err != nil {
-				return err
+				return recordFailure("transaction_missing_blob", before.DisplayPath, err)
 			}
-			if err := os.MkdirAll(filepath.Dir(diskPath), 0o755); err != nil {
-				return err
-			}
-			tmp := diskPath + fmt.Sprintf(".rollback.tmp.%d", time.Now().UnixNano())
 			mode := os.FileMode(0o644)
 			if before.Mode != 0 {
 				mode = os.FileMode(before.Mode)
 			}
-			if err := os.WriteFile(tmp, data, mode); err != nil {
-				return err
-			}
-			if err := safeAtomicRename(tmp, diskPath); err != nil {
-				_ = os.Remove(tmp)
-				return err
+			if err := writeAtomicFile(diskPath, data, mode); err != nil {
+				return recordFailure("transaction_rollback_failed", before.DisplayPath, err)
 			}
 		} else {
 			// Did not exist: remove it
 			if err := os.Remove(diskPath); err != nil && !os.IsNotExist(err) {
-				return err
+				return recordFailure("transaction_rollback_failed", before.DisplayPath, err)
 			}
 			cleanEmptyDirs(filepath.Dir(diskPath), i.root)
 		}
@@ -440,33 +760,46 @@ func (i *Installer) RollbackJournal(j *TxJournal) error {
 
 	// 2. Restore manifest
 	manifestPath := filepath.Join(i.state, "manifest.json")
-	if len(j.OldManifest) > 0 {
-		if err := os.WriteFile(manifestPath, j.OldManifest, 0o644); err != nil {
-			return err
+	manifestExisted := j.OldManifestExisted || len(j.OldManifest) > 0
+	if manifestExisted {
+		if len(j.OldManifest) == 0 {
+			return recordFailure("transaction_recovery_incomplete", "manifest.json", errors.New("missing old manifest recovery data"))
+		}
+		if err := writeAtomicFile(manifestPath, j.OldManifest, 0o644); err != nil {
+			return recordFailure("transaction_rollback_failed", "manifest.json", err)
 		}
 	} else {
+		// Old manifest did not exist originally: clean up newly created manifest
 		if err := os.Remove(manifestPath); err != nil && !os.IsNotExist(err) {
-			return err
+			return recordFailure("transaction_rollback_failed", "manifest.json", err)
 		}
 	}
 
 	// 3. Restore receipt
 	if j.ReceiptPath != "" {
-		if len(j.OldReceipt) > 0 {
-			if err := os.WriteFile(j.ReceiptPath, j.OldReceipt, 0o644); err != nil {
-				return err
+		receiptExisted := j.OldReceiptExisted || len(j.OldReceipt) > 0
+		if receiptExisted {
+			if len(j.OldReceipt) == 0 {
+				return recordFailure("transaction_recovery_incomplete", j.ReceiptPath, errors.New("missing old receipt recovery data"))
+			}
+			if err := writeAtomicFile(j.ReceiptPath, j.OldReceipt, 0o600); err != nil {
+				return recordFailure("transaction_rollback_failed", j.ReceiptPath, err)
 			}
 		} else {
+			// Old receipt did not exist originally: clean up newly created receipt
 			if err := os.Remove(j.ReceiptPath); err != nil && !os.IsNotExist(err) {
-				return err
+				return recordFailure("transaction_rollback_failed", j.ReceiptPath, err)
 			}
 		}
 	}
 
 	// 4. Update journal state to rolled_back
-	j.Phase = "rolled_back"
+	j.Phase = TxPhaseRolledBack
+	j.ErrorCode = ""
+	j.ErrorMessage = ""
+	j.ExpectedHash = ""
+	j.ActualHash = ""
 	j.UpdatedAt = time.Now().UTC()
-	journalPath := filepath.Join(i.state, "journals", j.OperationID+".json")
 	return saveJournalFile(journalPath, j)
 }
 
@@ -487,17 +820,71 @@ func (i *Installer) recoverPendingLocked() error {
 		path := filepath.Join(journalsDir, entry.Name())
 		b, err := os.ReadFile(path)
 		if err != nil {
-			continue
+			return err
 		}
 		var j TxJournal
 		if err := json.Unmarshal(b, &j); err != nil {
-			continue
+			opID := strings.TrimSuffix(entry.Name(), ".json")
+			diagDir := filepath.Join(i.state, "diagnostics")
+			_ = os.MkdirAll(diagDir, 0o755)
+			diag := &TxDiagnostic{
+				OperationID:  opID,
+				ErrorCode:    "transaction_journal_corrupt",
+				ErrorMessage: fmt.Sprintf("corrupt journal JSON: %v", err),
+				RawPath:      path,
+				CreatedAt:    time.Now().UTC(),
+				UpdatedAt:    time.Now().UTC(),
+			}
+			if diagBytes, mErr := json.MarshalIndent(diag, "", "  "); mErr == nil {
+				_ = writeAtomicFile(filepath.Join(diagDir, opID+".json"), diagBytes, 0o600)
+			}
+			return &Error{
+				Code:        "transaction_journal_corrupt",
+				OperationID: opID,
+				Path:        path,
+				Err:         fmt.Errorf("corrupt journal JSON in %s: %w", entry.Name(), err),
+			}
 		}
 
-		if j.Phase != "committed" && j.Phase != "rolled_back" {
-			// Needs rollback!
-			if err := i.RollbackJournal(&j); err != nil {
-				return err
+		action, dErr := i.DecideRecovery(&j)
+		switch action {
+		case RecoveryActionNone:
+			continue
+		case RecoveryActionCommit:
+			j.Phase = TxPhaseCommitted
+			j.UpdatedAt = time.Now().UTC()
+			if sErr := saveJournalFile(path, &j); sErr != nil {
+				return sErr
+			}
+			continue
+		case RecoveryActionRollback:
+			if rErr := i.RollbackJournal(&j); rErr != nil {
+				return rErr
+			}
+		case RecoveryActionManualRequired:
+			j.Phase = TxPhaseNeedsManualRecovery
+			if dErr != nil {
+				var appErr *Error
+				if errors.As(dErr, &appErr) {
+					j.ErrorCode = appErr.Code
+					j.LastPath = appErr.Path
+					j.ExpectedHash = appErr.ExpectedHash
+					j.ActualHash = appErr.ActualHash
+				} else if j.ErrorCode == "" {
+					j.ErrorCode = "transaction_manual_recovery"
+				}
+				j.ErrorMessage = dErr.Error()
+			}
+			j.UpdatedAt = time.Now().UTC()
+			_ = saveJournalFile(path, &j)
+			if dErr != nil {
+				return dErr
+			}
+			return &Error{
+				Code:        "transaction_manual_recovery",
+				OperationID: j.OperationID,
+				Path:        j.LastPath,
+				Err:         errors.New(j.ErrorMessage),
 			}
 		}
 	}
@@ -512,6 +899,169 @@ func (i *Installer) RecoverPending() error {
 	}
 	defer lock.Release()
 	return i.recoverPendingLocked()
+}
+
+// ListTxJournals returns all transaction journals (and legacy journals mapped to TxJournal) sorted by UpdatedAt desc.
+func (i *Installer) ListTxJournals() ([]TxJournal, error) {
+	var list []TxJournal
+	seenOps := make(map[string]bool)
+
+	journalsDir := filepath.Join(i.state, "journals")
+	entries, err := os.ReadDir(journalsDir)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+				continue
+			}
+			opID := strings.TrimSuffix(entry.Name(), ".json")
+			path := filepath.Join(journalsDir, entry.Name())
+			b, rErr := os.ReadFile(path)
+			if rErr != nil {
+				continue
+			}
+			var j TxJournal
+			if err := json.Unmarshal(b, &j); err != nil {
+				diagPath := filepath.Join(i.state, "diagnostics", opID+".json")
+				var diag TxDiagnostic
+				if diagBytes, dErr := os.ReadFile(diagPath); dErr == nil && json.Unmarshal(diagBytes, &diag) == nil {
+					j = TxJournal{
+						OperationID:  opID,
+						Phase:        TxPhaseNeedsManualRecovery,
+						ErrorCode:    diag.ErrorCode,
+						ErrorMessage: diag.ErrorMessage,
+						CreatedAt:    diag.CreatedAt,
+						UpdatedAt:    diag.UpdatedAt,
+					}
+				} else {
+					j = TxJournal{
+						OperationID:  opID,
+						Phase:        TxPhaseNeedsManualRecovery,
+						ErrorCode:    "transaction_journal_corrupt",
+						ErrorMessage: fmt.Sprintf("corrupt journal JSON: %v", err),
+						CreatedAt:    time.Now().UTC(),
+						UpdatedAt:    time.Now().UTC(),
+					}
+				}
+			}
+			if j.OperationID == "" {
+				j.OperationID = opID
+			}
+			if j.Phase == "" {
+				j.Phase = TxPhasePlanned
+			}
+			list = append(list, j)
+			seenOps[j.OperationID] = true
+		}
+	}
+
+	// Also inspect legacy journals in i.state/*.json
+	stateEntries, sErr := os.ReadDir(i.state)
+	if sErr == nil {
+		for _, entry := range stateEntries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "manifest.json" {
+				continue
+			}
+			opID := strings.TrimSuffix(entry.Name(), ".json")
+			if seenOps[opID] {
+				continue
+			}
+			legacyPath := filepath.Join(i.state, entry.Name())
+			b, rErr := os.ReadFile(legacyPath)
+			if rErr != nil {
+				continue
+			}
+			var legacyJ Journal
+			if err := json.Unmarshal(b, &legacyJ); err != nil {
+				continue
+			}
+			phase := legacyJ.State
+			if phase == "" {
+				phase = TxPhaseCommitted
+			}
+			j := TxJournal{
+				OperationID: legacyJ.Operation.ID,
+				PlanID:      legacyJ.Operation.ID,
+				Phase:       phase,
+				Kind:        "install",
+				ModTitle:    legacyJ.Operation.ID,
+				TotalSteps:  len(legacyJ.Operation.Changes),
+				CreatedAt:   legacyJ.UpdatedAt,
+				UpdatedAt:   legacyJ.UpdatedAt,
+			}
+			list = append(list, j)
+			seenOps[opID] = true
+		}
+	}
+
+	sort.Slice(list, func(a, b int) bool {
+		if !list[a].UpdatedAt.Equal(list[b].UpdatedAt) {
+			return list[a].UpdatedAt.After(list[b].UpdatedAt)
+		}
+		return list[a].OperationID < list[b].OperationID
+	})
+
+	return list, nil
+}
+
+// GetTxJournal retrieves a TxJournal by ID, falling back to legacy journal if needed.
+func (i *Installer) GetTxJournal(id string) (*TxJournal, error) {
+	if id == "" || strings.ContainsAny(id, `/\\`) {
+		return nil, &Error{Code: "validation_failed", Err: errors.New("invalid operation id")}
+	}
+
+	path := filepath.Join(i.state, "journals", id+".json")
+	if b, err := os.ReadFile(path); err == nil {
+		var j TxJournal
+		if err := json.Unmarshal(b, &j); err != nil {
+			diagPath := filepath.Join(i.state, "diagnostics", id+".json")
+			if diagBytes, dErr := os.ReadFile(diagPath); dErr == nil {
+				var diag TxDiagnostic
+				if json.Unmarshal(diagBytes, &diag) == nil {
+					return &TxJournal{
+						OperationID:  id,
+						Phase:        TxPhaseNeedsManualRecovery,
+						ErrorCode:    diag.ErrorCode,
+						ErrorMessage: diag.ErrorMessage,
+						CreatedAt:    diag.CreatedAt,
+						UpdatedAt:    diag.UpdatedAt,
+					}, nil
+				}
+			}
+			return &TxJournal{
+				OperationID:  id,
+				Phase:        TxPhaseNeedsManualRecovery,
+				ErrorCode:    "transaction_journal_corrupt",
+				ErrorMessage: fmt.Sprintf("corrupt journal JSON: %v", err),
+				CreatedAt:    time.Now().UTC(),
+				UpdatedAt:    time.Now().UTC(),
+			}, nil
+		}
+		if j.OperationID == "" {
+			j.OperationID = id
+		}
+		return &j, nil
+	}
+
+	// Legacy fallback
+	legacyJ, err := i.LoadJournal(id)
+	if err == nil {
+		phase := legacyJ.State
+		if phase == "" {
+			phase = TxPhaseCommitted
+		}
+		return &TxJournal{
+			OperationID: legacyJ.Operation.ID,
+			PlanID:      legacyJ.Operation.ID,
+			Phase:       phase,
+			Kind:        "install",
+			ModTitle:    legacyJ.Operation.ID,
+			TotalSteps:  len(legacyJ.Operation.Changes),
+			CreatedAt:   legacyJ.UpdatedAt,
+			UpdatedAt:   legacyJ.UpdatedAt,
+		}, nil
+	}
+
+	return nil, &Error{Code: "operation_not_found", OperationID: id, Err: fmt.Errorf("operation %s not found", id)}
 }
 
 func safeAtomicRename(src, dest string) error {

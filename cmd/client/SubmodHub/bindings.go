@@ -118,6 +118,44 @@ type ExecutePlanRequest struct {
 	Confirmed bool   `json:"confirmed"`
 }
 
+type OperationProgress struct {
+	Stage          string `json:"stage"`
+	CurrentFile    string `json:"current_file,omitempty"`
+	ProcessedFiles int    `json:"processed_files"`
+	TotalFiles     int    `json:"total_files"`
+	BytesProcessed int64  `json:"bytes_processed"`
+	TotalBytes     int64  `json:"total_bytes"`
+	Percent        int    `json:"percent"`
+}
+
+type OperationError struct {
+	Code    string                 `json:"code"`
+	Message string                 `json:"message"`
+	Details map[string]interface{} `json:"details,omitempty"`
+}
+
+type OperationDetail struct {
+	OperationID          string            `json:"operation_id"`
+	InstallationID       string            `json:"installation_id"`
+	TargetInstallationID string            `json:"target_installation_id,omitempty"`
+	ModID                string            `json:"mod_id"`
+	ModTitle             string            `json:"mod_title"`
+	VersionID      string            `json:"version_id"`
+	VersionStr     string            `json:"version_str"`
+	Kind           string            `json:"kind"`
+	State          string            `json:"state"` // committed, rolled_back, needs_manual_recovery, recoverable, planned, applying...
+	Phase          string            `json:"phase"`
+	Progress       OperationProgress `json:"progress"`
+	Error          *OperationError   `json:"error,omitempty"`
+	ConflictPath   string            `json:"conflict_path,omitempty"`
+	ExpectedHash   string            `json:"expected_hash,omitempty"`
+	ActualHash     string            `json:"actual_hash,omitempty"`
+	BackupID       string            `json:"backup_id,omitempty"`
+	CanRollback    bool              `json:"can_rollback"`
+	CreatedAt      string            `json:"created_at"`
+	UpdatedAt      string            `json:"updated_at"`
+}
+
 type DesktopService struct {
 	root       string
 	state      string
@@ -178,7 +216,9 @@ func (s *DesktopService) SetMASRoot(root string) (MASStatus, error) {
 
 	// Invariant: recover any pending interrupted transactions on startup/set
 	if err := s.core.RecoverPending(); err != nil {
-		return MASStatus{}, err
+		if !core.IsDisplayableRecoveryError(err) {
+			return MASStatus{}, err
+		}
 	}
 
 	return s.GetMASStatus()
@@ -290,13 +330,185 @@ func (s *DesktopService) ApplyFile(request InstallRequest) (string, error) {
 	return "committed", nil
 }
 
-func (s *DesktopService) Recover(operationID string) error {
+func (s *DesktopService) mapJournalToDetail(j *core.TxJournal) OperationDetail {
+	instID := s.activeID
+	targetInstID := j.TargetInstallationID
+	modID := j.ModID
+	if modID == "" {
+		modID = j.OperationID
+	}
+	modTitle := j.ModTitle
+	if modTitle == "" {
+		modTitle = modID
+	}
+	kind := j.Kind
+	if kind == "" {
+		kind = "install"
+	}
+
+	state := j.Phase
+	canRollback := false
+	switch j.Phase {
+	case core.TxPhaseCommitted:
+		state = "committed"
+	case core.TxPhaseRolledBack:
+		state = "rolled_back"
+	case core.TxPhaseNeedsManualRecovery:
+		state = "needs_manual_recovery"
+		if j.HasRecoveryMaterial() {
+			canRollback = true
+		}
+	case core.TxPhasePlanned:
+		state = "planned"
+		canRollback = true
+	case core.TxPhasePrepared, core.TxPhaseApplying, core.TxPhaseCommitting:
+		state = "recoverable"
+		canRollback = true
+	default:
+		state = j.Phase
+	}
+
+	totalFiles := j.TotalSteps
+	if totalFiles == 0 {
+		totalFiles = len(j.AfterFiles)
+	}
+	processedFiles := j.CurrentStep
+	if j.Phase == core.TxPhaseCommitted {
+		processedFiles = totalFiles
+	}
+	percent := 0
+	if totalFiles > 0 {
+		percent = (processedFiles * 100) / totalFiles
+		if percent > 100 {
+			percent = 100
+		}
+	} else if j.Phase == core.TxPhaseCommitted {
+		percent = 100
+	}
+
+	stage := "操作已初始化"
+	switch j.Phase {
+	case core.TxPhaseCommitted:
+		stage = "操作已成功提交"
+	case core.TxPhaseRolledBack:
+		stage = "操作已安全回滚"
+	case core.TxPhaseNeedsManualRecovery:
+		stage = "检测到外部冲突或异常，需要人工恢复"
+	case core.TxPhasePrepared:
+		stage = "快照就绪，准备应用"
+	case core.TxPhaseApplying:
+		stage = fmt.Sprintf("正在应用文件变更 (%d/%d)", processedFiles, totalFiles)
+	case core.TxPhaseCommitting:
+		stage = "正在提交清单与持久化记录"
+	case core.TxPhasePlanned:
+		stage = "计划已生成"
+	}
+
+	var opErr *OperationError
+	if j.ErrorCode != "" || j.ErrorMessage != "" {
+		opErr = &OperationError{
+			Code:    j.ErrorCode,
+			Message: j.ErrorMessage,
+		}
+	}
+
+	backupID := ""
+	if len(j.BeforeFiles) > 0 || len(j.OldManifest) > 0 {
+		backupID = fmt.Sprintf("snapshot_%s", j.OperationID)
+	}
+
+	createdAt := j.CreatedAt.Format(time.RFC3339)
+	if j.CreatedAt.IsZero() {
+		createdAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	updatedAt := j.UpdatedAt.Format(time.RFC3339)
+	if j.UpdatedAt.IsZero() {
+		updatedAt = createdAt
+	}
+
+	return OperationDetail{
+		OperationID:          j.OperationID,
+		InstallationID:       instID,
+		TargetInstallationID: targetInstID,
+		ModID:                modID,
+		ModTitle:             modTitle,
+		VersionID:      j.VersionID,
+		VersionStr:     j.Version,
+		Kind:           kind,
+		State:          state,
+		Phase:          j.Phase,
+		Progress: OperationProgress{
+			Stage:          stage,
+			CurrentFile:    j.LastPath,
+			ProcessedFiles: processedFiles,
+			TotalFiles:     totalFiles,
+			Percent:        percent,
+		},
+		Error:        opErr,
+		ConflictPath: j.LastPath,
+		ExpectedHash: j.ExpectedHash,
+		ActualHash:   j.ActualHash,
+		BackupID:     backupID,
+		CanRollback:  canRollback,
+		CreatedAt:    createdAt,
+		UpdatedAt:    updatedAt,
+	}
+}
+
+func (s *DesktopService) ListOperations() ([]OperationDetail, error) {
+	if s.core == nil {
+		if _, err := s.SetMASRoot(s.root); err != nil {
+			return nil, err
+		}
+	}
+	journals, err := s.core.ListTxJournals()
+	if err != nil {
+		return nil, err
+	}
+	var res []OperationDetail
+	for _, j := range journals {
+		res = append(res, s.mapJournalToDetail(&j))
+	}
+	return res, nil
+}
+
+func (s *DesktopService) GetOperation(operationID string) (*OperationDetail, error) {
+	if strings.TrimSpace(operationID) == "" {
+		return nil, &core.Error{Code: "validation_failed", Err: errors.New("operation_id is required")}
+	}
+	if strings.ContainsAny(operationID, `/\\`) {
+		return nil, &core.Error{Code: "invalid_path", Path: operationID, Err: errors.New("invalid operation id")}
+	}
+	if s.core == nil {
+		if _, err := s.SetMASRoot(s.root); err != nil {
+			return nil, err
+		}
+	}
+	txJ, err := s.core.GetTxJournal(operationID)
+	if err != nil {
+		return nil, err
+	}
+	detail := s.mapJournalToDetail(txJ)
+	return &detail, nil
+}
+
+func (s *DesktopService) RollbackOperation(operationID string) error {
+	if strings.TrimSpace(operationID) == "" {
+		return &core.Error{Code: "validation_failed", Err: errors.New("operation_id is required")}
+	}
+	if strings.ContainsAny(operationID, `/\\`) {
+		return &core.Error{Code: "invalid_path", Path: operationID, Err: errors.New("invalid operation id")}
+	}
 	if s.core == nil {
 		if _, err := s.SetMASRoot(s.root); err != nil {
 			return err
 		}
 	}
-	return s.core.Recover(operationID)
+	return s.core.Rollback(operationID)
+}
+
+func (s *DesktopService) Recover(operationID string) error {
+	return s.RollbackOperation(operationID)
 }
 
 func parseArchiveFiles(data []byte, category string) ([]core.PlannedFile, []string, packagezip.Report, error) {
@@ -772,7 +984,7 @@ func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstall
 	defer tx.Close()
 
 	// Coordinate receipt update atomically within transaction boundary
-	if plan.OperationType == "install" {
+	if plan.OperationType == "install" || plan.OperationType == "update" {
 		req, ok := s.activePlanRequest.(ArchiveInstallRequest)
 		if ok && req.ModID != "" {
 			newReceipts, pErr := s.projectedInstalledArchives(req, s.activePlanReport, hex.EncodeToString(s.activePlanHash[:]), int64(len(s.activePlanArchive)))

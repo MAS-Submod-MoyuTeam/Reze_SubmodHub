@@ -521,6 +521,8 @@ export const INITIAL_OPERATIONS: Operation[] = [
     version_str: '1.4.2',
     kind: 'update',
     state: 'recoverable',
+    phase: 'applying',
+    can_rollback: true,
     progress: {
       stage: '检测到文件哈希漂移，为保护用户修改已安全挂起',
       current_file: 'game/submods/ExtraPlus/extraplus.rpy',

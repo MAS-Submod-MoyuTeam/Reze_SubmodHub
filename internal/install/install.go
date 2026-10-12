@@ -33,12 +33,28 @@ type Journal struct {
 }
 
 type Error struct {
-	Code string
-	Path string
-	Err  error
+	Code         string
+	Path         string
+	OperationID  string
+	ExpectedHash string
+	ActualHash   string
+	Err          error
 }
 
 func (e *Error) Error() string {
+	if e.OperationID != "" || e.ExpectedHash != "" || e.ActualHash != "" {
+		var parts []string
+		if e.OperationID != "" {
+			parts = append(parts, "op="+e.OperationID)
+		}
+		if e.Path != "" {
+			parts = append(parts, "path="+e.Path)
+		}
+		if e.ExpectedHash != "" || e.ActualHash != "" {
+			parts = append(parts, fmt.Sprintf("expected=%s actual=%s", e.ExpectedHash, e.ActualHash))
+		}
+		return fmt.Sprintf("%s (%s): %v", e.Code, strings.Join(parts, ", "), e.Err)
+	}
 	if e.Path != "" {
 		return fmt.Sprintf("%s (%s): %v", e.Code, e.Path, e.Err)
 	}
@@ -48,11 +64,28 @@ func (e *Error) Error() string {
 func (e *Error) Unwrap() error           { return e.Err }
 func IsCode(err error, code string) bool { var e *Error; return errors.As(err, &e) && e.Code == code }
 
+// IsDisplayableRecoveryError returns true if err indicates a transaction state that requires
+// manual recovery or inspection, which should not block loading an instance for display/diagnostics.
+func IsDisplayableRecoveryError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return IsCode(err, "transaction_manual_recovery") ||
+		IsCode(err, "transaction_journal_corrupt") ||
+		IsCode(err, "external_change") ||
+		IsCode(err, "transaction_missing_blob") ||
+		IsCode(err, "transaction_rollback_failed") ||
+		IsCode(err, "transaction_recovery_incomplete") ||
+		IsCode(err, "disk_read_error") ||
+		IsCode(err, "invalid_path")
+}
+
 type Installer struct {
-	root      string
-	state     string
-	blobs     *BlobStore
-	faultHook func(step string) error
+	root                 string
+	state                string
+	blobs                *BlobStore
+	faultHook            func(step string) error
+	crashWithoutRollback bool
 }
 
 func New(root, state string) *Installer {
@@ -65,9 +98,18 @@ func New(root, state string) *Installer {
 	}
 }
 
-
 func (i *Installer) SetFaultHook(hook func(step string) error) {
 	i.faultHook = hook
+}
+
+func (i *Installer) SetBlobSyncHook(hook func() error) {
+	if i.blobs != nil {
+		i.blobs.SetSyncHook(hook)
+	}
+}
+
+func (i *Installer) SetCrashWithoutRollback(crash bool) {
+	i.crashWithoutRollback = crash
 }
 func (i *Installer) acquireLock() (*InstanceLock, error) {
 	return acquireInstanceLock(i.state)
@@ -192,8 +234,7 @@ func (i *Installer) Apply(op Operation) error {
 	}
 	defer tx.Close()
 	if err := tx.Execute(); err != nil {
-		// Roll back on failure if journal was created
-		if tx.journal != nil {
+		if !i.crashWithoutRollback && tx.journal != nil {
 			_ = i.RollbackJournal(tx.journal)
 		}
 		return err
@@ -267,25 +308,58 @@ func (i *Installer) LoadJournal(id string) (Journal, error) {
 	return j, nil
 }
 
+// Rollback rolls back the specified operation by ID.
+// If the operation was already committed, it cannot be rolled back with this method (use Uninstall instead).
+// If the operation is already rolled back, it returns nil (idempotent).
+func (i *Installer) Rollback(id string) error {
+	lock, err := i.acquireLock()
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+
+	return i.rollbackLocked(id)
+}
+
+// Recover is a backward-compatible alias for Rollback.
+// Note: Recovery performs a safe rollback of an interrupted or uncommitted transaction to its initial state.
 func (i *Installer) Recover(id string) error {
+	return i.Rollback(id)
+}
+
+func (i *Installer) rollbackLocked(id string) error {
+	if id == "" {
+		return &Error{Code: "validation_failed", Err: errors.New("operation id required")}
+	}
+
+	// 1. If there's a TxJournal, rollback via TxJournal
+	txPath := filepath.Join(i.state, "journals", id+".json")
+	if b, err := os.ReadFile(txPath); err == nil {
+		var txJ TxJournal
+		if err := json.Unmarshal(b, &txJ); err != nil {
+			return &Error{Code: "transaction_journal_corrupt", OperationID: id, Path: txPath, Err: err}
+		}
+		if txJ.Phase == TxPhaseCommitted {
+			return &Error{Code: "transaction_invalid_state", OperationID: id, Err: fmt.Errorf("operation %s is already committed; use Uninstall to remove", id)}
+		}
+		if txJ.Phase == TxPhaseRolledBack {
+			return nil
+		}
+		return i.RollbackJournal(&txJ)
+	}
+
+	// 2. Otherwise fallback to legacy journal
 	j, err := i.LoadJournal(id)
 	if err != nil {
 		return err
 	}
 	if j.State == "committed" {
+		return &Error{Code: "transaction_invalid_state", OperationID: id, Err: fmt.Errorf("operation %s is already committed; use Uninstall to remove", id)}
+	}
+	if j.State == "rolled_back" {
 		return nil
 	}
 
-	// If there's a TxJournal, rollback via TxJournal
-	txPath := filepath.Join(i.state, "journals", id+".json")
-	if b, err := os.ReadFile(txPath); err == nil {
-		var txJ TxJournal
-		if err := json.Unmarshal(b, &txJ); err == nil {
-			return i.RollbackJournal(&txJ)
-		}
-	}
-
-	// Otherwise fallback to legacy rollback
 	for path, backup := range j.Backups {
 		target, pathErr := safe(i.root, path)
 		if pathErr != nil {
@@ -295,7 +369,7 @@ func (i *Installer) Recover(id string) error {
 		if readErr != nil {
 			return readErr
 		}
-		if writeErr := os.WriteFile(target, b, 0o644); writeErr != nil {
+		if writeErr := writeAtomicFile(target, b, 0o644); writeErr != nil {
 			return writeErr
 		}
 	}
@@ -359,7 +433,7 @@ func (i *Installer) Uninstall(id, uninstallID string) error {
 	}
 	defer tx.Close()
 	if err := tx.Execute(); err != nil {
-		if tx.journal != nil {
+		if !i.crashWithoutRollback && tx.journal != nil {
 			_ = i.RollbackJournal(tx.journal)
 		}
 		return err
@@ -381,11 +455,7 @@ func (i *Installer) writeJournal(j Journal) error {
 	if err != nil {
 		return err
 	}
-	tmp := filepath.Join(i.state, j.Operation.ID+".json.tmp")
-	if err = os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, filepath.Join(i.state, j.Operation.ID+".json")); err != nil {
+	if err := writeAtomicFile(filepath.Join(i.state, j.Operation.ID+".json"), b, 0o600); err != nil {
 		return err
 	}
 	txPath := filepath.Join(i.state, "journals", j.Operation.ID+".json")

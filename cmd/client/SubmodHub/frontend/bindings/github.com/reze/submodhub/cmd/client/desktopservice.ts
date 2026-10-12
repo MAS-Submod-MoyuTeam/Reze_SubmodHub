@@ -93,6 +93,18 @@ export function PreviewUninstallWithOpID(targetID: string, uninstallOpID: string
     return $Call.ByID(2695786689, targetID, uninstallOpID);
 }
 
+export function ListOperations(): $CancellablePromise<any> {
+    return $Call.ByName("main.DesktopService.ListOperations");
+}
+
+export function GetOperation(operationID: string): $CancellablePromise<any> {
+    return $Call.ByName("main.DesktopService.GetOperation", operationID);
+}
+
+export function RollbackOperation(operationID: string): $CancellablePromise<void> {
+    return $Call.ByName("main.DesktopService.RollbackOperation", operationID);
+}
+
 export function Recover(operationID: string): $CancellablePromise<void> {
     return $Call.ByID(1449242715, operationID);
 }

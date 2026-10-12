@@ -10,3 +10,4 @@ Local reference projects used during design:
 - `J:\MonikaModDev-zhCN\Monika After Story\game` — target MAS installation and built-in ZIP installer/uninstaller.
 - `E:\GithubKu\MAICA_Server_Submod\game` — complex submod with `Submods` and `python-packages` content.
 - `E:\GithubKu\MAS_UniSync` — Flarum login flow and user-group mapping reference.
+- [Task center and safe transaction recovery](plans/2026-10-12-task-atomic-recovery.md)

@@ -74,3 +74,35 @@ curl http://100.72.137.92:18082/healthz
   - `502 upstream_archive_changed`：上游 ZIP 哈希或大小与发布时快照不符。
   - `503 github_upstream_rate_limited`：上游触发频率限制（含 `Retry-After`）。
   - `503 relay_busy`：服务端并发下载中转槽位占满，需稍后重试。
+
+## 客户端任务中心与安装事务恢复
+
+### 事务阶段模型
+SubmodHub 安装引擎使用统一的 journal 状态机保障多文件写入的 ACID 一致性：
+- `planned`：已生成计划，尚未锁定与修改磁盘。
+- `prepared`：实例锁已获取，已为所有受影响文件在 blob store 创建快照备份。
+- `applying`：正在向 MAS 目录逐项写入文件或执行删除；包含 `current_step`、`total_steps` 与 `last_path` 进度。
+- `committing`：所有文件写入已完成，正在更新 manifest 与 receipt。
+- `committed`：事务成功提交，终态。
+- `rolled_back`：未完成操作已完全回滚至修改前状态，终态。
+- `needs_manual_recovery`：保护性暂停，需要人工处理。
+
+### 崩溃与重启自动恢复规则
+- 默认恢复动作为**安全回滚（Rollback）**，不执行断点续做。
+- 当客户端重启或尝试开启新安装事务时，底层 `Installer` 会在实例锁保护下扫描 `journals/` 目录中的未终结事务：
+  - 若事务处于 `planned`、`prepared`、`applying` 或未完成的 `committing` 阶段，自动触发安全回滚。
+  - 回滚执行严格前置校验（Preflight）：验证所有涉及文件的当前磁盘状态是否匹配事务中的 before 或 after 镜像。
+  - 回滚成功后，磁盘文件、manifest 与 receipt 恢复为操作发生前的状态，journal 标记为 `rolled_back`。
+
+### 人工干预条件（`needs_manual_recovery`）
+若满足以下任一情况，系统严禁自动覆盖用户文件，立即转入 `needs_manual_recovery` 并阻断新事务：
+1. **外部漂移（External Drift）**：目标文件在中断期间被外部文本编辑器或第三方工具篡改，哈希既不匹配 before 也不匹配 after。
+2. **Journal 损坏**：journal 文件被外部截断或非合法 JSON。
+3. **Blob 丢失**：blob 存储池缺失回滚所需的原始快照数据。
+4. **回滚执行失败**：磁盘只读、受进程独占锁死或权限拒绝。
+
+此时任务中心会展示冲突文件路径、期望哈希与实测哈希，用户需先备份相关文件，解决外部冲突后，方可由客户端或命令行执行安全重试。
+
+### 事务原子性与语义边界
+- **可观察原子性**：本项目中的“原子”指事务级 all-or-nothing 可观察状态和崩溃后可恢复，不声称普通文件系统具备跨文件同时提交的底层操作系统语义。
+- **重试机制**：由于外部环境与 generation 可能已变更，重试失败操作时必须重新生成最新 Plan，不依赖旧事务断点。

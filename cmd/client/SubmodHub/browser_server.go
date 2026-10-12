@@ -144,6 +144,21 @@ func browserServiceHandler(service *DesktopService) http.Handler {
 			if err == nil {
 				result, err = service.Uninstall(operationID, uninstallID)
 			}
+		case "ListOperations":
+			result, err = service.ListOperations()
+		case "GetOperation":
+			var value string
+			err = arg(0, &value)
+			if err == nil {
+				result, err = service.GetOperation(value)
+			}
+		case "RollbackOperation":
+			var value string
+			err = arg(0, &value)
+			if err == nil {
+				err = service.RollbackOperation(value)
+				result = true
+			}
 		case "Recover":
 			var value string
 			err = arg(0, &value)

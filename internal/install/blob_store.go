@@ -8,15 +8,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 type BlobStore struct {
-	dir string
+	dir      string
+	syncHook func() error
 }
 
 func NewBlobStore(dir string) *BlobStore {
 	return &BlobStore{dir: filepath.Clean(dir)}
+}
+
+func (s *BlobStore) SetSyncHook(hook func() error) {
+	s.syncHook = hook
 }
 
 func (s *BlobStore) Path(hash string) string {
@@ -43,22 +47,17 @@ func (s *BlobStore) Put(content []byte) (string, error) {
 		return hash, nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return "", err
+	if s.syncHook != nil {
+		if err := s.syncHook(); err != nil {
+			return "", fmt.Errorf("blob sync failed: %w", err)
+		}
 	}
 
-	tmp := dest + fmt.Sprintf(".tmp.%d", time.Now().UnixNano())
-	if err := os.WriteFile(tmp, content, 0o644); err != nil {
-		return "", err
-	}
-
-	if err := os.Rename(tmp, dest); err != nil {
+	if err := writeAtomicFile(dest, content, 0o644); err != nil {
 		// Another concurrent write might have placed it
 		if s.Exists(hash) {
-			_ = os.Remove(tmp)
 			return hash, nil
 		}
-		_ = os.Remove(tmp)
 		return "", err
 	}
 	return hash, nil
