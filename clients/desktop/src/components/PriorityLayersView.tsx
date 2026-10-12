@@ -38,7 +38,7 @@ import {
 export interface PriorityLayersViewProps {
   installedMods: InstalledItem[];
   currentInstanceId: string;
-  onRefreshInstalled: () => Promise<void>;
+  onRefreshInstalled: (options?: { forced?: boolean }) => Promise<void>;
   showToast: (msg: string) => void;
 }
 
@@ -336,7 +336,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
       // Refresh authoritative data
       try {
         await loadOverview(currentInstanceId);
-        await onRefreshInstalled();
+        await onRefreshInstalled({ forced: true });
       } catch (refreshErr) {
         showToast('已应用，状态刷新失败，请手动刷新');
       }

@@ -14,6 +14,7 @@ import { AdoptModal } from './components/AdoptModal';
 import { FileInspectModal } from './components/FileInspectModal';
 import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
 import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
+import { createInstalledLoadCoordinator, LoadingStatus } from './installedLoading';
 import {
   Installation,
   ModSummary,
@@ -41,6 +42,8 @@ export default function App() {
   // Installations
   const [installations, setInstallations] = useState<Installation[]>([UNVERIFIED_INSTALLATION]);
   const [activeInstallationId, setActiveInstallationId] = useState<string>('unverified');
+  const activeInstallationIdRef = useRef(activeInstallationId);
+  activeInstallationIdRef.current = activeInstallationId;
 
   // Navigation
   const [activeTab, setActiveTab] = useState<ActiveTab>('catalog');
@@ -52,6 +55,31 @@ export default function App() {
   const [spritepacks, setSpritepacks] = useState<Spritepack[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
   const [externalDrift, setExternalDrift] = useState<ExternalChangeDrift | null>(null);
+
+  // Installed scan loading state
+  const loadCoordinatorRef = useRef(createInstalledLoadCoordinator());
+  const [modsLoadingStatus, setModsLoadingStatus] = useState<LoadingStatus>('idle');
+  const [modsError, setModsError] = useState<string | null>(null);
+  const [isModsInitialLoading, setIsModsInitialLoading] = useState(false);
+  const [isModsRefreshing, setIsModsRefreshing] = useState(false);
+
+  const [spritepacksLoadingStatus, setSpritepacksLoadingStatus] = useState<LoadingStatus>('idle');
+  const [spritepacksError, setSpritepacksError] = useState<string | null>(null);
+  const [isSpritepacksInitialLoading, setIsSpritepacksInitialLoading] = useState(false);
+  const [isSpritepacksRefreshing, setIsSpritepacksRefreshing] = useState(false);
+
+  const updateCoordinatorUIState = () => {
+    const coordinator = loadCoordinatorRef.current;
+    setModsLoadingStatus(coordinator.getModsStatus());
+    setModsError(coordinator.getModsError());
+    setIsModsInitialLoading(coordinator.isModsInitialLoading());
+    setIsModsRefreshing(coordinator.isModsRefreshing());
+
+    setSpritepacksLoadingStatus(coordinator.getSpritepacksStatus());
+    setSpritepacksError(coordinator.getSpritepacksError());
+    setIsSpritepacksInitialLoading(coordinator.isSpritepacksInitialLoading());
+    setIsSpritepacksRefreshing(coordinator.isSpritepacksRefreshing());
+  };
 
   // States & Scenario Simulation
   const [isGameRunning, setIsGameRunning] = useState<boolean>(false);
@@ -103,9 +131,17 @@ export default function App() {
     }
   };
 
-  const scanLocalSubmods = async () => {
+  const scanLocalSubmods = async (targetInstanceId?: string, options?: { forced?: boolean }) => {
+    const instId = targetInstanceId || activeInstallationIdRef.current;
+    if (!instId || instId === 'unverified') return;
+    if (instId !== activeInstallationIdRef.current) return;
+    const token = await loadCoordinatorRef.current.waitForModsScan(instId, options);
+    if (!token) return;
+    updateCoordinatorUIState();
+
     try {
       const [local, receipts] = await Promise.all([ScanLocalSubmods(), ListInstalledArchives()]) as [LocalSubmod[], InstalledArchive[]];
+      if (activeInstallationIdRef.current !== instId) return;
       const managedDirs = new Set(receipts.flatMap((receipt) => receipt.submod_dirs || []).map((dir) => dir.toLowerCase()));
       const catalog = catalogModsRef.current.length > 0 ? catalogModsRef.current : catalogMods;
       const catalogMap = new Map(catalog.map((item) => [item.id, item]));
@@ -134,9 +170,44 @@ export default function App() {
         unmanaged_paths: (item.files || []).map((file) => file.path), submod_dir_name: item.directory,
         integrity_status: 'unknown',
       }));
-      setInstalledMods([...managed, ...unmanaged]);
+
+      const combined = [...managed, ...unmanaged];
+      if (loadCoordinatorRef.current.completeModsScan(token, combined)) {
+        setInstalledMods(combined);
+      }
     } catch (error) {
-      showToast(`本地子模组扫描失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+      if (activeInstallationIdRef.current !== instId) return;
+      const msg = error instanceof Error ? error.message : String(error);
+      if (loadCoordinatorRef.current.failModsScan(token, msg)) {
+        showToast(`本地子模组扫描失败：${msg}`);
+      }
+    } finally {
+      updateCoordinatorUIState();
+    }
+  };
+
+  const refreshSpritepacks = async (targetInstanceId?: string, options?: { forced?: boolean }) => {
+    const instId = targetInstanceId || activeInstallationIdRef.current;
+    if (!instId || instId === 'unverified') return;
+    if (instId !== activeInstallationIdRef.current) return;
+    const token = await loadCoordinatorRef.current.waitForSpritepacksScan(instId, options);
+    if (!token) return;
+    updateCoordinatorUIState();
+
+    try {
+      const items = (await ScanInstalledSpritepacks()) as Spritepack[];
+      if (activeInstallationIdRef.current !== instId) return;
+      if (loadCoordinatorRef.current.completeSpritepacksScan(token, items)) {
+        setSpritepacks(items || []);
+      }
+    } catch (error) {
+      if (activeInstallationIdRef.current !== instId) return;
+      const msg = error instanceof Error ? error.message : String(error);
+      if (loadCoordinatorRef.current.failSpritepacksScan(token, msg)) {
+        showToast(`精灵包扫描失败：${msg}`);
+      }
+    } finally {
+      updateCoordinatorUIState();
     }
   };
 
@@ -150,13 +221,21 @@ export default function App() {
       last_validated_at: new Date().toISOString(),
     }));
     setInstallations(items.length ? items : [UNVERIFIED_INSTALLATION]);
-    setActiveInstallationId(state.active_id || 'unverified');
+    const nextActiveId = state.active_id || 'unverified';
+    activeInstallationIdRef.current = nextActiveId;
+    setActiveInstallationId(nextActiveId);
+
+    // Switch instance in coordinator and reset data immediately
+    loadCoordinatorRef.current.resetForInstance(nextActiveId);
+    updateCoordinatorUIState();
     setInstalledMods([]);
     setSpritepacks([]);
+    setAdoptTarget(null);
+    setCurrentPlan(null);
+
     if (state.active_id) {
-      void scanLocalSubmods();
-      void ScanInstalledSpritepacks().then((items) => setSpritepacks(items as Spritepack[]))
-        .catch((error) => showToast(`精灵包扫描失败：${String(error)}`));
+      void scanLocalSubmods(state.active_id);
+      void refreshSpritepacks(state.active_id);
     }
   };
 
@@ -239,7 +318,8 @@ export default function App() {
   // Handler: Download, verify, and install the selected published archive.
   // Handler: Download, verify, and install the selected published archive using Go streaming stage.
   const handleStartInstallPlan = async (mod: ModSummary, selectedVersion?: { id: string; version: string; size_bytes: number; sha256: string }) => {
-    if (!activeInstallation.is_valid) { showToast('请先验证 MAS 目录。'); return; }
+    const targetInstId = activeInstallationIdRef.current;
+    if (!activeInstallation.is_valid || targetInstId === 'unverified') { showToast('请先验证 MAS 目录。'); return; }
     if (installingRef.current || isDownloadingArchive) return;
     if (isGameRunning) { showToast('请先退出 MAS 游戏再安装。'); return; }
     if (hasDependencyBlocker && mod.id === 'mod_memories_rain') { showToast('缺少前置依赖 ExtraPlus，无法安装。'); return; }
@@ -298,12 +378,13 @@ export default function App() {
         category: mod.category,
         priority: targetPriority,
       });
+      if (activeInstallationIdRef.current !== targetInstId) return;
       setCurrentPlan(mapPlanPreview(preview, {
         backend_operation_id: operationId,
         archive_sha256: staged.sha256,
         plan_id: `install_${mod.id}_${Date.now()}`,
         kind: existing ? 'update' : 'install',
-        installation_id: activeInstallation.id,
+        installation_id: targetInstId,
         mod_id: mod.id,
         mod_title: mod.title,
         author_name: mod.author?.display_name || "未知作者",
@@ -320,7 +401,9 @@ export default function App() {
         warnings: [],
       }));
     } catch (error) {
-      showToast(`安装失败：${error instanceof Error ? error.message : String(error)}`);
+      if (activeInstallationIdRef.current === targetInstId) {
+        showToast(`安装失败：${error instanceof Error ? error.message : String(error)}`);
+      }
     } finally {
       if (pollTimer !== null) clearInterval(pollTimer);
       setArchiveProgress(null);
@@ -332,7 +415,8 @@ export default function App() {
   };
 
   const handleStartUninstallPlan = async (item: InstalledItem) => {
-    if (!activeInstallation.is_valid || !item.managed_operation_id) {
+    const targetInstId = activeInstallationIdRef.current;
+    if (!activeInstallation.is_valid || !item.managed_operation_id || targetInstId === 'unverified') {
       showToast('该模组没有可追溯的真实安装记录，或 MAS 目录尚未验证。');
       return;
     }
@@ -341,10 +425,11 @@ export default function App() {
     try {
       await SetMASRoot(activeInstallation.path_hint);
       const preview = await PreviewUninstall(item.managed_operation_id);
+      if (activeInstallationIdRef.current !== targetInstId) return;
       const uninstallPlan: Plan = {
         plan_id: preview.plan_id,
         kind: 'uninstall',
-        installation_id: activeInstallation.id,
+        installation_id: targetInstId,
         mod_id: item.mod_id,
         mod_title: item.title,
         version_id: item.installed_version_id,
@@ -360,7 +445,9 @@ export default function App() {
 
       setCurrentPlan(mapPlanPreview(preview, { ...uninstallPlan, warnings: [], backend_operation_id: preview.plan_id }));
     } catch (error) {
-      showToast(`卸载预览失败：${String(error)}`);
+      if (activeInstallationIdRef.current === targetInstId) {
+        showToast(`卸载预览失败：${String(error)}`);
+      }
     } finally {
       installingRef.current = false;
     }
@@ -387,14 +474,19 @@ export default function App() {
         showToast('该模组没有可追溯的真实安装记录，无法执行自动卸载。');
         return;
       }
+      const targetInstId = plan.installation_id;
       try {
-        if (isGameRunning || plan.installation_id !== activeInstallation.id) throw new Error('游戏正在运行或实例已变更，请重新预览。');
+        if (isGameRunning || targetInstId !== activeInstallationIdRef.current) throw new Error('游戏正在运行或实例已变更，请重新预览。');
         const uninstallOperationId = plan.backend_operation_id || plan.plan_id;
         installingRef.current = true;
         await ExecutePlan({ plan_id: plan.plan_id, confirmed: true });
+        if (activeInstallationIdRef.current !== targetInstId) {
+          return;
+        }
         setInstalledMods((prev) => prev.filter((item) => item.mod_id !== plan.mod_id));
+        void scanLocalSubmods(targetInstId, { forced: true });
         setOperations((prev) => [{
-          operation_id: uninstallOperationId, installation_id: plan.installation_id,
+          operation_id: uninstallOperationId, installation_id: targetInstId,
           mod_id: plan.mod_id, mod_title: plan.mod_title, version_id: plan.version_id,
           version_str: plan.version_str, kind: 'uninstall', state: 'committed',
           progress: { stage: '卸载完成，已恢复原文件或下层版本', processed_files: plan.changes.length,
@@ -403,20 +495,27 @@ export default function App() {
         }, ...prev]);
         showToast(`${plan.mod_title} 已卸载，恢复原文件 ${plan.summary?.restores_original || 0} 个，下层文件 ${plan.summary?.restores_layer || 0} 个。`);
       } catch (error) {
-        showToast(`真实卸载失败：${error instanceof Error ? error.message : String(error)}`);
+        if (activeInstallationIdRef.current === targetInstId) {
+          showToast(`真实卸载失败：${error instanceof Error ? error.message : String(error)}`);
+        }
       } finally {
         installingRef.current = false;
       }
       return;
     }
     if (plan.backend_operation_id) {
+      const targetInstId = plan.installation_id;
       try {
-        if (isGameRunning || plan.installation_id !== activeInstallation.id) throw new Error('游戏正在运行或实例已变更，请重新预览。');
+        if (isGameRunning || targetInstId !== activeInstallationIdRef.current) throw new Error('游戏正在运行或实例已变更，请重新预览。');
         const operationId = plan.backend_operation_id;
         installingRef.current = true;
         const result = await ExecutePlan({ plan_id: plan.plan_id, confirmed: true });
+        if (activeInstallationIdRef.current !== targetInstId) {
+          return;
+        }
+        void scanLocalSubmods(targetInstId, { forced: true });
         setOperations((prev) => [{
-          operation_id: operationId, installation_id: plan.installation_id,
+          operation_id: operationId, installation_id: targetInstId,
           mod_id: plan.mod_id, mod_title: plan.mod_title, version_id: plan.version_id,
           version_str: plan.version_str, kind: plan.kind, state: 'committed',
           progress: { stage: `真实归档已写入 ${result.files} 个文件`, processed_files: result.files,
@@ -449,8 +548,14 @@ export default function App() {
         });
         showToast(`已通过 Wails Go 安装核心写入 ${result.files} 个文件。`);
         return;
-      } catch (error) { showToast(`真实安装失败：${error instanceof Error ? error.message : String(error)}`); return; }
-      finally { installingRef.current = false; }
+      } catch (error) {
+        if (activeInstallationIdRef.current === targetInstId) {
+          showToast(`真实安装失败：${error instanceof Error ? error.message : String(error)}`);
+        }
+        return;
+      } finally {
+        installingRef.current = false;
+      }
     }
 
     showToast('执行计划缺少真实后端预览，请重新预览。');
@@ -525,10 +630,13 @@ export default function App() {
 
   // Handler: Adopt Unmanaged Mod
   const handleConfirmAdopt = (adopted: InstalledItem) => {
+    const currentInstId = activeInstallationIdRef.current;
+    if (!currentInstId || currentInstId === 'unverified') return;
     setAdoptTarget(null);
     setInstalledMods((prev) =>
       prev.map((m) => (m.mod_id === adopted.mod_id ? adopted : m))
     );
+    void scanLocalSubmods(currentInstId, { forced: true });
     showToast(`未托管项 "${adopted.title}" 已成功收养为托管模组！`);
   };
 
@@ -643,12 +751,25 @@ export default function App() {
             <InstalledView
               installedMods={installedMods}
               spritepacks={spritepacks}
-              onRefreshSpritepacks={() => { void ScanInstalledSpritepacks().then((items) => setSpritepacks(items as Spritepack[])).catch((error) => showToast(`精灵包扫描失败：${String(error)}`)); }}
+              hasValidInstance={activeInstallation.is_valid && activeInstallationId !== 'unverified'}
+              modsStatus={modsLoadingStatus}
+              modsError={modsError}
+              isModsInitialLoading={isModsInitialLoading}
+              isModsRefreshing={isModsRefreshing}
+              spritepacksStatus={spritepacksLoadingStatus}
+              spritepacksError={spritepacksError}
+              isSpritepacksInitialLoading={isSpritepacksInitialLoading}
+              isSpritepacksRefreshing={isSpritepacksRefreshing}
+              onRefreshInstalled={() => { void scanLocalSubmods(); }}
+              onRefreshSpritepacks={() => { void refreshSpritepacks(); }}
               onCreateSpriteGift={async (file) => {
+                const targetInstId = activeInstallationIdRef.current;
                 try {
                   const path = await CreateSpriteGift(file);
+                  if (activeInstallationIdRef.current !== targetInstId) return '';
                   return `礼物已创建：${path}`;
                 } catch (error) {
+                  if (activeInstallationIdRef.current !== targetInstId) return '';
                   const message = String(error);
                   if (message.includes('sprite_gift_already_exists')) return '礼物已存在，无需重复创建。';
                   if (message.includes('spritepack_incomplete')) return '精灵包文件不完整，暂时无法创建礼物。';
@@ -657,12 +778,18 @@ export default function App() {
                 }
               }}
               onDeleteSpritepack={async (file) => {
+                const targetInstId = activeInstallationIdRef.current;
                 try {
                   const result = await DeleteSpritepack(file);
-                  setSpritepacks(await ScanInstalledSpritepacks() as Spritepack[]);
+                  if (activeInstallationIdRef.current !== targetInstId) {
+                    return;
+                  }
+                  void refreshSpritepacks(targetInstId, { forced: true });
                   showToast(`已移出 ${result.files} 项，备份位于 ${result.backup}`);
                 } catch (error) {
-                  showToast(`删除精灵包失败：${String(error)}`);
+                  if (activeInstallationIdRef.current === targetInstId) {
+                    showToast(`删除精灵包失败：${String(error)}`);
+                  }
                 }
               }}
               onStartUpdatePlan={handleStartInstallPlan}
@@ -680,7 +807,7 @@ export default function App() {
             <PriorityLayersView
               installedMods={installedMods}
               currentInstanceId={activeInstallationId}
-              onRefreshInstalled={scanLocalSubmods}
+              onRefreshInstalled={(options) => scanLocalSubmods(undefined, options)}
               showToast={showToast}
             />
           )}
