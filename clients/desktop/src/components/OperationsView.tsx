@@ -16,6 +16,7 @@ import {
   PlayCircle,
   Clock,
   Terminal,
+  Loader2,
 } from 'lucide-react';
 import { Operation, ExternalChangeDrift } from '../types/client';
 
@@ -90,6 +91,27 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
         return (
           <span className="text-[11px] px-2 py-0.5 rounded bg-neutral-800 text-neutral-400 font-mono">
             rolled_back (已回滚)
+          </span>
+        );
+      case 'writing':
+        return (
+          <span className="text-[11px] px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-800/60 font-mono flex items-center gap-1 animate-pulse">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>writing (正在写入)</span>
+          </span>
+        );
+      case 'backed_up':
+        return (
+          <span className="text-[11px] px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-800/60 font-mono flex items-center gap-1">
+            <FolderArchive className="w-3.5 h-3.5 text-sky-400" />
+            <span>backed_up (快照就绪)</span>
+          </span>
+        );
+      case 'planned':
+        return (
+          <span className="text-[11px] px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-800/60 font-mono flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-sky-400" />
+            <span>planned (就绪执行)</span>
           </span>
         );
       default:
@@ -293,17 +315,29 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
 
                     {/* Progress */}
                     <td className="py-3 px-3 text-[11px]">
-                      <div className="text-neutral-300 font-sans truncate max-w-[200px]" title={op.progress.stage}>
-                        {op.progress.stage}
+                      <div className="text-neutral-300 font-sans truncate max-w-[200px]" title={op.progress?.stage || ''}>
+                        {op.progress?.stage || '无进度信息'}
                       </div>
                       <div className="text-neutral-400 mt-0.5">
-                        {op.progress.processed_files} / {op.progress.total_files} 文件 ({op.progress.percent}%)
+                        {op.progress?.processed_files ?? 0} / {op.progress?.total_files ?? 0} 文件 ({op.progress?.percent ?? 0}%)
                       </div>
+                      {op.progress?.current_file && (
+                        <div className="text-[10px] text-neutral-500 font-mono truncate max-w-[200px] mt-0.5" title={op.progress.current_file}>
+                          {op.progress.current_file}
+                        </div>
+                      )}
                     </td>
 
                     {/* Backup ID */}
-                    <td className="py-3 px-3 text-[11px] text-neutral-400 truncate max-w-[120px]">
-                      {op.backup_id || '无'}
+                    <td className="py-3 px-3 text-[11px] text-neutral-400 truncate max-w-[140px]">
+                      {op.backup_id ? (
+                        <span className="text-neutral-300 font-mono flex items-center gap-1" title={op.backup_id}>
+                          <FolderArchive className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                          <span className="truncate">{op.backup_id}</span>
+                        </span>
+                      ) : (
+                        '无'
+                      )}
                     </td>
 
                     {/* Created at */}

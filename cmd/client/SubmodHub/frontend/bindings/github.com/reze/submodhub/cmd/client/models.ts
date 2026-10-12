@@ -159,6 +159,8 @@ export interface PlanPreviewSummary {
 
 export interface PlanResult {
     "plan_id": string;
+    "operation_id"?: string;
+    "backup_id"?: string;
     "root": string;
     "generation": number;
 

@@ -189,6 +189,18 @@ export interface Operation {
   updated_at: string;
 }
 
+export interface ExecutionSession {
+  operation_id: string;
+  installation_id: string;
+  plan_id: string;
+  kind: PlanKind;
+  mod_title: string;
+  mod_id: string;
+  operation: Operation;
+  is_finished: boolean;
+  error?: string | null;
+}
+
 export interface InstalledItem {
   mod_id: string;
   title: string;

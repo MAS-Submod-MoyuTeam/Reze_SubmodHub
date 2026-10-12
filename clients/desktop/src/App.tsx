@@ -12,8 +12,10 @@ import { OperationsView } from './components/OperationsView';
 import { InstancesView } from './components/InstancesView';
 import { AdoptModal } from './components/AdoptModal';
 import { FileInspectModal } from './components/FileInspectModal';
+import { ExecutionProgressBar } from './components/ExecutionProgressBar';
+import { ExecutionCoordinator } from './executionCoordinator';
 import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
-import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, RollbackOperation, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
+import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
 import { INITIAL_OPERATIONS } from './data/mockData';
 import { createInstalledLoadCoordinator, LoadingStatus } from './installedLoading';
 import {
@@ -24,6 +26,7 @@ import {
   ExternalChangeDrift,
   Plan,
   PlanChange,
+  ExecutionSession,
 } from './types/client';
 
 const UNVERIFIED_INSTALLATION: Installation = {
@@ -56,6 +59,24 @@ export default function App() {
   const [spritepacks, setSpritepacks] = useState<Spritepack[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
   const [externalDrift, setExternalDrift] = useState<ExternalChangeDrift | null>(null);
+
+  // Execution session coordinator
+  const [executionSession, setExecutionSession] = useState<ExecutionSession | null>(null);
+  const executionCoordinatorRef = useRef<ExecutionCoordinator | null>(null);
+  if (!executionCoordinatorRef.current) {
+    executionCoordinatorRef.current = new ExecutionCoordinator({
+      activeInstanceId: () => activeInstallationIdRef.current,
+      onSessionChange: (session) => setExecutionSession(session),
+      onOperationsChange: (updater) => setOperations(updater),
+      getOperation: (opId) => GetOperation(opId),
+    });
+  }
+
+  useEffect(() => {
+    return () => {
+      executionCoordinatorRef.current?.stopPolling();
+    };
+  }, []);
 
   // Installed scan loading state
   const loadCoordinatorRef = useRef(createInstalledLoadCoordinator());
@@ -255,6 +276,7 @@ export default function App() {
     setActiveInstallationId(nextActiveId);
 
     // Switch instance in coordinator and reset data immediately
+    executionCoordinatorRef.current?.stopPolling();
     loadCoordinatorRef.current.resetForInstance(nextActiveId);
     updateCoordinatorUIState();
     setInstalledMods([]);
@@ -474,7 +496,7 @@ export default function App() {
         warnings: [],
       };
 
-      setCurrentPlan(mapPlanPreview(preview, { ...uninstallPlan, warnings: [], backend_operation_id: preview.plan_id }));
+      setCurrentPlan(mapPlanPreview(preview, { ...uninstallPlan, warnings: [], backend_operation_id: (preview as any).operation_id || preview.plan_id }));
     } catch (error) {
       if (activeInstallationIdRef.current === targetInstId) {
         showToast(`卸载预览失败：${String(error)}`);
@@ -498,29 +520,39 @@ export default function App() {
   // Handler: Apply Plan (Atomic write transaction)
   const handleApplyPlan = async (plan: Plan) => {
     if (installingRef.current) return;
+    const coordinator = executionCoordinatorRef.current!;
+    const targetInstId = plan.installation_id;
+    if (isGameRunning || targetInstId !== activeInstallationIdRef.current) {
+      showToast('游戏正在运行或实例已变更，请重新预览。');
+      return;
+    }
     setCurrentPlan(null);
+
     if (plan.kind === 'uninstall') {
       const installed = installedMods.find((item) => item.mod_id === plan.mod_id);
       if (!installed?.managed_operation_id) {
         showToast('该模组没有可追溯的真实安装记录，无法执行自动卸载。');
         return;
       }
-      const targetInstId = plan.installation_id;
+      const uninstallOperationId = plan.backend_operation_id || plan.plan_id;
+      installingRef.current = true;
+      coordinator.startSession(plan, targetInstId);
       try {
-        if (isGameRunning || targetInstId !== activeInstallationIdRef.current) throw new Error('游戏正在运行或实例已变更，请重新预览。');
-        const uninstallOperationId = plan.backend_operation_id || plan.plan_id;
-        installingRef.current = true;
         await ExecutePlan({ plan_id: plan.plan_id, confirmed: true });
         if (activeInstallationIdRef.current !== targetInstId) {
+          coordinator.stopPolling();
           return;
         }
+        await coordinator.finishSession(uninstallOperationId, targetInstId);
         await refreshOperations(targetInstId);
         setInstalledMods((prev) => prev.filter((item) => item.mod_id !== plan.mod_id));
         void scanLocalSubmods(targetInstId, { forced: true });
         showToast(`${plan.mod_title} 已卸载，恢复原文件 ${plan.summary?.restores_original || 0} 个，下层文件 ${plan.summary?.restores_layer || 0} 个。`);
       } catch (error) {
+        const errObj = error instanceof Error ? error : new Error(String(error));
+        await coordinator.finishSession(uninstallOperationId, targetInstId, errObj);
         if (activeInstallationIdRef.current === targetInstId) {
-          showToast(`真实卸载失败：${error instanceof Error ? error.message : String(error)}`);
+          showToast(`真实卸载失败：${errObj.message}`);
         }
         await refreshOperations(targetInstId);
       } finally {
@@ -528,16 +560,18 @@ export default function App() {
       }
       return;
     }
-    if (plan.backend_operation_id) {
-      const targetInstId = plan.installation_id;
+
+    if (plan.backend_operation_id || plan.plan_id) {
+      const operationId = plan.backend_operation_id || plan.plan_id;
+      installingRef.current = true;
+      coordinator.startSession(plan, targetInstId);
       try {
-        if (isGameRunning || targetInstId !== activeInstallationIdRef.current) throw new Error('游戏正在运行或实例已变更，请重新预览。');
-        const operationId = plan.backend_operation_id;
-        installingRef.current = true;
         const result = await ExecutePlan({ plan_id: plan.plan_id, confirmed: true });
         if (activeInstallationIdRef.current !== targetInstId) {
+          coordinator.stopPolling();
           return;
         }
+        await coordinator.finishSession(operationId, targetInstId);
         await refreshOperations(targetInstId);
         void scanLocalSubmods(targetInstId, { forced: true });
         setInstalledMods((prev) => {
@@ -567,8 +601,10 @@ export default function App() {
         showToast(`已通过 Wails Go 安装核心写入 ${result.files} 个文件。`);
         return;
       } catch (error) {
+        const errObj = error instanceof Error ? error : new Error(String(error));
+        await coordinator.finishSession(operationId, targetInstId, errObj);
         if (activeInstallationIdRef.current === targetInstId) {
-          showToast(`真实安装失败：${error instanceof Error ? error.message : String(error)}`);
+          showToast(`真实安装失败：${errObj.message}`);
         }
         await refreshOperations(targetInstId);
         return;
@@ -694,6 +730,18 @@ export default function App() {
         onLaunchGame={() => handleLaunchInstance(activeInstallationId)}
         isLaunchingGame={isLaunchingGame}
       />
+
+      {executionSession && executionSession.installation_id === activeInstallationId && (
+        <ExecutionProgressBar
+          session={executionSession}
+          onDismiss={() => {
+            setExecutionSession(null);
+            executionCoordinatorRef.current?.clearSession();
+          }}
+          onViewInOperations={() => setActiveTab('operations')}
+          onRecover={(opId) => void handleRecoverOperation(opId)}
+        />
+      )}
 
       {(isDownloadingArchive || installingModId !== null) && (
         <div role="status" aria-label="下载进度" className="shrink-0 border-b border-neutral-800 bg-neutral-900 px-4 py-2 text-xs text-neutral-200">

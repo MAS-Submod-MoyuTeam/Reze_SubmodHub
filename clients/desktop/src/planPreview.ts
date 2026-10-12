@@ -5,6 +5,7 @@ export function mapPlanPreview(preview: Awaited<ReturnType<typeof PreviewArchive
   return {
     ...metadata,
     plan_id: preview.plan_id,
+    backend_operation_id: (preview as { operation_id?: string }).operation_id || metadata.backend_operation_id,
     kind: preview.kind as Plan['kind'],
     priority: (preview as { priority?: number }).priority !== undefined
       ? (preview as { priority?: number }).priority

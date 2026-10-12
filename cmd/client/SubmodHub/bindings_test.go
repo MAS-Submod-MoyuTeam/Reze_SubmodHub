@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -734,5 +735,164 @@ func TestOperationDetailInstanceIDAndManualRecoveryRollback(t *testing.T) {
 	}
 	if afterDetail.CanRollback {
 		t.Fatal("expected CanRollback to be false after rolled_back")
+	}
+}
+
+func TestDesktopServiceExecutionProgressAndAuditVisibility(t *testing.T) {
+	tempDir := t.TempDir()
+	root := filepath.Join(tempDir, "mas")
+	game := filepath.Join(root, "game")
+	_ = os.MkdirAll(game, 0o755)
+
+	configDir := filepath.Join(tempDir, "config")
+	_ = os.MkdirAll(configDir, 0o755)
+	instancesFile := filepath.Join(configDir, "instances.json")
+
+	service := &DesktopService{
+		root:       root,
+		configPath: instancesFile,
+	}
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatalf("SetMASRoot failed: %v", err)
+	}
+
+	// 1. Build a multi-file archive to observe progress during execution
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	f1, _ := writer.Create("game/Submods/ProgressMod/file1.rpy")
+	_, _ = f1.Write([]byte("content 1"))
+	f2, _ := writer.Create("game/Submods/ProgressMod/file2.rpy")
+	_, _ = f2.Write([]byte("content 2"))
+	_ = writer.Close()
+
+	opID := "op_progress_audit"
+	preview, err := service.PreviewArchive(ArchiveInstallRequest{
+		OperationID:   opID,
+		ArchiveBase64: base64.StdEncoding.EncodeToString(archive.Bytes()),
+		ModID:         "mod_progress",
+		Title:         "Progress Mod",
+		Version:       "1.0.0",
+	})
+	if err != nil {
+		t.Fatalf("PreviewArchive failed: %v", err)
+	}
+
+	// Preview must carry operation_id and backup_id
+	if preview.OperationID != opID {
+		t.Fatalf("expected preview.OperationID to be %q, got %q", opID, preview.OperationID)
+	}
+	if preview.BackupID != "snapshot_"+opID {
+		t.Fatalf("expected preview.BackupID to be %q, got %q", "snapshot_"+opID, preview.BackupID)
+	}
+
+	// Set fault hook on after_file_1 to inspect in-flight operation state
+	var inFlightState string
+	var inFlightPhase string
+	var inFlightBackupID string
+	var inFlightProcessed int
+	var inFlightTotal int
+
+	service.core.SetFaultHook(func(step string) error {
+		if step == "after_file_1" {
+			detail, gErr := service.GetOperation(opID)
+			if gErr != nil {
+				return fmt.Errorf("in-flight GetOperation failed: %w", gErr)
+			}
+			inFlightState = detail.State
+			inFlightPhase = detail.Phase
+			inFlightBackupID = detail.BackupID
+			inFlightProcessed = detail.Progress.ProcessedFiles
+			inFlightTotal = detail.Progress.TotalFiles
+		}
+		return nil
+	})
+
+	res, err := service.ExecutePlan(ExecutePlanRequest{PlanID: preview.PlanID, Confirmed: true})
+	service.core.SetFaultHook(nil)
+	if err != nil {
+		t.Fatalf("ExecutePlan failed: %v", err)
+	}
+	if res.State != "committed" {
+		t.Fatalf("expected result state committed, got: %s", res.State)
+	}
+
+	// Verify in-flight inspection succeeded
+	if inFlightPhase != "applying" {
+		t.Fatalf("expected in-flight phase applying, got: %s", inFlightPhase)
+	}
+	if inFlightState != "recoverable" && inFlightState != "writing" {
+		t.Fatalf("expected in-flight state recoverable or writing, got: %s", inFlightState)
+	}
+	if inFlightBackupID != "snapshot_"+opID {
+		t.Fatalf("expected in-flight BackupID %q, got %q", "snapshot_"+opID, inFlightBackupID)
+	}
+	if inFlightProcessed != 1 || inFlightTotal != 2 {
+		t.Fatalf("expected in-flight progress 1/2, got %d/%d", inFlightProcessed, inFlightTotal)
+	}
+
+	// Verify terminal committed operation
+	detail, err := service.GetOperation(opID)
+	if err != nil {
+		t.Fatalf("GetOperation on committed failed: %v", err)
+	}
+	if detail.State != "committed" {
+		t.Fatalf("expected state committed, got: %s", detail.State)
+	}
+	if detail.BackupID != "snapshot_"+opID {
+		t.Fatalf("expected BackupID %q, got %q", "snapshot_"+opID, detail.BackupID)
+	}
+	if detail.Progress.ProcessedFiles != 2 || detail.Progress.TotalFiles != 2 || detail.Progress.Percent != 100 {
+		t.Fatalf("expected 100%% 2/2 progress, got %d/%d (%d%%)", detail.Progress.ProcessedFiles, detail.Progress.TotalFiles, detail.Progress.Percent)
+	}
+
+	// Verify ListOperations includes the operation
+	list, err := service.ListOperations()
+	if err != nil {
+		t.Fatalf("ListOperations failed: %v", err)
+	}
+	found := false
+	for _, item := range list {
+		if item.OperationID == opID {
+			found = true
+			if item.BackupID != "snapshot_"+opID {
+				t.Fatalf("expected item.BackupID in list to be %q, got %q", "snapshot_"+opID, item.BackupID)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("operation %s not found in ListOperations", opID)
+	}
+
+	// Verify uninstall preview also carries operation_id and backup_id
+	unPreview, err := service.PreviewUninstall("mod_progress")
+	if err != nil {
+		t.Fatalf("PreviewUninstall failed: %v", err)
+	}
+	if unPreview.OperationID == "" {
+		t.Fatal("expected PreviewUninstall to return non-empty OperationID")
+	}
+	if unPreview.BackupID != "snapshot_"+unPreview.OperationID {
+		t.Fatalf("expected PreviewUninstall BackupID %q, got %q", "snapshot_"+unPreview.OperationID, unPreview.BackupID)
+	}
+
+	// Execute uninstall
+	unRes, err := service.ExecutePlan(ExecutePlanRequest{PlanID: unPreview.PlanID, Confirmed: true})
+	if err != nil {
+		t.Fatalf("ExecutePlan uninstall failed: %v", err)
+	}
+	if unRes.State != "committed" {
+		t.Fatalf("expected uninstall committed, got: %s", unRes.State)
+	}
+
+	unDetail, err := service.GetOperation(unPreview.OperationID)
+	if err != nil {
+		t.Fatalf("GetOperation on uninstall failed: %v", err)
+	}
+	if unDetail.State != "committed" {
+		t.Fatalf("expected uninstall committed, got: %s", unDetail.State)
+	}
+	if unDetail.BackupID != unPreview.BackupID {
+		t.Fatalf("expected uninstall BackupID %q, got %q", unPreview.BackupID, unDetail.BackupID)
 	}
 }

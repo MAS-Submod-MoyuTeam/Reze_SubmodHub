@@ -99,18 +99,20 @@ type PlanPreviewSummary struct {
 }
 
 type PlanResult struct {
-	PlanID     string              `json:"plan_id"`
-	Root       string              `json:"root"`
-	Generation int64               `json:"generation"`
-	Kind       string              `json:"kind"` // install, update, uninstall
-	TargetID   string              `json:"target_id"`
-	ModTitle   string              `json:"mod_title"`
-	Version    string              `json:"version"`
-	Priority   int                 `json:"priority"`
-	Actions    []PlanPreviewAction `json:"actions"`
-	Blockers   []string            `json:"blockers"`
-	Risks      []PlanPreviewRisk   `json:"risks"`
-	Summary    PlanPreviewSummary  `json:"summary"`
+	PlanID      string              `json:"plan_id"`
+	OperationID string              `json:"operation_id,omitempty"`
+	BackupID    string              `json:"backup_id,omitempty"`
+	Root        string              `json:"root"`
+	Generation  int64               `json:"generation"`
+	Kind        string              `json:"kind"` // install, update, uninstall
+	TargetID    string              `json:"target_id"`
+	ModTitle    string              `json:"mod_title"`
+	Version     string              `json:"version"`
+	Priority    int                 `json:"priority"`
+	Actions     []PlanPreviewAction `json:"actions"`
+	Blockers    []string            `json:"blockers"`
+	Risks       []PlanPreviewRisk   `json:"risks"`
+	Summary     PlanPreviewSummary  `json:"summary"`
 }
 
 type ExecutePlanRequest struct {
@@ -413,7 +415,7 @@ func (s *DesktopService) mapJournalToDetail(j *core.TxJournal) OperationDetail {
 	}
 
 	backupID := ""
-	if len(j.BeforeFiles) > 0 || len(j.OldManifest) > 0 {
+	if j.OperationID != "" {
 		backupID = fmt.Sprintf("snapshot_%s", j.OperationID)
 	}
 
@@ -735,17 +737,19 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 	}
 
 	return PlanResult{
-		PlanID:     plan.PlanID,
-		Root:       s.root,
-		Generation: plan.Generation,
-		Kind:       kind,
-		TargetID:   request.ModID,
-		ModTitle:   request.Title,
-		Version:    request.Version,
-		Priority:   priorityVal,
-		Actions:    actions,
-		Blockers:   plan.Blockers,
-		Risks:      risks,
+		PlanID:      plan.PlanID,
+		OperationID: plan.OperationID,
+		BackupID:    fmt.Sprintf("snapshot_%s", plan.OperationID),
+		Root:        s.root,
+		Generation:  plan.Generation,
+		Kind:        kind,
+		TargetID:    request.ModID,
+		ModTitle:    request.Title,
+		Version:     request.Version,
+		Priority:    priorityVal,
+		Actions:     actions,
+		Blockers:    plan.Blockers,
+		Risks:       risks,
 		Summary: PlanPreviewSummary{
 			RestoresOriginal: plan.Summary.RestoresOriginal,
 			RestoresLayer:    plan.Summary.RestoresLayer,
@@ -853,14 +857,16 @@ func (s *DesktopService) PreviewUninstallWithOpID(targetID, uninstallOpID string
 	}
 
 	return PlanResult{
-		PlanID:     plan.PlanID,
-		Root:       s.root,
-		Generation: plan.Generation,
-		Kind:       "uninstall",
-		TargetID:   targetID,
-		Actions:    actions,
-		Blockers:   plan.Blockers,
-		Risks:      risks,
+		PlanID:      plan.PlanID,
+		OperationID: plan.OperationID,
+		BackupID:    fmt.Sprintf("snapshot_%s", plan.OperationID),
+		Root:        s.root,
+		Generation:  plan.Generation,
+		Kind:        "uninstall",
+		TargetID:    targetID,
+		Actions:     actions,
+		Blockers:    plan.Blockers,
+		Risks:       risks,
 		Summary: PlanPreviewSummary{
 			RestoresOriginal: plan.Summary.RestoresOriginal,
 			RestoresLayer:    plan.Summary.RestoresLayer,
@@ -929,12 +935,14 @@ func (s *DesktopService) PreviewPriority(priorities map[string]int) (PlanResult,
 	}
 
 	return PlanResult{
-		PlanID:     plan.PlanID,
-		Root:       s.root,
-		Generation: plan.Generation,
-		Kind:       "priority",
-		TargetID:   "priority_adjustment",
-		ModTitle:   "模组优先级调整",
+		PlanID:      plan.PlanID,
+		OperationID: plan.OperationID,
+		BackupID:    fmt.Sprintf("snapshot_%s", plan.OperationID),
+		Root:        s.root,
+		Generation:  plan.Generation,
+		Kind:        "priority",
+		TargetID:    "priority_adjustment",
+		ModTitle:    "模组优先级调整",
 		Version:    "",
 		Actions:    actions,
 		Blockers:   plan.Blockers,
