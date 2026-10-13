@@ -47,21 +47,24 @@ type PlanSummary struct {
 }
 
 type Plan struct {
-	PlanID               string       `json:"plan_id"`
-	Root                 string       `json:"root"`
-	Generation           int64        `json:"generation"`
-	OperationType        string       `json:"operation_type"`
-	TargetInstallationID string       `json:"target_installation_id"`
-	OperationID          string       `json:"operation_id"`
-	ModID                string       `json:"mod_id,omitempty"`
-	ModTitle             string       `json:"mod_title,omitempty"`
-	VersionID            string       `json:"version_id,omitempty"`
-	Version              string       `json:"version,omitempty"`
-	Actions              []PlanAction `json:"actions"`
-	Blockers             []string     `json:"blockers"`
-	Risks                []PlanRisk   `json:"risks"`
-	Summary              PlanSummary  `json:"summary"`
-	NewManifest          *Manifest    `json:"-"`
+	PlanID                 string       `json:"plan_id"`
+	Root                   string       `json:"root"`
+	Generation             int64        `json:"generation"`
+	OperationType          string       `json:"operation_type"`
+	TargetInstallationID   string       `json:"target_installation_id"`
+	OperationID            string       `json:"operation_id"`
+	ModID                  string       `json:"mod_id,omitempty"`
+	ModTitle               string       `json:"mod_title,omitempty"`
+	VersionID              string       `json:"version_id,omitempty"`
+	Version                string       `json:"version,omitempty"`
+	SpriteSetIDs           []string     `json:"sprite_set_ids,omitempty"`
+	SpriteSelectionHash    string       `json:"sprite_selection_hash,omitempty"`
+	SelectedSpriteSetCount int          `json:"selected_sprite_set_count,omitempty"`
+	Actions                []PlanAction `json:"actions"`
+	Blockers               []string     `json:"blockers"`
+	Risks                  []PlanRisk   `json:"risks"`
+	Summary                PlanSummary  `json:"summary"`
+	NewManifest            *Manifest    `json:"-"`
 }
 
 type PlannedFile struct {
@@ -72,14 +75,17 @@ type PlannedFile struct {
 }
 
 type InstallOperation struct {
-	OperationID    string
-	InstallationID string
-	ModID          string
-	VersionID      string
-	Version        string
-	Title          string
-	Priority       int
-	Files          []PlannedFile
+	OperationID            string
+	InstallationID         string
+	ModID                  string
+	VersionID              string
+	Version                string
+	Title                  string
+	Priority               int
+	Files                  []PlannedFile
+	SpriteSetIDs           []string
+	SpriteSelectionHash    string
+	SelectedSpriteSetCount int
 }
 
 func manifestCanonicalKey(rel string) string {
@@ -137,10 +143,13 @@ func PlanInstall(m *Manifest, root string, blobs *BlobStore, op InstallOperation
 		TargetInstallationID: instID,
 		OperationID:          op.OperationID,
 		ModID:                op.ModID,
-		ModTitle:             op.Title,
-		VersionID:            op.VersionID,
-		Version:              op.Version,
-		Actions:              make([]PlanAction, 0, len(op.Files)),
+		ModTitle:               op.Title,
+		VersionID:              op.VersionID,
+		Version:                op.Version,
+		SpriteSetIDs:           op.SpriteSetIDs,
+		SpriteSelectionHash:    op.SpriteSelectionHash,
+		SelectedSpriteSetCount: op.SelectedSpriteSetCount,
+		Actions:                make([]PlanAction, 0, len(op.Files)),
 		Blockers:             make([]string, 0),
 		Risks:                make([]PlanRisk, 0),
 	}
@@ -402,16 +411,19 @@ func PlanInstall(m *Manifest, root string, blobs *BlobStore, op InstallOperation
 
 	// Update installation entry in projected manifest
 	projManifest.Installations[instID] = &InstallationRecord{
-		InstallationID: instID,
-		ModID:          op.ModID,
-		VersionID:      op.VersionID,
-		Version:        op.Version,
-		Title:          op.Title,
-		OperationID:    op.OperationID,
-		Order:          order,
-		Priority:       priority,
-		Paths:          installedPaths,
-		InstalledAt:    time.Now().UTC(),
+		InstallationID:         instID,
+		ModID:                  op.ModID,
+		VersionID:              op.VersionID,
+		Version:                op.Version,
+		Title:                  op.Title,
+		OperationID:            op.OperationID,
+		Order:                  order,
+		Priority:               priority,
+		Paths:                  installedPaths,
+		InstalledAt:            time.Now().UTC(),
+		SpriteSetIDs:           op.SpriteSetIDs,
+		SpriteSelectionHash:    op.SpriteSelectionHash,
+		SelectedSpriteSetCount: op.SelectedSpriteSetCount,
 	}
 
 	plan.NewManifest = projManifest

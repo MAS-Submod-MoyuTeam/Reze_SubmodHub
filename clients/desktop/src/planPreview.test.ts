@@ -88,3 +88,28 @@ test('mapPlanPreview preserves priority from preview or metadata', () => {
   const planFromMetadata = mapPlanPreview(previewWithoutPrio as any, metadataWithPrio);
   assert.equal(planFromMetadata.priority, 50);
 });
+
+test('mapPlanPreview carries spritepack partial install fields', () => {
+  const metadata: Plan = {
+    plan_id: 'p1', kind: 'install', installation_id: 'mas', mod_id: 'mod_ribbon',
+    mod_title: 'Ribbon Pack', category: 'spritepack', version_id: 'v1', version_str: '1.0.0',
+    expires_at: '', dependency_blockers: [], semantic_blockers: [], changes: [],
+    backups_required: 0, bytes_required: 2048, warnings: [],
+    sprite_set_ids: ['set_a', 'set_b'], sprite_selection_hash: 'hash_ab', selected_sprite_set_count: 2,
+  };
+  const preview = {
+    plan_id: 'backend-plan-sp', root: 'mas', generation: 1, kind: 'install',
+    target_id: 'mod_ribbon', mod_title: 'Ribbon Pack', version: '1.0.0', priority: 10,
+    sprite_set_ids: ['set_a'], sprite_selection_hash: 'hash_a', selected_sprite_set_count: 1,
+    actions: [{ path: 'game/mod_assets/monika/j/ribbon.json', action: 'CREATE', current_source: '(无)',
+      target_source: 'Ribbon Pack', current_hash: '', target_hash: 'h_ribbon',
+      current_exists: false, target_exists: true, backup_required: false, reason: 'new' }],
+    blockers: [], risks: [],
+    summary: { restores_original: 0, restores_layer: 0, metadata_only: 0, deletes_added: 0, writes_new: 1 },
+  };
+
+  const plan = mapPlanPreview(preview, metadata);
+  assert.deepEqual(plan.sprite_set_ids, ['set_a']);
+  assert.equal(plan.sprite_selection_hash, 'hash_a');
+  assert.equal(plan.selected_sprite_set_count, 1);
+});

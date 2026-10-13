@@ -140,6 +140,9 @@ export interface Plan {
   summary?: { restores_original: number; restores_layer: number; metadata_only: number; deletes_added: number; writes_new: number };
   blockers?: string[];
   risks?: Array<{ type: string; path?: string; description: string }>;
+  sprite_set_ids?: string[];
+  sprite_selection_hash?: string;
+  selected_sprite_set_count?: number;
 }
 
 export type OperationState =
@@ -170,6 +173,9 @@ export interface Operation {
   conflict_path?: string;
   expected_hash?: string;
   actual_hash?: string;
+  sprite_set_ids?: string[];
+  sprite_selection_hash?: string;
+  selected_sprite_set_count?: number;
   progress: {
     stage: string;
     current_file?: string;
@@ -222,6 +228,9 @@ export interface InstalledItem {
   submod_dir_name?: string;
   integrity_status: 'intact' | 'modified' | 'unknown';
   managed_operation_id?: string;
+  sprite_set_ids?: string[];
+  sprite_selection_hash?: string;
+  selected_sprite_set_count?: number;
 }
 
 export interface ExternalChangeDrift {

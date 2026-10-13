@@ -90,6 +90,9 @@
 | `POST /admin/users/{id}/roles` | 管理员 | `{roles:["author"|"reviewer"]}`；目标 ID 为 `flarum:<numeric_id>`；显式角色集，空数组撤销附加角色并记录审计；不能通过此接口授予 `admin` |
 | `POST /admin/versions/{id}/unpublish` | 管理员 | `{reason}`；可恢复的下架 |
 | `POST /author/github-imports` | 作者 | Release URL/asset 标识导入为草稿，并走相同扫描审核 |
+| `GET /spritepacks/{mod_id}` | 公开 | 可选 `version_id`；返回 `{sets:[...], version_id}`；版本不匹配返回 409 `sprite_version_changed` |
+| `GET /spritepacks/{mod_id}/preview` | 公开 | `set,item` 及可选 `version_id`；返回预览图片 PNG |
+| `GET /spritepacks/{mod_id}/download` | 公开 | `sets`（逗号分隔集合 ID）及可选 `version_id`；响应头带 `X-Archive-SHA256`, `X-Version-ID` 与 `Content-Length` |
 
 路径是目标契约，后端实现时若有调整，须同步 OpenAPI 与本文，再交给前端。
 
@@ -115,7 +118,7 @@
 | `RecoverOperation` / `RestoreBackup` | 实例、操作/备份 ID | `operation_id,status` |
 | `ExportLogs` | 可选操作 ID | 本地导出文件位置 |
 
-`Plan` 至少包含 `plan_id,kind,installation_id,mod_id,version_id,expires_at,dependency_blockers,semantic_blockers,changes,backups_required,bytes_required,warnings`。每条 `change` 含 `target_path,action,previous_owner,next_owner,previous_hash,next_hash,reason`。只在阻断项为空、权限有效且 MAS 未运行时允许确认。
+`Plan` 至少包含 `plan_id,kind,installation_id,mod_id,version_id,expires_at,dependency_blockers,semantic_blockers,changes,backups_required,bytes_required,warnings`。对于 `spritepack`，可包含可选的 `sprite_set_ids,sprite_selection_hash,selected_sprite_set_count`。每条 `change` 含 `target_path,action,previous_owner,next_owner,previous_hash,next_hash,reason`。只在阻断项为空、权限有效且 MAS 未运行时允许确认。
 
 操作状态为 `planned -> downloading -> scanning -> backed_up -> writing -> committed`；失败时为 `blocked|recoverable|rolling_back|rolled_back`。前端必须能在重启后通过 `operation_id` 重连状态。进度事件可优化体验，但持久化的 `GetOperation` 是权威来源。
 
@@ -129,6 +132,8 @@
 | `validation_failed`, `invalid_archive`, `unsupported_path`, `scan_limit_exceeded` | 定位表单字段或 ZIP 扫描报告 |
 | `invalid_transition`, `idempotency_conflict` | 刷新提交状态，避免重复提交 |
 | `dependency_missing`, `version_incompatible`, `semantic_conflict` | 阻断安装，展示受影响模组/文件 |
+| `sprite_version_changed` | 精灵包已发布版本变更或下架，阻断旧集合选择并引导重新加载集合清单 |
+| `invalid_selection` | 精灵包集合选择无效（空选择、重复或未知集合 ID），要求重新选择 |
 | `permission_lost`, `invalid_mas_root` | Android 前者打开系统“所有文件访问权限”页并在返回后刷新，后者报告固定 MAS 根目录无效；Windows 可重新选择目录 |
 | `not_found`, `manifest_corrupt` | 提示模组未安装或 manifest 损坏，引导刷新状态或重新扫描，不伪装成空文件 |
 | `game_running`, `insufficient_space` | 停止写入，说明可恢复条件 |

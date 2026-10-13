@@ -13,12 +13,17 @@ export interface ArchiveInstallRequest {
     "title": string;
     "author"?: string;
     "priority"?: number;
+    "sprite_set_ids"?: string[] | null;
+    "sprite_selection_hash"?: string;
 }
 
 export interface ArchiveInstallResult {
     "state": string;
     "files": number;
     "warnings": string[] | null;
+    "sprite_set_ids"?: string[] | null;
+    "sprite_selection_hash"?: string;
+    "selected_sprite_set_count"?: number;
 }
 
 export interface ExecutePlanRequest {
@@ -47,6 +52,9 @@ export interface InstalledArchive {
     "sha256": string;
     "installed_at": string;
     "submod_dirs": string[] | null;
+    "sprite_set_ids"?: string[] | null;
+    "sprite_selection_hash"?: string;
+    "selected_sprite_set_count"?: number;
 }
 
 export interface LocalSubmod {
@@ -106,6 +114,9 @@ export interface OperationDetail {
     "actual_hash"?: string;
     "backup_id"?: string;
     "can_rollback": boolean;
+    "sprite_set_ids"?: string[] | null;
+    "sprite_selection_hash"?: string;
+    "selected_sprite_set_count"?: number;
     "created_at": string;
     "updated_at": string;
 }
@@ -172,6 +183,9 @@ export interface PlanResult {
     "mod_title": string;
     "version": string;
     "priority": number;
+    "sprite_set_ids"?: string[] | null;
+    "sprite_selection_hash"?: string;
+    "selected_sprite_set_count"?: number;
     "actions": PlanPreviewAction[] | null;
     "blockers": string[] | null;
     "risks": PlanPreviewRisk[] | null;
@@ -199,6 +213,10 @@ export interface StageArchiveRequest {
     "api_base": string;
     "version_id": string;
     "operation_id": string;
+    "mod_id"?: string;
+    "category"?: string;
+    "sprite_set_ids"?: string[] | null;
+    "sprite_selection_hash"?: string;
 }
 
 export interface StageProgress {
@@ -217,4 +235,7 @@ export interface StagedArchiveInfo {
     "sha256": string;
     "size_bytes": number;
     "expires_at": string;
+    "sprite_set_ids"?: string[] | null;
+    "sprite_selection_hash"?: string;
+    "selected_sprite_set_count"?: number;
 }

@@ -14,23 +14,53 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 )
 
 type StageArchiveRequest struct {
-	APIBase     string `json:"api_base"`
-	VersionID   string `json:"version_id"`
-	OperationID string `json:"operation_id"`
+	APIBase             string   `json:"api_base"`
+	VersionID           string   `json:"version_id"`
+	OperationID         string   `json:"operation_id"`
+	ModID               string   `json:"mod_id,omitempty"`
+	Category            string   `json:"category,omitempty"`
+	SpriteSetIDs        []string `json:"sprite_set_ids,omitempty"`
+	SpriteSelectionHash string   `json:"sprite_selection_hash,omitempty"`
 }
 
 type StagedArchiveInfo struct {
-	ArchiveID   string `json:"archive_id"`
-	OperationID string `json:"operation_id"`
-	SHA256      string `json:"sha256"`
-	SizeBytes   int64  `json:"size_bytes"`
-	ExpiresAt   string `json:"expires_at"`
+	ArchiveID              string   `json:"archive_id"`
+	OperationID            string   `json:"operation_id"`
+	SHA256                 string   `json:"sha256"`
+	SizeBytes              int64    `json:"size_bytes"`
+	ExpiresAt              string   `json:"expires_at"`
+	SpriteSetIDs           []string `json:"sprite_set_ids,omitempty"`
+	SpriteSelectionHash    string   `json:"sprite_selection_hash,omitempty"`
+	SelectedSpriteSetCount int      `json:"selected_sprite_set_count,omitempty"`
+}
+
+func NormalizeSpriteSetIDs(ids []string) []string {
+	seen := make(map[string]bool)
+	var list []string
+	for _, id := range ids {
+		trimmed := strings.TrimSpace(id)
+		if trimmed != "" && !seen[trimmed] {
+			seen[trimmed] = true
+			list = append(list, trimmed)
+		}
+	}
+	sort.Strings(list)
+	return list
+}
+
+func ComputeSpriteSelectionHash(sortedIDs []string) string {
+	if len(sortedIDs) == 0 {
+		return ""
+	}
+	h := sha256.Sum256([]byte(strings.Join(sortedIDs, ",")))
+	return hex.EncodeToString(h[:])
 }
 
 type StageProgress struct {
@@ -54,12 +84,19 @@ const (
 )
 
 type stagedEntry struct {
-	ArchiveID   string
-	OperationID string
-	Path        string
-	SHA256      string
-	SizeBytes   int64
-	ExpiresAt   time.Time
+	ArchiveID              string
+	OperationID            string
+	Path                   string
+	SHA256                 string
+	SizeBytes              int64
+	ExpiresAt              time.Time
+	Category               string
+	ModID                  string
+	VersionID              string
+	SpriteSetIDs           []string
+	SpriteSelectionHash    string
+	SelectedSpriteSetCount int
+	IsSelectedSpritepack   bool
 }
 
 type ArchiveStagingManager struct {
@@ -296,6 +333,234 @@ func (m *ArchiveStagingManager) Stage(ctx context.Context, req StageArchiveReque
 		},
 	}
 
+	sortedSets := NormalizeSpriteSetIDs(req.SpriteSetIDs)
+	isSelectedSpritepack := req.Category == "spritepack" && len(sortedSets) > 0
+
+	if isSelectedSpritepack {
+		if req.ModID == "" {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "mod_id_required"})
+			return StagedArchiveInfo{}, errors.New("mod_id_required")
+		}
+		if strings.ContainsAny(req.ModID, `/\\`) || req.ModID == ".." || strings.TrimSpace(req.ModID) != req.ModID {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "invalid_mod_id"})
+			return StagedArchiveInfo{}, errors.New("invalid_mod_id")
+		}
+		selectionHash := ComputeSpriteSelectionHash(sortedSets)
+		if req.SpriteSelectionHash != "" && !strings.EqualFold(req.SpriteSelectionHash, selectionHash) {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "sprite_selection_hash_mismatch"})
+			return StagedArchiveInfo{}, errors.New("sprite_selection_hash_mismatch")
+		}
+
+		dlURL := fmt.Sprintf("%s/spritepacks/%s/download?sets=%s", strings.TrimRight(apiBase, "/"), url.PathEscape(req.ModID), url.QueryEscape(strings.Join(sortedSets, ",")))
+		if req.VersionID != "" {
+			dlURL += fmt.Sprintf("&version_id=%s", url.QueryEscape(req.VersionID))
+		}
+		relParsed, err := url.Parse(dlURL)
+		if err != nil {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "invalid_download_url"})
+			return StagedArchiveInfo{}, fmt.Errorf("parse selected url failed: %w", err)
+		}
+		archiveParsed := baseParsed.ResolveReference(relParsed)
+		if archiveParsed.Host != baseParsed.Host {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "cross_origin_archive_url_rejected"})
+			return StagedArchiveInfo{}, fmt.Errorf("cross_origin_archive_url_rejected: %s", archiveParsed.Host)
+		}
+		if archiveParsed.Scheme != baseParsed.Scheme && archiveParsed.Scheme != "https" && !isLocalTestHost(archiveParsed.Hostname()) {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "insecure_archive_url_rejected"})
+			return StagedArchiveInfo{}, fmt.Errorf("insecure_archive_url_rejected: %s", archiveParsed.Scheme)
+		}
+
+		aReq, err := http.NewRequestWithContext(ctx, http.MethodGet, archiveParsed.String(), nil)
+		if err != nil {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: err.Error()})
+			return StagedArchiveInfo{}, err
+		}
+		aRes, err := safeClient.Do(aReq)
+		if err != nil {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: err.Error()})
+			return StagedArchiveInfo{}, fmt.Errorf("download selected archive failed: %w", err)
+		}
+		defer aRes.Body.Close()
+
+		if aRes.StatusCode != http.StatusOK {
+			var errObj struct {
+				Code string `json:"code"`
+			}
+			_ = json.NewDecoder(aRes.Body).Decode(&errObj)
+			code := errObj.Code
+			if code == "" {
+				if aRes.StatusCode == http.StatusConflict {
+					code = "sprite_version_changed"
+				} else {
+					code = fmt.Sprintf("http_%d", aRes.StatusCode)
+				}
+			}
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: code})
+			return StagedArchiveInfo{}, errors.New(code)
+		}
+
+		serverSHA := aRes.Header.Get("X-Archive-SHA256")
+		if len(serverSHA) != 64 {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "invalid_archive_hash_header"})
+			return StagedArchiveInfo{}, errors.New("invalid_archive_hash_header")
+		}
+
+		serverVersionID := aRes.Header.Get("X-Version-ID")
+		if serverVersionID == "" {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "missing_version_id_header"})
+			return StagedArchiveInfo{}, errors.New("missing_version_id_header")
+		}
+		if req.VersionID != "" && serverVersionID != req.VersionID {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "sprite_version_changed"})
+			return StagedArchiveInfo{}, errors.New("sprite_version_changed")
+		}
+
+		serverSelectionHash := aRes.Header.Get("X-Sprite-Selection-Hash")
+		if serverSelectionHash == "" {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "missing_sprite_selection_hash_header"})
+			return StagedArchiveInfo{}, errors.New("missing_sprite_selection_hash_header")
+		}
+		if !strings.EqualFold(serverSelectionHash, selectionHash) {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "sprite_selection_hash_mismatch"})
+			return StagedArchiveInfo{}, errors.New("sprite_selection_hash_mismatch")
+		}
+
+		serverSetsHeader := aRes.Header.Get("X-Sprite-Sets")
+		if serverSetsHeader != "" {
+			expectedSetsStr := strings.Join(sortedSets, ",")
+			if serverSetsHeader != expectedSetsStr {
+				m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "sprite_sets_mismatch"})
+				return StagedArchiveInfo{}, errors.New("sprite_sets_mismatch")
+			}
+		}
+
+		expectedSize := aRes.ContentLength
+		if expectedSize < 1 || expectedSize > maxStagedFileSize {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "download_too_large"})
+			return StagedArchiveInfo{}, errors.New("download_too_large")
+		}
+
+		m.mu.Lock()
+		if m.currentTotalSizeLocked()+expectedSize > maxTotalStagingCapacity {
+			m.mu.Unlock()
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "staging_capacity_exceeded"})
+			return StagedArchiveInfo{}, errors.New("staging_capacity_exceeded")
+		}
+		m.reservations[req.OperationID] = expectedSize
+		m.mu.Unlock()
+
+		tmpFile, err := os.CreateTemp(m.stageDir, "stage-*.zip")
+		if err != nil {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "create_temp_failed"})
+			return StagedArchiveInfo{}, fmt.Errorf("create temp file failed: %w", err)
+		}
+		tmpPath := tmpFile.Name()
+		cleanedUp := false
+		defer func() {
+			if !cleanedUp {
+				_ = tmpFile.Close()
+				_ = os.Remove(tmpPath)
+			}
+		}()
+
+		m.setProgress(req.OperationID, StageProgress{Stage: "downloading", Received: 0, Total: expectedSize})
+
+		hasher := sha256.New()
+		buf := make([]byte, 32*1024)
+		var totalRead int64
+		var lastUpdate time.Time
+
+		for {
+			n, rErr := aRes.Body.Read(buf)
+			if n > 0 {
+				totalRead += int64(n)
+				if totalRead > expectedSize {
+					m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "download_size_mismatch"})
+					return StagedArchiveInfo{}, errors.New("download_size_mismatch")
+				}
+				if _, wErr := tmpFile.Write(buf[:n]); wErr != nil {
+					m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "write_failed"})
+					return StagedArchiveInfo{}, fmt.Errorf("write archive failed: %w", wErr)
+				}
+				hasher.Write(buf[:n])
+
+				now := time.Now()
+				if now.Sub(lastUpdate) >= 50*time.Millisecond || totalRead == expectedSize {
+					lastUpdate = now
+					m.setProgress(req.OperationID, StageProgress{Stage: "downloading", Received: totalRead, Total: expectedSize})
+				}
+			}
+			if rErr != nil {
+				if errors.Is(rErr, io.EOF) {
+					break
+				}
+				m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: rErr.Error()})
+				return StagedArchiveInfo{}, fmt.Errorf("stream read failed: %w", rErr)
+			}
+		}
+
+		if totalRead != expectedSize {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "download_size_mismatch"})
+			return StagedArchiveInfo{}, errors.New("download_size_mismatch")
+		}
+
+		_ = tmpFile.Close()
+
+		m.setProgress(req.OperationID, StageProgress{Stage: "verifying", Received: totalRead, Total: expectedSize})
+		computedSHA := hex.EncodeToString(hasher.Sum(nil))
+		if !strings.EqualFold(computedSHA, serverSHA) {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "download_hash_mismatch"})
+			return StagedArchiveInfo{}, errors.New("download_hash_mismatch")
+		}
+
+		archiveID, err := generateSecureArchiveID()
+		if err != nil {
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "handle_generation_failed"})
+			return StagedArchiveInfo{}, err
+		}
+
+		expiresAt := time.Now().Add(stagedHandleExpiry)
+		entry := &stagedEntry{
+			ArchiveID:              archiveID,
+			OperationID:            req.OperationID,
+			Path:                   tmpPath,
+			SHA256:                 computedSHA,
+			SizeBytes:              totalRead,
+			ExpiresAt:              expiresAt,
+			Category:               "spritepack",
+			ModID:                  req.ModID,
+			VersionID:              serverVersionID,
+			SpriteSetIDs:           sortedSets,
+			SpriteSelectionHash:    selectionHash,
+			SelectedSpriteSetCount: len(sortedSets),
+			IsSelectedSpritepack:   true,
+		}
+
+		m.mu.Lock()
+		if _, stillActive := m.cancels[req.OperationID]; !stillActive {
+			delete(m.reservations, req.OperationID)
+			m.mu.Unlock()
+			return StagedArchiveInfo{}, errors.New("cancelled")
+		}
+		delete(m.reservations, req.OperationID)
+		m.entries[archiveID] = entry
+		m.mu.Unlock()
+
+		cleanedUp = true
+		m.setProgress(req.OperationID, StageProgress{Stage: "completed", Received: totalRead, Total: totalRead})
+
+		return StagedArchiveInfo{
+			ArchiveID:              archiveID,
+			OperationID:            req.OperationID,
+			SHA256:                 computedSHA,
+			SizeBytes:              totalRead,
+			ExpiresAt:              expiresAt.Format(time.RFC3339),
+			SpriteSetIDs:           sortedSets,
+			SpriteSelectionHash:    selectionHash,
+			SelectedSpriteSetCount: len(sortedSets),
+		}, nil
+	}
+
 	// 1. Fetch archive descriptor
 	descURL := fmt.Sprintf("%s/versions/%s/download", apiBase, url.PathEscape(req.VersionID))
 	dReq, err := http.NewRequestWithContext(ctx, http.MethodGet, descURL, nil)
@@ -485,6 +750,9 @@ func (m *ArchiveStagingManager) Stage(ctx context.Context, req StageArchiveReque
 		SHA256:      desc.SHA256,
 		SizeBytes:   totalRead,
 		ExpiresAt:   expiresAt,
+		Category:    req.Category,
+		ModID:       req.ModID,
+		VersionID:   req.VersionID,
 	}
 
 	m.mu.Lock()

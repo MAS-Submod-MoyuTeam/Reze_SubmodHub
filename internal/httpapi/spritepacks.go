@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -50,6 +51,11 @@ func (s *Store) spritepackResource(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 	if mod.ID == "" || mod.Category != "spritepack" || !ok || v.ModID != modID || v.State != "published" {
 		writeError(w, http.StatusNotFound, "not_found", "published spritepack was not found")
+		return
+	}
+	versionIDParam := r.URL.Query().Get("version_id")
+	if versionIDParam != "" && versionIDParam != v.ID {
+		writeError(w, http.StatusConflict, "sprite_version_changed", "spritepack version has changed")
 		return
 	}
 	if report.SpriteIndexVersion < 2 {
@@ -97,7 +103,7 @@ func (s *Store) spritepackResource(w http.ResponseWriter, r *http.Request) {
 			}
 			sets = append(sets, entry)
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"sets": sets})
+		writeJSON(w, http.StatusOK, map[string]any{"sets": sets, "version_id": v.ID})
 		return
 	}
 	switch parts[1] {
@@ -156,10 +162,27 @@ func (s *Store) spritepackResource(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, 404, "not_found", "preview was not found")
 	case "download":
-		ids := strings.Split(r.URL.Query().Get("sets"), ",")
+		rawSets := r.URL.Query().Get("sets")
+		if rawSets == "" {
+			writeError(w, 400, "invalid_selection", "select one or more sprite sets")
+			return
+		}
+		ids := strings.Split(rawSets, ",")
 		if len(ids) == 0 || len(ids) > len(report.SpriteSets) {
 			writeError(w, 400, "invalid_selection", "select one or more sprite sets")
 			return
+		}
+		setMap := make(map[string]bool, len(report.SpriteSets))
+		for _, s := range report.SpriteSets {
+			setMap[s.ID] = true
+		}
+		seen := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			if id == "" || !setMap[id] || seen[id] {
+				writeError(w, 400, "invalid_selection", "invalid sprite set selection")
+				return
+			}
+			seen[id] = true
 		}
 		file, err := os.Open(v.ArchivePath)
 		if err != nil {
@@ -182,10 +205,20 @@ func (s *Store) spritepackResource(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		hash := sha256.Sum256(b)
+		sortedIDs := make([]string, 0, len(seen))
+		for id := range seen {
+			sortedIDs = append(sortedIDs, id)
+		}
+		sort.Strings(sortedIDs)
+		setFingerprint := sha256.Sum256([]byte(strings.Join(sortedIDs, ",")))
+
 		w.Header().Set("Content-Type", "application/zip")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"spritepack_%s.zip\"", modID))
 		w.Header().Set("Content-Length", strconv.Itoa(len(b)))
 		w.Header().Set("X-Archive-SHA256", hex.EncodeToString(hash[:]))
+		w.Header().Set("X-Version-ID", v.ID)
+		w.Header().Set("X-Sprite-Selection-Hash", hex.EncodeToString(setFingerprint[:]))
+		w.Header().Set("X-Sprite-Sets", strings.Join(sortedIDs, ","))
 		_, _ = io.Copy(w, bytes.NewReader(b))
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "spritepack endpoint was not found")

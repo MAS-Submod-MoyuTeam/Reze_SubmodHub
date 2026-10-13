@@ -58,14 +58,32 @@ export interface SpriteSet {
   items: Array<{ display_name: string; preview_url?: string }>;
 }
 
+export interface SpriteManifestResponse {
+  sets: SpriteSet[];
+  version_id?: string;
+}
+
 export type DownloadProgress = { received: number; total: number; stage: 'connecting' | 'downloading' | 'verifying' };
 export type DownloadProgressCallback = (progress: DownloadProgress) => void;
 
-export async function fetchSpriteSets(modID: string, base = '/api/v1', fetcher: typeof fetch = fetch): Promise<SpriteSet[]> {
-  const path = `${base.replace(/\/$/, '')}/spritepacks/${encodeURIComponent(modID)}`;
-  const result = await readJSON(await fetcher(path)) as { sets?: SpriteSet[] };
+export async function fetchSpriteManifest(
+  modID: string,
+  base = '/api/v1',
+  fetcher: typeof fetch = fetch,
+  versionID?: string,
+): Promise<SpriteManifestResponse> {
+  let path = `${base.replace(/\/$/, '')}/spritepacks/${encodeURIComponent(modID)}`;
+  if (versionID) {
+    path += `?version_id=${encodeURIComponent(versionID)}`;
+  }
+  const result = await readJSON(await fetcher(path)) as { sets?: SpriteSet[]; version_id?: string };
   if (!Array.isArray(result.sets) || result.sets.some((set) => !set.id || !Array.isArray(set.items))) throw new Error('invalid_spritepack_response');
-  return result.sets;
+  return { sets: result.sets, version_id: result.version_id };
+}
+
+export async function fetchSpriteSets(modID: string, base = '/api/v1', fetcher: typeof fetch = fetch): Promise<SpriteSet[]> {
+  const manifest = await fetchSpriteManifest(modID, base, fetcher);
+  return manifest.sets;
 }
 
 export async function fetchVerifiedSpriteSelection(
@@ -75,16 +93,24 @@ export async function fetchVerifiedSpriteSelection(
   fetcher: typeof fetch = fetch,
   onProgress?: DownloadProgressCallback,
   signal?: AbortSignal,
-): Promise<{ blob: Blob; sha256: string; size_bytes: number }> {
+  versionID?: string,
+): Promise<{ blob: Blob; sha256: string; size_bytes: number; version_id?: string }> {
   if (setIDs.length === 0) throw new Error('empty_sprite_selection');
   onProgress?.({ received: 0, total: 0, stage: 'connecting' });
   const serviceURL = new URL(base, typeof window === 'undefined' ? 'http://localhost/' : window.location.href);
   const url = new URL(`${serviceURL.pathname.replace(/\/$/, '')}/spritepacks/${encodeURIComponent(modID)}/download`, serviceURL);
   url.searchParams.set('sets', setIDs.join(','));
+  if (versionID) {
+    url.searchParams.set('version_id', versionID);
+  }
   const response = await fetcher(url.href, { signal });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { code?: string } | null;
     throw new Error(body?.code || `http_${response.status}`);
+  }
+  const responseVersionID = response.headers.get('X-Version-ID') || undefined;
+  if (versionID && responseVersionID && responseVersionID !== versionID) {
+    throw new Error('sprite_version_changed');
   }
   const expectedHash = response.headers.get('X-Archive-SHA256') || '';
   const expectedSize = Number(response.headers.get('Content-Length'));
@@ -117,7 +143,7 @@ export async function fetchVerifiedSpriteSelection(
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
   const hash = bytesToHex(sha256(bytes));
   if (hash !== expectedHash) throw new Error('download_hash_mismatch');
-  return { blob: new Blob([bytes], { type: 'application/zip' }), sha256: hash, size_bytes: size };
+  return { blob: new Blob([bytes], { type: 'application/zip' }), sha256: hash, size_bytes: size, version_id: responseVersionID };
 }
 
 async function readJSON(response: Response): Promise<unknown> {
@@ -148,13 +174,24 @@ export async function fetchPublishedCatalog(base = '/api/v1', fetcher: typeof fe
   } while (cursor);
   return Promise.all(mods.map(async (mod) => {
     if (!mod.id || !mod.latest_version_id) throw new Error('invalid_catalog_response');
-    const path = `${root}/mods/${encodeURIComponent(mod.id)}/versions/${encodeURIComponent(mod.latest_version_id)}`;
-    const version = await readJSON(await fetcher(path)) as CatalogVersion;
-    if (version?.state !== 'published' || version.id !== mod.latest_version_id || version.mod_id !== mod.id) {
-      throw new Error('invalid_version_response');
-    }
+    const version = await fetchModVersion(mod.id, mod.latest_version_id, base, fetcher);
     return { mod, version };
   }));
+}
+
+export async function fetchModVersion(
+  modID: string,
+  versionID: string,
+  base = '/api/v1',
+  fetcher: typeof fetch = fetch,
+): Promise<CatalogVersion> {
+  const root = base.replace(/\/$/, '');
+  const path = `${root}/mods/${encodeURIComponent(modID)}/versions/${encodeURIComponent(versionID)}`;
+  const version = await readJSON(await fetcher(path)) as CatalogVersion;
+  if (!version || version.state !== 'published' || version.id !== versionID || version.mod_id !== modID) {
+    throw new Error('invalid_version_response');
+  }
+  return version;
 }
 
 export async function fetchPublishedVersions(modID: string, base = '/api/v1', fetcher: typeof fetch = fetch): Promise<CatalogVersion[]> {

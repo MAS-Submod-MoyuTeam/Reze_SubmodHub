@@ -8,6 +8,7 @@ import {
   FileCheck,
   CheckCircle2,
   Lock,
+  Sparkles,
 } from 'lucide-react';
 import { Plan, Installation } from '../types/client';
 
@@ -260,6 +261,36 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Spritepack Selection Summary */}
+          {(plan.category === 'spritepack' || (plan.sprite_set_ids && plan.sprite_set_ids.length > 0)) && (
+            <div className="p-3.5 rounded-lg bg-emerald-950/40 border border-emerald-800/80 flex items-start gap-3 text-xs">
+              <Sparkles className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-1.5">
+                <div className="font-semibold text-emerald-300">
+                  精灵包服饰套装部分安装摘要
+                </div>
+                <div className="text-neutral-300 leading-relaxed">
+                  已选择 <span className="font-semibold text-emerald-400">{plan.selected_sprite_set_count ?? plan.sprite_set_ids?.length ?? 0}</span> 个外观套装集合，预计应用 <span className="font-semibold text-neutral-100">{plan.changes.length}</span> 个文件变更。
+                </div>
+                {plan.sprite_set_ids && plan.sprite_set_ids.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] pt-1">
+                    <span className="text-neutral-400">已选集合 ID:</span>
+                    {plan.sprite_set_ids.map((id) => (
+                      <span key={id} className="px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-200 border border-emerald-700/60">
+                        {id}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {plan.sprite_selection_hash && (
+                  <div className="text-[11px] font-mono text-neutral-400">
+                    选择指纹: <span className="text-neutral-300">{plan.sprite_selection_hash.slice(0, 16)}...</span>
+                  </div>
+                )}
               </div>
             </div>
           )}

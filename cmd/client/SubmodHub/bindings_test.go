@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	packagezip "github.com/reze/submodhub/internal/package"
 )
 
 func TestDesktopServiceInstallsMultiRootSpritepack(t *testing.T) {
@@ -92,6 +94,253 @@ func TestDesktopServiceInstallsMultiRootSpritepack(t *testing.T) {
 				t.Fatalf("gift remains: %v", err)
 			}
 		})
+	}
+}
+
+func TestDesktopServicePartialSpritepackInstallAndUpdate(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	files := map[string]string{
+		"Set A/mod_assets/monika/j/necklace.json":      `{"type":0,"name":"necklace","img_sit":"necklace"}`,
+		"Set A/mod_assets/monika/a/acs-necklace-0.png": "necklace image",
+		"Set A/gifts/necklace.gift":                    "gift",
+		"Set B/mod_assets/monika/j/ribbon.json":        `{"type":0,"name":"ribbon","img_sit":"ribbon"}`,
+		"Set B/mod_assets/monika/a/acs-ribbon-0.png":   "ribbon image",
+		"Set B/gifts/ribbon.gift":                      "gift",
+	}
+	for name, content := range files {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	spriteReport, err := packagezip.ScanSpriteArchive(bytes.NewReader(archive.Bytes()), int64(archive.Len()), packagezip.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spriteReport.SpriteSets) != 2 {
+		t.Fatalf("expected 2 sets, got %d", len(spriteReport.SpriteSets))
+	}
+
+	var setAID, setBID string
+	for _, s := range spriteReport.SpriteSets {
+		if strings.Contains(s.Name, "Set A") {
+			setAID = s.ID
+		} else if strings.Contains(s.Name, "Set B") {
+			setBID = s.ID
+		}
+	}
+	if setAID == "" || setBID == "" {
+		t.Fatalf("could not identify set IDs: sets=%+v", spriteReport.SpriteSets)
+	}
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "game"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	service := NewDesktopService()
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	hash := sha256.Sum256(archive.Bytes())
+	expectedHash := hex.EncodeToString(hash[:])
+
+	// 1. Install Set A ONLY
+	reqA := ArchiveInstallRequest{
+		OperationID:   "op_install_partial_a",
+		ArchiveBase64: base64.StdEncoding.EncodeToString(archive.Bytes()),
+		ExpectedSHA:   expectedHash,
+		ModID:         "sprite_partial_mod",
+		Title:         "Sprite Partial Mod",
+		VersionID:     "v1",
+		Version:       "1.0.0",
+		Category:      "spritepack",
+		SpriteSetIDs:  []string{setAID},
+	}
+	resA, err := service.ApplyArchive(reqA)
+	if err != nil {
+		t.Fatalf("ApplyArchive partial A failed: %v", err)
+	}
+	if resA.State != "committed" {
+		t.Fatalf("expected committed, got %s", resA.State)
+	}
+	if resA.SelectedSpriteSetCount != 1 || len(resA.SpriteSetIDs) != 1 || resA.SpriteSetIDs[0] != setAID {
+		t.Fatalf("unexpected resA: %+v", resA)
+	}
+
+	// Verify Set A files exist on disk
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "necklace.json")); err != nil {
+		t.Fatalf("necklace.json should exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "characters", "necklace.gift")); err != nil {
+		t.Fatalf("necklace.gift should exist: %v", err)
+	}
+
+	// Verify Set B files DO NOT exist on disk
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "ribbon.json")); !os.IsNotExist(err) {
+		t.Fatalf("ribbon.json should NOT exist")
+	}
+	if _, err := os.Stat(filepath.Join(root, "characters", "ribbon.gift")); !os.IsNotExist(err) {
+		t.Fatalf("ribbon.gift should NOT exist")
+	}
+
+	// Check receipts
+	receipts, err := service.ListInstalledArchives()
+	if err != nil || len(receipts) != 1 {
+		t.Fatalf("receipts err=%v len=%d", err, len(receipts))
+	}
+	if receipts[0].SelectedSpriteSetCount != 1 || len(receipts[0].SpriteSetIDs) != 1 || receipts[0].SpriteSetIDs[0] != setAID {
+		t.Fatalf("receipt sprite info mismatch: %+v", receipts[0])
+	}
+	if receipts[0].SpriteSelectionHash == "" {
+		t.Fatalf("expected non-empty SpriteSelectionHash on receipt")
+	}
+
+	// Check operations audit
+	ops, err := service.ListOperations()
+	if err != nil || len(ops) == 0 {
+		t.Fatalf("ops err=%v len=%d", err, len(ops))
+	}
+	lastOp := ops[len(ops)-1]
+	if lastOp.SelectedSpriteSetCount != 1 || len(lastOp.SpriteSetIDs) != 1 || lastOp.SpriteSetIDs[0] != setAID {
+		t.Fatalf("operation sprite info mismatch: %+v", lastOp)
+	}
+
+	// 2. Append Set B (install union of Set A and Set B)
+	reqUnion := ArchiveInstallRequest{
+		OperationID:   "op_update_to_union",
+		ArchiveBase64: base64.StdEncoding.EncodeToString(archive.Bytes()),
+		ExpectedSHA:   expectedHash,
+		ModID:         "sprite_partial_mod",
+		Title:         "Sprite Partial Mod",
+		VersionID:     "v1",
+		Version:       "1.0.0",
+		Category:      "spritepack",
+		SpriteSetIDs:  []string{setAID, setBID},
+	}
+	resUnion, err := service.ApplyArchive(reqUnion)
+	if err != nil {
+		t.Fatalf("ApplyArchive union failed: %v", err)
+	}
+	if resUnion.SelectedSpriteSetCount != 2 || len(resUnion.SpriteSetIDs) != 2 {
+		t.Fatalf("unexpected resUnion: %+v", resUnion)
+	}
+
+	// Verify both Set A and Set B files exist
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "necklace.json")); err != nil {
+		t.Fatalf("necklace.json should exist in union: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "ribbon.json")); err != nil {
+		t.Fatalf("ribbon.json should exist in union: %v", err)
+	}
+
+	// 3. Update to Set B ONLY (removing Set A)
+	reqB := ArchiveInstallRequest{
+		OperationID:   "op_update_to_b",
+		ArchiveBase64: base64.StdEncoding.EncodeToString(archive.Bytes()),
+		ExpectedSHA:   expectedHash,
+		ModID:         "sprite_partial_mod",
+		Title:         "Sprite Partial Mod",
+		VersionID:     "v1",
+		Version:       "1.0.0",
+		Category:      "spritepack",
+		SpriteSetIDs:  []string{setBID},
+	}
+	resB, err := service.ApplyArchive(reqB)
+	if err != nil {
+		t.Fatalf("ApplyArchive update to B failed: %v", err)
+	}
+	if resB.State != "committed" {
+		t.Fatalf("expected committed, got %s", resB.State)
+	}
+	if resB.SelectedSpriteSetCount != 1 || len(resB.SpriteSetIDs) != 1 || resB.SpriteSetIDs[0] != setBID {
+		t.Fatalf("unexpected resB: %+v", resB)
+	}
+
+	// Verify Set A files were REMOVED on disk
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "necklace.json")); !os.IsNotExist(err) {
+		t.Fatalf("necklace.json should be removed after update to B")
+	}
+	if _, err := os.Stat(filepath.Join(root, "characters", "necklace.gift")); !os.IsNotExist(err) {
+		t.Fatalf("necklace.gift should be removed after update to B")
+	}
+
+	// Verify Set B files now EXIST on disk
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "ribbon.json")); err != nil {
+		t.Fatalf("ribbon.json should exist after update: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "characters", "ribbon.gift")); err != nil {
+		t.Fatalf("ribbon.gift should exist after update: %v", err)
+	}
+
+	// 4. External change protection: modify ribbon.json manually on disk
+	ribbonPath := filepath.Join(root, "game", "mod_assets", "monika", "j", "ribbon.json")
+	origRibbonContent, err := os.ReadFile(ribbonPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ribbonPath, []byte("manually modified content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Try to update back to Set A only (which would attempt to remove ribbon.json)
+	reqBackA := ArchiveInstallRequest{
+		OperationID:   "op_update_drift_test",
+		ArchiveBase64: base64.StdEncoding.EncodeToString(archive.Bytes()),
+		ExpectedSHA:   expectedHash,
+		ModID:         "sprite_partial_mod",
+		Title:         "Sprite Partial Mod",
+		VersionID:     "v1",
+		Version:       "1.0.0",
+		Category:      "spritepack",
+		SpriteSetIDs:  []string{setAID},
+	}
+	planDrift, err := service.PreviewArchive(reqBackA)
+	if err != nil {
+		t.Fatalf("PreviewArchive error: %v", err)
+	}
+	// Plan must have blockers containing external_change
+	hasDriftBlocker := false
+	for _, b := range planDrift.Blockers {
+		if strings.Contains(b, "external_change") {
+			hasDriftBlocker = true
+			break
+		}
+	}
+	if !hasDriftBlocker {
+		t.Fatalf("expected plan to be blocked by external_change, blockers: %+v", planDrift.Blockers)
+	}
+
+	// Ensure modified content was not touched
+	driftContent, _ := os.ReadFile(ribbonPath)
+	if string(driftContent) != "manually modified content" {
+		t.Fatalf("modified file should not have been overwritten")
+	}
+
+	// Restore original content
+	if err := os.WriteFile(ribbonPath, origRibbonContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 5. Uninstall Set B cleanly
+	if _, err := service.Uninstall("sprite_partial_mod", "op_uninstall_b"); err != nil {
+		t.Fatalf("Uninstall failed: %v", err)
+	}
+
+	// Verify Set B files removed
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "ribbon.json")); !os.IsNotExist(err) {
+		t.Fatalf("ribbon.json should be removed after uninstall")
+	}
+	if _, err := os.Stat(filepath.Join(root, "characters", "ribbon.gift")); !os.IsNotExist(err) {
+		t.Fatalf("ribbon.gift should be removed after uninstall")
 	}
 }
 

@@ -13,19 +13,22 @@ import (
 )
 
 type InstalledArchive struct {
-	ModID       string    `json:"mod_id"`
-	VersionID   string    `json:"version_id"`
-	Version     string    `json:"version"`
-	Title       string    `json:"title"`
-	Author      string    `json:"author,omitempty"`
-	Category    string    `json:"category,omitempty"`
-	OperationID string    `json:"operation_id"`
-	Priority    int       `json:"priority"`
-	Files       int       `json:"files"`
-	SizeBytes   int64     `json:"size_bytes"`
-	SHA256      string    `json:"sha256"`
-	InstalledAt time.Time `json:"installed_at"`
-	SubmodDirs  []string  `json:"submod_dirs"`
+	ModID                  string    `json:"mod_id"`
+	VersionID              string    `json:"version_id"`
+	Version                string    `json:"version"`
+	Title                  string    `json:"title"`
+	Author                 string    `json:"author,omitempty"`
+	Category               string    `json:"category,omitempty"`
+	OperationID            string    `json:"operation_id"`
+	Priority               int       `json:"priority"`
+	Files                  int       `json:"files"`
+	SizeBytes              int64     `json:"size_bytes"`
+	SHA256                 string    `json:"sha256"`
+	InstalledAt            time.Time `json:"installed_at"`
+	SubmodDirs             []string  `json:"submod_dirs"`
+	SpriteSetIDs           []string  `json:"sprite_set_ids,omitempty"`
+	SpriteSelectionHash    string    `json:"sprite_selection_hash,omitempty"`
+	SelectedSpriteSetCount int       `json:"selected_sprite_set_count,omitempty"`
 }
 
 func (s *DesktopService) installedArchivesPath() string {
@@ -89,7 +92,7 @@ func (s *DesktopService) saveInstalledArchives(receipts []InstalledArchive) erro
 	return nil
 }
 
-func (s *DesktopService) projectedInstalledArchives(request ArchiveInstallRequest, report packagezip.Report, hash string, size int64) ([]InstalledArchive, error) {
+func (s *DesktopService) projectedInstalledArchives(request ArchiveInstallRequest, report packagezip.Report, hash string, size int64, spriteSetIDs []string, spriteSelectionHash string, selectedSpriteSetCount int) ([]InstalledArchive, error) {
 	receipts, err := s.ListInstalledArchives()
 	if err != nil {
 		return nil, err
@@ -119,19 +122,22 @@ func (s *DesktopService) projectedInstalledArchives(request ArchiveInstallReques
 		}
 	}
 	next = append(next, InstalledArchive{
-		Priority:    prio,
-		ModID:       request.ModID,
-		VersionID:   request.VersionID,
-		Version:     request.Version,
-		Title:       request.Title,
-		Author:      request.Author,
-		Category:    request.Category,
-		OperationID: request.OperationID,
-		Files:       len(report.Files),
-		SizeBytes:   size,
-		SHA256:      hash,
-		InstalledAt: time.Now().UTC(),
-		SubmodDirs:  submodDirs,
+		Priority:               prio,
+		ModID:                  request.ModID,
+		VersionID:              request.VersionID,
+		Version:                request.Version,
+		Title:                  request.Title,
+		Author:                 request.Author,
+		Category:               request.Category,
+		OperationID:            request.OperationID,
+		Files:                  len(report.Files),
+		SizeBytes:              size,
+		SHA256:                 hash,
+		InstalledAt:            time.Now().UTC(),
+		SubmodDirs:             submodDirs,
+		SpriteSetIDs:           spriteSetIDs,
+		SpriteSelectionHash:    spriteSelectionHash,
+		SelectedSpriteSetCount: selectedSpriteSetCount,
 	})
 	return next, nil
 }
@@ -150,8 +156,8 @@ func (s *DesktopService) projectedRemoveInstalledArchive(targetID string) ([]Ins
 	return next, nil
 }
 
-func (s *DesktopService) recordInstalledArchive(request ArchiveInstallRequest, report packagezip.Report, hash string, size int64) error {
-	next, err := s.projectedInstalledArchives(request, report, hash, size)
+func (s *DesktopService) recordInstalledArchive(request ArchiveInstallRequest, report packagezip.Report, hash string, size int64, spriteSetIDs []string, spriteSelectionHash string, selectedSpriteSetCount int) error {
+	next, err := s.projectedInstalledArchives(request, report, hash, size, spriteSetIDs, spriteSelectionHash, selectedSpriteSetCount)
 	if err != nil {
 		return err
 	}

@@ -384,7 +384,13 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                       )
                     ) : (
                         <button
-                          onClick={() => onStartInstallPlan(mod)}
+                          onClick={() => {
+                            if (mod.category === 'spritepack') {
+                              onOpenDetail(mod);
+                            } else {
+                              onStartInstallPlan(mod);
+                            }
+                          }}
                           disabled={installingModId !== null}
                         className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-md transition-colors flex items-center gap-1.5 shadow-xs"
                       >

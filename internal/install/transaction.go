@@ -79,6 +79,9 @@ type TxJournal struct {
 	ReceiptPath          string                     `json:"receipt_path,omitempty"`
 	OldReceiptExisted    bool                       `json:"old_receipt_existed,omitempty"`
 	OldReceipt           []byte                     `json:"old_receipt,omitempty"`
+	SpriteSetIDs         []string                   `json:"sprite_set_ids,omitempty"`
+	SpriteSelectionHash  string                     `json:"sprite_selection_hash,omitempty"`
+	SelectedSpriteSetCount int                      `json:"selected_sprite_set_count,omitempty"`
 	CreatedAt            time.Time                  `json:"created_at"`
 	UpdatedAt            time.Time                  `json:"updated_at"`
 }
@@ -312,6 +315,9 @@ func (tx *TransactionContext) Execute() error {
 		ModTitle:             tx.plan.ModTitle,
 		VersionID:            tx.plan.VersionID,
 		Version:              tx.plan.Version,
+		SpriteSetIDs:         tx.plan.SpriteSetIDs,
+		SpriteSelectionHash:  tx.plan.SpriteSelectionHash,
+		SelectedSpriteSetCount: tx.plan.SelectedSpriteSetCount,
 		TotalSteps:           len(tx.plan.Actions),
 		BeforeFiles:          make(map[string]FileBeforeState),
 		AfterFiles:           make(map[string]FileAfterState),

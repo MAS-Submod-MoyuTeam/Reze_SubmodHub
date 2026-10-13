@@ -24,5 +24,8 @@ export function mapPlanPreview(preview: Awaited<ReturnType<typeof PreviewArchive
     blockers: preview.blockers || [],
     risks: preview.risks || [],
     summary: preview.summary,
+    sprite_set_ids: (preview as { sprite_set_ids?: string[] }).sprite_set_ids || metadata.sprite_set_ids,
+    sprite_selection_hash: (preview as { sprite_selection_hash?: string }).sprite_selection_hash || metadata.sprite_selection_hash,
+    selected_sprite_set_count: (preview as { selected_sprite_set_count?: number }).selected_sprite_set_count ?? metadata.selected_sprite_set_count,
   };
 }

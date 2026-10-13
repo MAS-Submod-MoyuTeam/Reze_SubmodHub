@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -565,5 +566,317 @@ func TestStageArchiveAllowsConfiguredHTTPBase(t *testing.T) {
 	}
 	if staged.SHA256 != zipHash {
 		t.Fatalf("expected sha %s, got %s", zipHash, staged.SHA256)
+	}
+}
+
+func TestStageArchiveSelectedSpritepackDirectDownload(t *testing.T) {
+	zipData, zipHash := createTestZip(t, map[string]string{
+		"mod_assets/monika/j/ribbon.json": `{"name":"ribbon"}`,
+	})
+	expectedHash := ComputeSpriteSelectionHash([]string{"set_a", "set_b"})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/spritepacks/ribbon_mod/download" {
+			sets := r.URL.Query().Get("sets")
+			vID := r.URL.Query().Get("version_id")
+			if sets != "set_a,set_b" || vID != "v1" {
+				http.Error(w, "invalid query", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/zip")
+			w.Header().Set("Content-Length", fmt.Sprint(len(zipData)))
+			w.Header().Set("X-Archive-SHA256", zipHash)
+			w.Header().Set("X-Version-ID", "v1")
+			w.Header().Set("X-Sprite-Selection-Hash", expectedHash)
+			w.Header().Set("X-Sprite-Sets", "set_a,set_b")
+			_, _ = w.Write(zipData)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	stageDir := t.TempDir()
+	stagingMgr, err := NewArchiveStagingManager(stageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stagingMgr.Close()
+
+	service := NewDesktopService()
+	service.stagingMgr = stagingMgr
+	service.SetAPIURL(server.URL)
+
+	staged, err := service.StageArchive(StageArchiveRequest{
+		APIBase:      server.URL + "/api/v1",
+		ModID:        "ribbon_mod",
+		Category:     "spritepack",
+		VersionID:    "v1",
+		OperationID:  "op_sp_test",
+		SpriteSetIDs: []string{"set_b", "set_a"}, // Unsorted, should normalize to set_a,set_b
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if staged.SHA256 != zipHash {
+		t.Fatalf("expected sha %s, got %s", zipHash, staged.SHA256)
+	}
+	if staged.SelectedSpriteSetCount != 2 {
+		t.Fatalf("expected 2 selected sets, got %d", staged.SelectedSpriteSetCount)
+	}
+	if len(staged.SpriteSetIDs) != 2 || staged.SpriteSetIDs[0] != "set_a" || staged.SpriteSetIDs[1] != "set_b" {
+		t.Fatalf("expected sorted set IDs, got %+v", staged.SpriteSetIDs)
+	}
+	if staged.SpriteSelectionHash != expectedHash {
+		t.Fatalf("expected SpriteSelectionHash %s, got %s", expectedHash, staged.SpriteSelectionHash)
+	}
+
+	entry, err := stagingMgr.GetEntry(staged.ArchiveID, "op_sp_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !entry.IsSelectedSpritepack {
+		t.Fatalf("expected entry.IsSelectedSpritepack to be true")
+	}
+	if entry.VersionID != "v1" {
+		t.Fatalf("expected entry.VersionID to be v1, got %s", entry.VersionID)
+	}
+}
+
+func TestStageArchiveSelectedSpritepackRejectsMissingOrMismatchedHeaders(t *testing.T) {
+	zipData, zipHash := createTestZip(t, map[string]string{
+		"mod_assets/monika/j/ribbon.json": `{"name":"ribbon"}`,
+	})
+	expectedHash := ComputeSpriteSelectionHash([]string{"set_a"})
+
+	testCases := []struct {
+		name          string
+		versionHeader string
+		hashHeader    string
+		setsHeader    string
+		expectedErr   string
+	}{
+		{
+			name:          "missing X-Version-ID",
+			versionHeader: "",
+			hashHeader:    expectedHash,
+			setsHeader:    "set_a",
+			expectedErr:   "missing_version_id_header",
+		},
+		{
+			name:          "mismatched X-Version-ID",
+			versionHeader: "v2",
+			hashHeader:    expectedHash,
+			setsHeader:    "set_a",
+			expectedErr:   "sprite_version_changed",
+		},
+		{
+			name:          "missing X-Sprite-Selection-Hash",
+			versionHeader: "v1",
+			hashHeader:    "",
+			setsHeader:    "set_a",
+			expectedErr:   "missing_sprite_selection_hash_header",
+		},
+		{
+			name:          "mismatched X-Sprite-Selection-Hash",
+			versionHeader: "v1",
+			hashHeader:    "invalid_hash",
+			setsHeader:    "set_a",
+			expectedErr:   "sprite_selection_hash_mismatch",
+		},
+		{
+			name:          "mismatched X-Sprite-Sets",
+			versionHeader: "v1",
+			hashHeader:    expectedHash,
+			setsHeader:    "set_b",
+			expectedErr:   "sprite_sets_mismatch",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/zip")
+				w.Header().Set("Content-Length", fmt.Sprint(len(zipData)))
+				w.Header().Set("X-Archive-SHA256", zipHash)
+				if tc.versionHeader != "" {
+					w.Header().Set("X-Version-ID", tc.versionHeader)
+				}
+				if tc.hashHeader != "" {
+					w.Header().Set("X-Sprite-Selection-Hash", tc.hashHeader)
+				}
+				if tc.setsHeader != "" {
+					w.Header().Set("X-Sprite-Sets", tc.setsHeader)
+				}
+				_, _ = w.Write(zipData)
+			}))
+			defer server.Close()
+
+			stageDir := t.TempDir()
+			stagingMgr, err := NewArchiveStagingManager(stageDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stagingMgr.Close()
+
+			service := NewDesktopService()
+			service.stagingMgr = stagingMgr
+			service.SetAPIURL(server.URL)
+
+			_, err = service.StageArchive(StageArchiveRequest{
+				APIBase:      server.URL + "/api/v1",
+				ModID:        "ribbon_mod",
+				Category:     "spritepack",
+				VersionID:    "v1",
+				OperationID:  "op_sp_test_" + tc.name,
+				SpriteSetIDs: []string{"set_a"},
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.expectedErr) {
+				t.Fatalf("expected error containing %q, got: %v", tc.expectedErr, err)
+			}
+		})
+	}
+}
+
+func TestStageArchiveSelectedSpritepackVersionConflict(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/spritepacks/ribbon_mod/download" {
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    "sprite_version_changed",
+				"message": "version changed",
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	stageDir := t.TempDir()
+	stagingMgr, err := NewArchiveStagingManager(stageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stagingMgr.Close()
+
+	service := NewDesktopService()
+	service.stagingMgr = stagingMgr
+	service.SetAPIURL(server.URL)
+
+	_, err = service.StageArchive(StageArchiveRequest{
+		APIBase:      server.URL + "/api/v1",
+		ModID:        "ribbon_mod",
+		Category:     "spritepack",
+		VersionID:    "v_old",
+		OperationID:  "op_sp_conflict",
+		SpriteSetIDs: []string{"set_a"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "sprite_version_changed") {
+		t.Fatalf("expected sprite_version_changed error, got: %v", err)
+	}
+}
+
+func TestPreviewArchiveRejectsStagedIdentityMismatch(t *testing.T) {
+	zipData, zipHash := createTestZip(t, map[string]string{
+		"Submods/IdentityMod/header.txt": "content",
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/versions/v1/download":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"url":"/api/v1/archives/id.zip","expires_at":%q,"sha256":%q,"size_bytes":%d}`,
+				time.Now().Add(time.Hour).Format(time.RFC3339), zipHash, len(zipData))
+		case "/api/v1/archives/id.zip":
+			w.Header().Set("Content-Type", "application/zip")
+			w.Header().Set("Content-Length", fmt.Sprint(len(zipData)))
+			_, _ = w.Write(zipData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	masRoot := setupTestMASRoot(t)
+	stageDir := t.TempDir()
+	stagingMgr, err := NewArchiveStagingManager(stageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stagingMgr.Close()
+
+	service := NewDesktopService()
+	service.stagingMgr = stagingMgr
+	if _, err := service.SetMASRoot(masRoot); err != nil {
+		t.Fatal(err)
+	}
+
+	opID := "op_id_check"
+	staged, err := service.StageArchive(StageArchiveRequest{
+		APIBase:     server.URL + "/api/v1",
+		ModID:       "mod_a",
+		Category:    "submod",
+		VersionID:   "v1",
+		OperationID: opID,
+	})
+	if err != nil {
+		t.Fatalf("StageArchive failed: %v", err)
+	}
+
+	// 1. ModID mismatch
+	_, err = service.PreviewArchive(ArchiveInstallRequest{
+		OperationID: opID,
+		ArchiveID:   staged.ArchiveID,
+		ExpectedSHA: staged.SHA256,
+		ModID:       "mod_b",
+		VersionID:   "v1",
+		Category:    "submod",
+	})
+	if err == nil || !strings.Contains(err.Error(), "staged_mod_id_mismatch") {
+		t.Fatalf("expected staged_mod_id_mismatch, got: %v", err)
+	}
+
+	// 2. VersionID mismatch
+	_, err = service.PreviewArchive(ArchiveInstallRequest{
+		OperationID: opID,
+		ArchiveID:   staged.ArchiveID,
+		ExpectedSHA: staged.SHA256,
+		ModID:       "mod_a",
+		VersionID:   "v2",
+		Category:    "submod",
+	})
+	if err == nil || !strings.Contains(err.Error(), "staged_version_id_mismatch") {
+		t.Fatalf("expected staged_version_id_mismatch, got: %v", err)
+	}
+
+	// 3. Category mismatch
+	_, err = service.PreviewArchive(ArchiveInstallRequest{
+		OperationID: opID,
+		ArchiveID:   staged.ArchiveID,
+		ExpectedSHA: staged.SHA256,
+		ModID:       "mod_a",
+		VersionID:   "v1",
+		Category:    "spritepack",
+	})
+	if err == nil || !strings.Contains(err.Error(), "staged_category_mismatch") {
+		t.Fatalf("expected staged_category_mismatch, got: %v", err)
+	}
+
+	// 4. Same identity succeeds and derives correctly
+	plan, err := service.PreviewArchive(ArchiveInstallRequest{
+		OperationID: opID,
+		ArchiveID:   staged.ArchiveID,
+		ExpectedSHA: staged.SHA256,
+		ModID:       "mod_a",
+		VersionID:   "v1",
+		Category:    "submod",
+		Title:       "Mod A",
+		Version:     "1.0.0",
+	})
+	if err != nil {
+		t.Fatalf("expected successful preview, got: %v", err)
+	}
+	if plan.PlanID == "" {
+		t.Fatal("expected non-empty plan ID")
 	}
 }

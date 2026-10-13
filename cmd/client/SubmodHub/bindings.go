@@ -38,23 +38,28 @@ type InstallRequest struct {
 }
 
 type ArchiveInstallRequest struct {
-	Category      string `json:"category"`
-	OperationID   string `json:"operation_id"`
-	ArchiveBase64 string `json:"archive_base64,omitempty"`
-	ArchiveID     string `json:"archive_id,omitempty"`
-	ExpectedSHA   string `json:"expected_sha256"`
-	ModID         string `json:"mod_id"`
-	VersionID     string `json:"version_id"`
-	Version       string `json:"version"`
-	Title         string `json:"title"`
-	Author        string `json:"author,omitempty"`
-	Priority      int    `json:"priority,omitempty"`
+	Category            string   `json:"category"`
+	OperationID         string   `json:"operation_id"`
+	ArchiveBase64       string   `json:"archive_base64,omitempty"`
+	ArchiveID           string   `json:"archive_id,omitempty"`
+	ExpectedSHA         string   `json:"expected_sha256"`
+	ModID               string   `json:"mod_id"`
+	VersionID           string   `json:"version_id"`
+	Version             string   `json:"version"`
+	Title               string   `json:"title"`
+	Author              string   `json:"author,omitempty"`
+	Priority            int      `json:"priority,omitempty"`
+	SpriteSetIDs        []string `json:"sprite_set_ids,omitempty"`
+	SpriteSelectionHash string   `json:"sprite_selection_hash,omitempty"`
 }
 
 type ArchiveInstallResult struct {
-	State    string   `json:"state"`
-	Files    int      `json:"files"`
-	Warnings []string `json:"warnings"`
+	State                  string   `json:"state"`
+	Files                  int      `json:"files"`
+	Warnings               []string `json:"warnings"`
+	SpriteSetIDs           []string `json:"sprite_set_ids,omitempty"`
+	SpriteSelectionHash    string   `json:"sprite_selection_hash,omitempty"`
+	SelectedSpriteSetCount int      `json:"selected_sprite_set_count,omitempty"`
 }
 
 type LocalSubmodFile struct {
@@ -99,20 +104,23 @@ type PlanPreviewSummary struct {
 }
 
 type PlanResult struct {
-	PlanID      string              `json:"plan_id"`
-	OperationID string              `json:"operation_id,omitempty"`
-	BackupID    string              `json:"backup_id,omitempty"`
-	Root        string              `json:"root"`
-	Generation  int64               `json:"generation"`
-	Kind        string              `json:"kind"` // install, update, uninstall
-	TargetID    string              `json:"target_id"`
-	ModTitle    string              `json:"mod_title"`
-	Version     string              `json:"version"`
-	Priority    int                 `json:"priority"`
-	Actions     []PlanPreviewAction `json:"actions"`
-	Blockers    []string            `json:"blockers"`
-	Risks       []PlanPreviewRisk   `json:"risks"`
-	Summary     PlanPreviewSummary  `json:"summary"`
+	PlanID                 string              `json:"plan_id"`
+	OperationID            string              `json:"operation_id,omitempty"`
+	BackupID               string              `json:"backup_id,omitempty"`
+	Root                   string              `json:"root"`
+	Generation             int64               `json:"generation"`
+	Kind                   string              `json:"kind"` // install, update, uninstall
+	TargetID               string              `json:"target_id"`
+	ModTitle               string              `json:"mod_title"`
+	Version                string              `json:"version"`
+	Priority               int                 `json:"priority"`
+	SpriteSetIDs           []string            `json:"sprite_set_ids,omitempty"`
+	SpriteSelectionHash    string              `json:"sprite_selection_hash,omitempty"`
+	SelectedSpriteSetCount int                 `json:"selected_sprite_set_count,omitempty"`
+	Actions                []PlanPreviewAction `json:"actions"`
+	Blockers               []string            `json:"blockers"`
+	Risks                  []PlanPreviewRisk   `json:"risks"`
+	Summary                PlanPreviewSummary  `json:"summary"`
 }
 
 type ExecutePlanRequest struct {
@@ -137,25 +145,28 @@ type OperationError struct {
 }
 
 type OperationDetail struct {
-	OperationID          string            `json:"operation_id"`
-	InstallationID       string            `json:"installation_id"`
-	TargetInstallationID string            `json:"target_installation_id,omitempty"`
-	ModID                string            `json:"mod_id"`
-	ModTitle             string            `json:"mod_title"`
-	VersionID      string            `json:"version_id"`
-	VersionStr     string            `json:"version_str"`
-	Kind           string            `json:"kind"`
-	State          string            `json:"state"` // committed, rolled_back, needs_manual_recovery, recoverable, planned, applying...
-	Phase          string            `json:"phase"`
-	Progress       OperationProgress `json:"progress"`
-	Error          *OperationError   `json:"error,omitempty"`
-	ConflictPath   string            `json:"conflict_path,omitempty"`
-	ExpectedHash   string            `json:"expected_hash,omitempty"`
-	ActualHash     string            `json:"actual_hash,omitempty"`
-	BackupID       string            `json:"backup_id,omitempty"`
-	CanRollback    bool              `json:"can_rollback"`
-	CreatedAt      string            `json:"created_at"`
-	UpdatedAt      string            `json:"updated_at"`
+	OperationID            string            `json:"operation_id"`
+	InstallationID         string            `json:"installation_id"`
+	TargetInstallationID   string            `json:"target_installation_id,omitempty"`
+	ModID                  string            `json:"mod_id"`
+	ModTitle               string            `json:"mod_title"`
+	VersionID              string            `json:"version_id"`
+	VersionStr             string            `json:"version_str"`
+	Kind                   string            `json:"kind"`
+	State                  string            `json:"state"` // committed, rolled_back, needs_manual_recovery, recoverable, planned, applying...
+	Phase                  string            `json:"phase"`
+	Progress               OperationProgress `json:"progress"`
+	Error                  *OperationError   `json:"error,omitempty"`
+	ConflictPath           string            `json:"conflict_path,omitempty"`
+	ExpectedHash           string            `json:"expected_hash,omitempty"`
+	ActualHash             string            `json:"actual_hash,omitempty"`
+	BackupID               string            `json:"backup_id,omitempty"`
+	CanRollback            bool              `json:"can_rollback"`
+	SpriteSetIDs           []string          `json:"sprite_set_ids,omitempty"`
+	SpriteSelectionHash    string            `json:"sprite_selection_hash,omitempty"`
+	SelectedSpriteSetCount int               `json:"selected_sprite_set_count,omitempty"`
+	CreatedAt              string            `json:"created_at"`
+	UpdatedAt              string            `json:"updated_at"`
 }
 
 type DesktopService struct {
@@ -451,9 +462,12 @@ func (s *DesktopService) mapJournalToDetail(j *core.TxJournal) OperationDetail {
 		ExpectedHash: j.ExpectedHash,
 		ActualHash:   j.ActualHash,
 		BackupID:     backupID,
-		CanRollback:  canRollback,
-		CreatedAt:    createdAt,
-		UpdatedAt:    updatedAt,
+		CanRollback:            canRollback,
+		SpriteSetIDs:           j.SpriteSetIDs,
+		SpriteSelectionHash:    j.SpriteSelectionHash,
+		SelectedSpriteSetCount: j.SelectedSpriteSetCount,
+		CreatedAt:              createdAt,
+		UpdatedAt:              updatedAt,
 	}
 }
 
@@ -513,24 +527,29 @@ func (s *DesktopService) Recover(operationID string) error {
 	return s.RollbackOperation(operationID)
 }
 
-func parseArchiveFiles(data []byte, category string) ([]core.PlannedFile, []string, packagezip.Report, error) {
+func parseArchiveFiles(data []byte, category string, isSelectedSpritepack bool, spriteSetIDs []string) ([]core.PlannedFile, []string, packagezip.Report, error) {
 	archiveData := data
 	var spriteWarnings []string
 	if category == "spritepack" {
-		spriteReport, scanErr := packagezip.ScanSpriteArchive(bytes.NewReader(data), int64(len(data)), packagezip.Limits{})
-		if scanErr != nil {
-			return nil, nil, packagezip.Report{}, scanErr
+		if !isSelectedSpritepack {
+			spriteReport, scanErr := packagezip.ScanSpriteArchive(bytes.NewReader(data), int64(len(data)), packagezip.Limits{})
+			if scanErr != nil {
+				return nil, nil, packagezip.Report{}, scanErr
+			}
+			setIDs := NormalizeSpriteSetIDs(spriteSetIDs)
+			if len(setIDs) == 0 {
+				setIDs = make([]string, 0, len(spriteReport.SpriteSets))
+				for _, set := range spriteReport.SpriteSets {
+					setIDs = append(setIDs, set.ID)
+				}
+			}
+			var err error
+			archiveData, err = packagezip.BuildSpriteSelection(bytes.NewReader(data), int64(len(data)), spriteReport, setIDs)
+			if err != nil {
+				return nil, nil, packagezip.Report{}, err
+			}
+			spriteWarnings = spriteReport.Warnings
 		}
-		setIDs := make([]string, 0, len(spriteReport.SpriteSets))
-		for _, set := range spriteReport.SpriteSets {
-			setIDs = append(setIDs, set.ID)
-		}
-		var err error
-		archiveData, err = packagezip.BuildSpriteSelection(bytes.NewReader(data), int64(len(data)), spriteReport, setIDs)
-		if err != nil {
-			return nil, nil, packagezip.Report{}, err
-		}
-		spriteWarnings = spriteReport.Warnings
 	}
 	report, err := packagezip.Scan(bytes.NewReader(archiveData), int64(len(archiveData)), packagezip.Limits{})
 	if err != nil {
@@ -583,6 +602,11 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 	}
 
 	var data []byte
+	var isSelectedSpritepack bool
+	var effectiveSpriteSetIDs []string
+	var effectiveSpriteSelectionHash string
+	var selectedSpriteSetCount int
+
 	if request.ArchiveID != "" {
 		if s.stagingMgr == nil {
 			return PlanResult{}, errors.New("staging_manager_not_initialized")
@@ -594,11 +618,50 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 		if request.ExpectedSHA != "" && !strings.EqualFold(entry.SHA256, request.ExpectedSHA) {
 			return PlanResult{}, errors.New("archive_hash_mismatch")
 		}
+		if entry.ModID != "" {
+			if request.ModID != "" && request.ModID != entry.ModID {
+				return PlanResult{}, errors.New("staged_mod_id_mismatch")
+			}
+			request.ModID = entry.ModID
+		}
+		if entry.VersionID != "" {
+			if request.VersionID != "" && request.VersionID != entry.VersionID {
+				return PlanResult{}, errors.New("staged_version_id_mismatch")
+			}
+			request.VersionID = entry.VersionID
+		}
+		if entry.Category != "" {
+			if request.Category != "" && request.Category != entry.Category {
+				return PlanResult{}, errors.New("staged_category_mismatch")
+			}
+			request.Category = entry.Category
+		}
+		if entry.IsSelectedSpritepack {
+			if request.Category != "" && request.Category != "spritepack" {
+				return PlanResult{}, errors.New("staged_category_mismatch")
+			}
+			request.Category = "spritepack"
+			if request.SpriteSelectionHash != "" && !strings.EqualFold(request.SpriteSelectionHash, entry.SpriteSelectionHash) {
+				return PlanResult{}, errors.New("sprite_selection_hash_mismatch")
+			}
+			if len(request.SpriteSetIDs) > 0 {
+				reqNorm := NormalizeSpriteSetIDs(request.SpriteSetIDs)
+				if strings.Join(reqNorm, ",") != strings.Join(entry.SpriteSetIDs, ",") {
+					return PlanResult{}, errors.New("sprite_selection_mismatch")
+				}
+			}
+			request.SpriteSetIDs = entry.SpriteSetIDs
+			request.SpriteSelectionHash = entry.SpriteSelectionHash
+		}
 		archiveData, err := os.ReadFile(entry.Path)
 		if err != nil {
 			return PlanResult{}, fmt.Errorf("read staged archive failed: %w", err)
 		}
 		data = archiveData
+		isSelectedSpritepack = entry.IsSelectedSpritepack
+		effectiveSpriteSetIDs = entry.SpriteSetIDs
+		effectiveSpriteSelectionHash = entry.SpriteSelectionHash
+		selectedSpriteSetCount = entry.SelectedSpriteSetCount
 	} else if request.ArchiveBase64 != "" {
 		const maxBridgeBase64Len = 22 * 1024 * 1024
 		if len(request.ArchiveBase64) > maxBridgeBase64Len {
@@ -613,12 +676,18 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 		return PlanResult{}, errors.New("archive_source_required")
 	}
 
+	if request.Category == "spritepack" && len(effectiveSpriteSetIDs) == 0 && len(request.SpriteSetIDs) > 0 {
+		effectiveSpriteSetIDs = NormalizeSpriteSetIDs(request.SpriteSetIDs)
+		effectiveSpriteSelectionHash = ComputeSpriteSelectionHash(effectiveSpriteSetIDs)
+		selectedSpriteSetCount = len(effectiveSpriteSetIDs)
+	}
+
 	hash := sha256.Sum256(data)
 	if request.ExpectedSHA != "" && !strings.EqualFold(hex.EncodeToString(hash[:]), request.ExpectedSHA) {
 		return PlanResult{}, errors.New("archive_hash_mismatch")
 	}
 
-	plannedFiles, warnings, report, err := parseArchiveFiles(data, request.Category)
+	plannedFiles, warnings, report, err := parseArchiveFiles(data, request.Category, isSelectedSpritepack, effectiveSpriteSetIDs)
 	if err != nil {
 		return PlanResult{}, err
 	}
@@ -643,14 +712,17 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 	}
 
 	plan, err := core.PlanInstall(manifest, s.root, blobs, core.InstallOperation{
-		OperationID:    request.OperationID,
-		InstallationID: request.ModID,
-		ModID:          request.ModID,
-		VersionID:      request.VersionID,
-		Version:        request.Version,
-		Title:          request.Title,
-		Priority:       request.Priority,
-		Files:          plannedFiles,
+		OperationID:            request.OperationID,
+		InstallationID:         request.ModID,
+		ModID:                  request.ModID,
+		VersionID:              request.VersionID,
+		Version:                request.Version,
+		Title:                  request.Title,
+		Priority:               request.Priority,
+		Files:                  plannedFiles,
+		SpriteSetIDs:           effectiveSpriteSetIDs,
+		SpriteSelectionHash:    effectiveSpriteSelectionHash,
+		SelectedSpriteSetCount: selectedSpriteSetCount,
 	})
 	if err != nil {
 		return PlanResult{}, err
@@ -737,19 +809,22 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 	}
 
 	return PlanResult{
-		PlanID:      plan.PlanID,
-		OperationID: plan.OperationID,
-		BackupID:    fmt.Sprintf("snapshot_%s", plan.OperationID),
-		Root:        s.root,
-		Generation:  plan.Generation,
-		Kind:        kind,
-		TargetID:    request.ModID,
-		ModTitle:    request.Title,
-		Version:     request.Version,
-		Priority:    priorityVal,
-		Actions:     actions,
-		Blockers:    plan.Blockers,
-		Risks:       risks,
+		PlanID:                 plan.PlanID,
+		OperationID:            plan.OperationID,
+		BackupID:               fmt.Sprintf("snapshot_%s", plan.OperationID),
+		Root:                   s.root,
+		Generation:             plan.Generation,
+		Kind:                   kind,
+		TargetID:               request.ModID,
+		ModTitle:               request.Title,
+		Version:                request.Version,
+		Priority:               priorityVal,
+		SpriteSetIDs:           effectiveSpriteSetIDs,
+		SpriteSelectionHash:    effectiveSpriteSelectionHash,
+		SelectedSpriteSetCount: selectedSpriteSetCount,
+		Actions:                actions,
+		Blockers:               plan.Blockers,
+		Risks:                  risks,
 		Summary: PlanPreviewSummary{
 			RestoresOriginal: plan.Summary.RestoresOriginal,
 			RestoresLayer:    plan.Summary.RestoresLayer,
@@ -995,7 +1070,15 @@ func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstall
 	if plan.OperationType == "install" || plan.OperationType == "update" {
 		req, ok := s.activePlanRequest.(ArchiveInstallRequest)
 		if ok && req.ModID != "" {
-			newReceipts, pErr := s.projectedInstalledArchives(req, s.activePlanReport, hex.EncodeToString(s.activePlanHash[:]), int64(len(s.activePlanArchive)))
+			newReceipts, pErr := s.projectedInstalledArchives(
+				req,
+				s.activePlanReport,
+				hex.EncodeToString(s.activePlanHash[:]),
+				int64(len(s.activePlanArchive)),
+				plan.SpriteSetIDs,
+				plan.SpriteSelectionHash,
+				plan.SelectedSpriteSetCount,
+			)
 			if pErr != nil {
 				return ArchiveInstallResult{}, pErr
 			}
@@ -1032,9 +1115,12 @@ func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstall
 	s.activePlanArchive = nil
 
 	return ArchiveInstallResult{
-		State:    "committed",
-		Files:    len(plan.Actions),
-		Warnings: []string{},
+		State:                  "committed",
+		Files:                  len(plan.Actions),
+		Warnings:               []string{},
+		SpriteSetIDs:           plan.SpriteSetIDs,
+		SpriteSelectionHash:    plan.SpriteSelectionHash,
+		SelectedSpriteSetCount: plan.SelectedSpriteSetCount,
 	}, nil
 }
 

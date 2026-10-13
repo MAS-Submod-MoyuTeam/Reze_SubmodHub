@@ -1,22 +1,51 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { fetchDownloadDescriptor, fetchPublishedCatalog, fetchSpriteSets, fetchVerifiedArchive, fetchVerifiedSpriteSelection } from './catalog-api';
+import { fetchDownloadDescriptor, fetchModVersion, fetchPublishedCatalog, fetchSpriteManifest, fetchSpriteSets, fetchVerifiedArchive, fetchVerifiedSpriteSelection } from './catalog-api';
 
-test('loads sprite sets and verifies a selected ZIP hash', async () => {
+test('loads sprite manifest with version_id and verifies a selected ZIP hash', async () => {
   const bytes = new TextEncoder().encode('selected sprite ZIP');
   const hash = createHash('sha256').update(bytes).digest('hex');
   const requests: string[] = [];
   const fetcher = async (input: RequestInfo | URL) => {
     requests.push(String(input));
-    if (String(input).endsWith('/spritepacks/m1')) return Response.json({ sets: [{ id: 'set_a', name: 'Set A', items: [{ display_name: '和服', preview_url: '/api/v1/spritepacks/m1/preview?set=set_a&item=0' }] }] });
-    return new Response(bytes, { headers: { 'X-Archive-SHA256': hash, 'Content-Length': String(bytes.length) } });
+    if (String(input).endsWith('/spritepacks/m1')) {
+      return Response.json({ version_id: 'v_manifest_1', sets: [{ id: 'set_a', name: 'Set A', items: [{ display_name: '和服', preview_url: '/api/v1/spritepacks/m1/preview?set=set_a&item=0' }] }] });
+    }
+    return new Response(bytes, { headers: { 'X-Archive-SHA256': hash, 'Content-Length': String(bytes.length), 'X-Version-ID': 'v_manifest_1' } });
   };
+  const manifest = await fetchSpriteManifest('m1', '/api/v1', fetcher as typeof fetch);
+  assert.equal(manifest.version_id, 'v_manifest_1');
+  assert.equal(manifest.sets[0].items[0].display_name, '和服');
+
   const sets = await fetchSpriteSets('m1', '/api/v1', fetcher as typeof fetch);
   assert.equal(sets[0].items[0].display_name, '和服');
-  const result = await fetchVerifiedSpriteSelection('m1', ['set_a'], '/api/v1', fetcher as typeof fetch);
+
+  const result = await fetchVerifiedSpriteSelection('m1', ['set_a'], '/api/v1', fetcher as typeof fetch, undefined, undefined, 'v_manifest_1');
   assert.deepEqual(new Uint8Array(await result.blob.arrayBuffer()), bytes);
-  assert.equal(requests[1], 'http://localhost/api/v1/spritepacks/m1/download?sets=set_a');
+  assert.equal(result.version_id, 'v_manifest_1');
+  assert.equal(requests[2], 'http://localhost/api/v1/spritepacks/m1/download?sets=set_a&version_id=v_manifest_1');
+});
+
+test('fetchVerifiedSpriteSelection detects version mismatch from server headers or 409 status', async () => {
+  const bytes = new TextEncoder().encode('data');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+
+  // Mismatched X-Version-ID header
+  const mismatchedFetcher = async () => new Response(bytes, {
+    headers: { 'X-Archive-SHA256': hash, 'Content-Length': String(bytes.length), 'X-Version-ID': 'v_newer' },
+  });
+  await assert.rejects(
+    fetchVerifiedSpriteSelection('m1', ['set_a'], '/api/v1', mismatchedFetcher as typeof fetch, undefined, undefined, 'v_older'),
+    /sprite_version_changed/,
+  );
+
+  // 409 sprite_version_changed response
+  const conflictFetcher = async () => Response.json({ code: 'sprite_version_changed', message: 'version changed' }, { status: 409 });
+  await assert.rejects(
+    fetchVerifiedSpriteSelection('m1', ['set_a'], '/api/v1', conflictFetcher as typeof fetch, undefined, undefined, 'v_older'),
+    /sprite_version_changed/,
+  );
 });
 
 test('rejects a sprite selection with an invalid server hash', async () => {
@@ -53,6 +82,19 @@ test('loads the published catalog and its latest versions', async () => {
   assert.equal(result.length, 1);
   assert.equal(result[0].version.version, '1.0.0');
   assert.deepEqual(paths, ['/api/v1/mods', '/api/v1/mods/m1/versions/v1']);
+});
+
+test('fetchModVersion loads and validates specific published version details', async () => {
+  const fetcher = async (input: RequestInfo | URL) => {
+    assert.equal(String(input), '/api/v1/mods/m1/versions/v2');
+    return Response.json({ id: 'v2', mod_id: 'm1', state: 'published', version: '2.0.0', sha256: 'b'.repeat(64), size_bytes: 1024 });
+  };
+  const ver = await fetchModVersion('m1', 'v2', '/api/v1', fetcher as typeof fetch);
+  assert.equal(ver.id, 'v2');
+  assert.equal(ver.version, '2.0.0');
+
+  const mismatchedFetcher = async () => Response.json({ id: 'v_wrong', mod_id: 'm1', state: 'published', version: '2.0.0' });
+  await assert.rejects(fetchModVersion('m1', 'v2', '/api/v1', mismatchedFetcher as typeof fetch), /invalid_version_response/);
 });
 
 test('does not replace failed API responses with demo content', async () => {

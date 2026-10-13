@@ -15,7 +15,7 @@ import { FileInspectModal } from './components/FileInspectModal';
 import { ExecutionProgressBar } from './components/ExecutionProgressBar';
 import { ExecutionCoordinator } from './executionCoordinator';
 import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
-import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
+import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
 import { INITIAL_OPERATIONS } from './data/mockData';
 import { createInstalledLoadCoordinator, LoadingStatus } from './installedLoading';
 import {
@@ -179,6 +179,9 @@ export default function App() {
           is_managed: true, files_count: receipt.files, size_bytes: receipt.size_bytes,
           installed_at: receipt.installed_at ? new Date(receipt.installed_at).toISOString() : new Date().toISOString(), sha256: receipt.sha256,
           integrity_status: 'unknown', managed_operation_id: receipt.operation_id,
+          sprite_set_ids: receipt.sprite_set_ids,
+          sprite_selection_hash: receipt.sprite_selection_hash,
+          selected_sprite_set_count: receipt.selected_sprite_set_count,
         };
       });
       const unmanaged: InstalledItem[] = local.filter((item) => !managedDirs.has(item.directory.toLowerCase())).map((item) => ({
@@ -370,7 +373,15 @@ export default function App() {
 
   // Handler: Download, verify, and install the selected published archive.
   // Handler: Download, verify, and install the selected published archive using Go streaming stage.
-  const handleStartInstallPlan = async (mod: ModSummary, selectedVersion?: { id: string; version: string; size_bytes: number; sha256: string }) => {
+  const handleStartInstallPlan = async (
+    mod: ModSummary,
+    selectedVersion?: { id: string; version: string; size_bytes: number; sha256: string },
+    selectedSpriteSetIDs?: string[],
+  ) => {
+    if (mod.category === 'spritepack' && (!selectedSpriteSetIDs || selectedSpriteSetIDs.length === 0)) {
+      setSelectedModDetail(mod);
+      return;
+    }
     const targetInstId = activeInstallationIdRef.current;
     if (!activeInstallation.is_valid || targetInstId === 'unverified') { showToast('请先验证 MAS 目录。'); return; }
     if (installingRef.current || isDownloadingArchive) return;
@@ -382,6 +393,7 @@ export default function App() {
     setInstallStage('preparing');
     const version = selectedVersion || { id: mod.latest_version_id, version: mod.latest_version, size_bytes: mod.size_bytes, sha256: mod.sha256 };
     const operationId = `op_install_${mod.id}_${Date.now()}`;
+    const normalizedSets = mod.category === 'spritepack' && selectedSpriteSetIDs ? normalizeSpriteSetIDs(selectedSpriteSetIDs) : undefined;
     let pollTimer: number | null = null;
     try {
       // If VITE_API_BASE_URL is configured, pass it; otherwise pass empty string to let Go use configured backend API URL
@@ -408,6 +420,9 @@ export default function App() {
         api_base: apiBase,
         version_id: version.id,
         operation_id: operationId,
+        mod_id: mod.id,
+        category: mod.category,
+        sprite_set_ids: normalizedSets,
       });
 
       if (pollTimer !== null) {
@@ -430,6 +445,8 @@ export default function App() {
         author: mod.author?.display_name || "",
         category: mod.category,
         priority: targetPriority,
+        sprite_set_ids: staged.sprite_set_ids || normalizedSets,
+        sprite_selection_hash: staged.sprite_selection_hash,
       });
       if (activeInstallationIdRef.current !== targetInstId) return;
       setCurrentPlan(mapPlanPreview(preview, {
@@ -445,17 +462,26 @@ export default function App() {
         version_id: version.id,
         version_str: version.version,
         priority: targetPriority,
+        sprite_set_ids: staged.sprite_set_ids || normalizedSets,
+        sprite_selection_hash: staged.sprite_selection_hash,
+        selected_sprite_set_count: staged.selected_sprite_set_count ?? normalizedSets?.length,
         expires_at: new Date(Date.now() + 300000).toISOString(),
         dependency_blockers: [],
         semantic_blockers: [],
         changes: [],
         backups_required: 0,
-        bytes_required: version.size_bytes,
+        bytes_required: staged.size_bytes || version.size_bytes,
         warnings: [],
       }));
     } catch (error) {
       if (activeInstallationIdRef.current === targetInstId) {
-        showToast(`安装失败：${error instanceof Error ? error.message : String(error)}`);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        if (errorMsg.includes('sprite_version_changed')) {
+          showToast('精灵包版本已更新，已刷新模组目录，请重新选择套装。');
+          void loadCatalog();
+        } else {
+          showToast(`安装失败：${errorMsg}`);
+        }
       }
     } finally {
       if (pollTimer !== null) clearInterval(pollTimer);
@@ -899,9 +925,9 @@ export default function App() {
           onDownloadArchive={(mod, versionId) => void handleDownloadArchive(mod, versionId)}
           isDownloadingArchive={isDownloadingArchive}
           archiveProgress={archiveProgress}
-          onStartInstallPlan={(mod, version) => {
+          onStartInstallPlan={(mod, version, spriteSetIDs) => {
             setSelectedModDetail(null);
-            void handleStartInstallPlan(mod, version);
+            void handleStartInstallPlan(mod, version, spriteSetIDs);
           }}
           isInstalling={installingModId === selectedModDetail.id}
           isInstalled={installedMods.some((i) => i.mod_id === selectedModDetail.id)}

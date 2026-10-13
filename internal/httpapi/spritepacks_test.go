@@ -288,3 +288,109 @@ func TestApprovingSpritepackReplacementRetiresOldArchive(t *testing.T) {
 		t.Fatalf("old review history: %d %+v", history.StatusCode, oldDetail.Version)
 	}
 }
+
+func TestSpritepackVersionIDValidationAndHeaders(t *testing.T) {
+	b := spriteFixture(t)
+	report, err := packagezip.ScanSpriteArchive(bytes.NewReader(b), int64(len(b)), packagezip.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dataDir, "archives"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(dataDir, "archives", "current.zip")
+	if err := os.WriteFile(archivePath, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewStore(dataDir, Catalog{
+		Mods:        []Mod{{ID: "m1", Category: "spritepack", LatestVersionID: "v1"}},
+		Versions:    map[string]Version{"v1": {ID: "v1", ModID: "m1", State: "published", ArchivePath: archivePath, ScanReportID: "scan_v1"}},
+		ScanReports: map[string]packagezip.Report{"scan_v1": report},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewStoreHandler(s))
+	defer server.Close()
+
+	// 1. Manifest includes version_id
+	res, err := http.Get(server.URL + "/api/v1/spritepacks/m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var manifest struct {
+		VersionID string `json:"version_id"`
+		Sets      []struct {
+			ID string `json:"id"`
+		} `json:"sets"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.VersionID != "v1" || len(manifest.Sets) != 2 {
+		t.Fatalf("manifest version_id: %q, sets: %d", manifest.VersionID, len(manifest.Sets))
+	}
+
+	// 2. Mismatched version_id on manifest returns 409 sprite_version_changed
+	conflictRes, err := http.Get(server.URL + "/api/v1/spritepacks/m1?version_id=v_old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conflictRes.Body.Close()
+	if conflictRes.StatusCode != http.StatusConflict {
+		t.Fatalf("expected 409 conflict, got %d", conflictRes.StatusCode)
+	}
+
+	// 3. Download returns X-Version-ID, X-Sprite-Selection-Hash, and X-Sprite-Sets
+	dlRes, err := http.Get(server.URL + "/api/v1/spritepacks/m1/download?sets=" + manifest.Sets[0].ID + "&version_id=v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dlRes.Body.Close()
+	dlBody, _ := io.ReadAll(dlRes.Body)
+	if dlRes.StatusCode != http.StatusOK {
+		t.Fatalf("download status: %d, body: %s", dlRes.StatusCode, string(dlBody))
+	}
+	if dlRes.Header.Get("X-Version-ID") != "v1" {
+		t.Fatalf("expected X-Version-ID: v1, got: %q", dlRes.Header.Get("X-Version-ID"))
+	}
+	expectedHash := sha256.Sum256([]byte(manifest.Sets[0].ID))
+	if dlRes.Header.Get("X-Sprite-Selection-Hash") != hex.EncodeToString(expectedHash[:]) {
+		t.Fatalf("expected X-Sprite-Selection-Hash: %x, got: %q", expectedHash, dlRes.Header.Get("X-Sprite-Selection-Hash"))
+	}
+	if dlRes.Header.Get("X-Sprite-Sets") != manifest.Sets[0].ID {
+		t.Fatalf("expected X-Sprite-Sets: %s, got: %q", manifest.Sets[0].ID, dlRes.Header.Get("X-Sprite-Sets"))
+	}
+
+	// 4. Download with mismatched version_id returns 409
+	dlConflict, err := http.Get(server.URL + "/api/v1/spritepacks/m1/download?sets=" + manifest.Sets[0].ID + "&version_id=v_old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dlConflict.Body.Close()
+	if dlConflict.StatusCode != http.StatusConflict {
+		t.Fatalf("expected 409 for download conflict, got: %d", dlConflict.StatusCode)
+	}
+
+	// 5. Download with duplicate set returns 400
+	dupRes, err := http.Get(server.URL + "/api/v1/spritepacks/m1/download?sets=" + manifest.Sets[0].ID + "," + manifest.Sets[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dupRes.Body.Close()
+	if dupRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for duplicate set, got: %d", dupRes.StatusCode)
+	}
+
+	// 6. Download with empty set returns 400
+	emptyRes, err := http.Get(server.URL + "/api/v1/spritepacks/m1/download?sets=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer emptyRes.Body.Close()
+	if emptyRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty set, got: %d", emptyRes.StatusCode)
+	}
+}

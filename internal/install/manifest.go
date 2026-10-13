@@ -43,16 +43,19 @@ func (f *FileRecord) ActiveLayer() *LayerRecord {
 }
 
 type InstallationRecord struct {
-	InstallationID string    `json:"installation_id"`
-	ModID          string    `json:"mod_id,omitempty"`
-	VersionID      string    `json:"version_id,omitempty"`
-	Version        string    `json:"version,omitempty"`
-	Title          string    `json:"title,omitempty"`
-	OperationID    string    `json:"operation_id"`
-	Order          int64     `json:"order"`
-	Priority       int       `json:"priority"`
-	Paths          []string  `json:"paths"` // canonical keys
-	InstalledAt    time.Time `json:"installed_at"`
+	InstallationID         string    `json:"installation_id"`
+	ModID                  string    `json:"mod_id,omitempty"`
+	VersionID              string    `json:"version_id,omitempty"`
+	Version                string    `json:"version,omitempty"`
+	Title                  string    `json:"title,omitempty"`
+	OperationID            string    `json:"operation_id"`
+	Order                  int64     `json:"order"`
+	Priority               int       `json:"priority"`
+	Paths                  []string  `json:"paths"` // canonical keys
+	InstalledAt            time.Time `json:"installed_at"`
+	SpriteSetIDs           []string  `json:"sprite_set_ids,omitempty"`
+	SpriteSelectionHash    string    `json:"sprite_selection_hash,omitempty"`
+	SelectedSpriteSetCount int       `json:"selected_sprite_set_count,omitempty"`
 }
 
 type Manifest struct {

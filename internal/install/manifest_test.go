@@ -1,6 +1,7 @@
 package install
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -229,5 +230,79 @@ func TestManifestSaveAndLoad(t *testing.T) {
 	f := loaded.GetFile("game/submods/a.rpy")
 	if f == nil || len(f.Layers) != 1 || f.Layers[0].Hash != "h1" || f.Original.Hash != "orig_h" {
 		t.Fatalf("unexpected file record: %+v", f)
+	}
+}
+
+func TestManifestSpritepackPartialSelectionCompatibility(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "manifest.json")
+
+	// 1. Save manifest with spritepack partial fields
+	m := NewManifest()
+	m.Installations["inst_sp"] = &InstallationRecord{
+		InstallationID:         "inst_sp",
+		ModID:                  "mod_sp",
+		VersionID:              "v1",
+		Version:                "1.0.0",
+		Title:                  "Spritepack Title",
+		OperationID:            "op_1",
+		Order:                  1,
+		Priority:               10,
+		Paths:                  []string{"game/mod_assets/monika/j/necklace.json"},
+		SpriteSetIDs:           []string{"set_a"},
+		SpriteSelectionHash:    "hash_a",
+		SelectedSpriteSetCount: 1,
+	}
+	if err := m.Save(p); err != nil {
+		t.Fatalf("save failed: %v", err)
+	}
+
+	loaded, err := LoadManifest(p)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+	inst := loaded.Installations["inst_sp"]
+	if inst == nil {
+		t.Fatal("expected inst_sp in loaded manifest")
+	}
+	if len(inst.SpriteSetIDs) != 1 || inst.SpriteSetIDs[0] != "set_a" {
+		t.Fatalf("unexpected SpriteSetIDs: %+v", inst.SpriteSetIDs)
+	}
+	if inst.SpriteSelectionHash != "hash_a" || inst.SelectedSpriteSetCount != 1 {
+		t.Fatalf("unexpected sprite hash or count: %+v", inst)
+	}
+
+	// 2. Backward compatibility: manifest JSON without sprite fields
+	legacyJSON := []byte(`{
+		"schema_version": 2,
+		"generation": 1,
+		"installations": {
+			"inst_legacy": {
+				"installation_id": "inst_legacy",
+				"mod_id": "mod_legacy",
+				"operation_id": "op_leg",
+				"order": 1,
+				"priority": 0,
+				"paths": ["game/script.rpy"]
+			}
+		},
+		"files": {}
+	}`)
+	legacyPath := filepath.Join(tmp, "legacy_manifest.json")
+	if err := os.WriteFile(legacyPath, legacyJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loadedLegacy, err := LoadManifest(legacyPath)
+	if err != nil {
+		t.Fatalf("load legacy failed: %v", err)
+	}
+	legInst := loadedLegacy.Installations["inst_legacy"]
+	if legInst == nil {
+		t.Fatal("expected inst_legacy in loaded manifest")
+	}
+	// Omitted fields must be empty/nil/0, never auto-inferred as full install
+	if len(legInst.SpriteSetIDs) != 0 || legInst.SpriteSelectionHash != "" || legInst.SelectedSpriteSetCount != 0 {
+		t.Fatalf("legacy record should have empty sprite fields: %+v", legInst)
 	}
 }
