@@ -113,3 +113,27 @@ test('mapPlanPreview carries spritepack partial install fields', () => {
   assert.equal(plan.sprite_selection_hash, 'hash_a');
   assert.equal(plan.selected_sprite_set_count, 1);
 });
+
+test('mapPlanPreview carries sprite_selection_context from metadata', () => {
+  const metadata: Plan = {
+    plan_id: 'p1', kind: 'update', installation_id: 'mas', mod_id: 'mod_ribbon',
+    mod_title: 'Ribbon Pack', category: 'spritepack', version_id: 'v1', version_str: '1.0.0',
+    expires_at: '', dependency_blockers: [], semantic_blockers: [], changes: [],
+    backups_required: 0, bytes_required: 2048, warnings: [],
+    sprite_selection_context: {
+      baseline_ids: ['set_a', 'set_b'],
+      final_ids: ['set_b'],
+      removed_ids: ['set_a'],
+      unavailable_installed_ids: [],
+    },
+  };
+  const preview = {
+    plan_id: 'backend-plan-sp', root: 'mas', generation: 1, kind: 'install',
+    target_id: 'mod_ribbon', mod_title: 'Ribbon Pack', version: '1.0.0', priority: 10,
+    actions: [], blockers: [], risks: [],
+    summary: { restores_original: 0, restores_layer: 0, metadata_only: 0, deletes_added: 0, writes_new: 0 },
+  };
+
+  const plan = mapPlanPreview(preview, metadata);
+  assert.deepEqual(plan.sprite_selection_context, metadata.sprite_selection_context);
+});

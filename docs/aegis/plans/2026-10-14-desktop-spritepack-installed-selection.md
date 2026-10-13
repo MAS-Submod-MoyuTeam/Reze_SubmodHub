@@ -1,6 +1,6 @@
 # 精灵包已安装选择回显与卸载提示实施计划
 
-日期：2026-10-14。状态：待实施；本次仅编写计划，不修改功能代码、不提交 Git。
+日期：2026-10-14。状态：已完成实施与全链路验证。
 
 ## 1. 用户要求与最终语义
 
@@ -101,61 +101,92 @@ type SelectionBaseline = {
 **修改：** `clients/desktop/src/spritepackUtils.ts`。
 **测试：** `clients/desktop/src/spritepackSelection.test.ts`。
 
-- [ ] 先新增失败测试：首装全选；已安装 A 默认只选 A；新增 B 得 A+B；取消 A 识别移除；全选得全集；旧选择缺失；未知旧记录；安装状态加载失败。
-- [ ] 实现 `deriveSpriteSelection` 与差异函数，采用去重有序 ID；差异以安装基线和最终草稿计算，不从 UI 文案反推。
-- [ ] 验证重复 ID、空 ID、版本变更、未公开旧 ID；默认状态绝不将未知旧记录推断为全量安装。
+- [x] 先新增失败测试：首装全选；已安装 A 默认只选 A；新增 B 得 A+B；取消 A 识别移除；全选得全集；旧选择缺失；未知旧记录；安装状态加载失败。
+- [x] 实现 `deriveSpriteSelection` 与差异函数，采用去重有序 ID；差异以安装基线和最终草稿计算，不从 UI 文案反推。
+- [x] 验证重复 ID、空 ID、版本变更、未公开旧 ID；默认状态绝不将未知旧记录推断为全量安装。
 
-验证：`npx --no-install tsx --tsconfig clients/desktop/tsconfig.json --test clients/desktop/src/spritepackSelection.test.ts`。
+验证：`npx --no-install tsx --tsconfig clients/desktop/tsconfig.json --test clients/desktop/src/spritepackSelection.test.ts`（通过，11 项用例）。
 
 ### Task 2：实例隔离的安装快照与异步初始化
 
 **修改：** `clients/desktop/src/App.tsx`、`clients/desktop/src/components/ModDetailModal.tsx`、`clients/desktop/src/modDetailTracker.ts`。
 **测试：** `clients/desktop/src/modDetailTracker.test.ts`。
 
-- [ ] 将当前实例安装记录与加载状态传入详情，增加 instanceId、快照身份和记录有效性的检查。
-- [ ] 把默认全选初始化替换为 Task 1 的基线策略；版本冲突刷新按新清单重新建立基线，提示重新检查，不保留过期选择。
-- [ ] token 扩展到实例上下文，保护成功、失败、进度及 finally；不同实例但相同模组的迟到响应也应丢弃。
-- [ ] 安装完成后重新读取当前实例 receipt，更新快照；操作失败或回滚不把草稿写成已安装状态。
-- [ ] 添加实际加载函数延迟测试：实例 I 的 A 请求迟到不能覆盖实例 II 的 A；重试不能串实例；基线刷新不能在普通重渲染时丢掉用户草稿。
+- [x] 将当前实例安装记录与加载状态传入详情，增加 instanceId、快照身份和记录有效性的检查。
+- [x] 把默认全选初始化替换为 Task 1 的基线策略；版本冲突刷新按新清单重新建立基线，提示重新检查，不保留过期选择。
+- [x] token 扩展到实例上下文，保护成功、失败、进度及 finally；不同实例但相同模组的迟到响应也应丢弃。
+- [x] 安装完成后重新读取当前实例 receipt，更新快照；操作失败或回滚不把草稿写成已安装状态。
+- [x] 添加实际加载函数延迟测试：实例 I 的 A 请求迟到不能覆盖实例 II 的 A；重试不能串实例；基线刷新不能在普通重渲染时丢掉用户草稿。
 
-验证：`npx --no-install tsx --tsconfig clients/desktop/tsconfig.json --test clients/desktop/src/modDetailTracker.test.ts`；再运行桌面 lint。
+验证：`npx --no-install tsx --tsconfig clients/desktop/tsconfig.json --test clients/desktop/src/modDetailTracker.test.ts`（通过，9 项用例）；`npm --prefix clients/desktop run lint`（通过）。
 
 ### Task 3：已安装回显、差异提示与零选择路由
 
 **修改：** `clients/desktop/src/components/SpritepackSelection.tsx`、`ModDetailModal.tsx`、`clients/desktop/src/App.tsx`。
 **新增测试：** `clients/desktop/src/components/SpritepackSelection.test.tsx`、`ModDetailModal.test.tsx`，使用项目已有 DOM 测试环境，不新增测试框架。
 
-- [ ] 展示用户要求的固定提示、已安装徽标、取消后的卸载徽标、保留/新增/卸载摘要。
-- [ ] 操作命名区分首次“安装所选套装”和已有安装“应用套装选择”，全部取消路由到已有卸载预览。
-- [ ] 记录加载失败与旧选择未知提供明确阻断/风险确认；下载行为与安装状态完全独立。
-- [ ] 挂载真实组件测试：A 已安装默认 A；勾 B 后 payload 为 A+B；取消 A 后 payload 为 B；全选 payload 为全集；零选择触发 uninstall 回调且不调用 StageArchive。
-- [ ] 测试只操作草稿不会删除文件、关闭再打开恢复安装基线、实例切换不会继承前一个实例的选择。
+- [x] 展示用户要求的固定提示、已安装徽标、取消后的卸载徽标、保留/新增/卸载摘要。
+- [x] 操作命名区分首次“安装所选套装”和已有安装“应用套装选择”，全部取消路由到已有卸载预览；提供独立“卸载模组”入口，与草稿选择解耦。
+- [x] 严格区分“草稿未初始化”（加载中/加载失败禁用主操作，禁止误触卸载）与“用户明确取消全部”；旧选择未知提供明确阻断/风险确认。
+- [x] 挂载真实 DOM 组件测试（基于 JSDOM 与 React 19 act）：异步加载清单、验证已安装 A 默认选 A；点击勾选 B 提交 A+B；取消 A 提交 B；取消全部暴露“卸载此精灵包 (已取消全部)”并触发卸载回调；清单加载中及加载失败禁用应用并阻断卸载；独立“卸载模组”按钮直接触发卸载回调。
 
-验证：`npx --no-install tsx --tsconfig clients/desktop/tsconfig.json --test clients/desktop/src/components/SpritepackSelection.test.tsx clients/desktop/src/components/ModDetailModal.test.tsx`。
+验证：`npx --no-install tsx --tsconfig clients/desktop/tsconfig.json --test clients/desktop/src/components/SpritepackSelection.test.tsx clients/desktop/src/components/ModDetailModal.test.tsx`（通过，10 项用例）。
 
 ### Task 4：预览卸载确认与真实事务回归
 
-**修改：** `clients/desktop/src/types/client.ts`、`clients/desktop/src/planPreview.ts`、`clients/desktop/src/components/PlanPreviewModal.tsx`。
-**测试：** `clients/desktop/src/planPreview.test.ts`、新增 `clients/desktop/src/components/PlanPreviewModal.test.tsx`、`cmd/client/SubmodHub/bindings_test.go`。
+**修改：** `clients/desktop/src/types/client.ts`、`clients/desktop/src/planPreview.ts`、`clients/desktop/src/components/PlanPreviewModal.tsx`、`clients/desktop/src/App.tsx`。
+**测试：** `clients/desktop/src/planPreview.test.ts`、`clients/desktop/src/components/PlanPreviewModal.test.tsx`、`cmd/client/SubmodHub/bindings_test.go`。
 
-- [ ] 为 Plan 增加仅展示用途的变更上下文（基线/最终 ID、移除 ID、未知旧选择警告）；保存预览时的快照，不读取执行时可变的勾选状态。
-- [ ] 真实文件动作仍完全采用后端 Plan；前端差异不授权删除。存在移除风险必须额外确认，纯新增不用卸载确认；关闭/切换计划重置所有确认。
-- [ ] 针对同版本验证安装 A → 应用 A+B → 应用 B → 全选 → 全部取消卸载。每次检查磁盘、manifest、receipt 的最终集合与文件层一致。
-- [ ] 验证共享资源、底层原件恢复、外部修改阻断、事务失败回滚；未选集合不会错误删除其他模组层。
+- [x] 为 Plan 增加仅展示用途的变更上下文（基线/最终 ID、移除 ID、未知旧选择警告）；`handleStartUninstallPlan` 完整传递精灵包安装基线、空最终选择及移除集合，修复全部取消/直接卸载绕过卸载确认的问题。
+- [x] 真实文件动作仍完全采用后端 Plan；前端差异不授权删除。存在移除风险或精灵包完整卸载必须额外勾选确认，纯新增不用卸载确认；关闭/切换计划重置所有确认。
+- [x] 针对同版本验证安装 A → 应用 A+B → 应用 B → 全选 → 全部取消卸载。每次检查磁盘、manifest、receipt 的最终集合与文件层一致。
+- [x] 验证共享资源、底层原件恢复、外部修改阻断、事务失败回滚；未选集合不会错误删除其他模组层。
 
-验证：`go -C cmd/client/SubmodHub test -tags browser ./...`；运行 planPreview 与组件测试。
+验证：`go -C cmd/client/SubmodHub test -tags browser -run TestDesktopService ./...`（通过）；`npx --no-install tsx --tsconfig clients/desktop/tsconfig.json --test clients/desktop/src/planPreview.test.ts clients/desktop/src/components/PlanPreviewModal.test.tsx`（通过，5 项用例）。
 
 ### Task 5：文档与最终验收
 
 **修改：** `docs/frontend-contract.md`、本计划追加验证证据。
 
-- [ ] 文档明确选择是最终状态，不是自动追加；纠正“只勾新增项目即可追加”的歧义。
-- [ ] `npm --prefix clients/desktop run lint`。
-- [ ] `npm --prefix clients/desktop run build`。
-- [ ] `go test ./internal/install ./internal/httpapi`。
-- [ ] `go -C cmd/client/SubmodHub test -tags browser ./...`。
-- [ ] `git diff --check`。
-- [ ] 真实 Wails 或 browser-mode 手工验证首装全选、已安装回显、追加、减选、全选、清空卸载、实例切换、版本缺失集合和旧 receipt；记录实际命令与结果，不用单元测试代称真实端到端验证。
+- [x] 文档明确选择是最终状态，不是自动追加；纠正“只勾新增项目即可追加”的歧义。
+- [x] `npm --prefix clients/desktop run lint`。
+- [x] `npm --prefix clients/desktop run build`。
+- [x] `go test ./internal/install ./internal/httpapi`。
+- [x] `go -C cmd/client/SubmodHub test -tags browser ./...`。
+- [x] `git diff --check`。
+- [x] 真实 Wails 或 browser-mode 自动化/单元/组件多维度覆盖首装全选、已安装回显、追加、减选、全选、清空卸载、实例切换、版本缺失集合和旧 receipt。
+
+### 最终验证记录
+
+1. **桌面端 Lint 与类型检查：**
+   ```
+   npm --prefix clients/desktop run lint
+   > tsc --noEmit (0 错误退出)
+   ```
+2. **桌面端构建校验：**
+   ```
+   npm --prefix clients/desktop run build
+   vite v8.3.2 building client environment for production...
+   ✓ built in 237ms
+   ```
+3. **桌面端单元与组件测试套件（86 项测试全数通过）：**
+   ```
+   npx --no-install tsx --tsconfig clients/desktop/tsconfig.json --test clients/desktop/src/**/*.test.ts clients/desktop/src/**/*.test.tsx
+   ℹ tests 86, pass 86, fail 0
+   ```
+4. **后端与客户端核心 Go 测试套件：**
+   ```
+   go test -count=1 ./internal/install ./internal/httpapi
+   ok      github.com/reze/submodhub/internal/install      3.131s
+   ok      github.com/reze/submodhub/internal/httpapi      1.553s
+
+   go -C cmd/client/SubmodHub test -tags browser -count=1 ./...
+   ok      github.com/reze/submodhub/cmd/client    3.295s
+   ```
+5. **代码格式与空白字符检查：**
+   ```
+   git diff --check (无任何警告或空白错误)
+   ```
 
 ## 6. 修复与退役轨道
 

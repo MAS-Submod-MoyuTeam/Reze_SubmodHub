@@ -4,29 +4,53 @@ import type { ModSummary } from './types/client';
 export type LoadReason = 'initial' | 'retry' | 'conflict';
 
 export interface ModDetailToken {
+  instanceId: string;
   modId: string;
   generation: number;
 }
 
 export interface ModDetailTracker {
+  setContext: (instanceId: string | null, modId: string | null) => void;
   setMod: (modId: string | null) => void;
+  setInstanceId: (instanceId: string | null) => void;
+  getInstanceId: () => string | null;
   getModId: () => string | null;
   getGeneration: () => number;
-  beginLoad: (expectedModId?: string) => ModDetailToken | null;
+  beginLoad: (expectedModId?: string, expectedInstanceId?: string) => ModDetailToken | null;
   isValid: (token: ModDetailToken | null | undefined) => boolean;
   invalidate: () => void;
 }
 
-export function createModDetailTracker(initialModId: string | null = null): ModDetailTracker {
+export function createModDetailTracker(
+  initialModId: string | null = null,
+  initialInstanceId: string | null = null
+): ModDetailTracker {
   let activeModId: string | null = initialModId;
+  let activeInstanceId: string | null = initialInstanceId;
   let generation = 0;
 
   return {
+    setContext(instanceId: string | null, modId: string | null) {
+      if (activeInstanceId !== instanceId || activeModId !== modId) {
+        activeInstanceId = instanceId;
+        activeModId = modId;
+        generation++;
+      }
+    },
     setMod(modId: string | null) {
       if (activeModId !== modId) {
         activeModId = modId;
         generation++;
       }
+    },
+    setInstanceId(instanceId: string | null) {
+      if (activeInstanceId !== instanceId) {
+        activeInstanceId = instanceId;
+        generation++;
+      }
+    },
+    getInstanceId() {
+      return activeInstanceId;
     },
     getModId() {
       return activeModId;
@@ -34,19 +58,27 @@ export function createModDetailTracker(initialModId: string | null = null): ModD
     getGeneration() {
       return generation;
     },
-    beginLoad(expectedModId?: string) {
+    beginLoad(expectedModId?: string, expectedInstanceId?: string) {
       if (expectedModId && expectedModId !== activeModId) {
+        return null;
+      }
+      if (expectedInstanceId !== undefined && expectedInstanceId !== activeInstanceId) {
         return null;
       }
       generation++;
       return {
+        instanceId: activeInstanceId ?? '',
         modId: activeModId ?? '',
         generation,
       };
     },
     isValid(token: ModDetailToken | null | undefined) {
       if (!token) return false;
-      return token.modId === activeModId && token.generation === generation;
+      return (
+        token.instanceId === (activeInstanceId ?? '') &&
+        token.modId === (activeModId ?? '') &&
+        token.generation === generation
+      );
     },
     invalidate() {
       generation++;
@@ -79,7 +111,7 @@ export interface ModDetailLoadHandlers {
 }
 
 /**
- * Unified detail loading execution engine with request generation and mod identity guards.
+ * Unified detail loading execution engine with request generation and mod/instance identity guards.
  * All state mutations (start, success, error, finally) are strictly guarded against stale responses.
  */
 export async function executeDetailLoad(
@@ -87,9 +119,10 @@ export async function executeDetailLoad(
   targetMod: ModSummary,
   reason: LoadReason,
   fetchers: ModDetailFetchers,
-  handlers: ModDetailLoadHandlers
+  handlers: ModDetailLoadHandlers,
+  targetInstanceId?: string
 ): Promise<boolean> {
-  const token = tracker.beginLoad(targetMod.id);
+  const token = tracker.beginLoad(targetMod.id, targetInstanceId);
   if (!token) {
     return false;
   }

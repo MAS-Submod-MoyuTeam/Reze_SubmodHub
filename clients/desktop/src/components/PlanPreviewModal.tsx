@@ -29,16 +29,27 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
 }) => {
   const [timeLeft, setTimeLeft] = useState(300); // 5 minutes validity countdown
   const [overwriteConfirmed, setOverwriteConfirmed] = useState(false);
+  const [uninstallConfirmed, setUninstallConfirmed] = useState(false);
 
   useEffect(() => {
     if (!plan) return;
+    setOverwriteConfirmed(false);
+    setUninstallConfirmed(false);
     const timer = setInterval(() => {
       setTimeLeft((prev) => Math.max(0, prev - 1));
     }, 1000);
     return () => clearInterval(timer);
-  }, [plan]);
+  }, [plan?.plan_id]);
 
   if (!plan) return null;
+
+  const spriteCtx = plan.sprite_selection_context;
+  const hasUninstallRemovals = Boolean(
+    spriteCtx &&
+    ((spriteCtx.removed_ids && spriteCtx.removed_ids.length > 0) ||
+      (spriteCtx.unavailable_installed_ids && spriteCtx.unavailable_installed_ids.length > 0) ||
+      spriteCtx.unknown_legacy_selection)
+  );
 
   const hasDependencyBlockers = plan.dependency_blockers.length > 0;
   const hasSemanticBlockers = plan.semantic_blockers.length > 0;
@@ -57,7 +68,8 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
     !isInvalidRoot &&
     !isInsufficientSpace &&
     !isExpired &&
-    (!hasOverwrites || overwriteConfirmed);
+    (!hasOverwrites || overwriteConfirmed) &&
+    (!hasUninstallRemovals || uninstallConfirmed);
 
   const formatBytes = (bytes: number) => {
     if (bytes >= 1024 * 1024) {
@@ -266,21 +278,67 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
           )}
 
           {/* Spritepack Selection Summary */}
-          {(plan.category === 'spritepack' || (plan.sprite_set_ids && plan.sprite_set_ids.length > 0)) && (
+          {(plan.category === 'spritepack' || (plan.sprite_set_ids && plan.sprite_set_ids.length > 0) || Boolean(spriteCtx)) && (
             <div className="p-3.5 rounded-lg bg-emerald-950/40 border border-emerald-800/80 flex items-start gap-3 text-xs">
               <Sparkles className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
               <div className="flex-1 space-y-1.5">
                 <div className="font-semibold text-emerald-300">
-                  精灵包服饰套装部分安装摘要
+                  {plan.kind === 'uninstall'
+                    ? '精灵包服饰套装卸载摘要'
+                    : '精灵包服饰套装部分安装摘要'}
                 </div>
                 <div className="text-neutral-300 leading-relaxed">
-                  已选择 <span className="font-semibold text-emerald-400">{plan.selected_sprite_set_count ?? plan.sprite_set_ids?.length ?? 0}</span> 个外观套装集合，预计应用 <span className="font-semibold text-neutral-100">{plan.changes.length}</span> 个文件变更。
+                  {plan.kind === 'uninstall' ? (
+                    <>
+                      将卸载所有外观套装集合（共{' '}
+                      <span className="font-semibold text-rose-400">
+                        {spriteCtx?.unknown_legacy_selection
+                          ? '未知数量（旧安装记录）'
+                          : (spriteCtx?.removed_ids?.length ?? spriteCtx?.baseline_ids?.length ?? 0)}
+                      </span>{' '}
+                      个套装），预计应用{' '}
+                      <span className="font-semibold text-neutral-100">{plan.changes.length}</span>{' '}
+                      个文件变更。
+                    </>
+                  ) : (
+                    <>
+                      最终保留{' '}
+                      <span className="font-semibold text-emerald-400">
+                        {plan.selected_sprite_set_count ?? plan.sprite_set_ids?.length ?? 0}
+                      </span>{' '}
+                      个外观套装集合，预计应用{' '}
+                      <span className="font-semibold text-neutral-100">{plan.changes.length}</span>{' '}
+                      个文件变更。
+                    </>
+                  )}
                 </div>
                 {plan.sprite_set_ids && plan.sprite_set_ids.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] pt-1">
-                    <span className="text-neutral-400">已选集合 ID:</span>
+                    <span className="text-neutral-400">保留/新增集合 ID:</span>
                     {plan.sprite_set_ids.map((id) => (
                       <span key={id} className="px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-200 border border-emerald-700/60">
+                        {id}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {spriteCtx?.removed_ids && spriteCtx.removed_ids.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] pt-1">
+                    <span className="text-rose-400">
+                      {plan.kind === 'uninstall' ? '将卸载的集合 ID:' : '将卸载旧集合 ID:'}
+                    </span>
+                    {spriteCtx.removed_ids.map((id) => (
+                      <span key={id} className="px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800/80">
+                        {id}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {spriteCtx?.unavailable_installed_ids && spriteCtx.unavailable_installed_ids.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] pt-1">
+                    <span className="text-amber-400">版本缺失集合 (将移除):</span>
+                    {spriteCtx.unavailable_installed_ids.map((id) => (
+                      <span key={id} className="px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/80">
                         {id}
                       </span>
                     ))}
@@ -291,7 +349,43 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                     选择指纹: <span className="text-neutral-300">{plan.sprite_selection_hash.slice(0, 16)}...</span>
                   </div>
                 )}
+                <div className="text-[11px] text-neutral-400 leading-normal pt-1">
+                  说明：卸载表示移除本模组拥有的相关文件层；共享文件可能仍被其他选中集合或模组使用，物理文件是否删除/恢复以真实后端计划为准。
+                </div>
               </div>
+            </div>
+          )}
+
+          {/* Uninstall Removals Confirmation Checkbox */}
+          {hasUninstallRemovals && (
+            <div className="p-3 rounded-lg bg-rose-950/60 border border-rose-800/80 flex items-center justify-between text-xs text-rose-200">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>
+                  {spriteCtx?.unknown_legacy_selection
+                    ? (plan.kind === 'uninstall'
+                        ? '检测到旧安装记录无法验证，卸载将清理本模组相关的所有安装文件。'
+                        : '检测到旧安装记录无法验证，应用后将替换并卸载未保留的原有套装。')
+                    : (plan.kind === 'uninstall'
+                        ? `本操作将完整卸载已安装的全部 ${spriteCtx?.removed_ids?.length || 0} 个外观套装。`
+                        : `本操作将卸载 ${[...(spriteCtx?.removed_ids || []), ...(spriteCtx?.unavailable_installed_ids || [])].length} 个未保留的已安装外观套装。`)}
+                </span>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer font-medium select-none text-rose-300 bg-rose-900/40 px-2.5 py-1 rounded border border-rose-700/60 hover:bg-rose-900/60 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={uninstallConfirmed}
+                  onChange={(e) => setUninstallConfirmed(e.target.checked)}
+                  className="rounded text-rose-500 focus:ring-rose-500 bg-neutral-900 border-neutral-700"
+                />
+                <span>
+                  {plan.kind === 'uninstall'
+                    ? (spriteCtx?.unknown_legacy_selection
+                        ? '我确认卸载此旧版本精灵包并清理相关文件'
+                        : '我确认卸载此精灵包及所有已安装套装')
+                    : '我确认应用后将卸载未保留的已安装套装'}
+                </span>
+              </label>
             </div>
           )}
 
@@ -392,6 +486,10 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                   ? '计划已过期，请关闭重新预览'
                   : hasOverwrites && !overwriteConfirmed
                   ? '写入受阻：请勾选确认覆盖已有文件'
+                  : hasUninstallRemovals && !uninstallConfirmed
+                  ? (plan.kind === 'uninstall'
+                      ? '写入受阻：请勾选确认卸载已安装套装'
+                      : '写入受阻：请勾选确认卸载未保留的已安装套装')
                   : '写入受阻：存在阻断项或未解决的依赖/语义冲突'}
               </span>
             ) : (

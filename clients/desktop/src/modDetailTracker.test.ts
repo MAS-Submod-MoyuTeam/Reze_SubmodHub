@@ -494,3 +494,115 @@ test('submod loading: respects tracker and rejects stale response across mod swi
   assert.equal(resultA, false);
   assert.equal(activeVersions[0].id, 'v_b', 'Submod A must not overwrite Submod B');
 });
+
+test('instance isolation: delayed response from Instance 1 for Mod A does not write to Instance 2 for Mod A', async () => {
+  const tracker = createModDetailTracker('mod_shared', 'inst_1');
+  const modShared = makeMockMod('mod_shared', 'spritepack');
+
+  let activeInstanceId = 'inst_1';
+  let activeSets: any[] = [];
+  let loading = false;
+  let error = '';
+
+  const handlers: ModDetailLoadHandlers = {
+    onStart: () => {
+      loading = true;
+      error = '';
+    },
+    onSpritepackSuccess: (manifest) => {
+      activeSets = manifest.sets;
+    },
+    onSubmodSuccess: () => {},
+    onError: (msg) => {
+      error = msg;
+    },
+    onFinally: () => {
+      loading = false;
+    },
+  };
+
+  let resolveInst1!: (manifest: SpriteManifestLike) => void;
+  const promiseInst1 = new Promise<SpriteManifestLike>((res) => {
+    resolveInst1 = res;
+  });
+
+  const fetchersInst1: ModDetailFetchers = {
+    fetchSpriteManifest: async () => promiseInst1,
+    fetchModVersion: async () => null,
+    fetchPublishedVersions: async () => [],
+    fetchModImages: async () => [],
+  };
+
+  // Start load for mod_shared on inst_1
+  const runInst1 = executeDetailLoad(tracker, modShared, 'initial', fetchersInst1, handlers, 'inst_1');
+  assert.equal(loading, true);
+
+  // Switch instance to inst_2 while same mod_shared is active
+  activeInstanceId = 'inst_2';
+  tracker.setContext('inst_2', 'mod_shared');
+
+  const fetchersInst2: ModDetailFetchers = {
+    fetchSpriteManifest: async () => ({
+      version_id: 'v_inst2',
+      sets: [{ id: 'set_inst2', name: 'Inst 2 Set' } as any],
+    }),
+    fetchModVersion: async () => null,
+    fetchPublishedVersions: async () => [],
+    fetchModImages: async () => [],
+  };
+
+  const runInst2 = executeDetailLoad(tracker, modShared, 'initial', fetchersInst2, handlers, 'inst_2');
+  const resultInst2 = await runInst2;
+  assert.equal(resultInst2, true);
+  assert.equal(activeSets.length, 1);
+  assert.equal(activeSets[0].id, 'set_inst2');
+
+  // Now the slow response from Instance 1 arrives
+  resolveInst1({
+    version_id: 'v_inst1',
+    sets: [{ id: 'set_inst1', name: 'Inst 1 Set' } as any],
+  });
+  const resultInst1 = await runInst1;
+  assert.equal(resultInst1, false, 'Delayed response from inst_1 must be rejected');
+  assert.equal(activeSets[0].id, 'set_inst2', 'State from inst_2 must not be overwritten');
+});
+
+test('instance isolation: error response from Instance 1 does not report error to Instance 2', async () => {
+  const tracker = createModDetailTracker('mod_shared', 'inst_1');
+  const modShared = makeMockMod('mod_shared', 'spritepack');
+
+  let reportedError = '';
+
+  const handlers: ModDetailLoadHandlers = {
+    onStart: () => {},
+    onSpritepackSuccess: () => {},
+    onSubmodSuccess: () => {},
+    onError: (msg) => {
+      reportedError = msg;
+    },
+    onFinally: () => {},
+  };
+
+  let rejectInst1!: (err: Error) => void;
+  const promiseInst1 = new Promise<SpriteManifestLike>((_, rej) => {
+    rejectInst1 = rej;
+  });
+
+  const fetchersInst1: ModDetailFetchers = {
+    fetchSpriteManifest: async () => promiseInst1,
+    fetchModVersion: async () => null,
+    fetchPublishedVersions: async () => [],
+    fetchModImages: async () => [],
+  };
+
+  const runInst1 = executeDetailLoad(tracker, modShared, 'initial', fetchersInst1, handlers, 'inst_1');
+
+  // Switch instance to inst_2
+  tracker.setContext('inst_2', 'mod_shared');
+
+  // Now reject inst_1
+  rejectInst1(new Error('Network failure in instance 1'));
+  const resultInst1 = await runInst1;
+  assert.equal(resultInst1, false);
+  assert.equal(reportedError, '', 'Error from old instance must not be written to new instance');
+});

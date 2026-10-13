@@ -142,6 +142,7 @@ func TestDesktopServicePartialSpritepackInstallAndUpdate(t *testing.T) {
 	}
 
 	root := t.TempDir()
+	safeCleanupDir(t, root)
 	if err := os.MkdirAll(filepath.Join(root, "game"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1143,5 +1144,185 @@ func TestDesktopServiceExecutionProgressAndAuditVisibility(t *testing.T) {
 	}
 	if unDetail.BackupID != unPreview.BackupID {
 		t.Fatalf("expected uninstall BackupID %q, got %q", unPreview.BackupID, unDetail.BackupID)
+	}
+}
+
+func TestDesktopServiceSpritepackFullLifecycleAndSharedPreservation(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	files := map[string]string{
+		"Set A/mod_assets/monika/j/necklace.json":      `{"type":0,"name":"necklace","img_sit":"necklace"}`,
+		"Set A/mod_assets/monika/a/acs-necklace-0.png": "necklace image",
+		"Set B/mod_assets/monika/j/ribbon.json":        `{"type":0,"name":"ribbon","img_sit":"ribbon"}`,
+		"Set B/mod_assets/monika/a/acs-ribbon-0.png":   "ribbon image",
+	}
+	for name, content := range files {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	spriteReport, err := packagezip.ScanSpriteArchive(bytes.NewReader(archive.Bytes()), int64(archive.Len()), packagezip.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var setAID, setBID string
+	for _, s := range spriteReport.SpriteSets {
+		if strings.Contains(s.Name, "Set A") {
+			setAID = s.ID
+		} else if strings.Contains(s.Name, "Set B") {
+			setBID = s.ID
+		}
+	}
+	if setAID == "" || setBID == "" {
+		t.Fatalf("could not identify set IDs: sets=%+v", spriteReport.SpriteSets)
+	}
+
+	root := t.TempDir()
+	safeCleanupDir(t, root)
+	if err := os.MkdirAll(filepath.Join(root, "game", "Submods", "unrelated"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	service := NewDesktopService()
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Install an unrelated mod
+	unrelatedPath := filepath.Join(root, "game", "Submods", "unrelated", "unrelated.rpy")
+	if err := os.WriteFile(unrelatedPath, []byte("unrelated mod content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	hash := sha256.Sum256(archive.Bytes())
+	expectedHash := hex.EncodeToString(hash[:])
+	archiveBase64 := base64.StdEncoding.EncodeToString(archive.Bytes())
+
+	// Step 1: Install Set A
+	previewA, err := service.PreviewArchive(ArchiveInstallRequest{
+		OperationID:   "op_lifecycle_1_a",
+		ArchiveBase64: archiveBase64,
+		ExpectedSHA:   expectedHash,
+		ModID:         "sprite_cycle",
+		Title:         "Sprite Cycle Mod",
+		VersionID:     "v1",
+		Version:       "1.0.0",
+		Category:      "spritepack",
+		SpriteSetIDs:  []string{setAID},
+	})
+	if err != nil {
+		t.Fatalf("Preview Set A failed: %v", err)
+	}
+	if _, err := service.ExecutePlan(ExecutePlanRequest{PlanID: previewA.PlanID, Confirmed: true}); err != nil {
+		t.Fatalf("Execute Plan A failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "necklace.json")); err != nil {
+		t.Fatalf("necklace.json must exist after step 1: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "ribbon.json")); !os.IsNotExist(err) {
+		t.Fatalf("ribbon.json must not exist after step 1")
+	}
+
+	// Step 2: Apply Set A + Set B (Add B)
+	previewAB, err := service.PreviewArchive(ArchiveInstallRequest{
+		OperationID:   "op_lifecycle_2_ab",
+		ArchiveBase64: archiveBase64,
+		ExpectedSHA:   expectedHash,
+		ModID:         "sprite_cycle",
+		Title:         "Sprite Cycle Mod",
+		VersionID:     "v1",
+		Version:       "1.0.0",
+		Category:      "spritepack",
+		SpriteSetIDs:  []string{setAID, setBID},
+	})
+	if err != nil {
+		t.Fatalf("Preview A+B failed: %v", err)
+	}
+	if _, err := service.ExecutePlan(ExecutePlanRequest{PlanID: previewAB.PlanID, Confirmed: true}); err != nil {
+		t.Fatalf("Execute Plan A+B failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "necklace.json")); err != nil {
+		t.Fatalf("necklace.json must exist after step 2: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "ribbon.json")); err != nil {
+		t.Fatalf("ribbon.json must exist after step 2: %v", err)
+	}
+
+	// Step 3: Apply Set B only (Remove A)
+	previewB, err := service.PreviewArchive(ArchiveInstallRequest{
+		OperationID:   "op_lifecycle_3_b",
+		ArchiveBase64: archiveBase64,
+		ExpectedSHA:   expectedHash,
+		ModID:         "sprite_cycle",
+		Title:         "Sprite Cycle Mod",
+		VersionID:     "v1",
+		Version:       "1.0.0",
+		Category:      "spritepack",
+		SpriteSetIDs:  []string{setBID},
+	})
+	if err != nil {
+		t.Fatalf("Preview B failed: %v", err)
+	}
+	if _, err := service.ExecutePlan(ExecutePlanRequest{PlanID: previewB.PlanID, Confirmed: true}); err != nil {
+		t.Fatalf("Execute Plan B failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "necklace.json")); !os.IsNotExist(err) {
+		t.Fatalf("necklace.json must be removed after step 3")
+	}
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "ribbon.json")); err != nil {
+		t.Fatalf("ribbon.json must exist after step 3: %v", err)
+	}
+
+	// Step 4: Apply all sets again
+	previewAll, err := service.PreviewArchive(ArchiveInstallRequest{
+		OperationID:   "op_lifecycle_4_all",
+		ArchiveBase64: archiveBase64,
+		ExpectedSHA:   expectedHash,
+		ModID:         "sprite_cycle",
+		Title:         "Sprite Cycle Mod",
+		VersionID:     "v1",
+		Version:       "1.0.0",
+		Category:      "spritepack",
+		SpriteSetIDs:  []string{setAID, setBID},
+	})
+	if err != nil {
+		t.Fatalf("Preview all failed: %v", err)
+	}
+	if _, err := service.ExecutePlan(ExecutePlanRequest{PlanID: previewAll.PlanID, Confirmed: true}); err != nil {
+		t.Fatalf("Execute Plan all failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "necklace.json")); err != nil {
+		t.Fatalf("necklace.json must exist after step 4: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "ribbon.json")); err != nil {
+		t.Fatalf("ribbon.json must exist after step 4: %v", err)
+	}
+
+	// Step 5: Full uninstall (when user deselects all sets)
+	unPreview, err := service.PreviewUninstall("sprite_cycle")
+	if err != nil {
+		t.Fatalf("Preview uninstall failed: %v", err)
+	}
+	if _, err := service.ExecutePlan(ExecutePlanRequest{PlanID: unPreview.PlanID, Confirmed: true}); err != nil {
+		t.Fatalf("Execute uninstall plan failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "necklace.json")); !os.IsNotExist(err) {
+		t.Fatalf("necklace.json must be removed after step 5")
+	}
+	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "ribbon.json")); !os.IsNotExist(err) {
+		t.Fatalf("ribbon.json must be removed after step 5")
+	}
+
+	// Verify unrelated mod was NEVER touched during the entire lifecycle!
+	unrelatedBytes, err := os.ReadFile(unrelatedPath)
+	if err != nil || string(unrelatedBytes) != "unrelated mod content" {
+		t.Fatalf("unrelated mod content was corrupted: %v, content: %q", err, string(unrelatedBytes))
 	}
 }

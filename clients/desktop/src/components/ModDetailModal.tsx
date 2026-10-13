@@ -4,9 +4,15 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { fetchModImages, fetchModVersion, fetchPublishedVersions, fetchSpriteManifest, fetchVerifiedSpriteSelection, type CatalogVersion, type DownloadProgress, type SpriteSet } from '../../../../ui/catalog-api';
 import { ModSummary } from '../types/client';
-import { isSpriteSelectionValid } from '../spritepackUtils';
+import {
+  calculateSpriteSelectionDiff,
+  deriveSpriteSelection,
+  isSpriteSelectionValid,
+  type SpriteInstallationSnapshot,
+} from '../spritepackUtils';
 import { SpritepackSelection } from './SpritepackSelection';
 import { createModDetailTracker, executeDetailLoad, type LoadReason } from '../modDetailTracker';
+import type { LoadingStatus } from '../installedLoading';
 
 interface Props {
   mod: ModSummary | null;
@@ -14,6 +20,7 @@ interface Props {
   onSelectMod: (mod: ModSummary) => void;
   onClose: () => void;
   onStartInstallPlan: (mod: ModSummary, version?: CatalogVersion, selectedSpriteSetIDs?: string[]) => void;
+  onStartUninstallPlan?: (mod: ModSummary) => void;
   onDownloadArchive: (mod: ModSummary, versionId: string) => void;
   isDownloadingArchive: boolean;
   isInstalling: boolean;
@@ -21,13 +28,33 @@ interface Props {
   isInstalled: boolean;
   installedVersion?: string;
   hasUpdate?: boolean;
+  instanceId?: string;
+  installationSnapshot?: SpriteInstallationSnapshot | null;
+  installedLoadingStatus?: LoadingStatus;
 }
 
-const apiBase = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+const apiBase = `${((import.meta as any).env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
 const formatBytes = (bytes: number) => bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 const Markdown: React.FC<{ value: string }> = ({ value }) => <div className="min-w-0 space-y-2 break-words [&_a]:text-sky-400 [&_a]:underline [&_h1]:text-base [&_h2]:text-sm [&_h1]:font-semibold [&_h2]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-neutral-900 [&_pre]:p-2 [&_table]:block [&_table]:overflow-x-auto [&_img]:max-w-full"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{value}</ReactMarkdown></div>;
 
-export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod, onClose, onStartInstallPlan, onDownloadArchive, isDownloadingArchive, isInstalling, archiveProgress, isInstalled, installedVersion, hasUpdate }) => {
+export const ModDetailModal: React.FC<Props> = ({
+  mod,
+  catalogMods,
+  onSelectMod,
+  onClose,
+  onStartInstallPlan,
+  onStartUninstallPlan,
+  onDownloadArchive,
+  isDownloadingArchive,
+  isInstalling,
+  archiveProgress,
+  isInstalled,
+  installedVersion,
+  hasUpdate,
+  instanceId,
+  installationSnapshot,
+  installedLoadingStatus,
+}) => {
   const [versions, setVersions] = useState<CatalogVersion[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -41,11 +68,37 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
   const [manifestError, setManifestError] = useState('');
   const [downloadError, setDownloadError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [legacyRiskConfirmed, setLegacyRiskConfirmed] = useState(false);
+  const [isDraftInitialized, setIsDraftInitialized] = useState(false);
 
   const modRef = useRef(mod);
   modRef.current = mod;
 
-  const trackerRef = useRef(createModDetailTracker(mod?.id ?? null));
+  const trackerRef = useRef(createModDetailTracker(mod?.id ?? null, instanceId ?? null));
+
+  // Compute baseline and diff from current instance records and manifest
+  const baseline = deriveSpriteSelection(
+    spriteSets,
+    installationSnapshot,
+    installedLoadingStatus || 'success'
+  );
+  const diff = calculateSpriteSelectionDiff(baseline, selectedSets);
+
+  // Track baseline identity to prevent accidental overwrite of user draft on standard re-renders
+  const baselineKey = `${instanceId || ''}:${mod?.id || ''}:${manifestVersionId}:${installationSnapshot?.operationId || ''}:${installationSnapshot?.selectionHash || ''}:${installedLoadingStatus || ''}`;
+  const lastInitializedKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (mod?.category !== 'spritepack') return;
+    if (loading || manifestError) return;
+    if (baseline.mode === 'loading' || baseline.mode === 'error') return;
+
+    if (lastInitializedKeyRef.current !== baselineKey) {
+      lastInitializedKeyRef.current = baselineKey;
+      setSelectedSets(baseline.initialIds);
+      setIsDraftInitialized(true);
+    }
+  }, [baselineKey, baseline.mode, baseline.initialIds, loading, manifestError, mod?.category]);
 
   const loadDetails = async (options?: { reason?: LoadReason; targetMod?: ModSummary }) => {
     const target = options?.targetMod ?? modRef.current;
@@ -70,6 +123,9 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
           setLoading(true);
           setManifestError('');
           if (r === 'initial') {
+            setIsDraftInitialized(false);
+            lastInitializedKeyRef.current = null;
+            setLegacyRiskConfirmed(false);
             setDownloadError('');
             setVersions([]);
             setSelectedVersionId(m.latest_version_id);
@@ -81,20 +137,22 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
             setDownloadingSprite(false);
             setSpriteProgress(null);
           } else if (r === 'conflict') {
+            setIsDraftInitialized(false);
+            lastInitializedKeyRef.current = null;
             setDownloadError('精灵包版本已更新，正在重新加载最新清单…');
           }
         },
         onSpritepackSuccess: (manifest, ver, r) => {
           setSpriteSets(manifest.sets);
-          if (r === 'conflict') {
-            setSelectedSets([]);
-            setDownloadError('精灵包版本已更新，已刷新至最新版本，请重新选择套装。');
-          } else {
-            setSelectedSets(manifest.sets.map((set) => set.id));
-          }
           setManifestVersionId(ver?.id || manifest.version_id || '');
           setManifestVersion(ver);
           setManifestError('');
+
+          if (r === 'conflict') {
+            // Version conflict refresh: re-establish baseline and notify user
+            lastInitializedKeyRef.current = null;
+            setDownloadError('精灵包版本已更新，已刷新至最新版本，请重新检查套装选择。');
+          }
         },
         onSubmodSuccess: (pubVersions, pics) => {
           setVersions(pubVersions);
@@ -102,6 +160,7 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
           setManifestError('');
         },
         onError: (msg, r) => {
+          setIsDraftInitialized(false);
           if (r === 'conflict') {
             setManifestError(`重新加载清单失败：${msg}`);
             setDownloadError('');
@@ -112,12 +171,13 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
         onFinally: () => {
           setLoading(false);
         },
-      }
+      },
+      instanceId
     );
   };
 
   useEffect(() => {
-    trackerRef.current.setMod(mod?.id ?? null);
+    trackerRef.current.setContext(instanceId ?? null, mod?.id ?? null);
     if (!mod) {
       return;
     }
@@ -125,7 +185,7 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
     return () => {
       trackerRef.current.invalidate();
     };
-  }, [mod?.id, mod?.category, mod?.latest_version_id]);
+  }, [instanceId, mod?.id, mod?.category, mod?.latest_version_id]);
 
   if (!mod) return null;
   const selected = versions.find((version) => version.id === selectedVersionId) || versions[0];
@@ -175,6 +235,12 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
 
   const progress = mod.category === 'spritepack' ? spriteProgress : archiveProgress;
   const progressPercent = progress && progress.total > 0 ? Math.min(100, Math.round(progress.received / progress.total * 100)) : 0;
+
+  // Determine whether this version differs from what is currently installed
+  const isVersionChanged = Boolean(
+    hasUpdate ||
+    (installationSnapshot?.versionId && manifestVersionId && installationSnapshot.versionId !== manifestVersionId)
+  );
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section role="dialog" aria-modal="true" aria-label={`${mod.title} 详情`} className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-2xl">
@@ -240,6 +306,10 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
             loading={loading}
             error={manifestError}
             onRetry={() => void loadDetails({ reason: 'retry' })}
+            baseline={baseline}
+            diff={diff}
+            legacyRiskConfirmed={legacyRiskConfirmed}
+            onToggleLegacyRisk={setLegacyRiskConfirmed}
           />
         ) : (
           <section className="space-y-3"><h3 className="font-semibold">版本历史</h3><div className="flex gap-2 overflow-x-auto pb-1">{orderedVersions.map((version) => <button key={version.id} onClick={() => setSelectedVersionId(version.id)} className={`shrink-0 rounded px-3 py-1.5 ${selected?.id === version.id ? 'bg-emerald-700 text-white' : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'}`}>{version.version}{version.deprecated && <AlertTriangle className="ml-1 inline h-3 w-3 text-amber-400" aria-label="不推荐使用" />}</button>)}</div>
@@ -265,6 +335,21 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
               : `已选择 ${selectedSets.length}/${spriteSets.length} 个外观套装`}
           </span>
           <div className="flex flex-wrap gap-2">
+            {isInstalled && onStartUninstallPlan && (
+              <button
+                type="button"
+                disabled={isInstalling}
+                onClick={() => {
+                  onClose();
+                  onStartUninstallPlan(mod);
+                }}
+                className="flex items-center gap-1.5 rounded border border-rose-800/80 bg-rose-950/40 px-3 py-2 font-medium text-rose-300 hover:bg-rose-900/60 disabled:opacity-50"
+                title="直接卸载此模组的全部已安装内容"
+              >
+                <X className="h-4 w-4" />
+                卸载模组
+              </button>
+            )}
             <button
               type="button"
               disabled={!isSpriteSelectionValid(selectedSets, spriteSets, loading, manifestError) || downloadingSprite}
@@ -274,22 +359,139 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
               <Download className="h-4 w-4" />
               下载已选 ZIP ({selectedSets.length})
             </button>
-            <button
-              type="button"
-              disabled={!isSpriteSelectionValid(selectedSets, spriteSets, loading, manifestError) || isInstalling}
-              onClick={() => {
-                onClose();
-                onStartInstallPlan(
-                  mod,
-                  manifestVersion || undefined,
-                  selectedSets,
-                );
-              }}
-              className="flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
-            >
-              <Download className="h-4 w-4" />
-              {isInstalling ? '安装中…' : `安装已选套装 (${selectedSets.length})`}
-            </button>
+
+            {/* Action button routing: Install / Apply Selection / Uninstall */}
+            {loading ? (
+              <button
+                type="button"
+                disabled
+                className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 font-semibold text-neutral-500 disabled:opacity-50 cursor-not-allowed"
+              >
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                正在读取套装清单…
+              </button>
+            ) : manifestError ? (
+              <button
+                type="button"
+                disabled
+                className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 font-semibold text-neutral-500 disabled:opacity-50 cursor-not-allowed"
+              >
+                套装清单读取失败
+              </button>
+            ) : baseline.mode === 'loading' || baseline.mode === 'error' ? (
+              <button
+                type="button"
+                disabled
+                className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 font-semibold text-neutral-500 disabled:opacity-50 cursor-not-allowed"
+              >
+                {baseline.mode === 'loading' ? '正在读取安装状态…' : '安装状态读取失败'}
+              </button>
+            ) : !isDraftInitialized ? (
+              <button
+                type="button"
+                disabled
+                className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 font-semibold text-neutral-500 disabled:opacity-50 cursor-not-allowed"
+              >
+                正在初始化选择…
+              </button>
+            ) : baseline.mode === 'first_install' ? (
+              <button
+                type="button"
+                disabled={!isSpriteSelectionValid(selectedSets, spriteSets, loading, manifestError) || isInstalling}
+                onClick={() => {
+                  onClose();
+                  onStartInstallPlan(
+                    mod,
+                    manifestVersion || undefined,
+                    selectedSets
+                  );
+                }}
+                className="flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" />
+                {isInstalling ? '安装中…' : `安装所选套装 (${selectedSets.length})`}
+              </button>
+            ) : baseline.mode === 'known_installed' ? (
+              selectedSets.length === 0 ? (
+                <button
+                  type="button"
+                  disabled={isInstalling}
+                  onClick={() => {
+                    onClose();
+                    onStartUninstallPlan?.(mod);
+                  }}
+                  className="flex items-center gap-1.5 rounded bg-rose-700 px-3 py-2 font-semibold text-white hover:bg-rose-600 disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                  卸载此精灵包 (已取消全部)
+                </button>
+              ) : diff.isUnchanged && !isVersionChanged ? (
+                <button
+                  type="button"
+                  disabled
+                  className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 font-semibold text-neutral-500 cursor-not-allowed border border-neutral-700"
+                >
+                  套装选择未变化
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!isSpriteSelectionValid(selectedSets, spriteSets, loading, manifestError) || isInstalling}
+                  onClick={() => {
+                    onClose();
+                    onStartInstallPlan(
+                      mod,
+                      manifestVersion || undefined,
+                      selectedSets
+                    );
+                  }}
+                  className="flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
+                >
+                  <Download className="h-4 w-4" />
+                  {isInstalling ? '应用中…' : `应用套装选择 (${selectedSets.length})`}
+                </button>
+              )
+            ) : baseline.mode === 'unknown_installed' ? (
+              selectedSets.length === 0 ? (
+                <button
+                  type="button"
+                  disabled={isInstalling}
+                  onClick={() => {
+                    onClose();
+                    onStartUninstallPlan?.(mod);
+                  }}
+                  className="flex items-center gap-1.5 rounded bg-rose-700 px-3 py-2 font-semibold text-white hover:bg-rose-600 disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                  卸载此精灵包 (已取消全部)
+                </button>
+              ) : !legacyRiskConfirmed ? (
+                <button
+                  type="button"
+                  disabled
+                  className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 font-semibold text-neutral-500 cursor-not-allowed border border-neutral-700"
+                >
+                  请先确认替换旧安装风险
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!isSpriteSelectionValid(selectedSets, spriteSets, loading, manifestError) || isInstalling}
+                  onClick={() => {
+                    onClose();
+                    onStartInstallPlan(
+                      mod,
+                      manifestVersion || undefined,
+                      selectedSets
+                    );
+                  }}
+                  className="flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
+                >
+                  <Download className="h-4 w-4" />
+                  {isInstalling ? '应用中…' : `应用套装选择 (${selectedSets.length})`}
+                </button>
+              )
+            ) : null}
           </div>
         </footer>
       ) : (
@@ -297,6 +499,20 @@ export const ModDetailModal: React.FC<Props> = ({ mod, catalogMods, onSelectMod,
           <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-800 p-4 text-xs">
             <span className="text-neutral-400">{isInstalled ? `${hasUpdate ? '可更新' : '已安装'} ${installedVersion || ''}` : '选择版本后下载或安装'}</span>
             <div className="flex flex-wrap gap-2">
+              {isInstalled && onStartUninstallPlan && (
+                <button
+                  type="button"
+                  disabled={isInstalling}
+                  onClick={() => {
+                    onClose();
+                    onStartUninstallPlan(mod);
+                  }}
+                  className="flex items-center gap-1.5 rounded border border-rose-800/80 bg-rose-950/40 px-3 py-2 font-medium text-rose-300 hover:bg-rose-900/60 disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                  卸载模组
+                </button>
+              )}
               <button onClick={() => onDownloadArchive(mod, selected.id)} disabled={isDownloadingArchive} className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 text-neutral-100 hover:bg-neutral-700 disabled:opacity-50"><Download className="h-4 w-4" />{isDownloadingArchive ? (archiveProgress?.stage === 'connecting' ? '连接中' : archiveProgress?.stage === 'verifying' ? '校验中' : `下载中 ${archiveProgress && archiveProgress.total > 0 ? Math.round(archiveProgress.received / archiveProgress.total * 100) : 0}%`) : '下载 ZIP'}</button>
               <button onClick={() => { onClose(); onStartInstallPlan(mod, selected); }} disabled={isInstalling} className="flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"><Download className="h-4 w-4" />{isInstalling ? '安装中…' : '安装'}</button>
             </div>

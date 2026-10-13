@@ -118,7 +118,9 @@
 | `RecoverOperation` / `RestoreBackup` | 实例、操作/备份 ID | `operation_id,status` |
 | `ExportLogs` | 可选操作 ID | 本地导出文件位置 |
 
-`Plan` 至少包含 `plan_id,kind,installation_id,mod_id,version_id,expires_at,dependency_blockers,semantic_blockers,changes,backups_required,bytes_required,warnings`。对于 `spritepack`，可包含可选的 `sprite_set_ids,sprite_selection_hash,selected_sprite_set_count`。每条 `change` 含 `target_path,action,previous_owner,next_owner,previous_hash,next_hash,reason`。只在阻断项为空、权限有效且 MAS 未运行时允许确认。
+`Plan` 至少包含 `plan_id,kind,installation_id,mod_id,version_id,expires_at,dependency_blockers,semantic_blockers,changes,backups_required,bytes_required,warnings`。对于 `spritepack`，包含 `sprite_set_ids,sprite_selection_hash,selected_sprite_set_count` 以及变更上下文 `sprite_selection_context`。每条 `change` 含 `target_path,action,previous_owner,next_owner,previous_hash,next_hash,reason`。只在阻断项为空、权限有效且 MAS 未运行时允许确认。
+
+**精灵包选择最终状态语义**：客户端的套装勾选表示“应用后最终安装的集合”，不是本次增量下载清单。若已安装 A，追加 B 须保持 A 勾选并勾选 B（提交 A+B）；若仅勾选 B，则应用后 A 将被卸载；若取消勾选全部套装，操作路由至“卸载此精灵包”。首次安装默认全选；已有可验证安装默认仅勾选已安装集合；未知旧记录默认零选且须确认替换风险。若存在移除已安装套装、版本缺失集合或未知旧记录替换，预览弹窗要求用户显式勾选“我确认应用后将卸载未保留的已安装套装”方可执行写入。下载 ZIP 行为独立于安装状态，不支持零集合下载。
 
 操作状态为 `planned -> downloading -> scanning -> backed_up -> writing -> committed`；失败时为 `blocked|recoverable|rolling_back|rolled_back`。前端必须能在重启后通过 `operation_id` 重连状态。进度事件可优化体验，但持久化的 `GetOperation` 是权威来源。
 

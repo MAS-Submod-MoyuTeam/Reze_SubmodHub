@@ -106,6 +106,14 @@ export interface PlanChange {
   backup_required: boolean;
 }
 
+export interface SpriteSelectionPlanContext {
+  baseline_ids?: string[];
+  final_ids?: string[];
+  removed_ids?: string[];
+  unavailable_installed_ids?: string[];
+  unknown_legacy_selection?: boolean;
+}
+
 export interface Plan {
   backend_operation_id?: string;
   archive_sha256?: string;
@@ -143,6 +151,7 @@ export interface Plan {
   sprite_set_ids?: string[];
   sprite_selection_hash?: string;
   selected_sprite_set_count?: number;
+  sprite_selection_context?: SpriteSelectionPlanContext;
 }
 
 export type OperationState =

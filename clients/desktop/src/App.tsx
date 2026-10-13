@@ -27,6 +27,7 @@ import {
   Plan,
   PlanChange,
   ExecutionSession,
+  SpriteSelectionPlanContext,
 } from './types/client';
 
 const UNVERIFIED_INSTALLATION: Installation = {
@@ -449,6 +450,18 @@ export default function App() {
         sprite_selection_hash: staged.sprite_selection_hash,
       });
       if (activeInstallationIdRef.current !== targetInstId) return;
+
+      const finalSpriteSets = staged.sprite_set_ids || normalizedSets || [];
+      const spriteSelectionContext = mod.category === 'spritepack' ? {
+        baseline_ids: existing?.sprite_set_ids || [],
+        final_ids: finalSpriteSets,
+        removed_ids: existing?.sprite_set_ids && existing?.sprite_selection_hash
+          ? normalizeSpriteSetIDs(existing.sprite_set_ids).filter((id) => !finalSpriteSets.includes(id))
+          : [],
+        unavailable_installed_ids: [],
+        unknown_legacy_selection: Boolean(existing?.is_managed && (!existing?.sprite_set_ids || !existing?.sprite_selection_hash)),
+      } : undefined;
+
       setCurrentPlan(mapPlanPreview(preview, {
         backend_operation_id: operationId,
         archive_sha256: staged.sha256,
@@ -465,6 +478,7 @@ export default function App() {
         sprite_set_ids: staged.sprite_set_ids || normalizedSets,
         sprite_selection_hash: staged.sprite_selection_hash,
         selected_sprite_set_count: staged.selected_sprite_set_count ?? normalizedSets?.length,
+        sprite_selection_context: spriteSelectionContext,
         expires_at: new Date(Date.now() + 300000).toISOString(),
         dependency_blockers: [],
         semantic_blockers: [],
@@ -505,14 +519,35 @@ export default function App() {
       await SetMASRoot(activeInstallation.path_hint);
       const preview = await PreviewUninstall(item.managed_operation_id);
       if (activeInstallationIdRef.current !== targetInstId) return;
+
+      const isSpritepack = item.category === 'spritepack';
+      const installedSetIds = normalizeSpriteSetIDs(item.sprite_set_ids);
+      const hasValidSelection = Boolean(item.sprite_set_ids && item.sprite_selection_hash);
+      const unknownLegacy = Boolean(isSpritepack && (!item.sprite_set_ids || !item.sprite_selection_hash));
+
+      const spriteSelectionContext: SpriteSelectionPlanContext | undefined = isSpritepack
+        ? {
+            baseline_ids: installedSetIds,
+            final_ids: [],
+            removed_ids: hasValidSelection && installedSetIds.length > 0 ? installedSetIds : [],
+            unavailable_installed_ids: [],
+            unknown_legacy_selection: unknownLegacy || !hasValidSelection || installedSetIds.length === 0,
+          }
+        : undefined;
+
       const uninstallPlan: Plan = {
         plan_id: preview.plan_id,
         kind: 'uninstall',
         installation_id: targetInstId,
         mod_id: item.mod_id,
         mod_title: item.title,
+        author_name: item.author_name || '未知作者',
+        category: item.category,
         version_id: item.installed_version_id,
         version_str: item.installed_version,
+        sprite_set_ids: [],
+        selected_sprite_set_count: 0,
+        sprite_selection_context: spriteSelectionContext,
         expires_at: new Date(Date.now() + 300000).toISOString(),
         dependency_blockers: [],
         semantic_blockers: [],
@@ -614,6 +649,9 @@ export default function App() {
             has_update: false, integrity_status: 'intact', is_managed: true,
             managed_operation_id: operationId, files_count: result.files,
             priority: nextPriority,
+            sprite_set_ids: plan.sprite_set_ids,
+            sprite_selection_hash: plan.sprite_selection_hash,
+            selected_sprite_set_count: plan.selected_sprite_set_count,
           } : item);
           return [...prev, {
             mod_id: plan.mod_id, title: plan.mod_title, summary: '已通过 SubmodHub 验证安装',
@@ -622,6 +660,9 @@ export default function App() {
             latest_version_id: plan.version_id, has_update: false, priority: nextPriority, is_managed: true,
             files_count: result.files, size_bytes: plan.bytes_required, installed_at: new Date().toISOString(),
             sha256: plan.archive_sha256 || '', integrity_status: 'intact', managed_operation_id: operationId,
+            sprite_set_ids: plan.sprite_set_ids,
+            sprite_selection_hash: plan.sprite_selection_hash,
+            selected_sprite_set_count: plan.selected_sprite_set_count,
           }];
         });
         showToast(`已通过 Wails Go 安装核心写入 ${result.files} 个文件。`);
@@ -929,6 +970,13 @@ export default function App() {
             setSelectedModDetail(null);
             void handleStartInstallPlan(mod, version, spriteSetIDs);
           }}
+          onStartUninstallPlan={(mod) => {
+            setSelectedModDetail(null);
+            const installed = installedMods.find((i) => i.mod_id === mod.id);
+            if (installed) {
+              void handleStartUninstallPlan(installed);
+            }
+          }}
           isInstalling={installingModId === selectedModDetail.id}
           isInstalled={installedMods.some((i) => i.mod_id === selectedModDetail.id)}
           installedVersion={
@@ -937,6 +985,20 @@ export default function App() {
           hasUpdate={
             installedMods.find((i) => i.mod_id === selectedModDetail.id)?.has_update
           }
+          instanceId={activeInstallationId}
+          installationSnapshot={(() => {
+            const installed = installedMods.find((i) => i.mod_id === selectedModDetail.id && i.is_managed);
+            if (!installed) return null;
+            return {
+              instanceId: activeInstallationId,
+              modId: installed.mod_id,
+              versionId: installed.installed_version_id,
+              operationId: installed.managed_operation_id || '',
+              setIds: installed.sprite_set_ids,
+              selectionHash: installed.sprite_selection_hash,
+            };
+          })()}
+          installedLoadingStatus={modsLoadingStatus}
         />
       )}
 

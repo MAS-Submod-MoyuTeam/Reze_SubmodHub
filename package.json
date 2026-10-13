@@ -4,5 +4,9 @@
   "version": "1.0.0",
   "dependencies": {
     "@noble/hashes": "^2.0.1"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^30.0.0",
+    "jsdom": "^29.1.1"
   }
 }
