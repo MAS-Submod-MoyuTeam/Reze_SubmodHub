@@ -81,7 +81,7 @@ func browserServiceHandler(service *DesktopService) http.Handler {
 					result, err = service.DeleteSpritepack(value)
 				}
 			}
-				case "StageArchive":
+		case "StageArchive":
 			var value StageArchiveRequest
 			err = arg(0, &value)
 			if err == nil {
@@ -117,6 +117,12 @@ func browserServiceHandler(service *DesktopService) http.Handler {
 			var priorities map[string]int
 			if err = arg(0, &priorities); err == nil {
 				result, err = service.PreviewPriority(priorities)
+			}
+		case "PreviewRepair":
+			var value string
+			err = arg(0, &value)
+			if err == nil {
+				result, err = service.PreviewRepair(value)
 			}
 		case "PreviewUninstall":
 			var value string

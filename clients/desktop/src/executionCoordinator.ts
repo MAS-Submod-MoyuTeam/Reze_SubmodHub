@@ -1,4 +1,9 @@
-import type { Operation, ExecutionSession, Plan } from './types/client';
+import type { Operation, ExecutionSession, Plan, OperationState } from './types/client';
+
+export interface FinishSessionOptions {
+  confirmedState?: OperationState | string;
+  files?: number;
+}
 
 export function createInitialOperationFromPlan(plan: Plan, instanceId: string): Operation {
   const opId = plan.backend_operation_id || plan.plan_id;
@@ -35,9 +40,11 @@ export function isTerminalOperation(op: Operation): boolean {
     op.state === 'committed' ||
     op.state === 'rolled_back' ||
     op.state === 'needs_manual_recovery' ||
+    op.state === 'unknown' ||
     op.phase === 'committed' ||
     op.phase === 'rolled_back' ||
-    op.phase === 'needs_manual_recovery'
+    op.phase === 'needs_manual_recovery' ||
+    op.phase === 'unknown'
   );
 }
 
@@ -163,7 +170,8 @@ export class ExecutionCoordinator {
   async finishSession(
     operationId: string,
     targetInstanceId: string,
-    error?: Error | null
+    error?: Error | null,
+    options?: FinishSessionOptions
   ): Promise<void> {
     if (
       this.options.activeInstanceId() !== targetInstanceId ||
@@ -175,42 +183,156 @@ export class ExecutionCoordinator {
     this.stopPolling();
     const generation = ++this.sessionGeneration;
 
+    let detail: Operation | null = null;
+    let queryError: Error | null = null;
+
     try {
-      const detail = await this.options.getOperation(operationId);
-      if (this.isSessionValid(generation, targetInstanceId, operationId) && detail) {
-        const finished = isTerminalOperation(detail) || !!error;
-        const updatedSession: ExecutionSession = {
-          operation_id: operationId,
-          installation_id: targetInstanceId,
-          plan_id: this.currentSession?.plan_id || operationId,
-          kind: this.currentSession?.kind || detail.kind,
-          mod_title: this.currentSession?.mod_title || detail.mod_title,
-          mod_id: this.currentSession?.mod_id || detail.mod_id,
-          operation: detail,
-          is_finished: finished,
-          error: error?.message || detail.error?.message || null,
-        };
-        this.currentSession = updatedSession;
-        this.options.onSessionChange(updatedSession);
-        this.options.onOperationsChange((prev) => mergeOperationIntoList(prev, detail));
-        return;
-      }
-    } catch {
-      // If fetching fails, still finalize current session with error if present
+      detail = await this.options.getOperation(operationId);
+    } catch (err) {
+      queryError = err instanceof Error ? err : new Error(String(err));
     }
 
-    if (
-      this.isSessionValid(generation, targetInstanceId, operationId) &&
-      this.currentSession
-    ) {
+    if (!this.isSessionValid(generation, targetInstanceId, operationId) || !this.currentSession) {
+      return;
+    }
+
+    if (detail) {
+      const isCommitted =
+        detail.state === 'committed' ||
+        detail.phase === 'committed' ||
+        options?.confirmedState === 'committed';
+      const finished = isTerminalOperation(detail) || !!error || isCommitted;
+      let finalOp: Operation = { ...detail };
+      if (options?.confirmedState === 'committed' && finalOp.state !== 'committed') {
+        finalOp.state = 'committed';
+        finalOp.phase = 'committed';
+        if (finalOp.progress) {
+          finalOp.progress.percent = 100;
+        }
+      }
+      if (options?.files !== undefined && (finalOp.progress.processed_files === 0 || !finalOp.progress.processed_files)) {
+        finalOp.progress.processed_files = options.files;
+        finalOp.progress.total_files = Math.max(finalOp.progress.total_files, options.files);
+      }
+      if (error && !isCommitted) {
+        finalOp = {
+          ...finalOp,
+          error: finalOp.error || { code: 'execute_error', message: error.message },
+        };
+      }
       const updatedSession: ExecutionSession = {
-        ...this.currentSession,
-        is_finished: true,
-        error: error ? error.message : this.currentSession.error,
+        operation_id: operationId,
+        installation_id: targetInstanceId,
+        plan_id: this.currentSession.plan_id || operationId,
+        kind: this.currentSession.kind || finalOp.kind,
+        mod_title: this.currentSession.mod_title || finalOp.mod_title,
+        mod_id: this.currentSession.mod_id || finalOp.mod_id,
+        operation: finalOp,
+        is_finished: finished,
+        error: isCommitted ? (detail.error?.message || null) : (detail.error?.message || error?.message || null),
+        communication_error: (error && isCommitted) ? error.message : null,
       };
       this.currentSession = updatedSession;
       this.options.onSessionChange(updatedSession);
+      this.options.onOperationsChange((prev) => mergeOperationIntoList(prev, finalOp));
+      return;
     }
+
+    // Detail query failed or returned empty:
+    // Check if we already have a confirmed terminal state (e.g. from polling or passed options)
+    const currentOp = this.currentSession.operation;
+    const isCommitted =
+      options?.confirmedState === 'committed' ||
+      currentOp.state === 'committed' ||
+      currentOp.phase === 'committed';
+    const isNeedsManual =
+      options?.confirmedState === 'needs_manual_recovery' ||
+      currentOp.state === 'needs_manual_recovery' ||
+      currentOp.phase === 'needs_manual_recovery';
+    const isRolledBack =
+      options?.confirmedState === 'rolled_back' ||
+      currentOp.state === 'rolled_back' ||
+      currentOp.phase === 'rolled_back';
+
+    const queryErrorMsg = queryError?.message || '后端状态查询失败';
+
+    if (isCommitted) {
+      // Confirmed committed state MUST be preserved.
+      // Display query or communication exception separately.
+      const finalOp: Operation = {
+        ...currentOp,
+        state: 'committed',
+        phase: 'committed',
+        progress: {
+          ...currentOp.progress,
+          percent: 100,
+          stage: currentOp.progress?.stage || '已提交',
+        },
+      };
+      if (options?.files !== undefined && (finalOp.progress.processed_files === 0 || !finalOp.progress.processed_files)) {
+        finalOp.progress.processed_files = options.files;
+        finalOp.progress.total_files = Math.max(finalOp.progress.total_files, options.files);
+      }
+      const commError = error
+        ? (queryError ? `${error.message} (查询异常: ${queryErrorMsg})` : error.message)
+        : (queryError ? `后端状态查询失败: ${queryErrorMsg}` : null);
+
+      const updatedSession: ExecutionSession = {
+        ...this.currentSession,
+        operation: finalOp,
+        is_finished: true,
+        error: currentOp.error?.message || null,
+        communication_error: commError,
+      };
+      this.currentSession = updatedSession;
+      this.options.onSessionChange(updatedSession);
+      this.options.onOperationsChange((prev) => mergeOperationIntoList(prev, finalOp));
+      return;
+    }
+
+    if (isNeedsManual || isRolledBack) {
+      // Confirmed terminal recovery/rollback state MUST be preserved.
+      const commError = error
+        ? (queryError ? `${error.message} (查询异常: ${queryErrorMsg})` : error.message)
+        : (queryError ? `后端状态查询失败: ${queryErrorMsg}` : null);
+
+      const updatedSession: ExecutionSession = {
+        ...this.currentSession,
+        is_finished: true,
+        error: currentOp.error?.message || error?.message || null,
+        communication_error: commError,
+      };
+      this.currentSession = updatedSession;
+      this.options.onSessionChange(updatedSession);
+      this.options.onOperationsChange((prev) => mergeOperationIntoList(prev, currentOp));
+      return;
+    }
+
+    // Only when there is no confirmed terminal state / determined result do we fall back to unknown
+    const fallbackOp: Operation = {
+      ...currentOp,
+      state: 'unknown',
+      phase: 'unknown',
+      progress: {
+        ...currentOp.progress,
+        stage: '后端状态查询失败，结果未知',
+      },
+      error: error
+        ? { code: 'query_failed', message: error.message }
+        : queryError
+          ? { code: 'query_failed', message: queryError.message }
+          : currentOp.error,
+    };
+    const updatedSession: ExecutionSession = {
+      ...this.currentSession,
+      operation: fallbackOp,
+      is_finished: true,
+      error: error ? error.message : (queryError ? queryError.message : (this.currentSession.error || '后端状态查询失败')),
+      communication_error: error ? error.message : (queryError ? queryError.message : null),
+    };
+    this.currentSession = updatedSession;
+    this.options.onSessionChange(updatedSession);
+    this.options.onOperationsChange((prev) => mergeOperationIntoList(prev, fallbackOp));
   }
 
   clearSession() {

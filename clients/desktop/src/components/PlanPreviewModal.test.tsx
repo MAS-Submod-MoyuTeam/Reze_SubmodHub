@@ -43,6 +43,14 @@ function makeMockPlan(override?: Partial<Plan>): Plan {
   };
 }
 
+test('external drift distinguishes pending recovery from ordinary repair', () => {
+ const html = renderToStaticMarkup(<PlanPreviewModal plan={makeMockPlan({blockers:['external_change: game/demo.rpy (expected old got missing)']})} activeInstallation={makeMockInstallation()} isGameRunning={false} onClose={() => {}} onApplyPlan={() => {}} onOpenRecovery={() => {}} />);
+ assert.match(html, /external_change/);
+ assert.match(html, /检查未完成事务/);
+ assert.match(html, /没有未完成事务/);
+ assert.doesNotMatch(html, /事务校验阻断 \[plan_blocked\]/);
+});
+
 test('PlanPreviewModal: pure new install does not require uninstall confirmation', () => {
   const plan = makeMockPlan({
     sprite_selection_context: {

@@ -116,6 +116,7 @@ export interface SpriteSelectionPlanContext {
 
 export interface Plan {
   backend_operation_id?: string;
+  target_installation_id?: string;
   archive_sha256?: string;
   category?: 'submod' | 'spritepack';
   plan_id: string;
@@ -165,7 +166,8 @@ export type OperationState =
   | 'recoverable'
   | 'rolling_back'
   | 'rolled_back'
-  | 'needs_manual_recovery';
+  | 'needs_manual_recovery'
+  | 'unknown';
 
 export interface Operation {
   operation_id: string;
@@ -214,10 +216,12 @@ export interface ExecutionSession {
   operation: Operation;
   is_finished: boolean;
   error?: string | null;
+  communication_error?: string | null;
 }
 
 export interface InstalledItem {
   mod_id: string;
+  installation_id?: string;
   title: string;
   summary: string;
   author_name: string;

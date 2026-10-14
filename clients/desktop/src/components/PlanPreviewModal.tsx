@@ -18,6 +18,7 @@ interface PlanPreviewModalProps {
   isGameRunning: boolean;
   onClose: () => void;
   onApplyPlan: (planId: string) => void;
+  onOpenRecovery?: () => void;
 }
 
 export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
@@ -26,6 +27,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
   isGameRunning,
   onClose,
   onApplyPlan,
+  onOpenRecovery,
 }) => {
   const [timeLeft, setTimeLeft] = useState(300); // 5 minutes validity countdown
   const [overwriteConfirmed, setOverwriteConfirmed] = useState(false);
@@ -54,6 +56,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
   const hasDependencyBlockers = plan.dependency_blockers.length > 0;
   const hasSemanticBlockers = plan.semantic_blockers.length > 0;
   const hasBackendBlockers = (plan.blockers?.length ?? 0) > 0;
+  const hasExternalChange = plan.blockers?.some((blocker) => blocker.startsWith('external_change'));
   const isBlockedByGame = isGameRunning;
   const isInvalidRoot = !activeInstallation.is_valid || activeInstallation.permission_state !== 'authorized';
   const isInsufficientSpace = activeInstallation.disk_available_bytes != null && plan.bytes_required > activeInstallation.disk_available_bytes;
@@ -228,13 +231,15 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <div className="font-semibold text-rose-300">
-                  阻断警告: 事务校验阻断 [plan_blocked]
+                  {hasExternalChange ? '外部修改或删除阻断 [external_change]' : '阻断警告: 事务校验阻断 [plan_blocked]'}
                 </div>
                 <div className="mt-1 space-y-1 font-mono">
                   {plan.blockers?.map((blk, idx) => (
                     <div key={idx} className="text-rose-200/90">• {blk}</div>
                   ))}
+                  {hasExternalChange && <p>先检查未完成事务；有未完成事务时先备份冲突文件、人工解决漂移，再重新校验并安全回滚。没有未完成事务时使用已安装模组的修复预览，不必回滚已提交安装。处理后废弃此计划并重新预览。</p>}
                 </div>
+                {hasExternalChange && onOpenRecovery && <button type="button" onClick={onOpenRecovery} className="mt-2 px-3 py-2 rounded bg-rose-900">检查未完成事务与恢复操作</button>}
               </div>
             </div>
           )}

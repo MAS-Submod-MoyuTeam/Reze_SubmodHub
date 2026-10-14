@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	core "github.com/reze/submodhub/internal/install"
@@ -170,6 +171,7 @@ type OperationDetail struct {
 }
 
 type DesktopService struct {
+	mu         sync.Mutex
 	root       string
 	state      string
 	core       *core.Installer
@@ -445,11 +447,11 @@ func (s *DesktopService) mapJournalToDetail(j *core.TxJournal) OperationDetail {
 		TargetInstallationID: targetInstID,
 		ModID:                modID,
 		ModTitle:             modTitle,
-		VersionID:      j.VersionID,
-		VersionStr:     j.Version,
-		Kind:           kind,
-		State:          state,
-		Phase:          j.Phase,
+		VersionID:            j.VersionID,
+		VersionStr:           j.Version,
+		Kind:                 kind,
+		State:                state,
+		Phase:                j.Phase,
 		Progress: OperationProgress{
 			Stage:          stage,
 			CurrentFile:    j.LastPath,
@@ -457,11 +459,11 @@ func (s *DesktopService) mapJournalToDetail(j *core.TxJournal) OperationDetail {
 			TotalFiles:     totalFiles,
 			Percent:        percent,
 		},
-		Error:        opErr,
-		ConflictPath: j.LastPath,
-		ExpectedHash: j.ExpectedHash,
-		ActualHash:   j.ActualHash,
-		BackupID:     backupID,
+		Error:                  opErr,
+		ConflictPath:           j.LastPath,
+		ExpectedHash:           j.ExpectedHash,
+		ActualHash:             j.ActualHash,
+		BackupID:               backupID,
 		CanRollback:            canRollback,
 		SpriteSetIDs:           j.SpriteSetIDs,
 		SpriteSelectionHash:    j.SpriteSelectionHash,
@@ -728,6 +730,7 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 		return PlanResult{}, err
 	}
 
+	s.mu.Lock()
 	if s.activePlanArchiveID != "" && s.activePlanArchiveID != request.ArchiveID && s.stagingMgr != nil {
 		s.stagingMgr.ReleaseArchive(s.activePlanArchiveID)
 	}
@@ -737,6 +740,7 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 	s.activePlanArchive = data
 	s.activePlanHash = hash
 	s.activePlanReport = report
+	s.mu.Unlock()
 
 	actions := make([]PlanPreviewAction, 0, len(plan.Actions))
 	for _, a := range plan.Actions {
@@ -877,8 +881,15 @@ func (s *DesktopService) PreviewUninstallWithOpID(targetID, uninstallOpID string
 		return PlanResult{}, err
 	}
 
+	s.mu.Lock()
+	if s.activePlanArchiveID != "" && s.stagingMgr != nil {
+		s.stagingMgr.ReleaseArchive(s.activePlanArchiveID)
+	}
+	s.activePlanArchiveID = ""
+	s.activePlanArchive = nil
 	s.activePlan = plan
 	s.activePlanRequest = targetID
+	s.mu.Unlock()
 
 	actions := make([]PlanPreviewAction, 0, len(plan.Actions))
 	for _, a := range plan.Actions {
@@ -977,10 +988,15 @@ func (s *DesktopService) PreviewPriority(priorities map[string]int) (PlanResult,
 	if err != nil {
 		return PlanResult{}, err
 	}
+	s.mu.Lock()
+	if s.activePlanArchiveID != "" && s.stagingMgr != nil {
+		s.stagingMgr.ReleaseArchive(s.activePlanArchiveID)
+	}
 	s.activePlan = plan
 	s.activePlanRequest = priorities
 	s.activePlanArchiveID = ""
 	s.activePlanArchive = nil
+	s.mu.Unlock()
 
 	actions := make([]PlanPreviewAction, 0, len(plan.Actions))
 	for _, act := range plan.Actions {
@@ -1018,10 +1034,10 @@ func (s *DesktopService) PreviewPriority(priorities map[string]int) (PlanResult,
 		Kind:        "priority",
 		TargetID:    "priority_adjustment",
 		ModTitle:    "模组优先级调整",
-		Version:    "",
-		Actions:    actions,
-		Blockers:   plan.Blockers,
-		Risks:      []PlanPreviewRisk{},
+		Version:     "",
+		Actions:     actions,
+		Blockers:    plan.Blockers,
+		Risks:       []PlanPreviewRisk{},
 		Summary: PlanPreviewSummary{
 			RestoresOriginal: plan.Summary.RestoresOriginal,
 			RestoresLayer:    plan.Summary.RestoresLayer,
@@ -1032,11 +1048,60 @@ func (s *DesktopService) PreviewPriority(priorities map[string]int) (PlanResult,
 	}, nil
 }
 
+func (s *DesktopService) PreviewRepair(targetID string) (PlanResult, error) {
+	if s.core == nil {
+		if _, err := s.SetMASRoot(s.root); err != nil {
+			return PlanResult{}, err
+		}
+	}
+	targetID = strings.TrimSpace(targetID)
+	if targetID == "" {
+		return PlanResult{}, errors.New("target_id_required")
+	}
+
+	plan, err := s.core.PreviewRepair(targetID, fmt.Sprintf("repair_%d", time.Now().UnixNano()))
+	if err != nil {
+		return PlanResult{}, err
+	}
+	actions := make([]PlanPreviewAction, 0, len(plan.Actions))
+	for _, action := range plan.Actions {
+		kind := "METADATA_ONLY"
+		reason := "仅确认托管层记录；无需写入磁盘"
+		if action.Action == core.ActionWrite {
+			kind = "CREATE"
+			reason = "恢复当前活动托管层；保留现有文件备份"
+			if action.CurrentExists {
+				kind = "OVERWRITE"
+			}
+		}
+		actions = append(actions, PlanPreviewAction{Path: action.Path, Action: kind, CurrentSource: action.CurrentSource, TargetSource: action.TargetSource, CurrentHash: action.CurrentHash, TargetHash: action.TargetHash, CurrentExists: action.CurrentExists, TargetExists: action.TargetExists, BackupRequired: action.Action == core.ActionWrite && action.CurrentExists, Reason: reason})
+	}
+	risks := make([]PlanPreviewRisk, 0, len(plan.Risks))
+	for _, risk := range plan.Risks {
+		risks = append(risks, PlanPreviewRisk{Type: risk.Type, Path: risk.Path, Description: risk.Description})
+	}
+
+	s.mu.Lock()
+	if s.activePlanArchiveID != "" && s.stagingMgr != nil {
+		s.stagingMgr.ReleaseArchive(s.activePlanArchiveID)
+	}
+	s.activePlanArchiveID = ""
+	s.activePlanArchive = nil
+	s.activePlan = plan
+	s.activePlanRequest = plan.TargetInstallationID
+	s.mu.Unlock()
+
+	return PlanResult{PlanID: plan.PlanID, OperationID: plan.OperationID, Root: plan.Root, Generation: plan.Generation, Kind: "repair", TargetID: plan.TargetInstallationID, ModTitle: plan.ModTitle, Version: plan.Version, Actions: actions, Blockers: plan.Blockers, Risks: risks, SpriteSetIDs: plan.SpriteSetIDs, SpriteSelectionHash: plan.SpriteSelectionHash, SelectedSpriteSetCount: plan.SelectedSpriteSetCount, Summary: PlanPreviewSummary{WritesNew: plan.Summary.WritesNew, MetadataOnly: plan.Summary.MetadataOnly}}, nil
+}
+
 func (s *DesktopService) PreviewUninstall(targetID string) (PlanResult, error) {
 	return s.PreviewUninstallWithOpID(targetID, "")
 }
 
 func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstallResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.core == nil {
 		if _, err := s.SetMASRoot(s.root); err != nil {
 			return ArchiveInstallResult{}, err
@@ -1049,16 +1114,38 @@ func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstall
 		return ArchiveInstallResult{}, errors.New("plan_stale")
 	}
 	if len(s.activePlan.Blockers) > 0 {
+		var externalBlocker string
+		for _, b := range s.activePlan.Blockers {
+			if strings.HasPrefix(b, "external_change") {
+				externalBlocker = b
+				break
+			}
+		}
+		if externalBlocker != "" {
+			return ArchiveInstallResult{}, &core.Error{Code: "external_change", Err: errors.New(externalBlocker)}
+		}
 		return ArchiveInstallResult{}, errors.New("plan_blocked")
 	}
 
 	plan := s.activePlan
+	s.activePlan = nil
 	activeReq := s.activePlanRequest
+	s.activePlanRequest = nil
+	activeArchive := s.activePlanArchive
+	s.activePlanArchive = nil
+	activeReport := s.activePlanReport
+	s.activePlanReport = packagezip.Report{}
+	activeHash := s.activePlanHash
+	s.activePlanHash = [32]byte{}
+	archiveID := s.activePlanArchiveID
+	s.activePlanArchiveID = ""
+
 	defer func() {
 		if req, ok := activeReq.(ArchiveInstallRequest); ok && req.ArchiveID != "" && s.stagingMgr != nil {
 			s.stagingMgr.ReleaseArchive(req.ArchiveID)
+		} else if archiveID != "" && s.stagingMgr != nil {
+			s.stagingMgr.ReleaseArchive(archiveID)
 		}
-		s.activePlanArchiveID = ""
 	}()
 	tx, err := s.core.NewTransaction(plan)
 	if err != nil {
@@ -1068,13 +1155,13 @@ func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstall
 
 	// Coordinate receipt update atomically within transaction boundary
 	if plan.OperationType == "install" || plan.OperationType == "update" {
-		req, ok := s.activePlanRequest.(ArchiveInstallRequest)
+		req, ok := activeReq.(ArchiveInstallRequest)
 		if ok && req.ModID != "" {
 			newReceipts, pErr := s.projectedInstalledArchives(
 				req,
-				s.activePlanReport,
-				hex.EncodeToString(s.activePlanHash[:]),
-				int64(len(s.activePlanArchive)),
+				activeReport,
+				hex.EncodeToString(activeHash[:]),
+				int64(len(activeArchive)),
 				plan.SpriteSetIDs,
 				plan.SpriteSelectionHash,
 				plan.SelectedSpriteSetCount,
@@ -1089,7 +1176,7 @@ func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstall
 			tx.SetReceiptUpdate(s.installedArchivesPath(), data)
 		}
 	} else if plan.OperationType == "uninstall" {
-		targetID, ok := s.activePlanRequest.(string)
+		targetID, ok := activeReq.(string)
 		if ok {
 			newReceipts, pErr := s.projectedRemoveInstalledArchive(targetID)
 			if pErr != nil {
@@ -1104,15 +1191,8 @@ func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstall
 	}
 
 	if err := tx.Execute(); err != nil {
-		s.activePlan = nil
-		s.activePlanRequest = nil
-		s.activePlanArchive = nil
 		return ArchiveInstallResult{}, err
 	}
-
-	s.activePlan = nil
-	s.activePlanRequest = nil
-	s.activePlanArchive = nil
 
 	return ArchiveInstallResult{
 		State:                  "committed",
@@ -1130,6 +1210,11 @@ func (s *DesktopService) ApplyArchive(request ArchiveInstallRequest) (ArchiveIns
 		return ArchiveInstallResult{}, err
 	}
 	if len(preview.Blockers) > 0 {
+		for _, b := range preview.Blockers {
+			if strings.HasPrefix(b, "external_change") {
+				return ArchiveInstallResult{}, &core.Error{Code: "external_change", Err: errors.New(b)}
+			}
+		}
 		return ArchiveInstallResult{}, fmt.Errorf("plan_blocked: %s", strings.Join(preview.Blockers, "; "))
 	}
 	return s.ExecutePlan(ExecutePlanRequest{
@@ -1144,6 +1229,11 @@ func (s *DesktopService) Uninstall(operationID, uninstallOperationID string) (st
 		return "", err
 	}
 	if len(preview.Blockers) > 0 {
+		for _, b := range preview.Blockers {
+			if strings.HasPrefix(b, "external_change") {
+				return "", &core.Error{Code: "external_change", Err: errors.New(b)}
+			}
+		}
 		return "", fmt.Errorf("plan_blocked: %s", strings.Join(preview.Blockers, "; "))
 	}
 	res, err := s.ExecutePlan(ExecutePlanRequest{

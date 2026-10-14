@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	core "github.com/reze/submodhub/internal/install"
 	packagezip "github.com/reze/submodhub/internal/package"
 )
 
@@ -1326,3 +1327,254 @@ func TestDesktopServiceSpritepackFullLifecycleAndSharedPreservation(t *testing.T
 		t.Fatalf("unrelated mod content was corrupted: %v, content: %q", err, string(unrelatedBytes))
 	}
 }
+
+func TestPreviewRepairPreservesActivePlanOnFailure(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "game", "Submods"), 0o755)
+	service := NewDesktopService()
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Create a valid initial preview plan
+	zipBytes, hashStr := createTestZip(t, map[string]string{
+		"game/Submods/initial/initial.rpy": "initial content",
+	})
+	prevPlan, err := service.PreviewArchive(ArchiveInstallRequest{
+		OperationID:   "op_initial_preview",
+		ArchiveBase64: base64.StdEncoding.EncodeToString(zipBytes),
+		ExpectedSHA:   hashStr,
+		ModID:         "mod_initial",
+		VersionID:     "v1",
+		Version:       "1.0.0",
+		Title:         "Initial Mod",
+	})
+	if err != nil {
+		t.Fatalf("PreviewArchive failed: %v", err)
+	}
+	if service.activePlan == nil || service.activePlan.PlanID != prevPlan.PlanID {
+		t.Fatalf("expected activePlan to be set to %s", prevPlan.PlanID)
+	}
+
+	// 2. Call PreviewRepair with non-existent target ID
+	_, err = service.PreviewRepair("non_existent_target")
+	if err == nil {
+		t.Fatal("expected error for non-existent target")
+	}
+
+	// 3. activePlan must STILL be intact and not cleared by failed PreviewRepair
+	if service.activePlan == nil || service.activePlan.PlanID != prevPlan.PlanID {
+		t.Fatalf("failed PreviewRepair cleared activePlan! activePlan=%v", service.activePlan)
+	}
+
+	// 4. Staged plan can still be executed without plan_stale error
+	res, err := service.ExecutePlan(ExecutePlanRequest{
+		PlanID:    prevPlan.PlanID,
+		Confirmed: true,
+	})
+	if err != nil {
+		t.Fatalf("executing preserved plan failed: %v", err)
+	}
+	if res.State != "committed" {
+		t.Fatalf("expected committed state, got %s", res.State)
+	}
+}
+
+func TestExecutePlanPreservesExternalChangeWhenNotFirstBlocker(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "game", "Submods"), 0o755)
+	service := NewDesktopService()
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	// Manually set an activePlan with multiple blockers, where external_change is NOT at index 0
+	service.activePlan = &core.Plan{
+		PlanID:        "plan_multi_blockers",
+		Root:          root,
+		OperationType: "install",
+		Blockers: []string{
+			"dependency_missing: mod_dependency required",
+			"external_change: game/Submods/drifted.rpy has unexpected local edits",
+		},
+	}
+
+	_, err := service.ExecutePlan(ExecutePlanRequest{
+		PlanID:    "plan_multi_blockers",
+		Confirmed: true,
+	})
+	if err == nil {
+		t.Fatal("expected ExecutePlan to fail due to blockers")
+	}
+
+	var coreErr *core.Error
+	if !errors.As(err, &coreErr) || coreErr.Code != "external_change" {
+		t.Fatalf("expected error code external_change, got err=%v", err)
+	}
+}
+
+func TestPreviewRepairResolvesModIDAndReceipts(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "game", "Submods"), 0o755)
+	service := NewDesktopService()
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Install a mod through ApplyArchive
+	zipBytes, hashStr := createTestZip(t, map[string]string{
+		"game/Submods/resolver/resolver.rpy": "original resolver content",
+	})
+	_, err := service.ApplyArchive(ArchiveInstallRequest{
+		OperationID:   "op_resolver_1",
+		ArchiveBase64: base64.StdEncoding.EncodeToString(zipBytes),
+		ExpectedSHA:   hashStr,
+		ModID:         "mod_resolver",
+		VersionID:     "v1",
+		Version:       "1.0.0",
+		Title:         "Resolver Mod",
+	})
+	if err != nil {
+		t.Fatalf("ApplyArchive failed: %v", err)
+	}
+
+	// Introduce external drift
+	filePath := filepath.Join(root, "game", "Submods", "resolver", "resolver.rpy")
+	_ = os.WriteFile(filePath, []byte("external drifted content"), 0644)
+
+	// 2. Call PreviewRepair with mod_id
+	repairPlan, err := service.PreviewRepair("mod_resolver")
+	if err != nil {
+		t.Fatalf("PreviewRepair with mod_id failed: %v", err)
+	}
+	if repairPlan.Summary.WritesNew != 1 {
+		t.Fatalf("expected 1 write action in repair plan, got %+v", repairPlan.Summary)
+	}
+
+	// 3. Execute repair
+	res, err := service.ExecutePlan(ExecutePlanRequest{
+		PlanID:    repairPlan.PlanID,
+		Confirmed: true,
+	})
+	if err != nil {
+		t.Fatalf("ExecutePlan repair failed: %v", err)
+	}
+	if res.State != "committed" {
+		t.Fatalf("expected committed, got %s", res.State)
+	}
+
+	// 4. Verify disk restored
+	content, _ := os.ReadFile(filePath)
+	if string(content) != "original resolver content" {
+		t.Fatalf("expected disk restored, got %s", string(content))
+	}
+}
+
+func TestPreviewRepairResolvesOperationIDWithoutReceipts(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "game", "Submods", "norec"), 0o755)
+	service := NewDesktopService()
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Install a mod through ApplyArchive
+	zipBytes, hashStr := createTestZip(t, map[string]string{
+		"game/Submods/norec/norec.rpy": "original norec content",
+	})
+	_, err := service.ApplyArchive(ArchiveInstallRequest{
+		OperationID:   "op_norec_100",
+		ArchiveBase64: base64.StdEncoding.EncodeToString(zipBytes),
+		ExpectedSHA:   hashStr,
+		ModID:         "mod_norec",
+		VersionID:     "v1",
+		Version:       "1.0.0",
+		Title:         "NoRec Mod",
+	})
+	if err != nil {
+		t.Fatalf("ApplyArchive failed: %v", err)
+	}
+
+	// 2. Explicitly remove installed-archives.json so receipt is missing
+	receiptFile := filepath.Join(root, ".submodhub", "installed-archives.json")
+	if err := os.Remove(receiptFile); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("failed to remove receipt file: %v", err)
+	}
+
+	// 3. Introduce external drift
+	filePath := filepath.Join(root, "game", "Submods", "norec", "norec.rpy")
+	_ = os.WriteFile(filePath, []byte("external drifted content"), 0644)
+
+	// 4. Call PreviewRepair with operation_id ("op_norec_100") when receipts are missing
+	repairPlan, err := service.PreviewRepair("op_norec_100")
+	if err != nil {
+		t.Fatalf("PreviewRepair with operation_id without receipts failed: %v", err)
+	}
+	if repairPlan.TargetID != "mod_norec" {
+		t.Fatalf("expected TargetID to resolve to mod_norec, got %s", repairPlan.TargetID)
+	}
+	if repairPlan.Summary.WritesNew != 1 {
+		t.Fatalf("expected 1 write action, got %+v", repairPlan.Summary)
+	}
+
+	// 5. Execute repair and check disk restored
+	res, err := service.ExecutePlan(ExecutePlanRequest{
+		PlanID:    repairPlan.PlanID,
+		Confirmed: true,
+	})
+	if err != nil {
+		t.Fatalf("ExecutePlan repair failed: %v", err)
+	}
+	if res.State != "committed" {
+		t.Fatalf("expected committed, got %s", res.State)
+	}
+	content, _ := os.ReadFile(filePath)
+	if string(content) != "original norec content" {
+		t.Fatalf("expected restored content, got %s", string(content))
+	}
+}
+
+func TestPreviewRepairPropagatesReceiptReadError(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "game"), 0o755)
+	service := NewDesktopService()
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write invalid JSON into installed-archives.json
+	receiptFile := filepath.Join(root, ".submodhub", "installed-archives.json")
+	_ = os.MkdirAll(filepath.Dir(receiptFile), 0o700)
+	if err := os.WriteFile(receiptFile, []byte("{invalid-json-corrupt"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Call PreviewRepair with unresolvable target that triggers receipt lookup
+	_, err := service.PreviewRepair("nonexistent_id")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to read installed archives for repair") {
+		t.Fatalf("expected receipt read error, got: %v", err)
+	}
+}
+
+func TestPreviewRepairEmptyTarget(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "game"), 0o755)
+	service := NewDesktopService()
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := service.PreviewRepair("")
+	if err == nil || err.Error() != "target_id_required" {
+		t.Fatalf("expected target_id_required, got: %v", err)
+	}
+
+	_, err = service.PreviewRepair("   ")
+	if err == nil || err.Error() != "target_id_required" {
+		t.Fatalf("expected target_id_required for whitespace, got: %v", err)
+	}
+}
+

@@ -129,3 +129,53 @@ func TestRollbackJournalRejectsDrift(t *testing.T) {
 		t.Fatalf("expected journal to enter needs_manual_recovery, got %q", journal.Phase)
 	}
 }
+
+func TestRollbackJournalExternalDriftModifiedAndDeleted(t *testing.T) {
+	for _, driftType := range []string{"modified", "deleted"} {
+		t.Run(driftType, func(t *testing.T) {
+			root := t.TempDir()
+			inst := New(root, filepath.Join(t.TempDir(), "state"))
+			beforeHash, err := inst.GetBlobs().Put([]byte("before"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			afterHash, err := inst.GetBlobs().Put([]byte("after"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(root, "file.rpy")
+			if driftType == "modified" {
+				if err := os.WriteFile(path, []byte("external_user_edit"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			} // for "deleted", do not write file, so file is missing
+			journal := &TxJournal{
+				OperationID: "op_" + driftType,
+				Phase:       "prepared",
+				BeforeFiles: map[string]FileBeforeState{"file.rpy": {DisplayPath: "file.rpy", Existed: true, Hash: beforeHash}},
+				AfterFiles:  map[string]FileAfterState{"file.rpy": {DisplayPath: "file.rpy", Exists: true, Hash: afterHash}},
+			}
+			err = inst.RollbackJournal(journal)
+			if err == nil || !IsCode(err, "external_change") {
+				t.Fatalf("expected external_change error, got: %v", err)
+			}
+			if journal.Phase != TxPhaseNeedsManualRecovery {
+				t.Fatalf("expected phase needs_manual_recovery, got %q", journal.Phase)
+			}
+			if journal.ErrorCode != "external_change" {
+				t.Fatalf("expected ErrorCode external_change, got %q", journal.ErrorCode)
+			}
+			if driftType == "modified" {
+				data, err := os.ReadFile(path)
+				if err != nil || string(data) != "external_user_edit" {
+					t.Fatalf("user edit overwritten: %q, %v", data, err)
+				}
+			} else {
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Fatalf("deleted file unexpectedly created: %v", err)
+				}
+			}
+		})
+	}
+}
+

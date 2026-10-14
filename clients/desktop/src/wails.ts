@@ -1,4 +1,5 @@
 import * as native from '@wails-bindings/desktopservice.js';
+import { Call } from '@wailsio/runtime';
 import type { Operation } from './types/client';
 
 const browserMode = Boolean(import.meta.env?.VITE_BROWSER_MODE === '1');
@@ -52,6 +53,7 @@ export const PreviewArchive = (request: Parameters<typeof native.PreviewArchive>
   return invoke('PreviewArchive', () => native.PreviewArchive(req), [req]);
 };
 export const PreviewUninstall = (targetID: string) => invoke('PreviewUninstall', () => native.PreviewUninstall(targetID), [targetID]);
+export const PreviewRepair = (targetID: string) => invoke<Awaited<ReturnType<typeof native.PreviewArchive>>>('PreviewRepair', () => Call.ByName('main.DesktopService.PreviewRepair', targetID), [targetID]);
 export const GetPriorityOverview = () => invoke('GetPriorityOverview', () => native.GetPriorityOverview());
 export const PreviewPriority = (priorities: Record<string, number>) => invoke('PreviewPriority', () => native.PreviewPriority(priorities), [priorities]);
 export const ExecutePlan = (request: Parameters<typeof native.ExecutePlan>[0]) => invoke('ExecutePlan', () => native.ExecutePlan(request), [request]);

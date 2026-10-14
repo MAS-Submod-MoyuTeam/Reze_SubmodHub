@@ -8,6 +8,7 @@ import {
   ArrowRight,
   X,
   Clock,
+  HelpCircle,
 } from 'lucide-react';
 import type { ExecutionSession } from '../types/client';
 
@@ -40,8 +41,9 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
   const percent = progress.percent || 0;
 
   const isSuccess = state === 'committed' || phase === 'committed';
-  const isFailed = state === 'needs_manual_recovery' || state === 'rolled_back' || !!session.error;
   const isNeedsManual = state === 'needs_manual_recovery' || phase === 'needs_manual_recovery';
+  const isUnknown = state === 'unknown' || phase === 'unknown';
+  const isFailed = isNeedsManual || state === 'rolled_back' || isUnknown || (!!session.error && !isSuccess);
 
   // Compute title
   let actionTitle = `正在执行${session.kind === 'uninstall' ? '卸载' : '安装'}：${session.mod_title}`;
@@ -51,19 +53,25 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
     actionTitle = `需人工恢复：${session.mod_title}`;
   } else if (state === 'rolled_back') {
     actionTitle = `操作已安全回滚：${session.mod_title}`;
+  } else if (isUnknown) {
+    actionTitle = `状态未知（查询失败）：${session.mod_title}`;
   } else if (session.error) {
     actionTitle = `执行失败：${session.mod_title}`;
   }
 
   // Compute description text
   let stageDescription = progress.stage;
-  if (!stageDescription || stageDescription === '操作已初始化') {
+  if (isSuccess && session.communication_error) {
+    stageDescription = `事务已提交，但客户端通信异常：${session.communication_error}`;
+  } else if (!stageDescription || stageDescription === '操作已初始化') {
     if (phase === 'planned') {
       stageDescription = '计划已确认，正在初始化写入事务...';
     } else if (phase === 'prepared') {
       stageDescription = `快照就绪 (${op.backup_id || 'snapshot'})，准备原子写入...`;
     } else if (phase === 'committing') {
       stageDescription = '正在提交清单与持久化记录...';
+    } else if (isUnknown) {
+      stageDescription = '后端状态查询失败，无法确认事务是否已提交';
     }
   }
 
@@ -75,7 +83,10 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
     if (isNeedsManual) {
       return <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 animate-bounce" />;
     }
-    if (state === 'rolled_back' || session.error) {
+    if (isUnknown) {
+      return <HelpCircle className="w-4 h-4 text-amber-400 shrink-0" />;
+    }
+    if (state === 'rolled_back' || (!isSuccess && session.error)) {
       return <RotateCcw className="w-4 h-4 text-rose-400 shrink-0" />;
     }
     return <Loader2 className="w-4 h-4 text-sky-400 shrink-0 animate-spin" />;
@@ -85,7 +96,9 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
   let barColor = 'bg-emerald-500';
   if (isNeedsManual) {
     barColor = 'bg-amber-500';
-  } else if (state === 'rolled_back' || session.error) {
+  } else if (isUnknown) {
+    barColor = 'bg-amber-500/80';
+  } else if (state === 'rolled_back' || (!isSuccess && session.error)) {
     barColor = 'bg-rose-500';
   }
 
@@ -114,6 +127,14 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
               <span>{op.backup_id}</span>
             </span>
           )}
+          {session.communication_error && (
+            <span
+              className="hidden lg:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-950/70 border border-amber-800/70 text-[10px] text-amber-300 font-sans"
+              title={`通信响应异常: ${session.communication_error}`}
+            >
+              <span>通信异常 ({isSuccess ? '后端已提交' : '状态未知'})</span>
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-3 shrink-0 text-[11px] self-end sm:self-auto font-mono">
@@ -123,7 +144,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
             </span>
           ) : (
             <span className="text-neutral-400 font-sans">
-              {isSuccess ? '全部完成' : isFinished ? '事务终止' : '准备写入'}
+              {isSuccess ? '全部完成' : isUnknown ? '结果未知' : isFinished ? '事务终止' : '准备写入'}
             </span>
           )}
 

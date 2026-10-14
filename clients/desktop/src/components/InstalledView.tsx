@@ -80,12 +80,13 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
   const [spriteSearch, setSpriteSearch] = useState('');
   const [spriteGroup, setSpriteGroup] = useState('');
 
-  const spriteGroups = [...new Set(spritepacks.map((item) => item.group?.trim() || '未分类'))].sort((a, b) =>
+  const safeSpritepacks = spritepacks || [];
+  const spriteGroups = [...new Set(safeSpritepacks.map((item) => item.group?.trim() || '未分类'))].sort((a, b) =>
     a.localeCompare(b, 'zh')
   );
   const selectedGroup = spriteGroups.includes(spriteGroup) ? spriteGroup : '';
   const spriteQuery = spriteSearch.trim().toLocaleLowerCase();
-  const visibleSpritepacks = spritepacks.filter((item) => {
+  const visibleSpritepacks = safeSpritepacks.filter((item) => {
     const group = item.group?.trim() || '未分类';
     return (
       (!selectedGroup || group === selectedGroup) &&
@@ -647,7 +648,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                   disabled={isModsActionBlocked}
                                   onClick={() => onStartRepairPlan(item)}
                                   className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法修复' : '正在读取模组列表…') : '校验缺失文件并从发布版本归档重新解压'}
+                                  title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法修复' : '正在读取模组列表…') : '预览从已校验的托管材料恢复文件；覆盖前备份，缺少材料时失败'}
                                 >
                                   修复
                                 </button>

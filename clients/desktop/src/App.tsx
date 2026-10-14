@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { mapPlanPreview } from './planPreview';
+import { PreviewRepair } from './wails';
 import { isAllowedNavTab } from './priorityLayers';
 import { TitleBar } from './components/TitleBar';
 import { Sidebar, ActiveTab } from './components/Sidebar';
@@ -18,6 +19,7 @@ import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } fr
 import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
 import { INITIAL_OPERATIONS } from './data/mockData';
 import { createInstalledLoadCoordinator, LoadingStatus } from './installedLoading';
+import { getPlanActionText, resolveModInstallationId } from './planExecution';
 import {
   Installation,
   ModSummary,
@@ -173,7 +175,7 @@ export default function App() {
         const catMod = catalogMap.get(receipt.mod_id);
         const authorName = receipt.author || catMod?.author?.display_name || '未知作者';
         return {
-          mod_id: receipt.mod_id, title: receipt.title, summary: '已通过 SubmodHub 安装',
+          mod_id: receipt.mod_id, installation_id: receipt.operation_id || receipt.mod_id, title: receipt.title, summary: '已通过 SubmodHub 安装',
           author_name: authorName, category: (receipt.category as any) || catMod?.category || 'submod', installed_version: receipt.version,
           installed_version_id: receipt.version_id, latest_version: catMod?.latest_version || receipt.version,
           latest_version_id: catMod?.latest_version_id || receipt.version_id, has_update: false, priority: receipt.priority ?? 0,
@@ -568,14 +570,60 @@ export default function App() {
   };
 
   // Handler: Start Repair Plan
-  const handleStartRepairPlan = (item: InstalledItem) => {
-    showToast(`正在从安全发布归档为 ${item.title} 重新提取完整哈希文件...`);
-    setTimeout(() => {
-      setInstalledMods((prev) =>
-        prev.map((m) => (m.mod_id === item.mod_id ? { ...m, integrity_status: 'intact' } : m))
-      );
-      showToast(`${item.title} 文件完整性修复完成！`);
-    }, 1200);
+  const handleStartRepairPlan = async (item: InstalledItem) => {
+    const targetInstId = activeInstallationIdRef.current;
+    if (!activeInstallation.is_valid || targetInstId === 'unverified') {
+      showToast('请先验证 MAS 目录。');
+      return;
+    }
+    const targetInstallationId = resolveModInstallationId(item);
+    if (!item.is_managed || !targetInstallationId) {
+      showToast('缺少托管安装记录，无法自动修复。请重新扫描或人工处理。');
+      return;
+    }
+    if (installingRef.current) return;
+    installingRef.current = true;
+    setCurrentPlan(null);
+    try {
+      const pending = (await ListOperations()).find((operation) => operation.state === 'needs_manual_recovery' || operation.state === 'recoverable');
+      if (activeInstallationIdRef.current !== targetInstId) return;
+      if (pending) {
+        await refreshOperations(targetInstId);
+        setActiveTab('operations');
+        showToast('存在未完成事务，请先检查诊断并重新校验、安全回滚，再重新预览修复。');
+        return;
+      }
+      await SetMASRoot(activeInstallation.path_hint);
+      const preview = await PreviewRepair(targetInstallationId);
+      if (activeInstallationIdRef.current !== targetInstId) return;
+      setCurrentPlan(mapPlanPreview(preview, {
+        plan_id: preview.plan_id,
+        backend_operation_id: preview.operation_id,
+        kind: 'repair',
+        installation_id: targetInstId,
+        target_installation_id: preview.target_id || targetInstallationId,
+        mod_id: item.mod_id,
+        mod_title: item.title,
+        author_name: item.author_name || '未知作者',
+        category: item.category,
+        version_id: item.installed_version_id,
+        version_str: item.installed_version,
+        expires_at: new Date(Date.now() + 300000).toISOString(),
+        dependency_blockers: [],
+        semantic_blockers: [],
+        changes: [],
+        backups_required: 0,
+        bytes_required: 0,
+        warnings: [],
+      }));
+    } catch (error) {
+      if (activeInstallationIdRef.current !== targetInstId) return;
+      showToast(`修复预览失败：${error instanceof Error ? error.message : String(error)}`);
+      await refreshOperations(targetInstId);
+      setActiveTab('operations');
+    } finally {
+      installingRef.current = false;
+    }
   };
 
   // Handler: Apply Plan (Atomic write transaction)
@@ -589,6 +637,8 @@ export default function App() {
     }
     setCurrentPlan(null);
 
+    const actionText = getPlanActionText(plan.kind);
+
     if (plan.kind === 'uninstall') {
       const installed = installedMods.find((item) => item.mod_id === plan.mod_id);
       if (!installed?.managed_operation_id) {
@@ -599,23 +649,42 @@ export default function App() {
       installingRef.current = true;
       coordinator.startSession(plan, targetInstId);
       try {
-        await ExecutePlan({ plan_id: plan.plan_id, confirmed: true });
+        const result = await ExecutePlan({ plan_id: plan.plan_id, confirmed: true });
+        if (result.state !== 'committed') {
+          throw new Error(`${actionText}事务执行未正常提交，状态为: ${result.state || 'uncommitted'}`);
+        }
         if (activeInstallationIdRef.current !== targetInstId) {
           coordinator.stopPolling();
           return;
         }
-        await coordinator.finishSession(uninstallOperationId, targetInstId);
+        await coordinator.finishSession(uninstallOperationId, targetInstId, null, {
+          confirmedState: result.state,
+          files: result.files,
+        });
         await refreshOperations(targetInstId);
         setInstalledMods((prev) => prev.filter((item) => item.mod_id !== plan.mod_id));
         void scanLocalSubmods(targetInstId, { forced: true });
         showToast(`${plan.mod_title} 已卸载，恢复原文件 ${plan.summary?.restores_original || 0} 个，下层文件 ${plan.summary?.restores_layer || 0} 个。`);
       } catch (error) {
         const errObj = error instanceof Error ? error : new Error(String(error));
-        await coordinator.finishSession(uninstallOperationId, targetInstId, errObj);
-        if (activeInstallationIdRef.current === targetInstId) {
-          showToast(`真实卸载失败：${errObj.message}`);
+        try {
+          await coordinator.finishSession(uninstallOperationId, targetInstId, errObj);
+          await refreshOperations(targetInstId);
+        } catch {
+          // ignore cleanup errors to ensure error toast is displayed
         }
-        await refreshOperations(targetInstId);
+        if (activeInstallationIdRef.current === targetInstId) {
+          const finalSession = coordinator.getCurrentSession();
+          if (finalSession?.operation.state === 'committed') {
+            setInstalledMods((prev) => prev.filter((item) => item.mod_id !== plan.mod_id));
+            void scanLocalSubmods(targetInstId, { forced: true });
+            showToast(`${plan.mod_title} 后端事务已提交，但通信响应异常：${errObj.message}`);
+          } else if (finalSession?.operation.state === 'unknown') {
+            showToast(`真实${actionText}状态未知（后端状态查询失败）：${errObj.message}`);
+          } else {
+            showToast(`真实${actionText}失败：${errObj.message}`);
+          }
+        }
       } finally {
         installingRef.current = false;
       }
@@ -628,13 +697,23 @@ export default function App() {
       coordinator.startSession(plan, targetInstId);
       try {
         const result = await ExecutePlan({ plan_id: plan.plan_id, confirmed: true });
+        if (result.state !== 'committed') {
+          throw new Error(`${actionText}事务执行未正常提交，状态为: ${result.state || 'uncommitted'}`);
+        }
         if (activeInstallationIdRef.current !== targetInstId) {
           coordinator.stopPolling();
           return;
         }
-        await coordinator.finishSession(operationId, targetInstId);
+        await coordinator.finishSession(operationId, targetInstId, null, {
+          confirmedState: result.state,
+          files: result.files,
+        });
         await refreshOperations(targetInstId);
         void scanLocalSubmods(targetInstId, { forced: true });
+        if (plan.kind === 'repair') {
+          showToast(`${plan.mod_title} 真实修复事务已提交，正在重新扫描。旧预览已废弃。`);
+          return;
+        }
         setInstalledMods((prev) => {
           const exists = prev.find((item) => item.mod_id === plan.mod_id);
           const authorName = plan.author_name
@@ -669,11 +748,23 @@ export default function App() {
         return;
       } catch (error) {
         const errObj = error instanceof Error ? error : new Error(String(error));
-        await coordinator.finishSession(operationId, targetInstId, errObj);
-        if (activeInstallationIdRef.current === targetInstId) {
-          showToast(`真实安装失败：${errObj.message}`);
+        try {
+          await coordinator.finishSession(operationId, targetInstId, errObj);
+          await refreshOperations(targetInstId);
+        } catch {
+          // ignore cleanup errors to ensure error toast is displayed
         }
-        await refreshOperations(targetInstId);
+        if (activeInstallationIdRef.current === targetInstId) {
+          const finalSession = coordinator.getCurrentSession();
+          if (finalSession?.operation.state === 'committed') {
+            void scanLocalSubmods(targetInstId, { forced: true });
+            showToast(`${plan.mod_title} 后端事务已提交，但通信响应异常：${errObj.message}`);
+          } else if (finalSession?.operation.state === 'unknown') {
+            showToast(`真实${actionText}状态未知（后端状态查询失败）：${errObj.message}`);
+          } else {
+            showToast(`真实${actionText}失败：${errObj.message}`);
+          }
+        }
         return;
       } finally {
         installingRef.current = false;
@@ -690,6 +781,8 @@ export default function App() {
       await RollbackOperation(opId);
       showToast(`操作 [${opId}] 已安全回滚`);
       await refreshOperations(activeInstallationIdRef.current);
+      setCurrentPlan(null);
+      void scanLocalSubmods(activeInstallationIdRef.current, { forced: true });
       setExternalDrift(null);
     } catch (err: any) {
       showToast(`回滚失败：${err.message || String(err)}`);
@@ -1010,6 +1103,7 @@ export default function App() {
           isGameRunning={isGameRunning}
           onClose={() => { if (currentPlan?.backend_operation_id) void CancelStage(currentPlan.backend_operation_id); setCurrentPlan(null); }}
           onApplyPlan={() => { if (currentPlan) void handleApplyPlan(currentPlan); }}
+          onOpenRecovery={() => { setCurrentPlan(null); setActiveTab('operations'); void refreshOperations(); }}
         />
       )}
 

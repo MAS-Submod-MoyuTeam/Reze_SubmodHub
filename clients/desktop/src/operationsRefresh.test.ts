@@ -496,10 +496,334 @@ test('ExecutionCoordinator: finishSession preserves needs_manual_recovery and er
   assert.equal(operationsState[0].state, 'needs_manual_recovery');
 });
 
+test('ExecutionCoordinator: finishSession with error preserves committed backend state and records communication error', async () => {
+  let sessionState: ExecutionSession | null = null;
+  let operationsState: Operation[] = [];
+
+  const coordinator = new ExecutionCoordinator({
+    activeInstanceId: () => 'inst-test',
+    onSessionChange: (s) => {
+      sessionState = s;
+    },
+    onOperationsChange: (updater) => {
+      operationsState = updater(operationsState);
+    },
+    getOperation: async () => {
+      return {
+        operation_id: 'op_false_committed',
+        installation_id: 'inst-test',
+        mod_id: 'mod_test',
+        mod_title: 'Test Mod',
+        version_id: 'v1',
+        version_str: '1.0.0',
+        kind: 'repair',
+        state: 'committed',
+        phase: 'committed',
+        can_rollback: false,
+        progress: { stage: '完成', processed_files: 1, total_files: 1, bytes_processed: 10, total_bytes: 10, percent: 100 },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+    },
+  });
+
+  const plan: Plan = {
+    plan_id: 'plan_repair_1',
+    backend_operation_id: 'op_false_committed',
+    installation_id: 'inst-test',
+    kind: 'repair',
+    mod_id: 'mod_test',
+    mod_title: 'Test Mod',
+    version_id: 'v1',
+    version_str: '1.0.0',
+    expires_at: '',
+    dependency_blockers: [],
+    semantic_blockers: [],
+    changes: [],
+    backups_required: 0,
+    bytes_required: 10,
+    warnings: [],
+  };
+
+  coordinator.startSession(plan, 'inst-test');
+
+  // Finish session with error (e.g. ExecutePlan threw or post-execution response was lost)
+  await coordinator.finishSession('op_false_committed', 'inst-test', new Error('Execution failed unexpectedly'));
+
+  const session = coordinator.getCurrentSession();
+  assert.ok(session);
+  assert.equal(session.is_finished, true);
+  // Authoritative committed backend status must be preserved
+  assert.equal(session.operation.state, 'committed');
+  assert.equal(session.operation.phase, 'committed');
+  assert.equal(session.operation.error, undefined);
+  // Communication error is recorded separately on the session rather than failing the committed operation
+  assert.equal(session.communication_error, 'Execution failed unexpectedly');
+  assert.equal(session.error, null);
+  assert.equal(operationsState.length, 1);
+  assert.equal(operationsState[0].state, 'committed');
+});
+
+test('ExecutionCoordinator: finishSession fallback on getOperation rejection marks state as unknown with error', async () => {
+  let sessionState: ExecutionSession | null = null;
+  let operationsState: Operation[] = [];
+
+  const coordinator = new ExecutionCoordinator({
+    activeInstanceId: () => 'inst-test',
+    onSessionChange: (s) => {
+      sessionState = s;
+    },
+    onOperationsChange: (updater) => {
+      operationsState = updater(operationsState);
+    },
+    getOperation: async () => {
+      throw new Error('Backend journal not found');
+    },
+  });
+
+  const plan: Plan = {
+    plan_id: 'plan_repair_2',
+    backend_operation_id: 'op_rejected',
+    installation_id: 'inst-test',
+    kind: 'repair',
+    mod_id: 'mod_test',
+    mod_title: 'Test Mod',
+    version_id: 'v1',
+    version_str: '1.0.0',
+    expires_at: '',
+    dependency_blockers: [],
+    semantic_blockers: [],
+    changes: [],
+    backups_required: 0,
+    bytes_required: 10,
+    warnings: [],
+  };
+
+  coordinator.startSession(plan, 'inst-test');
+  await coordinator.finishSession('op_rejected', 'inst-test', new Error('plan_stale'));
+
+  const session = coordinator.getCurrentSession();
+  assert.ok(session);
+  assert.equal(session.is_finished, true);
+  assert.equal(session.error, 'plan_stale');
+  assert.equal(session.operation.state, 'unknown');
+  assert.equal(session.operation.phase, 'unknown');
+  assert.equal(session.operation.error?.message, 'plan_stale');
+  assert.equal(operationsState.length, 1);
+  assert.equal(operationsState[0].state, 'unknown');
+  assert.equal(operationsState[0].error?.message, 'plan_stale');
+});
+
+test('ExecutionCoordinator: polling already received committed -> query failure in finishSession does not downgrade to unknown', async () => {
+  let sessionState: ExecutionSession | null = null;
+  let operationsState: Operation[] = [];
+  let pollCount = 0;
+
+  const coordinator = new ExecutionCoordinator({
+    activeInstanceId: () => 'inst-test',
+    onSessionChange: (s) => {
+      sessionState = s;
+    },
+    onOperationsChange: (updater) => {
+      operationsState = updater(operationsState);
+    },
+    getOperation: async () => {
+      pollCount++;
+      if (pollCount === 1) {
+        return {
+          operation_id: 'op_poll_committed',
+          installation_id: 'inst-test',
+          mod_id: 'mod_test',
+          mod_title: 'Test Mod',
+          version_id: 'v1',
+          version_str: '1.0.0',
+          kind: 'install',
+          state: 'committed',
+          phase: 'committed',
+          can_rollback: false,
+          progress: { stage: '完成', processed_files: 5, total_files: 5, bytes_processed: 100, total_bytes: 100, percent: 100 },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+      }
+      throw new Error('Database connection reset during final query');
+    },
+    pollIntervalMs: 20,
+  });
+
+  const plan: Plan = {
+    plan_id: 'plan_1',
+    backend_operation_id: 'op_poll_committed',
+    installation_id: 'inst-test',
+    kind: 'install',
+    mod_id: 'mod_test',
+    mod_title: 'Test Mod',
+    version_id: 'v1',
+    version_str: '1.0.0',
+    expires_at: '',
+    dependency_blockers: [],
+    semantic_blockers: [],
+    changes: [],
+    backups_required: 0,
+    bytes_required: 100,
+    warnings: [],
+  };
+
+  coordinator.startSession(plan, 'inst-test');
+
+  // Wait for polling to deliver committed
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(coordinator.getCurrentSession()?.operation.state, 'committed');
+
+  // Finish session where getOperation fails
+  await coordinator.finishSession('op_poll_committed', 'inst-test');
+
+  const session = coordinator.getCurrentSession();
+  assert.ok(session);
+  assert.equal(session.is_finished, true);
+  // Crucial: Must preserve committed state rather than downgrading to unknown
+  assert.equal(session.operation.state, 'committed');
+  assert.equal(session.operation.phase, 'committed');
+  assert.equal(session.error, null);
+  assert.match(session.communication_error || '', /Database connection reset/);
+});
+
+test('ExecutionCoordinator: ExecutePlan confirmed committed in finishSession options preserves committed state even if getOperation rejects', async () => {
+  let sessionState: ExecutionSession | null = null;
+  let operationsState: Operation[] = [];
+
+  const coordinator = new ExecutionCoordinator({
+    activeInstanceId: () => 'inst-test',
+    onSessionChange: (s) => {
+      sessionState = s;
+    },
+    onOperationsChange: (updater) => {
+      operationsState = updater(operationsState);
+    },
+    getOperation: async () => {
+      // Simulate backend status query failing after ExecutePlan returned
+      throw new Error('Backend journal query timed out');
+    },
+  });
+
+  const plan: Plan = {
+    plan_id: 'plan_exec_succ',
+    backend_operation_id: 'op_exec_succ',
+    installation_id: 'inst-test',
+    kind: 'install',
+    mod_id: 'mod_succ',
+    mod_title: 'Success Mod',
+    version_id: 'v1',
+    version_str: '1.0.0',
+    expires_at: '',
+    dependency_blockers: [],
+    semantic_blockers: [],
+    changes: [],
+    backups_required: 0,
+    bytes_required: 200,
+    warnings: [],
+  };
+
+  coordinator.startSession(plan, 'inst-test');
+  assert.equal(coordinator.getCurrentSession()?.operation.state, 'planned');
+
+  // ExecutePlan succeeded and returned state: committed with 12 files
+  await coordinator.finishSession('op_exec_succ', 'inst-test', null, {
+    confirmedState: 'committed',
+    files: 12,
+  });
+
+  const session = coordinator.getCurrentSession();
+  assert.ok(session);
+  assert.equal(session.is_finished, true);
+  // Committed status must be set from confirmedState, NOT downgraded to unknown
+  assert.equal(session.operation.state, 'committed');
+  assert.equal(session.operation.phase, 'committed');
+  assert.equal(session.operation.progress.percent, 100);
+  assert.equal(session.operation.progress.processed_files, 12);
+  assert.equal(session.error, null);
+  assert.match(session.communication_error || '', /Backend journal query timed out/);
+  assert.equal(operationsState.length, 1);
+  assert.equal(operationsState[0].state, 'committed');
+});
+
+test('ExecutionCoordinator: polling received needs_manual_recovery -> finishSession query failure preserves recovery state', async () => {
+  let sessionState: ExecutionSession | null = null;
+  let operationsState: Operation[] = [];
+  let pollCount = 0;
+
+  const coordinator = new ExecutionCoordinator({
+    activeInstanceId: () => 'inst-test',
+    onSessionChange: (s) => {
+      sessionState = s;
+    },
+    onOperationsChange: (updater) => {
+      operationsState = updater(operationsState);
+    },
+    getOperation: async () => {
+      pollCount++;
+      if (pollCount === 1) {
+        return {
+          operation_id: 'op_poll_recovery',
+          installation_id: 'inst-test',
+          mod_id: 'mod_recovery',
+          mod_title: 'Recovery Mod',
+          version_id: 'v1',
+          version_str: '1.0.0',
+          kind: 'install',
+          state: 'needs_manual_recovery',
+          phase: 'needs_manual_recovery',
+          can_rollback: true,
+          backup_id: 'snapshot_op_poll_recovery',
+          progress: { stage: '外部文件冲突', processed_files: 1, total_files: 2, bytes_processed: 10, total_bytes: 20, percent: 50 },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          error: { code: 'conflict_detected', message: 'Target file modified outside SubmodHub' },
+        };
+      }
+      throw new Error('Query error during finish');
+    },
+    pollIntervalMs: 20,
+  });
+
+  const plan: Plan = {
+    plan_id: 'plan_rec',
+    backend_operation_id: 'op_poll_recovery',
+    installation_id: 'inst-test',
+    kind: 'install',
+    mod_id: 'mod_recovery',
+    mod_title: 'Recovery Mod',
+    version_id: 'v1',
+    version_str: '1.0.0',
+    expires_at: '',
+    dependency_blockers: [],
+    semantic_blockers: [],
+    changes: [],
+    backups_required: 0,
+    bytes_required: 20,
+    warnings: [],
+  };
+
+  coordinator.startSession(plan, 'inst-test');
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(coordinator.getCurrentSession()?.operation.state, 'needs_manual_recovery');
+
+  await coordinator.finishSession('op_poll_recovery', 'inst-test');
+
+  const session = coordinator.getCurrentSession();
+  assert.ok(session);
+  assert.equal(session.is_finished, true);
+  assert.equal(session.operation.state, 'needs_manual_recovery');
+  assert.equal(session.operation.can_rollback, true);
+  assert.match(session.communication_error || '', /Query error during finish/);
+});
+
 test('isTerminalOperation identifies terminal states accurately', () => {
   assert.equal(isTerminalOperation({ state: 'committed' } as any), true);
   assert.equal(isTerminalOperation({ state: 'rolled_back' } as any), true);
   assert.equal(isTerminalOperation({ state: 'needs_manual_recovery' } as any), true);
+  assert.equal(isTerminalOperation({ state: 'unknown' } as any), true);
+  assert.equal(isTerminalOperation({ state: 'writing', phase: 'unknown' } as any), true);
   assert.equal(isTerminalOperation({ state: 'writing', phase: 'committed' } as any), true);
   assert.equal(isTerminalOperation({ state: 'writing', phase: 'applying' } as any), false);
   assert.equal(isTerminalOperation({ state: 'planned', phase: 'planned' } as any), false);

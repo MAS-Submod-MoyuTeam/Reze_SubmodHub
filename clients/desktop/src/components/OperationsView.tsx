@@ -17,6 +17,7 @@ import {
   Clock,
   Terminal,
   Loader2,
+  HelpCircle,
 } from 'lucide-react';
 import { Operation, ExternalChangeDrift } from '../types/client';
 
@@ -114,6 +115,13 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
             <span>planned (就绪执行)</span>
           </span>
         );
+      case 'unknown':
+        return (
+          <span className="text-[11px] px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700/60 font-mono flex items-center gap-1">
+            <HelpCircle className="w-3.5 h-3.5 text-neutral-400" />
+            <span>unknown (状态未知)</span>
+          </span>
+        );
       default:
         return (
           <span className="text-[11px] px-2 py-0.5 rounded bg-sky-950 text-sky-300 font-mono">
@@ -135,7 +143,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
             </h2>
           </div>
           <p className="text-xs text-neutral-400 mt-0.5">
-            严格按照规范第4章与第5章状态机管理。任何中断、哈希漂移或客户端重启均可通过 <code>operation_id</code> 权威恢复或安全回滚。
+            未完成事务必须先检查诊断，再按恢复材料重新校验并安全回滚。普通已提交安装的文件漂移应使用“已安装 → 修复”；不需要强制回滚安装。恢复后旧计划失效，请重新预览。
           </p>
         </div>
 
