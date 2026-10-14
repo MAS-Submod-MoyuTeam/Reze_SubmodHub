@@ -10,6 +10,8 @@ export function getPlanActionText(kind: PlanKind): string {
       return '更新';
     case 'install':
       return '安装';
+    case 'adopt':
+      return '收养';
     default:
       return '操作';
   }

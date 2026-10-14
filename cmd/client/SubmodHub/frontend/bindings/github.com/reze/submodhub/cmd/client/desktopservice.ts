@@ -85,12 +85,20 @@ export function ListOperations(): $CancellablePromise<$models.OperationDetail[] 
     return $Call.ByID(3166334435);
 }
 
+export function PreviewAdopt(request: $models.AdoptRequest): $CancellablePromise<$models.PlanResult> {
+    return $Call.ByID(2433987110, request);
+}
+
 export function PreviewArchive(request: $models.ArchiveInstallRequest): $CancellablePromise<$models.PlanResult> {
     return $Call.ByID(1878777463, request);
 }
 
 export function PreviewPriority(priorities: { [_ in string]?: number } | null): $CancellablePromise<$models.PlanResult> {
     return $Call.ByID(1682193823, priorities);
+}
+
+export function PreviewRepair(targetID: string): $CancellablePromise<$models.PlanResult> {
+    return $Call.ByID(2784741150, targetID);
 }
 
 export function PreviewUninstall(targetID: string): $CancellablePromise<$models.PlanResult> {

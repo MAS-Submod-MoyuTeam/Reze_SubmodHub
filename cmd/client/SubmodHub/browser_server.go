@@ -124,6 +124,12 @@ func browserServiceHandler(service *DesktopService) http.Handler {
 			if err == nil {
 				result, err = service.PreviewRepair(value)
 			}
+		case "PreviewAdopt":
+			var value AdoptRequest
+			err = arg(0, &value)
+			if err == nil {
+				result, err = service.PreviewAdopt(value)
+			}
 		case "PreviewUninstall":
 			var value string
 			err = arg(0, &value)

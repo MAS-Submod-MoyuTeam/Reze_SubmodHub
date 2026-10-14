@@ -52,6 +52,18 @@ export const PreviewArchive = (request: Parameters<typeof native.PreviewArchive>
   }
   return invoke('PreviewArchive', () => native.PreviewArchive(req), [req]);
 };
+export const PreviewAdopt = (request: {
+  instance_id?: string;
+  scan_item_id?: string;
+  mod_id: string;
+  candidate_id?: string;
+  candidate_registrations?: string[];
+  version_id?: string;
+  version: string;
+  title: string;
+  priority: number;
+  files: string[];
+}) => invoke<Awaited<ReturnType<typeof native.PreviewArchive>>>('PreviewAdopt', () => Call.ByName('main.DesktopService.PreviewAdopt', request), [request]);
 export const PreviewUninstall = (targetID: string) => invoke('PreviewUninstall', () => native.PreviewUninstall(targetID), [targetID]);
 export const PreviewRepair = (targetID: string) => invoke<Awaited<ReturnType<typeof native.PreviewArchive>>>('PreviewRepair', () => Call.ByName('main.DesktopService.PreviewRepair', targetID), [targetID]);
 export const GetPriorityOverview = () => invoke('GetPriorityOverview', () => native.GetPriorityOverview());
@@ -65,7 +77,24 @@ export const GetOperation = (operationID: string) => invoke<Operation>('GetOpera
 export const RollbackOperation = (operationID: string) => invoke<void>('RollbackOperation', () => (native as any).RollbackOperation ? (native as any).RollbackOperation(operationID) : (native as any).Recover(operationID), [operationID]);
 export const BrowseMASDirectory = () => browserMode ? Promise.reject(new Error('浏览器模式请手动输入 MAS 根目录')) : native.BrowseMASDirectory();
 
-export type LocalSubmod = { directory: string; name: string; author?: string; version: string; files: Array<{ path: string; sha256: string; size: number }> };
+export type LocalSubmod = {
+  id?: string;
+  directory: string;
+  name: string;
+  author?: string;
+  version: string;
+  registrations?: Array<{
+    name: string;
+    author?: string;
+    version?: string;
+    source: string;
+    unknown: boolean;
+    dependencies_unknown?: boolean;
+  }>;
+  files: Array<{ path: string; sha256: string; size: number }>;
+  warnings?: string[];
+  incomplete?: boolean;
+};
 export type MASInstancesState = { instances: Array<{ id: string; label: string; root: string; status: { valid: boolean; game_exists: boolean; submods: number; available_bytes?: number } }>; active_id: string };
 export type Spritepack = { file: string; name: string; author: string; kind: string; group: string; giftname: string; complete: boolean; missing: string[]; preview: string };
 export type InstalledArchive = {

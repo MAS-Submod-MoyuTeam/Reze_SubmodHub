@@ -28,6 +28,28 @@ test('unmanaged files use fresh scan sizes and hashes without claiming integrity
   });
   assert.deepEqual(files, [{ path: 'local/script.rpy', size_bytes: 42, sha256: 'disk-hash', status: 'unmanaged' }]);
 });
+test('unmanaged root scattered scripts can be opened by stable scan_item_id', async () => {
+  const files = await loadInstalledFiles({
+    ...item,
+    mod_id: 'local:__root_scattered__',
+    scan_item_id: '__root_scattered__',
+    submod_dir_name: '',
+    is_managed: false,
+  }, {
+    list: async () => { throw new Error('unexpected manifest query'); },
+    scan: async () => [{
+      id: '__root_scattered__',
+      directory: '',
+      files: [{ path: 'game/Submods/scattered.rpy', size: 100, sha256: 'hash_scat' }],
+    }],
+  });
+  assert.deepEqual(files, [{
+    path: 'game/Submods/scattered.rpy',
+    size_bytes: 100,
+    sha256: 'hash_scat',
+    status: 'unmanaged',
+  }]);
+});
 test('errors and missing results never fall back to preview data', async () => {
   await assert.rejects(loadInstalledFiles(item, {
     list: async () => { throw new Error('manifest_corrupt'); }, scan: async () => [],

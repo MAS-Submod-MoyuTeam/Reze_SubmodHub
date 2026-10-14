@@ -191,3 +191,35 @@ test('PlanPreviewModal: full uninstall of unknown legacy spritepack requires uni
   assert.match(html, /我确认卸载此旧版本精灵包并清理相关文件/);
   assert.match(html, /写入受阻：请勾选确认卸载已安装套装/);
 });
+
+test('PlanPreviewModal: adopt plan displays adopt header badge and metadata actions', () => {
+  const plan = makeMockPlan({
+    kind: 'adopt',
+    mod_title: '散落模组A',
+    version_str: '1.0.0-adopted',
+    changes: [
+      {
+        target_path: 'game/Submods/AdoptA/main.rpy',
+        action: 'METADATA_ONLY',
+        reason: '将现有本地文件收养并纳入 SubmodHub Ledger 持久化管理',
+        backup_required: false,
+      },
+    ],
+  });
+
+  const html = renderToStaticMarkup(
+    <PlanPreviewModal
+      plan={plan}
+      activeInstallation={makeMockInstallation()}
+      isGameRunning={false}
+      onClose={() => {}}
+      onApplyPlan={() => {}}
+      onOpenRecovery={() => {}}
+    />
+  );
+
+  assert.ok(html.includes('收养计划预览'));
+  assert.ok(html.includes('散落模组A'));
+  assert.ok(html.includes('仅移归属 (METADATA)'));
+  assert.ok(html.includes('game/Submods/AdoptA/main.rpy'));
+});

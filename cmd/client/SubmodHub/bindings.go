@@ -13,7 +13,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -63,19 +62,7 @@ type ArchiveInstallResult struct {
 	SelectedSpriteSetCount int      `json:"selected_sprite_set_count,omitempty"`
 }
 
-type LocalSubmodFile struct {
-	Path   string `json:"path"`
-	SHA256 string `json:"sha256"`
-	Size   int64  `json:"size"`
-}
-
-type LocalSubmod struct {
-	Directory string            `json:"directory"`
-	Name      string            `json:"name"`
-	Author    string            `json:"author,omitempty"`
-	Version   string            `json:"version"`
-	Files     []LocalSubmodFile `json:"files"`
-}
+// LocalSubmod and LocalSubmodFile are defined in local_submods.go
 
 type PlanPreviewAction struct {
 	Path           string `json:"path"`
@@ -182,6 +169,8 @@ type DesktopService struct {
 	apiURL     string
 	stagingMgr *ArchiveStagingManager
 
+	candidateRegistrationsResolver func(candidateID string) ([]string, error)
+
 	activePlan          *core.Plan
 	activePlanRequest   any
 	activePlanArchiveID string
@@ -214,6 +203,12 @@ func (s *DesktopService) SetAPIURL(apiURL string) {
 
 func (s *DesktopService) GetAPIURL() string {
 	return s.apiURL
+}
+
+func (s *DesktopService) SetCandidateRegistrationsResolver(fn func(candidateID string) ([]string, error)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.candidateRegistrationsResolver = fn
 }
 
 func (s *DesktopService) SetMASRoot(root string) (MASStatus, error) {
@@ -265,68 +260,13 @@ func (s *DesktopService) ScanLocalSubmods() ([]LocalSubmod, error) {
 	if s.root == "" {
 		return nil, errors.New("mas_root_not_configured")
 	}
-	base := filepath.Join(s.root, "game", "Submods")
-	entries, err := os.ReadDir(base)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []LocalSubmod{}, nil
+	var manifest *core.Manifest
+	if s.core != nil {
+		if m, err := s.core.LoadManifest(); err == nil {
+			manifest = m
 		}
-		return nil, err
 	}
-	nameRe := regexp.MustCompile(`\bname\s*=\s*["']([^"']+)["']`)
-	authorRe := regexp.MustCompile(`\bauthor\s*=\s*["']([^"']+)["']`)
-	versionRe := regexp.MustCompile(`\bversion\s*=\s*["']([^"']+)["']`)
-	result := make([]LocalSubmod, 0)
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		root := filepath.Join(base, entry.Name())
-		item := LocalSubmod{Directory: entry.Name()}
-		err = filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if info.IsDir() {
-				return nil
-			}
-			b, readErr := os.ReadFile(path)
-			if readErr != nil {
-				return readErr
-			}
-			h := sha256.Sum256(b)
-			rel, relErr := filepath.Rel(filepath.Join(s.root, "game"), path)
-			if relErr != nil {
-				return relErr
-			}
-			item.Files = append(item.Files, LocalSubmodFile{Path: filepath.ToSlash(filepath.Join("game", rel)), SHA256: hex.EncodeToString(h[:]), Size: info.Size()})
-			if strings.HasSuffix(strings.ToLower(path), ".rpy") || strings.HasSuffix(strings.ToLower(path), ".rpym") || strings.HasSuffix(strings.ToLower(path), ".py") {
-				if strings.Contains(string(b), "Submod") {
-					if item.Name == "" {
-						if m := nameRe.FindSubmatch(b); len(m) == 2 {
-							item.Name = string(m[1])
-						}
-					}
-					if item.Version == "" {
-						if m := versionRe.FindSubmatch(b); len(m) == 2 {
-							item.Version = string(m[1])
-						}
-					}
-					if item.Author == "" {
-						if m := authorRe.FindSubmatch(b); len(m) == 2 {
-							item.Author = string(m[1])
-						}
-					}
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, item)
-	}
-	return result, nil
+	return scanLocalSubmodsCore(s.root, manifest)
 }
 
 func (s *DesktopService) ApplyFile(request InstallRequest) (string, error) {
@@ -1179,6 +1119,19 @@ func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstall
 		targetID, ok := activeReq.(string)
 		if ok {
 			newReceipts, pErr := s.projectedRemoveInstalledArchive(targetID)
+			if pErr != nil {
+				return ArchiveInstallResult{}, pErr
+			}
+			data, mErr := json.MarshalIndent(newReceipts, "", "  ")
+			if mErr != nil {
+				return ArchiveInstallResult{}, mErr
+			}
+			tx.SetReceiptUpdate(s.installedArchivesPath(), data)
+		}
+	} else if plan.OperationType == "adopt" {
+		req, ok := activeReq.(AdoptRequest)
+		if ok {
+			newReceipts, pErr := s.projectedAdoptInstalledArchive(req, plan)
 			if pErr != nil {
 				return ArchiveInstallResult{}, pErr
 			}

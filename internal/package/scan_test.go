@@ -184,3 +184,63 @@ func TestScanRejectsAmbiguousRootsAndTargetCollisions(t *testing.T) {
 		}
 	}
 }
+
+func TestParseSubmodsComprehensive(t *testing.T) {
+	// 1. Multiple registrations in one file
+	multi := `
+# Commented out fake registration:
+# Submod(name="Fake", version="0.0.1")
+
+init -990 python:
+    store.mas_submod_utils.Submod(
+        author="Author A",
+        name="Mod Alpha",
+        version="1.0.0"
+    )
+
+    Submod(
+        author="Author B",
+        name="Mod Beta",
+        version="2.1.0"
+    )
+"""
+Docstring mentioning Submod(name="TripleDoc", version="9.9.9")
+"""
+'''
+Single quote docstring Submod(name="SingleTriple", version="8.8.8")
+'''
+`
+	regs := ParseSubmods("multi.rpy", []byte(multi))
+	if len(regs) != 2 {
+		t.Fatalf("expected 2 registrations, got %d: %+v", len(regs), regs)
+	}
+	if regs[0].Name != "Mod Alpha" || regs[0].Author != "Author A" || regs[0].Version != "1.0.0" || regs[0].Unknown {
+		t.Errorf("first reg mismatch: %+v", regs[0])
+	}
+	if regs[1].Name != "Mod Beta" || regs[1].Author != "Author B" || regs[1].Version != "2.1.0" || regs[1].Unknown {
+		t.Errorf("second reg mismatch: %+v", regs[1])
+	}
+
+	// 2. Dynamic name -> Unknown: true
+	dynamic := `Submod(name=dynamic_name_var, version="1.0.0")`
+	dynRegs := ParseSubmods("dyn.rpy", []byte(dynamic))
+	if len(dynRegs) != 1 || !dynRegs[0].Unknown {
+		t.Fatalf("expected 1 unknown registration for dynamic name, got %+v", dynRegs)
+	}
+
+	// 3. Corrupt / unclosed parenthesis -> Unknown: true
+	unclosed := `init python:
+    store.mas_submod_utils.Submod(author="Broken", name="Unclosed"`
+	unclosedRegs := ParseSubmods("unclosed.rpy", []byte(unclosed))
+	if len(unclosedRegs) != 1 || !unclosedRegs[0].Unknown {
+		t.Fatalf("expected unknown for unclosed registration, got %+v", unclosedRegs)
+	}
+
+	// 4. Over limit (> 2MB) -> single unknown registration
+	huge := make([]byte, (2<<20)+10)
+	copy(huge, []byte("Submod(name='Huge', version='1.0.0')"))
+	hugeRegs := ParseSubmods("huge.rpy", huge)
+	if len(hugeRegs) != 1 || !hugeRegs[0].Unknown {
+		t.Fatalf("expected unknown registration for oversized file, got %+v", hugeRegs)
+	}
+}

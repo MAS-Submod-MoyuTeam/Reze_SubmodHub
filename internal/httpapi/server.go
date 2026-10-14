@@ -312,6 +312,7 @@ func NewStoreHandler(s *Store) http.Handler {
 		writeJSON(w, 200, status)
 	})
 	mux.HandleFunc("/api/v1/mods", s.listMods)
+	mux.HandleFunc("/api/v1/registrations/match", s.handleMatchRegistrations)
 	mux.HandleFunc("/api/v1/session", s.session)
 	mux.HandleFunc("/api/v1/auth/flarum/login", s.loginFlarum)
 	mux.HandleFunc("/api/v1/auth/logout", s.logout)
@@ -1316,6 +1317,31 @@ func (s *Store) listMods(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"items": items[offset:end], "next_cursor": nextCursor})
 }
+
+func (s *Store) getModRegistrationsLocked(modID string) []string {
+	regs := make(map[string]bool)
+	for _, version := range s.Catalog.Versions {
+		if version.ModID != modID || version.State != "published" {
+			continue
+		}
+		report, ok := s.Catalog.ScanReports[version.ScanReportID]
+		if !ok {
+			continue
+		}
+		for _, reg := range report.Submods {
+			if !reg.Unknown && reg.Name != "" {
+				regs[reg.Name] = true
+			}
+		}
+	}
+	res := make([]string, 0, len(regs))
+	for r := range regs {
+		res = append(res, r)
+	}
+	slices.Sort(res)
+	return res
+}
+
 func (s *Store) modResource(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/mods/"), "/"), "/")
 	if len(parts) == 0 || parts[0] == "" {
@@ -1363,6 +1389,14 @@ func (s *Store) modResource(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(parts) == 1 {
 		writeJSON(w, 200, cleanPublicMod(*mod))
+		return
+	}
+	if len(parts) == 2 && parts[1] == "registrations" && r.Method == http.MethodGet {
+		regs := s.getModRegistrationsLocked(mod.ID)
+		writeJSON(w, 200, map[string]any{
+			"mod_id":        mod.ID,
+			"registrations": regs,
+		})
 		return
 	}
 	if len(parts) == 2 && parts[1] == "versions" && r.Method == http.MethodGet {

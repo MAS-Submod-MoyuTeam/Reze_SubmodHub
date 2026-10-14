@@ -42,6 +42,7 @@ test('getPlanActionText: distinguishes repair from uninstall, install, and updat
   assert.equal(getPlanActionText('uninstall'), '卸载');
   assert.equal(getPlanActionText('install'), '安装');
   assert.equal(getPlanActionText('update'), '更新');
+  assert.equal(getPlanActionText('adopt'), '收养');
 
   // Verify failure message composition matches expectation
   const makeUncommittedError = (kind: PlanKind, state: string) =>

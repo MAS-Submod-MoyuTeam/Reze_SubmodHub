@@ -11,12 +11,15 @@ var dependenciesPattern = regexp.MustCompile(`\bdependencies\s*=\s*`)
 var literalDependencyPattern = regexp.MustCompile(`^\s*(["'])([^"'\r\n]+)["']\s*:\s*\(\s*(None|["'][^"'\r\n]*["'])\s*,\s*(None|["'][^"'\r\n]*["'])\s*\)\s*$`)
 var tripleStringPattern = regexp.MustCompile(`(?s)""".*?"""|'''.*?'''`)
 
-func parseSubmods(source string, data []byte) []Registration {
-	if len(data) > 2<<20 {
-		return []Registration{{Source: source, Unknown: true}}
-	}
-	var out []Registration
-	code := tripleStringPattern.ReplaceAllStringFunc(string(data), func(value string) string {
+// ParseSubmods extracts Submod registrations from .rpy/.py script content.
+// It is the shared static parser used for package scanning and local filesystem scanning.
+func ParseSubmods(source string, data []byte) []Registration {
+	return parseSubmods(source, data)
+}
+
+func maskCommentsAndStrings(source string) string {
+	// First mask triple quoted blocks so multi-line strings don't leak comments
+	masked := tripleStringPattern.ReplaceAllStringFunc(source, func(value string) string {
 		return strings.Map(func(char rune) rune {
 			if char == '\n' {
 				return char
@@ -24,10 +27,87 @@ func parseSubmods(source string, data []byte) []Registration {
 			return ' '
 		}, value)
 	})
+
+	var sb strings.Builder
+	sb.Grow(len(masked))
+	inSingleQuote := false
+	inDoubleQuote := false
+	escaped := false
+
+	for i := 0; i < len(masked); i++ {
+		c := masked[i]
+		if escaped {
+			escaped = false
+			sb.WriteByte(c)
+			continue
+		}
+		if c == '\\' {
+			escaped = true
+			sb.WriteByte(c)
+			continue
+		}
+		if inSingleQuote {
+			if c == '\'' {
+				inSingleQuote = false
+			} else if c == '\n' {
+				inSingleQuote = false // Unterminated string literal on this line
+			}
+			sb.WriteByte(c)
+			continue
+		}
+		if inDoubleQuote {
+			if c == '"' {
+				inDoubleQuote = false
+			} else if c == '\n' {
+				inDoubleQuote = false // Unterminated string literal on this line
+			}
+			sb.WriteByte(c)
+			continue
+		}
+
+		if c == '\'' {
+			inSingleQuote = true
+			sb.WriteByte(c)
+			continue
+		}
+		if c == '"' {
+			inDoubleQuote = true
+			sb.WriteByte(c)
+			continue
+		}
+		if c == '#' {
+			// Comment until end of line: replace with space to preserve offsets and newlines
+			for i < len(masked) && masked[i] != '\n' {
+				sb.WriteByte(' ')
+				i++
+			}
+			if i < len(masked) && masked[i] == '\n' {
+				sb.WriteByte('\n')
+			}
+			continue
+		}
+		sb.WriteByte(c)
+	}
+	return sb.String()
+}
+
+func parseSubmods(source string, data []byte) []Registration {
+	if len(data) > 2<<20 {
+		return []Registration{{Source: source, Unknown: true}}
+	}
+	var out []Registration
+	code := maskCommentsAndStrings(string(data))
 	for _, location := range registrationPattern.FindAllStringIndex(code, 128) {
 		reg := Registration{Source: source}
-		fields, ok := balancedContent(code, location[1]-1, '(', ')')
+		parenIdx := strings.LastIndex(code[location[0]:location[1]], "(")
+		if parenIdx == -1 {
+			continue
+		}
+		fields, ok := balancedContent(code, location[0]+parenIdx, '(', ')')
 		if !ok {
+			// Unbalanced or unclosed registration: mark as unknown registration
+			reg.Unknown = true
+			out = append(out, reg)
 			continue
 		}
 		for _, field := range literalFieldPattern.FindAllStringSubmatch(fields, -1) {

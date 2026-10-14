@@ -16,7 +16,7 @@ import { FileInspectModal } from './components/FileInspectModal';
 import { ExecutionProgressBar } from './components/ExecutionProgressBar';
 import { ExecutionCoordinator } from './executionCoordinator';
 import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
-import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
+import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewAdopt, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
 import { INITIAL_OPERATIONS } from './data/mockData';
 import { createInstalledLoadCoordinator, LoadingStatus } from './installedLoading';
 import { getPlanActionText, resolveModInstallationId } from './planExecution';
@@ -187,8 +187,10 @@ export default function App() {
           selected_sprite_set_count: receipt.selected_sprite_set_count,
         };
       });
-      const unmanaged: InstalledItem[] = local.filter((item) => !managedDirs.has(item.directory.toLowerCase())).map((item) => ({
-        mod_id: `local:${item.directory}`, title: item.name || item.directory,
+      // Do not filter out unmanaged items by directory name; the backend already excludes managed files individually.
+      const unmanaged: InstalledItem[] = local.map((item) => ({
+        mod_id: `local:${item.directory || item.id || 'scattered'}`,
+        title: item.name || item.directory || '散落脚本项',
         summary: '检测到 MAS 本地子模组，尚未与 SubmodHub 安装记录关联。',
         author_name: item.author || '未知作者 (本地检测)', category: 'submod',
         installed_version: item.version || '未声明', installed_version_id: '',
@@ -196,9 +198,77 @@ export default function App() {
         priority: 0, is_managed: false, files_count: (item.files || []).length,
         size_bytes: (item.files || []).reduce((sum, file) => sum + file.size, 0),
         installed_at: new Date().toISOString(), sha256: item.files?.[0]?.sha256 || '',
-        unmanaged_paths: (item.files || []).map((file) => file.path), submod_dir_name: item.directory,
+        unmanaged_paths: (item.files || []).map((file) => file.path),
+        submod_dir_name: item.directory,
+        scan_item_id: item.id || item.directory,
+        registrations: item.registrations || [],
+        warnings: item.warnings,
+        incomplete: item.incomplete,
         integrity_status: 'unknown',
       }));
+
+      // Try matching unmanaged registrations with store
+      const distinctNames = Array.from(new Set(
+        unmanaged.flatMap(u => (u.registrations || []).filter(r => !r.unknown && r.name).map(r => r.name))
+      ));
+      if (distinctNames.length > 0) {
+        try {
+          const apiBase = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+          const resp = await fetch(`${apiBase}/registrations/match`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ names: distinctNames }),
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            const matchMap = new Map<string, { status: 'matched' | 'ambiguous' | 'no_match'; candidates: any[] }>();
+            for (const res of data.results || []) {
+              matchMap.set(res.name, res);
+            }
+            for (const u of unmanaged) {
+              const allRegs = u.registrations || [];
+              const validRegs = allRegs.filter(r => !r.unknown && r.name);
+              const hasUnknownReg = allRegs.some(r => r.unknown);
+              const distinctRegNames = Array.from(new Set(validRegs.map(r => r.name)));
+
+              // If scan was incomplete or there are unknown registrations or multiple distinct registration names in the item,
+              // it cannot be automatically treated as a single clear match.
+              if (u.incomplete || hasUnknownReg || distinctRegNames.length !== 1) {
+                // Collect candidates across all registrations for user advisory review, but mark as ambiguous or no_match
+                const combinedCandidates: any[] = [];
+                const seenCandidateIds = new Set<string>();
+                for (const reg of validRegs) {
+                  const match = matchMap.get(reg.name);
+                  if (match && match.candidates) {
+                    for (const cand of match.candidates) {
+                      if (!seenCandidateIds.has(cand.mod_id)) {
+                        seenCandidateIds.add(cand.mod_id);
+                        combinedCandidates.push(cand);
+                      }
+                    }
+                  }
+                }
+                if (combinedCandidates.length > 0) {
+                  u.match_status = 'ambiguous';
+                  u.match_candidates = combinedCandidates;
+                } else {
+                  u.match_status = 'no_match';
+                  u.match_candidates = [];
+                }
+              } else {
+                // Exactly 1 distinct known registration name without unknowns/incomplete
+                const match = matchMap.get(distinctRegNames[0]);
+                if (match) {
+                  u.match_status = match.status;
+                  u.match_candidates = match.candidates;
+                }
+              }
+            }
+          }
+        } catch {
+          // Store match is advisory and non-blocking
+        }
+      }
 
       const combined = [...managed, ...unmanaged];
       if (loadCoordinatorRef.current.completeModsScan(token, combined)) {
@@ -714,6 +784,13 @@ export default function App() {
           showToast(`${plan.mod_title} 真实修复事务已提交，正在重新扫描。旧预览已废弃。`);
           return;
         }
+        if (plan.kind === 'adopt') {
+          // For adoption, immediately read back from persisted ledger state rather than optimistic assumption.
+          // Version is kept unverified if no store evidence, and integrity is unknown.
+          void scanLocalSubmods(targetInstId, { forced: true });
+          showToast(`已成功收养 ${result.files} 个文件并纳入 Ledger。`);
+          return;
+        }
         setInstalledMods((prev) => {
           const exists = prev.find((item) => item.mod_id === plan.mod_id);
           const authorName = plan.author_name
@@ -821,15 +898,67 @@ export default function App() {
   };
 
   // Handler: Adopt Unmanaged Mod
-  const handleConfirmAdopt = (adopted: InstalledItem) => {
+  const handleConfirmAdopt = async (adopted: InstalledItem, chosenFiles?: string[]) => {
     const currentInstId = activeInstallationIdRef.current;
     if (!currentInstId || currentInstId === 'unverified') return;
     setAdoptTarget(null);
-    setInstalledMods((prev) =>
-      prev.map((m) => (m.mod_id === adopted.mod_id ? adopted : m))
-    );
-    void scanLocalSubmods(currentInstId, { forced: true });
-    showToast(`未托管项 "${adopted.title}" 已成功收养为托管模组！`);
+    try {
+      showToast(`正在生成收养计划: "${adopted.title}"...`);
+      const filesToAdopt = chosenFiles && chosenFiles.length > 0 ? chosenFiles : (adopted.unmanaged_paths || []);
+      const scanItemId = adopted.scan_item_id || adopted.submod_dir_name || (adopted.mod_id.startsWith('local:') ? adopted.mod_id.replace(/^local:/, '') : adopted.mod_id);
+      const preview = await PreviewAdopt({
+        instance_id: currentInstId,
+        scan_item_id: scanItemId,
+        mod_id: adopted.mod_id,
+        candidate_id: adopted.selected_candidate_id || '',
+        candidate_registrations: adopted.selected_candidate_registrations || [],
+        version_id: adopted.installed_version_id || '',
+        version: adopted.installed_version || '1.0.0',
+        title: adopted.title,
+        priority: adopted.priority || 0,
+        files: filesToAdopt,
+      });
+
+      if (preview.blockers && preview.blockers.length > 0) {
+        showToast(`收养受阻：${preview.blockers.join('; ')}`);
+        return;
+      }
+
+      // Map backend preview and display in PlanPreviewModal for explicit user review & secondary confirmation
+      const mappedPlan = mapPlanPreview(preview, {
+        plan_id: preview.plan_id,
+        backend_operation_id: preview.operation_id,
+        kind: 'adopt',
+        installation_id: currentInstId,
+        target_installation_id: preview.target_id || adopted.mod_id,
+        mod_id: preview.target_id || adopted.mod_id,
+        mod_title: preview.mod_title || adopted.title,
+        author_name: adopted.author_name || '本地导入',
+        category: adopted.category || 'submod',
+        version_id: adopted.installed_version_id || '',
+        version_str: preview.version || adopted.installed_version || '1.0.0',
+        expires_at: new Date(Date.now() + 300000).toISOString(),
+        dependency_blockers: [],
+        semantic_blockers: [],
+        changes: (preview.actions || []).map((a) => ({
+          target_path: a.path,
+          action: (a.action as any) || 'METADATA_ONLY',
+          previous_owner: a.current_source || 'unmanaged',
+          next_owner: a.target_source || preview.target_id || adopted.mod_id,
+          previous_hash: a.current_hash,
+          next_hash: a.current_hash,
+          reason: '将现有本地文件收养并纳入 SubmodHub Ledger 持久化管理',
+          backup_required: false,
+        })),
+        backups_required: 0,
+        bytes_required: 0,
+        warnings: [],
+      });
+
+      setCurrentPlan(mappedPlan);
+    } catch (err: any) {
+      showToast(`收养计划生成失败：${err.message || String(err)}`);
+    }
   };
 
   // Handler: Check all updates

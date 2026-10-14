@@ -93,7 +93,7 @@ export interface Installation {
   last_validated_at: string;
 }
 
-export type PlanKind = 'install' | 'update' | 'uninstall' | 'repair';
+export type PlanKind = 'install' | 'update' | 'uninstall' | 'repair' | 'adopt';
 
 export interface PlanChange {
   target_path: string;
@@ -219,6 +219,16 @@ export interface ExecutionSession {
   communication_error?: string | null;
 }
 
+export interface StoreMatchCandidate {
+  mod_id: string;
+  title: string;
+  priority: 'single_registration' | 'multi_registration';
+  score: number;
+  registrations: string[];
+  evidence: string[];
+  reason: string;
+}
+
 export interface InstalledItem {
   mod_id: string;
   installation_id?: string;
@@ -239,6 +249,20 @@ export interface InstalledItem {
   sha256: string;
   unmanaged_paths?: string[];
   submod_dir_name?: string;
+  scan_item_id?: string;
+  registrations?: Array<{
+    name: string;
+    author?: string;
+    version?: string;
+    source: string;
+    unknown: boolean;
+  }>;
+  match_status?: 'matched' | 'ambiguous' | 'no_match';
+  match_candidates?: StoreMatchCandidate[];
+  selected_candidate_id?: string;
+  selected_candidate_registrations?: string[];
+  warnings?: string[];
+  incomplete?: boolean;
   integrity_status: 'intact' | 'modified' | 'unknown';
   managed_operation_id?: string;
   sprite_set_ids?: string[];

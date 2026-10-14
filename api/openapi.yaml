@@ -21,6 +21,24 @@ paths:
       operationId: getMod
       parameters: [{name: mod_id, in: path, required: true, schema: {type: string}}]
       responses: {'200': {$ref: '#/components/responses/Mod'}, 'default': {$ref: '#/components/responses/Error}}
+  /mods/{mod_id}/registrations:
+    get:
+      operationId: getModRegistrations
+      parameters: [{name: mod_id, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200':
+          description: Verified registration identities for this mod
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mod_id, registrations]
+                properties:
+                  mod_id: {type: string}
+                  registrations:
+                    type: array
+                    items: {type: string}
+        default: {$ref: '#/components/responses/Error'}
   /mods/{mod_id}/versions/{version_id}:
     get:
       operationId: getVersion

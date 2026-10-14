@@ -34,6 +34,7 @@ interface InstalledViewProps {
   spritepacksError: string | null;
   isSpritepacksInitialLoading: boolean;
   isSpritepacksRefreshing: boolean;
+  initialSubTab?: 'managed' | 'unmanaged' | 'spritepacks';
   onRefreshInstalled: () => void;
   onRefreshSpritepacks: () => void;
   onCreateSpriteGift: (file: string) => Promise<string>;
@@ -72,8 +73,9 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
   onCheckAllUpdates,
   onVerifyIntegrity,
   isVerifying,
+  initialSubTab = 'managed',
 }) => {
-  const [subTab, setSubTab] = useState<'managed' | 'unmanaged' | 'spritepacks'>('managed');
+  const [subTab, setSubTab] = useState<'managed' | 'unmanaged' | 'spritepacks'>(initialSubTab);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [creatingGiftFile, setCreatingGiftFile] = useState<string | null>(null);
   const [giftMessages, setGiftMessages] = useState<Record<string, string>>({});
@@ -706,17 +708,45 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             <span className="px-2 py-0.5 text-[10px] rounded bg-amber-950 text-amber-300 border border-amber-800 font-mono">
                               未托管发现项
                             </span>
+                            {item.match_status === 'matched' && (
+                              <span className="px-2 py-0.5 text-[10px] rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono">
+                                商店可匹配: {item.match_candidates?.[0]?.title}
+                              </span>
+                            )}
+                            {item.match_status === 'ambiguous' && (
+                              <span className="px-2 py-0.5 text-[10px] rounded bg-purple-950 text-purple-300 border border-purple-800 font-mono">
+                                存在多项商店候选
+                              </span>
+                            )}
                             <h4 className="font-semibold text-neutral-100 text-sm">{item.title}</h4>
                           </div>
-                          <p className="text-xs text-neutral-400 mt-1 leading-relaxed">{item.summary}</p>
+                          <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
+                            {item.author_name} · 声明版本: {item.installed_version} · 文件数: {item.unmanaged_paths?.length || 0}
+                          </p>
 
                           <div className="mt-2 space-y-1 font-mono text-[11px] text-neutral-400 bg-neutral-950/60 p-2.5 rounded-lg border border-neutral-800/80">
-                            <div className="text-neutral-400">检测到的本地路径 ({item.unmanaged_paths?.length || 0} 个文件):</div>
-                            {item.unmanaged_paths?.map((p) => (
+                            <div className="flex items-center justify-between text-neutral-400">
+                              <span>检测到的本地路径 ({item.unmanaged_paths?.length || 0} 个文件):</span>
+                              {(item.unmanaged_paths?.length || 0) > 3 && (
+                                <button
+                                  type="button"
+                                  onClick={() => onInspectFiles(item)}
+                                  className="text-emerald-400 hover:text-emerald-300 cursor-pointer font-sans text-[11px]"
+                                >
+                                  查看完整清单 ({item.unmanaged_paths?.length})
+                                </button>
+                              )}
+                            </div>
+                            {item.unmanaged_paths?.slice(0, 3).map((p) => (
                               <div key={p} className="text-neutral-300 truncate">
                                 • {p}
                               </div>
                             ))}
+                            {(item.unmanaged_paths?.length || 0) > 3 && (
+                              <div className="text-neutral-500 italic text-[10px]">
+                                ... 另有 {(item.unmanaged_paths?.length || 0) - 3} 个文件，可通过“检查散落散列”或点击上方查看完整清单
+                              </div>
+                            )}
                           </div>
                         </div>
 

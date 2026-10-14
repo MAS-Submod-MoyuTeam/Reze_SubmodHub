@@ -138,6 +138,8 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                   ? '升级更新计划预览'
                   : plan.kind === 'uninstall'
                   ? '卸载计划预览'
+                  : plan.kind === 'adopt'
+                  ? '收养计划预览'
                   : '修复计划预览'}
               </span>
               <h2 className="text-base font-bold text-neutral-100">
