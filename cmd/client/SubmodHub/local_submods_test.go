@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -117,5 +118,79 @@ func TestLocalSubmodsLedgerExclusionAndScattered(t *testing.T) {
 	}
 	if !foundScattered {
 		t.Error("Root scattered file not found")
+	}
+}
+
+func TestLocalSubmodsEmptyResultIsJSONArray(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T) (string, *core.Manifest)
+	}{
+		{
+			name: "directory does not exist",
+			setup: func(t *testing.T) (string, *core.Manifest) {
+				masRoot := t.TempDir()
+				return masRoot, core.NewManifest()
+			},
+		},
+		{
+			name: "directory exists and is empty",
+			setup: func(t *testing.T) (string, *core.Manifest) {
+				masRoot := t.TempDir()
+				submodsDir := filepath.Join(masRoot, "game", "Submods")
+				if err := os.MkdirAll(submodsDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				return masRoot, core.NewManifest()
+			},
+		},
+		{
+			name: "only managed scripts",
+			setup: func(t *testing.T) (string, *core.Manifest) {
+				masRoot := t.TempDir()
+				submodsDir := filepath.Join(masRoot, "game", "Submods")
+				managedDir := filepath.Join(submodsDir, "ManagedMod")
+				if err := os.MkdirAll(managedDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				managedFile := filepath.Join(managedDir, "managed.rpy")
+				if err := os.WriteFile(managedFile, []byte("init python:\n    Submod(name='Managed', version='1.0')\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				manifest := core.NewManifest()
+				manifest.Installations["inst_managed"] = &core.InstallationRecord{
+					InstallationID: "inst_managed",
+					ModID:          "mod_managed",
+					Paths:          []string{"game/Submods/ManagedMod/managed.rpy"},
+				}
+				manifest.Files["game/submods/managedmod/managed.rpy"] = &core.FileRecord{
+					DisplayPath: "game/Submods/ManagedMod/managed.rpy",
+				}
+				return masRoot, manifest
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			masRoot, manifest := tc.setup(t)
+			results, err := scanLocalSubmodsCore(masRoot, manifest)
+			if err != nil {
+				t.Fatalf("expected nil error, got %v", err)
+			}
+			if results == nil {
+				t.Fatalf("expected non-nil results slice, got nil")
+			}
+			if len(results) != 0 {
+				t.Fatalf("expected 0 results, got %d", len(results))
+			}
+			rawJSON, err := json.Marshal(results)
+			if err != nil {
+				t.Fatalf("json.Marshal failed: %v", err)
+			}
+			if string(rawJSON) != "[]" {
+				t.Fatalf("expected JSON '[]', got %q", string(rawJSON))
+			}
+		})
 	}
 }

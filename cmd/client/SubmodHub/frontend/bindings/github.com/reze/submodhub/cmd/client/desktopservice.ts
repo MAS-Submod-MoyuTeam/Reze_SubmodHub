@@ -86,7 +86,7 @@ export function ListOperations(): $CancellablePromise<$models.OperationDetail[] 
 }
 
 export function PreviewAdopt(request: $models.AdoptRequest): $CancellablePromise<$models.PlanResult> {
-    return $Call.ByID(2433987110, request);
+    return $Call.ByID(2529938515, request);
 }
 
 export function PreviewArchive(request: $models.ArchiveInstallRequest): $CancellablePromise<$models.PlanResult> {
@@ -139,6 +139,10 @@ export function SelectMASInstance(id: string): $CancellablePromise<$models.MASIn
 
 export function SetAPIURL(apiURL: string): $CancellablePromise<void> {
     return $Call.ByID(3112850050, apiURL);
+}
+
+export function SetCandidateRegistrationsResolver(fn: any): $CancellablePromise<void> {
+    return $Call.ByID(626430224, fn);
 }
 
 export function SetMASRoot(root: string): $CancellablePromise<$models.MASStatus> {

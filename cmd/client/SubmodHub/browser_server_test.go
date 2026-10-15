@@ -197,3 +197,29 @@ func TestBrowserServiceListInstalledModFiles(t *testing.T) {
 		t.Fatalf("expected file to not be drifted")
 	}
 }
+
+func TestBrowserServiceScanLocalSubmodsEmptyResult(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "game", "Submods"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	service := &DesktopService{configPath: filepath.Join(t.TempDir(), "instances.json")}
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+	handler := browserServiceHandler(service)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/ScanLocalSubmods", strings.NewReader(`{"args":[]}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	got := strings.TrimSpace(rec.Body.String())
+	if got != "[]" {
+		t.Fatalf("expected JSON response '[]', got %q", got)
+	}
+}

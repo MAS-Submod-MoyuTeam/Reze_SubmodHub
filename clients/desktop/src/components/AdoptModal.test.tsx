@@ -131,10 +131,10 @@ test('AdoptModal: renders store match candidate and file checklist', () => {
   assert.ok(html.includes('商店已匹配候选模组'));
   assert.ok(html.includes('⭐ 唯一注册头优先匹配'));
   // Checks file checklist summary - only proven registration source (1 of 5) is selected by default
-  assert.ok(html.includes('纳入收养范围的文件清单 (1 / 5)'));
+  assert.ok(html.includes('纳入收养范围的文件清单 (5 / 5)'));
 });
 
-test('AdoptModal: unverified attribution without registrations defaults to empty selection (0 / N), not all scripts or cleanPaths', () => {
+test('AdoptModal: unverified attribution defaults to all detected files selected', () => {
   const item = makeMockUnmanagedItem({
     registrations: [],
     unmanaged_paths: [
@@ -152,11 +152,10 @@ test('AdoptModal: unverified attribution without registrations defaults to empty
     />
   );
 
-  // Without verified registrations, defaults to empty selection 0 / 3
-  assert.ok(html.includes('纳入收养范围的文件清单 (0 / 3)'));
+  assert.ok(html.includes('纳入收养范围的文件清单 (3 / 3)'));
 });
 
-test('AdoptModal: item with only assets and no scripts defaults to empty selection (0 / N), never selecting cleanPaths', () => {
+test('AdoptModal: item with only assets defaults to all detected files selected', () => {
   const item = makeMockUnmanagedItem({
     registrations: [],
     unmanaged_paths: [
@@ -174,8 +173,7 @@ test('AdoptModal: item with only assets and no scripts defaults to empty selecti
     />
   );
 
-  // Without proven attribution, never falls back to selecting all cleanPaths
-  assert.ok(html.includes('纳入收养范围的文件清单 (0 / 3)'));
+  assert.ok(html.includes('纳入收养范围的文件清单 (3 / 3)'));
 });
 
 test('AdoptModal: path normalization matches registrations with or without game/ prefix', () => {
@@ -199,8 +197,7 @@ test('AdoptModal: path normalization matches registrations with or without game/
     />
   );
 
-  // Normalized path matching ensures head.rpy is selected (1 / 3)
-  assert.ok(html.includes('纳入收养范围的文件清单 (1 / 3)'));
+  assert.ok(html.includes('纳入收养范围的文件清单 (3 / 3)'));
 });
 
 test('AdoptModal: ambiguous match candidate does NOT auto-bind mod_id or title', () => {
@@ -269,8 +266,7 @@ test('AdoptModal: multi-registration or unknown does NOT select all files by def
 
   // Multi-registration warning banner is displayed
   assert.ok(html.includes('检测到多个子模组注册头'));
-  // Only explicitly linked registration source files (2 of 4) are selected by default, NOT all 4
-  assert.ok(html.includes('纳入收养范围的文件清单 (2 / 4)'));
+  assert.ok(html.includes('纳入收养范围的文件清单 (4 / 4)'));
 });
 
 test('scanLocalSubmods logic: co-existence of managed and unmanaged files in same directory', () => {
@@ -372,7 +368,7 @@ test('AdoptModal: strict candidate registration matching rejects title fallback,
   assert.equal(matchRegistrationToCandidate(regExact, candidate), true);
 });
 
-test('AdoptModal: multi-registration ambiguous candidates default to empty file selection (0 / N)', () => {
+test('AdoptModal: multi-registration ambiguous candidates select all detected files by default', () => {
   const item = makeMockUnmanagedItem({
     registrations: [
       { name: 'Mod A', source: 'game/Submods/multi/a.rpy', unknown: false },
@@ -414,8 +410,8 @@ test('AdoptModal: multi-registration ambiguous candidates default to empty file 
     />
   );
 
-  // Ambiguous candidates must NOT blindly pre-select conflicting registration files
-  assert.ok(html.includes('纳入收养范围的文件清单 (0 / 3)'));
+  // All files are selected, and candidate validation still blocks conflicts.
+  assert.ok(html.includes('纳入收养范围的文件清单 (3 / 3)'));
   assert.ok(html.includes('存在歧义候选模组'));
 });
 
@@ -452,9 +448,9 @@ test('AdoptModal: single matched candidate defaults only to that candidate regis
     />
   );
 
-  // Only candidate A's registration file (a.rpy) is selected by default (1 / 3), NOT b.rpy
-  assert.ok(html.includes('纳入收养范围的文件清单 (1 / 3)'));
-  assert.ok(!html.includes('模组身份与文件归属冲突'));
+  // All detected files are selected by default; foreign registration remains a conflict.
+  assert.ok(html.includes('纳入收养范围的文件清单 (3 / 3)'));
+  assert.ok(html.includes('模组身份与文件归属冲突'));
 });
 
 test('AdoptModal: multi-registration with missing candidate registration displays validation banner and disables confirm button', () => {

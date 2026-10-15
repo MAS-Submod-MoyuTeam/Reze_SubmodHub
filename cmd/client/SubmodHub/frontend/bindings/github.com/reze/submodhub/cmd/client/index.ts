@@ -7,6 +7,7 @@ export {
 };
 
 export type {
+    AdoptRequest,
     ArchiveInstallRequest,
     ArchiveInstallResult,
     ExecutePlanRequest,
@@ -28,5 +29,6 @@ export type {
     SpritepackDeleteResult,
     StageArchiveRequest,
     StageProgress,
-    StagedArchiveInfo
+    StagedArchiveInfo,
+    SubmodRegistration
 } from "./models.js";

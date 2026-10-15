@@ -98,49 +98,9 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
     (c) => c.mod_id === selectedCandidateId || (modId.trim() && c.mod_id === modId.trim())
   );
 
-  // File selection:
-  // When a store candidate is active (e.g. topCandidate), only select files corresponding to that candidate.
-  // Exclude non-source / compiled bytecode (.rpyc) by default.
-  // When attribution cannot be proven or is ambiguous, default to an empty selection.
+  // Default to all files in the detected unmanaged item; candidate validation still blocks identity conflicts.
   const allPaths = item?.unmanaged_paths || [];
-  const defaultSelectedPaths = (() => {
-    if (topCandidate) {
-      return getRegistrationSourcesForCandidate(topCandidate, item?.registrations, allPaths);
-    }
-    if (isAmbiguous) {
-      return [];
-    }
-
-    // Collect all paths that are explicitly linked as registration sources
-    const regSources = new Set(
-      (item?.registrations || [])
-        .filter((r) => !r.unknown && r.source)
-        .map((r) => r.source.replace(/\\/g, '/').toLowerCase())
-    );
-    const normalizedRegSources = new Set(
-      (item?.registrations || [])
-        .filter((r) => !r.unknown && r.source)
-        .map((r) => normalizePath(r.source))
-    );
-
-    const isRegSource = (path: string) => {
-      const p = path.replace(/\\/g, '/').toLowerCase();
-      return regSources.has(p) || normalizedRegSources.has(normalizePath(p));
-    };
-
-    // Filter out .rpyc compiled cache files from default selection
-    const cleanPaths = allPaths.filter((p) => !p.toLowerCase().endsWith('.rpyc'));
-
-    // Match files that are verified registration sources
-    const matched = cleanPaths.filter(isRegSource);
-    if (matched.length > 0) {
-      return matched;
-    }
-
-    // When attribution cannot be determined (no registration source or no matching files),
-    // default to empty selection. Do NOT blindly fall back to all scripts or all cleanPaths.
-    return [];
-  })();
+  const defaultSelectedPaths = allPaths;
 
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(
     new Set(defaultSelectedPaths)
@@ -163,8 +123,6 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
     setSelectedCandidateId(c.mod_id);
     setModId(c.mod_id);
     setModTitle(c.title);
-    const candidateFiles = getRegistrationSourcesForCandidate(c, item?.registrations, allPaths);
-    setSelectedPaths(new Set(candidateFiles));
   };
 
   const candidateValidationError = (() => {
@@ -282,7 +240,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                当前目录可能包含多个模组或未知脚本。已禁止整组盲目收养，并仅默认选中明确关联的文件。请仔细核验勾选的文件与模组归属。
+                当前目录可能包含多个模组或未知脚本。文件默认全部勾选，请核对文件与模组归属；身份冲突时无法作为单个商店模组收养。
               </p>
             </div>
           )}
@@ -466,7 +424,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
             取消
           </button>
           <button
-            disabled={selectedPaths.size === 0 || !modId.trim() || Boolean(candidateValidationError)}
+            disabled={selectedPaths.size === 0 || !modId.trim() || Boolean(candidateValidationError) || (isAmbiguous && !activeCandidate)}
             onClick={handleAdopt}
             className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
           >

@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	MaxScanFiles         = 10000
-	MaxScanTotalBytes    = 500 * 1024 * 1024 // 500 MB
+	MaxScanFiles            = 10000
+	MaxScanTotalBytes       = 500 * 1024 * 1024 // 500 MB
 	MaxRegistrationsPerItem = 128
 )
 
@@ -34,15 +34,15 @@ type SubmodRegistration struct {
 
 // LocalSubmod represents an unmanaged submod directory or root-scattered group.
 type LocalSubmod struct {
-	ID            string                `json:"id"`
-	Directory     string                `json:"directory"`
-	Name          string                `json:"name"`
-	Author        string                `json:"author,omitempty"`
-	Version       string                `json:"version"`
+	ID            string               `json:"id"`
+	Directory     string               `json:"directory"`
+	Name          string               `json:"name"`
+	Author        string               `json:"author,omitempty"`
+	Version       string               `json:"version"`
 	Registrations []SubmodRegistration `json:"registrations"`
-	Files         []LocalSubmodFile     `json:"files"`
-	Warnings      []string              `json:"warnings,omitempty"`
-	Incomplete    bool                  `json:"incomplete,omitempty"`
+	Files         []LocalSubmodFile    `json:"files"`
+	Warnings      []string             `json:"warnings,omitempty"`
+	Incomplete    bool                 `json:"incomplete,omitempty"`
 }
 
 type LocalSubmodFile struct {
@@ -98,7 +98,7 @@ func scanLocalSubmodsCore(masRoot string, manifest *install.Manifest) ([]LocalSu
 	totalFilesScanned := 0
 	var totalBytesScanned int64 = 0
 
-	var result []LocalSubmod
+	result := make([]LocalSubmod, 0)
 	var rootScatteredFiles []LocalSubmodFile
 	var rootScatteredRegs []SubmodRegistration
 	var rootScatteredWarnings []string
@@ -233,9 +233,9 @@ func scanLocalSubmodsCore(masRoot string, manifest *install.Manifest) ([]LocalSu
 		dirName := entry.Name()
 		dirRoot := filepath.Join(base, dirName)
 		item := LocalSubmod{
-			ID:         dirName,
-			Directory:  dirName,
-			Files:      make([]LocalSubmodFile, 0),
+			ID:            dirName,
+			Directory:     dirName,
+			Files:         make([]LocalSubmodFile, 0),
 			Registrations: make([]SubmodRegistration, 0),
 		}
 
