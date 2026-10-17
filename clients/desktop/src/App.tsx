@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { mapPlanPreview } from './planPreview';
-import { PreviewRepair } from './wails';
+import { PreviewRepair, fetchRegistrationMatches } from './wails';
 import { isAllowedNavTab } from './priorityLayers';
 import { TitleBar } from './components/TitleBar';
 import { Sidebar, ActiveTab } from './components/Sidebar';
@@ -273,11 +273,7 @@ export default function App() {
       if (distinctNames.length > 0) {
         try {
           const apiBase = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-          const resp = await fetch(`${apiBase}/registrations/match`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ names: distinctNames }),
-          });
+          const resp = await fetchRegistrationMatches(distinctNames, apiBase);
           if (resp.ok) {
             const data = await resp.json();
             const matchMap = new Map<string, { status: 'matched' | 'ambiguous' | 'no_match'; candidates: any[] }>();

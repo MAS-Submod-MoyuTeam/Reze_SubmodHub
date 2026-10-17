@@ -135,10 +135,10 @@ public class MainActivity extends AppCompatActivity {
                     // For wails API calls (runtime, capabilities, etc.) pass the
                     // full URL including the query string, because
                     // WebViewAssetLoader.PathHandler strips query params
-                    String path = request.getUrl().getPath();
+                    String path = request.getUrl().getEncodedPath();
                     if (path != null && path.startsWith("/wails/")) {
                         String fullPath = path;
-                        String query = request.getUrl().getQuery();
+                        String query = request.getUrl().getEncodedQuery();
                         if (query != null && !query.isEmpty()) {
                             fullPath = path + "?" + query;
                         }
@@ -176,7 +176,7 @@ public class MainActivity extends AppCompatActivity {
                     // and pass through backend status code and Content-Type.
                     if (path != null && path.startsWith("/api/")) {
                         String fullPath = path;
-                        String query = request.getUrl().getQuery();
+                        String query = request.getUrl().getEncodedQuery();
                         if (query != null && !query.isEmpty()) {
                             fullPath = path + "?" + query;
                         }
@@ -188,11 +188,10 @@ public class MainActivity extends AppCompatActivity {
                             java.util.Map<String, String> headers = new java.util.HashMap<>();
                             headers.put("Access-Control-Allow-Origin", "*");
                             headers.put("Cache-Control", "no-cache");
-                            headers.put("Content-Type", apiResp.mimeType != null ? apiResp.mimeType : "application/octet-stream");
-
+                            String mimeType = apiResp.mimeType != null ? apiResp.mimeType.split(";", 2)[0].trim() : "application/octet-stream";
                             String reasonPhrase = getStatusReason(apiResp.statusCode);
                             return new WebResourceResponse(
-                                apiResp.mimeType != null ? apiResp.mimeType : "application/octet-stream",
+                                mimeType,
                                 "UTF-8",
                                 apiResp.statusCode > 0 ? apiResp.statusCode : 200,
                                 reasonPhrase,

@@ -23,6 +23,17 @@ export const LaunchMASInstance = (id: string) => invoke('LaunchMASInstance', () 
 export const SetMASRoot = (root: string) => invoke('SetMASRoot', () => native.SetMASRoot(root), [root]);
 export const GetMASStatus = () => invoke('GetMASStatus', () => native.GetMASStatus());
 export const ScanLocalSubmods = () => invoke('ScanLocalSubmods', () => native.ScanLocalSubmods());
+export async function fetchRegistrationMatches(names: string[], apiBase: string): Promise<Response> {
+  if (isAndroid() && !browserMode) {
+    const body = await Call.ByName('main.DesktopService.MatchRegistrations', names) as string;
+    return new Response(body, { headers: { 'Content-Type': 'application/json' } });
+  }
+  return fetch(`${apiBase}/registrations/match`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ names }),
+  });
+}
 export const ListInstalledArchives = () => invoke('ListInstalledArchives', () => native.ListInstalledArchives());
 export const ListInstalledModFiles = (installationID: string, modID: string) => invoke('ListInstalledModFiles', () => native.ListInstalledModFiles(installationID, modID), [installationID, modID]);
 export const ScanInstalledSpritepacks = () => invoke('ScanInstalledSpritepacks', () => native.ScanInstalledSpritepacks());
