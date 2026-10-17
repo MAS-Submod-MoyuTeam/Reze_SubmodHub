@@ -76,7 +76,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside className="w-64 bg-neutral-900/90 border-r border-neutral-800 flex flex-col justify-between shrink-0 select-none">
+    <aside className="hidden md:flex w-64 bg-neutral-900/90 border-r border-neutral-800 flex-col justify-between shrink-0 select-none">
       {/* Top Nav Section */}
       <div className="p-3">
         <div className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">

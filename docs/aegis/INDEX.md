@@ -4,6 +4,7 @@
 - [SubmodHub implementation plan](plans/2026-09-25-submodhub.md)
 - [Frontend function and API contract](../frontend-contract.md)
 - [Android All files access feasibility gate](../android-smoke.md)
+- [Android client adaptation plan](plans/2026-10-16-android-client.md)
 
 Local reference projects used during design:
 

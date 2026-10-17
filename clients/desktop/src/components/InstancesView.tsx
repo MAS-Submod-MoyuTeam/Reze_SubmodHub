@@ -23,6 +23,7 @@ interface InstancesViewProps {
   onRemoveInstance: (id: string) => Promise<void>;
   onRefreshInstances: () => Promise<void>;
   onBrowseDirectory: () => Promise<string>;
+  isAndroid?: boolean;
 }
 
 export const InstancesView: React.FC<InstancesViewProps> = ({
@@ -33,6 +34,7 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
   onRemoveInstance,
   onRefreshInstances,
   onBrowseDirectory,
+  isAndroid = false,
 }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newLabel, setNewLabel] = useState('');
@@ -73,18 +75,24 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
             </h2>
           </div>
           <p className="text-xs text-neutral-400 mt-0.5">
-            添加本机 MAS 目录，选择当前实例；路径失效时请重新检查。
+            {isAndroid
+              ? 'Android 客户端采用固定的 MAS 根目录；请确保游戏目录已就绪。'
+              : '添加本机 MAS 目录，选择当前实例；路径失效时请重新检查。'}
           </p>
         </div>
 
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
-        >
-          <FolderPlus className="w-3.5 h-3.5" />
-          <span>手选添加新 MAS 目录...</span>
-        </button>
-        <button onClick={() => void onRefreshInstances()} className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white flex items-center gap-1" title="重新检查目录"><RefreshCw className="w-3.5 h-3.5" />重新检查</button>
+        <div className="flex items-center gap-2">
+          {!isAndroid && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+            >
+              <FolderPlus className="w-3.5 h-3.5" />
+              <span>手选添加新 MAS 目录...</span>
+            </button>
+          )}
+          <button onClick={() => void onRefreshInstances()} className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white flex items-center gap-1" title="重新检查目录"><RefreshCw className="w-3.5 h-3.5" />重新检查</button>
+        </div>
       </div>
 
       {/* Main List */}
@@ -121,6 +129,11 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
                     </div>
 
                     <div className="text-[11px] text-neutral-500">{inst.is_valid ? 'game/ 目录已验证' : '找不到 game/ 目录'}</div>
+                    {isAndroid && !inst.is_valid && (
+                      <div className="mt-2 text-xs text-amber-300/90 bg-amber-950/40 border border-amber-800/40 rounded p-2">
+                        未检测到 MAS 游戏目录。请先在手机上安装并启动一次 MAS 游戏，确认其在 {inst.path_hint} 正常生成 game 目录后再使用本工具。
+                      </div>
+                    )}
                   </div>
 
                   {/* Actions */}
@@ -137,7 +150,7 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
                         切换为活动实例
                       </button>
                     )}
-                    {inst.id !== 'unverified' && <button onClick={() => void onRemoveInstance(inst.id)} className="px-2 py-1.5 text-xs text-rose-300 hover:text-rose-200" title="移除实例记录">移除</button>}
+                    {inst.id !== 'unverified' && !isAndroid && <button onClick={() => void onRemoveInstance(inst.id)} className="px-2 py-1.5 text-xs text-rose-300 hover:text-rose-200" title="移除实例记录">移除</button>}
                   </div>
                 </div>
               </div>

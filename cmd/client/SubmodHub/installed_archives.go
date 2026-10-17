@@ -36,6 +36,9 @@ func (s *DesktopService) installedArchivesPath() string {
 }
 
 func (s *DesktopService) ListInstalledArchives() ([]InstalledArchive, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return nil, err
+	}
 	if s.root == "" {
 		return nil, errors.New("mas_root_not_configured")
 	}

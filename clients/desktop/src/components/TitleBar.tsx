@@ -27,6 +27,7 @@ interface TitleBarProps {
   onOpenInstancesView: () => void;
   onLaunchGame: () => Promise<void>;
   isLaunchingGame: boolean;
+  isAndroid?: boolean;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -40,6 +41,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onOpenInstancesView,
   onLaunchGame,
   isLaunchingGame,
+  isAndroid = false,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const activeInst = installations.find((i) => i.id === activeInstallationId) || {
@@ -58,7 +60,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             SubmodHub
           </span>
           <span className="hidden text-[11px] text-neutral-400 font-mono lg:inline">
-            PC Client
+            {isAndroid ? 'Android' : 'PC Client'}
           </span>
         </div>
 
@@ -134,16 +136,18 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             </>
           )}
         </div>
-        <button
-          onClick={() => void onLaunchGame()}
-          disabled={!activeInst.is_valid || isLaunchingGame}
-          className="flex h-[26px] shrink-0 items-center gap-1.5 rounded bg-emerald-700 px-2.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
-          title={activeInst.is_valid ? `启动 ${activeInst.label} 的 DDLC.exe` : '请先选择有效的 MAS 实例'}
-          aria-label={isLaunchingGame ? '启动中' : '启动游戏'}
-        >
-          <Play className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">{isLaunchingGame ? '启动中…' : '启动游戏'}</span>
-        </button>
+        {!isAndroid && (
+          <button
+            onClick={() => void onLaunchGame()}
+            disabled={!activeInst.is_valid || isLaunchingGame}
+            className="flex h-[26px] shrink-0 items-center gap-1.5 rounded bg-emerald-700 px-2.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+            title={activeInst.is_valid ? `启动 ${activeInst.label} 的 DDLC.exe` : '请先选择有效的 MAS 实例'}
+            aria-label={isLaunchingGame ? '启动中' : '启动游戏'}
+          >
+            <Play className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{isLaunchingGame ? '启动中…' : '启动游戏'}</span>
+          </button>
+        )}
       </div>
 
       {/* Middle zone: Real-time Guards & Indicators */}
@@ -196,26 +200,28 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
       {/* Right zone: Window Controls */}
       <div className="flex items-center">
-        <div className="hidden md:flex items-center">
-        <button
-          className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors"
-          title="最小化"
-        >
-          <Minus className="w-3.5 h-3.5" />
-        </button>
-        <button
-          className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors"
-          title="最大化"
-        >
-          <Square className="w-3 h-3" />
-        </button>
-        <button
-          className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-white hover:bg-red-600 transition-colors"
-          title="关闭"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-        </div>
+        {!isAndroid && (
+          <div className="hidden md:flex items-center">
+            <button
+              className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors"
+              title="最小化"
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors"
+              title="最大化"
+            >
+              <Square className="w-3 h-3" />
+            </button>
+            <button
+              className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-white hover:bg-red-600 transition-colors"
+              title="关闭"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

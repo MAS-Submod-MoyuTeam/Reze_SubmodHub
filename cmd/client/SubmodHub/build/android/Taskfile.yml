@@ -4,8 +4,8 @@ includes:
   common: ../Taskfile.yml
 
 vars:
-  APP_ID: '{{.APP_ID | default "com.wails.app"}}'
-  MIN_SDK: '21'
+  APP_ID: '{{.APP_ID | default "com.reze.submodhub"}}'
+  MIN_SDK: '30'
   TARGET_SDK: '35'
   # The emulator runs the host architecture; physical devices are arm64
   HOST_ARCH:

@@ -128,6 +128,9 @@ func (s *DesktopService) spritepack(file string) (Spritepack, error) {
 }
 
 func (s *DesktopService) ScanInstalledSpritepacks() ([]Spritepack, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return nil, err
+	}
 	if s.root == "" {
 		return nil, errors.New("mas_root_not_configured")
 	}
@@ -155,6 +158,9 @@ func (s *DesktopService) ScanInstalledSpritepacks() ([]Spritepack, error) {
 }
 
 func (s *DesktopService) CreateSpriteGift(file string) (string, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return "", err
+	}
 	if s.root == "" {
 		return "", errors.New("mas_root_not_configured")
 	}
@@ -192,6 +198,9 @@ type SpritepackDeleteResult struct {
 }
 
 func (s *DesktopService) DeleteSpritepack(file string) (SpritepackDeleteResult, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return SpritepackDeleteResult{}, err
+	}
 	if s.root == "" || !fileExists(filepath.Join(s.root, "game")) {
 		return SpritepackDeleteResult{}, errors.New("mas_root_not_configured")
 	}

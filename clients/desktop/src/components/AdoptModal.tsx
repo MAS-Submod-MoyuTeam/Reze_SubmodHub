@@ -152,6 +152,11 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
         return '所选文件包含未知或非规范注册头，归属不明确，禁止作为单个商店模组提交。';
       }
 
+      const matchedCandRegs = selectedRegistrations.filter((r) => matchRegistrationToCandidate(r, activeCandidate));
+      if (matchedCandRegs.length === 0) {
+        return '所选文件中未包含候选模组的有效注册来源文件，归属不明确，禁止提交。';
+      }
+
       // Check if any selected registration does NOT belong to activeCandidate
       const foreignRegs = selectedRegistrations.filter((r) => !matchRegistrationToCandidate(r, activeCandidate));
       if (foreignRegs.length > 0) {

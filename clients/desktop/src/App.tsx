@@ -15,8 +15,16 @@ import { AdoptModal } from './components/AdoptModal';
 import { FileInspectModal } from './components/FileInspectModal';
 import { ExecutionProgressBar } from './components/ExecutionProgressBar';
 import { ExecutionCoordinator } from './executionCoordinator';
+import { StorageAccessBanner } from './components/StorageAccessBanner';
+import { MobileNavBar } from './components/MobileNavBar';
+import {
+  isInstanceAuthorized,
+  reconcileInstanceState,
+  subscribeStorageStateChanged,
+  type InstanceSyncReason,
+} from './storagePermissionSync';
 import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
-import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewAdopt, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive } from './wails';
+import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewAdopt, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive, GetAndroidStorageAccess, RequestAndroidStorageAccess, isAndroid } from './wails';
 import { INITIAL_OPERATIONS } from './data/mockData';
 import { createInstalledLoadCoordinator, LoadingStatus } from './installedLoading';
 import { getPlanActionText, resolveModInstallationId } from './planExecution';
@@ -108,6 +116,57 @@ export default function App() {
   };
 
   // States & Scenario Simulation
+  const isAndroidDevice = isAndroid();
+  const [storageState, setStorageState] = useState<'granted' | 'denied' | 'unsupported' | 'error' | string>('pending');
+  const [isStorageRefreshing, setIsStorageRefreshing] = useState(false);
+
+  const checkStoragePermission = async () => {
+    if (!isAndroidDevice) return;
+    setIsStorageRefreshing(true);
+    try {
+      const res = await GetAndroidStorageAccess();
+      setStorageState(res.state);
+      const state = await ListMASInstances();
+      refreshInstanceState(state as MASInstancesState);
+    } catch {
+      setStorageState('error');
+      try {
+        const state = await ListMASInstances();
+        refreshInstanceState(state as MASInstancesState);
+      } catch {
+        // ignore
+      }
+    } finally {
+      setIsStorageRefreshing(false);
+    }
+  };
+
+  const handleRequestStorageAccess = async () => {
+    try {
+      const res = await RequestAndroidStorageAccess();
+      if (!res.opened) {
+        showToast('打开系统设置页失败，请手动在应用管理中授予文件权限');
+      }
+    } catch (e) {
+      showToast(`打开设置页失败：${String(e)}`);
+    }
+  };
+
+  useEffect(() => {
+    if (isAndroidDevice) {
+      void checkStoragePermission();
+      const onFocus = () => { void checkStoragePermission(); };
+      window.addEventListener('focus', onFocus);
+      const unsubscribeStorage = subscribeStorageStateChanged(() => {
+        void checkStoragePermission();
+      });
+      return () => {
+        window.removeEventListener('focus', onFocus);
+        unsubscribeStorage();
+      };
+    }
+  }, [isAndroidDevice]);
+
   const [isGameRunning, setIsGameRunning] = useState<boolean>(false);
   const [isOffline, setIsOffline] = useState<boolean>(false);
   const [hasDependencyBlocker, setHasDependencyBlocker] = useState<boolean>(false);
@@ -337,39 +396,77 @@ export default function App() {
     }
   };
 
-  const syncInstances = (state: MASInstancesState) => {
+  const activeInstanceAuthorizedRef = useRef<boolean>(false);
+
+  const syncInstances = (
+    state: MASInstancesState,
+    options?: { reason?: InstanceSyncReason; forceReset?: boolean }
+  ) => {
+    const prevActiveId = activeInstallationIdRef.current;
+    const prevAuthorized = activeInstanceAuthorizedRef.current;
+    const nextActiveId = state.active_id || 'unverified';
+    const activeItem = state.instances.find((item) => item.id === nextActiveId);
+    const nextAuthorized = isInstanceAuthorized(activeItem);
+
+    const reconciliation = reconcileInstanceState({
+      currentActiveId: prevActiveId,
+      currentAuthorized: prevAuthorized,
+      nextActiveId,
+      nextAuthorized,
+      reason: options?.reason,
+      forceReset: options?.forceReset,
+    });
+
     const items: Installation[] = state.instances.map((item) => ({
-      id: item.id, label: item.label, platform: 'windows', path_hint: item.root,
+      id: item.id,
+      label: item.label,
+      platform: item.id === 'android-mas' || isAndroidDevice ? 'android' : 'windows',
+      path_hint: item.root,
       permission_state: item.status.valid && item.status.game_exists ? 'authorized' : 'revoked',
-      mas_version: '未检测', is_valid: item.status.valid && item.status.game_exists,
+      mas_version: '未检测',
+      is_valid: item.status.valid && item.status.game_exists,
       is_running: false,
       disk_available_bytes: item.status.available_bytes !== undefined ? item.status.available_bytes : null,
       last_validated_at: new Date().toISOString(),
     }));
     setInstallations(items.length ? items : [UNVERIFIED_INSTALLATION]);
-    const nextActiveId = state.active_id || 'unverified';
     activeInstallationIdRef.current = nextActiveId;
     setActiveInstallationId(nextActiveId);
+    activeInstanceAuthorizedRef.current = nextAuthorized;
 
-    // Switch instance in coordinator and reset data immediately
-    executionCoordinatorRef.current?.stopPolling();
-    loadCoordinatorRef.current.resetForInstance(nextActiveId);
-    updateCoordinatorUIState();
-    setInstalledMods([]);
-    setSpritepacks([]);
-    setAdoptTarget(null);
-    setCurrentPlan(null);
-
-    if (state.active_id) {
-      void scanLocalSubmods(state.active_id);
-      void refreshSpritepacks(state.active_id);
-      void refreshOperations(state.active_id);
+    if (reconciliation.shouldResetOperations) {
+      executionCoordinatorRef.current?.stopPolling();
+      loadCoordinatorRef.current.resetForInstance(nextActiveId);
+      updateCoordinatorUIState();
+      setInstalledMods([]);
+      setSpritepacks([]);
+      setAdoptTarget(null);
+      setCurrentPlan(null);
     }
+
+    const modsIdle = loadCoordinatorRef.current.getModsStatus() === 'idle';
+    if (reconciliation.shouldTriggerScan || (nextAuthorized && modsIdle && !installingRef.current)) {
+      void scanLocalSubmods(nextActiveId);
+      void refreshSpritepacks(nextActiveId);
+      void refreshOperations(nextActiveId);
+    } else if (reconciliation.shouldResetOperations && nextActiveId !== 'unverified') {
+      void refreshOperations(nextActiveId);
+    } else if (!installingRef.current && nextActiveId !== 'unverified') {
+      void refreshOperations(nextActiveId);
+    }
+  };
+
+  const refreshInstanceState = (state: MASInstancesState) => {
+    syncInstances(state, { reason: 'permission_refresh' });
+  };
+
+  const switchInstance = (state: MASInstancesState) => {
+    syncInstances(state, { reason: 'switch' });
   };
 
   useEffect(() => {
     void loadCatalog();
-    void ListMASInstances().then((state) => syncInstances(state as MASInstancesState))
+    void ListMASInstances().then((state) => syncInstances(state as MASInstancesState, { reason: 'init' }))
       .catch((error) => showToast(`实例列表读取失败：${String(error)}`));
     void refreshOperations();
   }, []);
@@ -972,17 +1069,17 @@ export default function App() {
   // Handler: Add Custom Instance
   const handleAddCustomInstance = async (label: string, path: string) => {
     const state = await AddMASInstance(label, path);
-    syncInstances(state as MASInstancesState);
+    switchInstance(state as MASInstancesState);
     showToast('MAS 实例已添加并设为活动实例。');
   };
 
   const handleSelectInstance = async (id: string) => {
-    try { syncInstances(await SelectMASInstance(id) as MASInstancesState); }
+    try { switchInstance(await SelectMASInstance(id) as MASInstancesState); }
     catch (error) { showToast(`切换实例失败：${String(error)}`); }
   };
 
   const handleRemoveInstance = async (id: string) => {
-    try { syncInstances(await RemoveMASInstance(id) as MASInstancesState); }
+    try { switchInstance(await RemoveMASInstance(id) as MASInstancesState); }
     catch (error) { showToast(`移除实例失败：${String(error)}`); }
   };
 
@@ -1000,13 +1097,13 @@ export default function App() {
   };
 
   const handleRefreshInstances = async () => {
-    try { syncInstances(await ListMASInstances() as MASInstancesState); }
+    try { refreshInstanceState(await ListMASInstances() as MASInstancesState); }
     catch (error) { showToast(`重新检查失败：${String(error)}`); }
   };
 
   return (
     <div className="flex flex-col h-screen w-screen bg-neutral-950 text-neutral-100 overflow-hidden font-sans">
-      {/* 1. PC Native Title Bar */}
+      {/* 1. PC / Android Native Title Bar */}
       <TitleBar
         installations={installations}
         activeInstallationId={activeInstallationId}
@@ -1018,6 +1115,7 @@ export default function App() {
         onOpenInstancesView={() => setActiveTab('instances')}
         onLaunchGame={() => handleLaunchInstance(activeInstallationId)}
         isLaunchingGame={isLaunchingGame}
+        isAndroid={isAndroidDevice}
       />
 
       {executionSession && executionSession.installation_id === activeInstallationId && (
@@ -1065,7 +1163,14 @@ export default function App() {
         />
 
         {/* Center Main Viewport */}
-        <main className="flex-1 flex flex-col overflow-hidden relative">
+        <main className="flex-1 flex flex-col overflow-hidden relative pb-16 md:pb-0">
+          <StorageAccessBanner
+            isAndroid={isAndroidDevice}
+            storageState={storageState}
+            onRequestAccess={handleRequestStorageAccess}
+            onRefreshStatus={() => { void checkStoragePermission(); }}
+            isRefreshing={isStorageRefreshing}
+          />
           {activeTab === 'catalog' && (
             <CatalogView
               mods={catalogMods}
@@ -1165,6 +1270,7 @@ export default function App() {
               onRemoveInstance={handleRemoveInstance}
               onRefreshInstances={handleRefreshInstances}
               onBrowseDirectory={BrowseMASDirectory}
+              isAndroid={isAndroidDevice}
             />
           )}
 
@@ -1177,6 +1283,14 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* Mobile Navigation Bar */}
+      <MobileNavBar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        updatesCount={installedMods.filter((m) => m.has_update).length}
+        activeOperationsCount={operations.filter((o) => o.state === 'downloading' || o.state === 'writing' || o.state === 'scanning' || o.state === 'planned').length}
+      />
 
       {/* 4. Mod Detail Modal */}
       {selectedModDetail && (

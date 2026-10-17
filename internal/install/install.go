@@ -164,7 +164,7 @@ func safe(root, rel string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, filepath.FromSlash(display)), nil
+	return SafeJoinAndValidateBounds(root, display)
 }
 
 func (i *Installer) Apply(op Operation) error {

@@ -275,7 +275,10 @@ func (tx *TransactionContext) Execute() error {
 	}
 
 	for _, act := range tx.plan.Actions {
-		diskPath := filepath.Join(inst.root, filepath.FromSlash(act.Path))
+		diskPath, err := SafeJoinAndValidateBounds(inst.root, act.Path)
+		if err != nil {
+			return err
+		}
 		diskHash, hErr := fileHash(diskPath)
 		if hErr != nil && !os.IsNotExist(hErr) {
 			return &Error{Code: "disk_read_error", OperationID: tx.plan.OperationID, Path: act.Path, Err: hErr}
@@ -335,7 +338,10 @@ func (tx *TransactionContext) Execute() error {
 
 	// 2. Snapshot all before-images into blob store and record in journal
 	for _, act := range tx.plan.Actions {
-		diskPath := filepath.Join(inst.root, filepath.FromSlash(act.Path))
+		diskPath, err := SafeJoinAndValidateBounds(inst.root, act.Path)
+		if err != nil {
+			return err
+		}
 		b, err := os.ReadFile(diskPath)
 		existed := err == nil
 		var beforeHash string
@@ -383,7 +389,10 @@ func (tx *TransactionContext) Execute() error {
 				return err
 			}
 
-			diskPath := filepath.Join(inst.root, filepath.FromSlash(act.Path))
+			diskPath, err := SafeJoinAndValidateBounds(inst.root, act.Path)
+			if err != nil {
+				return err
+			}
 			switch act.Action {
 			case ActionWrite, ActionRestoreOriginal, ActionRestoreLayer:
 				blobData, err := blobs.Get(act.TargetHash)
@@ -618,7 +627,15 @@ func (i *Installer) DecideRecovery(j *TxJournal) (RecoveryAction, error) {
 				}
 			}
 		}
-		diskPath := filepath.Join(i.root, filepath.FromSlash(before.DisplayPath))
+		diskPath, err := SafeJoinAndValidateBounds(i.root, before.DisplayPath)
+		if err != nil {
+			return RecoveryActionManualRequired, &Error{
+				Code:        "invalid_path",
+				OperationID: j.OperationID,
+				Path:        before.DisplayPath,
+				Err:         err,
+			}
+		}
 		diskHash, err := fileHash(diskPath)
 		if err != nil && !os.IsNotExist(err) {
 			return RecoveryActionManualRequired, &Error{
@@ -699,7 +716,7 @@ func (i *Installer) RollbackJournal(j *TxJournal) error {
 
 	// PREFLIGHT: verify all files, hashes, blobs and drift BEFORE touching disk
 	for key, before := range j.BeforeFiles {
-		_, _, err := CanonicalPath(before.DisplayPath, "")
+		diskPath, err := SafeJoinAndValidateBounds(i.root, before.DisplayPath)
 		if err != nil {
 			return recordFailure("invalid_path", before.DisplayPath, err)
 		}
@@ -710,7 +727,6 @@ func (i *Installer) RollbackJournal(j *TxJournal) error {
 			}
 		}
 
-		diskPath := filepath.Join(i.root, filepath.FromSlash(before.DisplayPath))
 		diskHash, err := fileHash(diskPath)
 		if err != nil && !os.IsNotExist(err) {
 			return recordFailure("disk_read_error", before.DisplayPath, err)
@@ -742,7 +758,10 @@ func (i *Installer) RollbackJournal(j *TxJournal) error {
 
 	// 1. Restore disk files from BeforeFiles
 	for _, before := range j.BeforeFiles {
-		diskPath := filepath.Join(i.root, filepath.FromSlash(before.DisplayPath))
+		diskPath, err := SafeJoinAndValidateBounds(i.root, before.DisplayPath)
+		if err != nil {
+			return recordFailure("invalid_path", before.DisplayPath, err)
+		}
 		if before.Existed {
 			data, err := blobs.Get(before.Hash)
 			if err != nil {

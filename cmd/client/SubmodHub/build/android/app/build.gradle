@@ -11,8 +11,8 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.wails.app"
-        minSdk 21
+        applicationId "com.reze.submodhub"
+        minSdk 30
         targetSdk 35
         versionCode 1
         versionName "1.0"

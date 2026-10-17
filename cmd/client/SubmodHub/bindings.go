@@ -18,6 +18,7 @@ import (
 	"time"
 
 	core "github.com/reze/submodhub/internal/install"
+	"github.com/reze/submodhub/internal/maspath"
 	packagezip "github.com/reze/submodhub/internal/package"
 )
 
@@ -169,6 +170,10 @@ type DesktopService struct {
 	apiURL     string
 	stagingMgr *ArchiveStagingManager
 
+	storageGuard      *StorageAccessGuard
+	storageProvider   StorageAccessProvider
+	isAndroidOverride bool
+
 	candidateRegistrationsResolver func(candidateID string) ([]string, error)
 
 	activePlan          *core.Plan
@@ -179,19 +184,72 @@ type DesktopService struct {
 	activePlanReport    packagezip.Report
 }
 
+func (s *DesktopService) isAndroid() bool {
+	return isAndroidPlatform || s.isAndroidOverride
+}
+
+func (s *DesktopService) checkStorageAccess() error {
+	if !s.isAndroid() {
+		return nil
+	}
+	if s.storageGuard == nil {
+		if s.storageProvider != nil {
+			s.storageGuard = NewStorageAccessGuard(s.storageProvider)
+		} else {
+			return ErrPermissionLost
+		}
+	}
+	return s.storageGuard.Check()
+}
+
+func (s *DesktopService) SetStorageAccessProvider(provider StorageAccessProvider) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.storageProvider = provider
+	s.storageGuard = NewStorageAccessGuard(provider)
+}
+
+func (s *DesktopService) GetAndroidStorageAccess() (AndroidStorageAccessStatus, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.storageProvider == nil {
+		return defaultAndroidStorageStatus(), nil
+	}
+	return s.storageProvider.GetStorageAccess()
+}
+
+func (s *DesktopService) RequestAndroidStorageAccess() (AndroidStorageAccessRequestResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.storageProvider == nil {
+		return AndroidStorageAccessRequestResult{Opened: false, Error: "no_provider"}, errors.New("no_storage_access_provider")
+	}
+	return s.storageProvider.RequestStorageAccess()
+}
+
 func NewDesktopService() *DesktopService {
+	provider := newPlatformStorageAccessProvider()
+	guard := NewStorageAccessGuard(provider)
+
+	configBase, _ := getPlatformInternalConfigDir()
+	cacheDir, _ := getPlatformInternalCacheDir()
+	mgr, _ := NewArchiveStagingManager(cacheDir)
+
 	root := os.Getenv("SUBMODHUB_MAS_ROOT")
-	configDir, _ := os.UserConfigDir()
-	mgr, _ := NewArchiveStagingManager("")
+	if isAndroidPlatform && root == "" {
+		root = strings.TrimRight(maspath.AndroidMASRoot, "/")
+	}
 	apiURL := os.Getenv("SUBMODHUB_API_URL")
 	if apiURL == "" {
 		apiURL = "http://100.72.137.92:18082"
 	}
 	return &DesktopService{
-		root:       root,
-		configPath: filepath.Join(configDir, "SubmodHub", "instances.json"),
-		apiURL:     apiURL,
-		stagingMgr: mgr,
+		root:            root,
+		configPath:      filepath.Join(configBase, "instances.json"),
+		apiURL:          apiURL,
+		stagingMgr:      mgr,
+		storageProvider: provider,
+		storageGuard:    guard,
 	}
 }
 
@@ -212,9 +270,19 @@ func (s *DesktopService) SetCandidateRegistrationsResolver(fn func(candidateID s
 }
 
 func (s *DesktopService) SetMASRoot(root string) (MASStatus, error) {
-	root = filepath.Clean(strings.TrimSpace(root))
-	if root == "." || root == "" || !filepath.IsAbs(root) {
-		return MASStatus{}, errors.New("invalid_mas_root")
+	if s.isAndroid() {
+		if err := maspath.ValidateAndroidMASRoot(root); err != nil {
+			return MASStatus{}, ErrInvalidMASRoot
+		}
+		if err := s.checkStorageAccess(); err != nil {
+			return MASStatus{}, err
+		}
+		root = strings.TrimRight(maspath.AndroidMASRoot, "/")
+	} else {
+		root = filepath.Clean(strings.TrimSpace(root))
+		if root == "." || root == "" || !filepath.IsAbs(root) {
+			return MASStatus{}, errors.New("invalid_mas_root")
+		}
 	}
 	if !fileExists(filepath.Join(root, "game")) {
 		return MASStatus{}, errors.New("mas_game_directory_missing")
@@ -235,6 +303,9 @@ func (s *DesktopService) SetMASRoot(root string) (MASStatus, error) {
 }
 
 func (s *DesktopService) GetMASStatus() (MASStatus, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return MASStatus{}, err
+	}
 	if s.root == "" {
 		return MASStatus{}, errors.New("mas_root_not_configured")
 	}
@@ -257,6 +328,9 @@ func (s *DesktopService) GetMASStatus() (MASStatus, error) {
 }
 
 func (s *DesktopService) ScanLocalSubmods() ([]LocalSubmod, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return nil, err
+	}
 	if s.root == "" {
 		return nil, errors.New("mas_root_not_configured")
 	}
@@ -270,6 +344,9 @@ func (s *DesktopService) ScanLocalSubmods() ([]LocalSubmod, error) {
 }
 
 func (s *DesktopService) ApplyFile(request InstallRequest) (string, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return "", err
+	}
 	if s.core == nil {
 		if _, err := s.SetMASRoot(s.root); err != nil {
 			return "", err
@@ -414,6 +491,9 @@ func (s *DesktopService) mapJournalToDetail(j *core.TxJournal) OperationDetail {
 }
 
 func (s *DesktopService) ListOperations() ([]OperationDetail, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return nil, err
+	}
 	if s.core == nil {
 		if _, err := s.SetMASRoot(s.root); err != nil {
 			return nil, err
@@ -431,6 +511,9 @@ func (s *DesktopService) ListOperations() ([]OperationDetail, error) {
 }
 
 func (s *DesktopService) GetOperation(operationID string) (*OperationDetail, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(operationID) == "" {
 		return nil, &core.Error{Code: "validation_failed", Err: errors.New("operation_id is required")}
 	}
@@ -451,6 +534,9 @@ func (s *DesktopService) GetOperation(operationID string) (*OperationDetail, err
 }
 
 func (s *DesktopService) RollbackOperation(operationID string) error {
+	if err := s.checkStorageAccess(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(operationID) == "" {
 		return &core.Error{Code: "validation_failed", Err: errors.New("operation_id is required")}
 	}
@@ -531,6 +617,9 @@ func parseArchiveFiles(data []byte, category string, isSelectedSpritepack bool, 
 }
 
 func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResult, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return PlanResult{}, err
+	}
 	if s.core == nil {
 		if _, err := s.SetMASRoot(s.root); err != nil {
 			return PlanResult{}, err
@@ -780,6 +869,9 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 }
 
 func (s *DesktopService) PreviewUninstallWithOpID(targetID, uninstallOpID string) (PlanResult, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return PlanResult{}, err
+	}
 	if s.core == nil {
 		if _, err := s.SetMASRoot(s.root); err != nil {
 			return PlanResult{}, err
@@ -904,6 +996,9 @@ func (s *DesktopService) PreviewUninstallWithOpID(targetID, uninstallOpID string
 }
 
 func (s *DesktopService) GetPriorityOverview() (*core.PriorityOverview, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return nil, err
+	}
 	if s.core == nil {
 		if _, err := s.SetMASRoot(s.root); err != nil {
 			return nil, err
@@ -913,6 +1008,9 @@ func (s *DesktopService) GetPriorityOverview() (*core.PriorityOverview, error) {
 }
 
 func (s *DesktopService) PreviewPriority(priorities map[string]int) (PlanResult, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return PlanResult{}, err
+	}
 	if s.core == nil {
 		if _, err := s.SetMASRoot(s.root); err != nil {
 			return PlanResult{}, err
@@ -989,6 +1087,9 @@ func (s *DesktopService) PreviewPriority(priorities map[string]int) (PlanResult,
 }
 
 func (s *DesktopService) PreviewRepair(targetID string) (PlanResult, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return PlanResult{}, err
+	}
 	if s.core == nil {
 		if _, err := s.SetMASRoot(s.root); err != nil {
 			return PlanResult{}, err
@@ -1035,10 +1136,16 @@ func (s *DesktopService) PreviewRepair(targetID string) (PlanResult, error) {
 }
 
 func (s *DesktopService) PreviewUninstall(targetID string) (PlanResult, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return PlanResult{}, err
+	}
 	return s.PreviewUninstallWithOpID(targetID, "")
 }
 
 func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstallResult, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return ArchiveInstallResult{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1158,6 +1265,9 @@ func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstall
 }
 
 func (s *DesktopService) ApplyArchive(request ArchiveInstallRequest) (ArchiveInstallResult, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return ArchiveInstallResult{}, err
+	}
 	preview, err := s.PreviewArchive(request)
 	if err != nil {
 		return ArchiveInstallResult{}, err
@@ -1177,6 +1287,9 @@ func (s *DesktopService) ApplyArchive(request ArchiveInstallRequest) (ArchiveIns
 }
 
 func (s *DesktopService) Uninstall(operationID, uninstallOperationID string) (string, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return "", err
+	}
 	preview, err := s.PreviewUninstallWithOpID(operationID, uninstallOperationID)
 	if err != nil {
 		return "", err
@@ -1291,6 +1404,9 @@ func (s *DesktopService) ReleaseArchive(archiveID string) error {
 }
 
 func (s *DesktopService) ListInstalledModFiles(installationID, modID string) (*core.InstalledFileList, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return nil, err
+	}
 	if s.root == "" {
 		return nil, &core.Error{Code: "invalid_mas_root", Err: errors.New("mas_root_not_configured")}
 	}

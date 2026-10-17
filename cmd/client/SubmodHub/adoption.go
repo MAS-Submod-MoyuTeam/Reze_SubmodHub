@@ -97,6 +97,9 @@ func (s *DesktopService) fetchTrustedCandidateRegistrationsLocked(candidateID st
 }
 
 func (s *DesktopService) PreviewAdopt(request AdoptRequest) (PlanResult, error) {
+	if err := s.checkStorageAccess(); err != nil {
+		return PlanResult{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

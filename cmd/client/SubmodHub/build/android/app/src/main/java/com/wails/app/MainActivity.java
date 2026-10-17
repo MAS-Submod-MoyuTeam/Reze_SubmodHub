@@ -88,6 +88,7 @@ public class MainActivity extends AppCompatActivity {
         // Initialize the native Go library
         bridge = new WailsBridge(this);
         bridge.initialize();
+        SubmodHubStorageAccess.init(this);
 
         // Set up WebView
         setupWebView();
@@ -762,12 +763,17 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    public WailsBridge getBridge() {
+        return bridge;
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         if (bridge != null) {
             bridge.onResume();
         }
+        SubmodHubStorageAccess.onResume(this);
     }
 
     @Override

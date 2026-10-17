@@ -11,6 +11,7 @@ import (
 	"time"
 
 	core "github.com/reze/submodhub/internal/install"
+	"github.com/reze/submodhub/internal/maspath"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -76,6 +77,31 @@ func (s *DesktopService) saveInstances() error {
 }
 
 func (s *DesktopService) ListMASInstances() (MASInstancesState, error) {
+	if s.isAndroid() {
+		fixedRoot := maspath.AndroidMASRoot
+		status := MASStatus{
+			Root:           fixedRoot,
+			GamePath:       maspath.AndroidGameDirectory(),
+			Valid:          false,
+			GameExists:     false,
+			AvailableBytes: 0,
+		}
+		if s.checkStorageAccess() == nil {
+			status = inspectMASRoot(fixedRoot)
+		}
+		return MASInstancesState{
+			Instances: []MASInstance{
+				{
+					ID:     "android-mas",
+					Label:  "MAS (Android)",
+					Root:   fixedRoot,
+					Status: status,
+				},
+			},
+			ActiveID: "android-mas",
+		}, nil
+	}
+
 	if err := s.loadInstances(); err != nil {
 		return MASInstancesState{}, err
 	}
@@ -105,6 +131,9 @@ func inspectMASRoot(root string) MASStatus {
 }
 
 func (s *DesktopService) AddMASInstance(label, root string) (MASInstancesState, error) {
+	if s.isAndroid() {
+		return MASInstancesState{}, errors.New("unsupported_platform")
+	}
 	if err := s.loadInstances(); err != nil {
 		return MASInstancesState{}, err
 	}
@@ -137,6 +166,16 @@ func (s *DesktopService) AddMASInstance(label, root string) (MASInstancesState, 
 }
 
 func (s *DesktopService) SelectMASInstance(id string) (MASInstancesState, error) {
+	if s.isAndroid() {
+		if id != "android-mas" && id != "" {
+			return MASInstancesState{}, errors.New("mas_instance_not_found")
+		}
+		if _, err := s.SetMASRoot(maspath.AndroidMASRoot); err != nil {
+			return MASInstancesState{}, err
+		}
+		return s.ListMASInstances()
+	}
+
 	if err := s.loadInstances(); err != nil {
 		return MASInstancesState{}, err
 	}
@@ -156,6 +195,9 @@ func (s *DesktopService) SelectMASInstance(id string) (MASInstancesState, error)
 }
 
 func (s *DesktopService) RemoveMASInstance(id string) (MASInstancesState, error) {
+	if s.isAndroid() {
+		return MASInstancesState{}, errors.New("unsupported_platform")
+	}
 	if err := s.loadInstances(); err != nil {
 		return MASInstancesState{}, err
 	}
@@ -178,6 +220,9 @@ func (s *DesktopService) RemoveMASInstance(id string) (MASInstancesState, error)
 }
 
 func (s *DesktopService) LaunchMASInstance(id string) error {
+	if s.isAndroid() {
+		return errors.New("unsupported_platform")
+	}
 	if err := s.loadInstances(); err != nil {
 		return err
 	}
@@ -207,5 +252,8 @@ func (s *DesktopService) LaunchMASInstance(id string) error {
 }
 
 func (s *DesktopService) BrowseMASDirectory() (string, error) {
+	if s.isAndroid() {
+		return "", errors.New("unsupported_platform")
+	}
 	return application.Get().Dialog.OpenFile().CanChooseFiles(false).CanChooseDirectories(true).SetTitle("选择 MAS 游戏根目录").PromptForSingleSelection()
 }

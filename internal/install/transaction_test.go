@@ -991,3 +991,130 @@ func TestDecideRecoveryBlocksCorruptJournal(t *testing.T) {
 		t.Fatal("expected HasRecoveryMaterial to be false for incomplete journal")
 	}
 }
+
+func TestTransaction_Commit_RejectsSymlinkAncestorEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	stateDir := filepath.Join(root, ".submodhub")
+	inst := New(root, stateDir)
+
+	outsideSecret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(outsideSecret, []byte("outside_original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	symlinkDir := filepath.Join(root, "game", "Submods", "escape_dir")
+	if err := os.MkdirAll(filepath.Dir(symlinkDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, symlinkDir); err != nil {
+		t.Skip("Symlinks not supported in current environment:", err)
+		return
+	}
+
+	hashTarget, err := inst.blobs.Put([]byte("malicious_write"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan := &Plan{
+		PlanID:      "plan_symlink_commit",
+		OperationID: "op_symlink_commit",
+		Generation:  1,
+		Actions: []PlanAction{
+			{
+				Path:         "game/Submods/escape_dir/secret.txt",
+				Key:          "game/submods/escape_dir/secret.txt",
+				Action:       ActionWrite,
+				TargetHash:   hashTarget,
+				TargetExists: true,
+			},
+		},
+		NewManifest: NewManifest(),
+	}
+
+	tx, err := inst.NewTransaction(plan)
+	if err != nil {
+		t.Fatalf("NewTransaction failed: %v", err)
+	}
+
+	err = tx.Execute()
+	if err == nil {
+		t.Fatal("expected Execute to fail due to symlink ancestor escape, got nil")
+	}
+	if !strings.Contains(err.Error(), "symlink_target_out_of_bounds") {
+		t.Fatalf("expected symlink_target_out_of_bounds error, got: %v", err)
+	}
+
+	// Verify outside file was NOT overwritten
+	content, _ := os.ReadFile(outsideSecret)
+	if string(content) != "outside_original" {
+		t.Fatalf("outside file was modified: %s", string(content))
+	}
+}
+
+func TestTransaction_RollbackAndRecover_RejectsSymlinkAncestorEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	stateDir := filepath.Join(root, ".submodhub")
+	inst := New(root, stateDir)
+
+	outsideSecret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(outsideSecret, []byte("outside_original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	symlinkDir := filepath.Join(root, "game", "Submods", "escape_dir")
+	if err := os.MkdirAll(filepath.Dir(symlinkDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, symlinkDir); err != nil {
+		t.Skip("Symlinks not supported in current environment:", err)
+		return
+	}
+
+	blobHash, err := inst.blobs.Put([]byte("rollback_data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	journal := &TxJournal{
+		OperationID: "op_symlink_recovery",
+		PlanID:      "plan_symlink_recovery",
+		Phase:       TxPhaseApplying,
+		BeforeFiles: map[string]FileBeforeState{
+			"game/submods/escape_dir/secret.txt": {
+				DisplayPath: "game/Submods/escape_dir/secret.txt",
+				Existed:     true,
+				Hash:        blobHash,
+			},
+		},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	txDir := filepath.Join(stateDir, "journals")
+	_ = os.MkdirAll(txDir, 0o755)
+	if err := saveJournalFile(filepath.Join(txDir, "op_symlink_recovery.json"), journal); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. DecideRecovery should fail / require manual recovery due to symlink escape
+	action, recErr := inst.DecideRecovery(journal)
+	if action != RecoveryActionManualRequired {
+		t.Fatalf("expected RecoveryActionManualRequired, got: %s (err: %v)", action, recErr)
+	}
+	if recErr == nil || !strings.Contains(recErr.Error(), "symlink_target_out_of_bounds") {
+		t.Fatalf("expected symlink_target_out_of_bounds in DecideRecovery, got: %v", recErr)
+	}
+
+	// 2. Rollback should fail and not touch outside directory
+	rbErr := inst.Rollback("op_symlink_recovery")
+	if rbErr == nil || !strings.Contains(rbErr.Error(), "symlink_target_out_of_bounds") {
+		t.Fatalf("expected symlink_target_out_of_bounds in Rollback, got: %v", rbErr)
+	}
+
+	content, _ := os.ReadFile(outsideSecret)
+	if string(content) != "outside_original" {
+		t.Fatalf("outside file was modified: %s", string(content))
+	}
+}

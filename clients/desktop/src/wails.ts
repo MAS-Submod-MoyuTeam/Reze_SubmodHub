@@ -77,6 +77,31 @@ export const GetOperation = (operationID: string) => invoke<Operation>('GetOpera
 export const RollbackOperation = (operationID: string) => invoke<void>('RollbackOperation', () => (native as any).RollbackOperation ? (native as any).RollbackOperation(operationID) : (native as any).Recover(operationID), [operationID]);
 export const BrowseMASDirectory = () => browserMode ? Promise.reject(new Error('浏览器模式请手动输入 MAS 根目录')) : native.BrowseMASDirectory();
 
+export type AndroidStorageAccessStatus = {
+  state: 'granted' | 'denied' | 'unsupported' | 'error' | string;
+  root: string;
+  game_path: string;
+};
+
+export type AndroidStorageAccessRequestResult = {
+  opened: boolean;
+  error?: string;
+};
+
+export const GetAndroidStorageAccess = () =>
+  invoke<AndroidStorageAccessStatus>('GetAndroidStorageAccess', () => Call.ByName('main.DesktopService.GetAndroidStorageAccess'));
+
+export const RequestAndroidStorageAccess = () =>
+  invoke<AndroidStorageAccessRequestResult>('RequestAndroidStorageAccess', () => Call.ByName('main.DesktopService.RequestAndroidStorageAccess'));
+
+export const isAndroid = (): boolean => {
+  if (typeof window !== 'undefined') {
+    if ((window as any).wails?.platform?.() === 'android') return true;
+    if (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)) return true;
+  }
+  return false;
+};
+
 export type LocalSubmod = {
   id?: string;
   directory: string;

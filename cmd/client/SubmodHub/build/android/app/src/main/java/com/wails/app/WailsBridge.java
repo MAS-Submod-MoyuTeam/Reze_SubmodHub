@@ -1405,4 +1405,22 @@ public class WailsBridge {
     private void dialogCallback(int callbackID, int buttonIndex) {
         if (initialized) nativeDialogCallback(callbackID, buttonIndex);
     }
+
+    // MARK: - SubmodHub storage access bridges
+
+    public String getStorageAccessState() {
+        return SubmodHubStorageAccess.getStorageAccessState();
+    }
+
+    public boolean requestStorageAccess() {
+        return SubmodHubStorageAccess.requestStorageAccess();
+    }
+
+    public String getInternalFilesDir() {
+        return SubmodHubStorageAccess.getInternalFilesDir();
+    }
+
+    public String getInternalCacheDir() {
+        return SubmodHubStorageAccess.getInternalCacheDir();
+    }
 }

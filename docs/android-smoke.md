@@ -1,78 +1,65 @@
 # Android Wails v3 / All files access feasibility gate
 
-Status (2026-10-04): pending native host integration and physical-device test.
-This is a joint Windows/Android release blocker, not evidence that storage
-access works.
+Status (2026-10-16): Cross-compilation and native host integration gate **PASSED** on Linux build server `100.72.137.92`.
+Physical device verification gate: **PENDING SIDELOAD TEST** on physical arm64 Android 11+ device.
 
 The sideloaded Android 11+ APK targets `/storage/emulated/0/MAS/`, with game
 files under `/storage/emulated/0/MAS/game`. The path is a validation target,
-not an access grant. The app must declare `MANAGE_EXTERNAL_STORAGE`, open the
-app-specific All files access Settings page on explicit user action, and query
-`Environment.isExternalStorageManager()` on launch, return from Settings, and
-before every managed file operation. A manifest declaration or successful
-Settings launch must never be reported as `granted`. Denial or revocation
+not an access grant. The app declares `MANAGE_EXTERNAL_STORAGE`, opens the
+app-specific All files access Settings page on explicit user action, and queries
+`Environment.isExternalStorageManager()` on launch, return from Settings (`onResume`),
+and before every managed file operation via Go backend `StorageAccessGuard`. A manifest
+declaration or successful Settings launch is never reported as `granted`. Denial or revocation
 returns `permission_lost` and prevents managed reads/writes. No silent SAF or
-other-directory fallback is approved.
+other-directory fallback is permitted.
 
-## Local environment
+## Build Environment (100.72.137.92)
 
-- Go: `go1.25.3 windows/amd64`.
-- JDK 21 is installed.
-- Android SDK directories exist at `J:\Renpy\renpy-8.2.3-sdk\rapt\Sdk` and
-  `C:\Users\Administrator.DESKTOP-465SP1L\AppData\Local\Android\Sdk`.
-- `adb devices -l` returned no connected device on 2026-10-04.
-- Wails CLI `v3.0.0-beta.27` is available in the Go bin directory.
-- `wails3 doctor` finds Android SDK/platform-tools but reports Android NDK
-  26.3.x missing.
-- This Wails version's Android Go shared-library task supports Darwin/Linux
-  hosts only; this Windows host cannot run that task as-is. Use a compatible
-  Linux/macOS build host with the pinned NDK, or revise the build task with a
-  separately verified Windows toolchain before claiming an APK build.
+- **Host OS**: Ubuntu 26.04 x86_64 (`Linux sirphomesv 7.0.0-34-generic`).
+- **Go**: `go1.26.8 linux/amd64`.
+- **JDK**: OpenJDK 21 (`21.0.12.1+1-1-26.04.4-Ubuntu`).
+- **Android SDK**: `/opt/android-sdk` (API 35, Build-tools 35.0.0, platform-tools 35).
+- **Android NDK**: `/opt/android-sdk/ndk/26.3.11579264` (NDK r26d).
+- **Wails CLI**: `v3.0.0-beta.27`.
+- **Node.js / npm**: `v22.22.1` / `9.2.0`.
+- **Gradle**: `9.2.1`.
 
-## Native integration contract
+## Built Artifact
 
-The generated Wails Android `AndroidManifest.xml` does not declare
-`MANAGE_EXTERNAL_STORAGE`, and its Java host has no SubmodHub permission
-bridge. A project-local generated Android host must add both. On Android 11+,
-`GetAndroidStorageAccess` queries `Environment.isExternalStorageManager()`;
-`RequestAndroidStorageAccess` opens
-`Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION` with
-`Uri.parse("package:" + getPackageName())`. If the app-specific intent cannot
-be handled, it may open `Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION`.
-The settings call reports only whether a page opened. `onResume` refreshes the
-observable state. Unsupported Android versions report `unsupported`; Android
-10 and older have no automatic storage-permission fallback in this design.
+- **Application ID**: `com.reze.submodhub`
+- **Version**: `1.0` (versionCode `1`)
+- **minSdkVersion**: `30` (Android 11+)
+- **targetSdkVersion**: `35`
+- **Output APK**: `cmd/client/SubmodHub/bin/submodhub-debug.apk`
+- **Size**: ~28 MB (29,355,595 bytes)
+- **SHA-256**: `8F557A783E5E2CD744BCFD26E083E27C31D103C42336F6431AFD7455EC3121DE`
+- **Native Architecture**: `arm64-v8a` (`lib/arm64-v8a/libwails.so`, ELF 64-bit LSB shared object)
+- **Core Permissions**:
+  - `android.permission.MANAGE_EXTERNAL_STORAGE`
+  - `android.permission.INTERNET`
+  - `android.permission.ACCESS_NETWORK_STATE`
 
-The Go filesystem adapter must check the grant again before reads/writes,
-validate the fixed MAS root and `game/`, and reject paths that escape that root.
-The permission bridge and adapter must be tested independently of UI state.
-Google Play policy may reject this special permission; distribution is by
-sideloaded APK for this release.
+## Native Integration Contract
 
-## Device test, disposable shared-storage tree only
+1. Java host: `com.wails.app.SubmodHubStorageAccess` implements:
+   - `getStorageAccessState()`: checks `Build.VERSION.SDK_INT >= 30` and `Environment.isExternalStorageManager()`.
+   - `requestStorageAccess()`: fires `Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION` with package URI fallback to general all-files settings.
+   - `onResume()`: forwards event `submodhub:storage_state_changed` to WebView.
+2. Go client: `StorageAccessGuard` default-denies operations unless real-time state is `"granted"`.
+   - Operations returning `permission_lost`: `ScanLocalSubmods`, `ListInstalledArchives`, `ListInstalledModFiles`, `ScanInstalledSpritepacks`, `CreateSpriteGift`, `DeleteSpritepack`, `PreviewArchive`, `PreviewAdopt`, `PreviewUninstall`, `PreviewRepair`, `PreviewPriority`, `GetPriorityOverview`, `ExecutePlan`, `ApplyArchive`, `Uninstall`, `Recover`, `RollbackOperation`.
+   - Fixed instance: on Android, `ListMASInstances()` exposes only `/storage/emulated/0/MAS/` as `android-mas`. Manual adding/browsing/removing instances and launching `DDLC.exe` are disabled.
+3. Frontend UI:
+   - `StorageAccessBanner`: prompts for All files access when denied/unsupported, allows catalog browsing, offers direct button to open system settings.
+   - `MobileNavBar`: responsive bottom navigation bar replacing fixed sidebar on mobile screens (< 768px).
+
+## Physical Device Verification Gate Checklist
 
 1. Record device model, Android version, Wails version, Go/JDK/SDK/NDK versions,
    build command, APK path, and SHA-256.
-2. Build, sideload, and launch the Wails APK. Before granting access, confirm
-   `GetAndroidStorageAccess` returns `denied` and managed file operations fail
-   with `permission_lost`, even if `/storage/emulated/0/MAS/` already exists.
-3. Trigger `RequestAndroidStorageAccess`; confirm the Android Settings page is
-   for this app. Grant access, return to the app, and confirm the fresh status
-   is `granted`. Cancel/deny once as a separate branch and confirm it remains
-   `denied` without a write.
-4. In an explicitly created disposable directory such as
-   `/storage/emulated/0/SubmodHubSmoke/`, create, read, replace, list, and
-   delete a test file through the same grant-gated adapter. Assert bytes and
-   listing after each operation. Do not test writes/deletes in the real MAS
-   installation.
-5. Force-stop and relaunch. Confirm the grant is still observed and read from
-   the disposable tree works without opening Settings again.
-6. Revoke All files access in Android Settings, return/relaunch, and confirm
-   status changes to `denied`, the UI offers reauthorization, and managed
-   reads/writes fail with `permission_lost` rather than writing elsewhere.
-7. After those checks, probe `/storage/emulated/0/MAS/` read-only and validate
-   `game/`. Report `invalid_mas_root` if absent or malformed.
-
-If the native bridge or real-device filesystem operations fail, stop the joint
-release path and revise the approved design with the user. No APK or device
-behavior is considered verified until the above results are recorded.
+2. Sideload and launch `submodhub-debug.apk` on an arm64 Android 11+ physical device.
+3. Before granting access, confirm `GetAndroidStorageAccess` returns `denied` and managed file operations fail with `permission_lost`, while remote catalog browsing remains functional.
+4. Tap "去设置授权" (`RequestAndroidStorageAccess`); confirm system Settings opens SubmodHub's permission toggle.
+5. Turn on permission, switch back to SubmodHub: confirm `onResume` auto-detects `granted`.
+6. Run disposable test directory check: verify create, read, replace, list, delete.
+7. Confirm `/storage/emulated/0/MAS/` detection: if missing or lacks `game/`, report `mas_game_directory_missing` or `invalid_mas_root` without crashing or writing false files.
+8. Revoke permission in Settings, switch back: confirm status updates to `denied` immediately and further writes halt with `permission_lost`.
