@@ -118,6 +118,8 @@ export interface MASStatus {
     "game_exists": boolean;
     "submods": number;
     "available_bytes": number;
+    "diagnostic"?: string;
+    "diagnostic_detail"?: string;
 }
 
 export interface OperationDetail {

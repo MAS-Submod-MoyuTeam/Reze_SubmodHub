@@ -91,6 +91,8 @@ export interface Installation {
   is_running: boolean;
   disk_available_bytes?: number | null;
   last_validated_at: string;
+  diagnostic?: string;
+  diagnostic_detail?: string;
 }
 
 export type PlanKind = 'install' | 'update' | 'uninstall' | 'repair' | 'adopt';

@@ -15,6 +15,113 @@ import {
 } from 'lucide-react';
 import { Installation } from '../types/client';
 
+export interface AndroidDiagnosticInfo {
+  summary: string;
+  detail: string;
+  isPermissionIssue: boolean;
+}
+
+export function getAndroidDiagnosticInfo(diagnostic?: string, detail?: string): AndroidDiagnosticInfo {
+  if (!diagnostic) {
+    return {
+      summary: '目录检查未通过',
+      detail: '目录检查未通过，暂无详细原因。',
+      isPermissionIssue: false,
+    };
+  }
+
+  switch (diagnostic) {
+    case 'storage_provider_unavailable':
+      return {
+        summary: '存储权限服务未就绪',
+        detail: 'Android 存储权限服务未初始化，尚未执行目录检查。',
+        isPermissionIssue: true,
+      };
+    case 'storage_access_query_failed':
+      return {
+        summary: '存储权限查询失败',
+        detail: detail
+          ? `查询存储权限状态时发生错误（${detail}），尚未执行目录检查。`
+          : '查询存储权限状态时发生错误，尚未执行目录检查。',
+        isPermissionIssue: true,
+      };
+    case 'storage_access_denied':
+      return {
+        summary: '存储访问权限未授予',
+        detail: '应用尚未获得 Android 存储访问权限，尚未执行目录检查。请授予存储访问权限后再试。',
+        isPermissionIssue: true,
+      };
+    case 'storage_access_unsupported':
+      return {
+        summary: '当前环境不支持存储访问',
+        detail: '当前设备环境不支持此存储访问方式，尚未执行目录检查。',
+        isPermissionIssue: true,
+      };
+    case 'storage_access_error':
+      return {
+        summary: '存储权限检查异常',
+        detail: detail
+          ? `系统返回存储权限错误（${detail}），尚未执行目录检查。`
+          : '系统返回存储权限错误，尚未执行目录检查。',
+        isPermissionIssue: true,
+      };
+    case 'mas_root_missing':
+      return {
+        summary: 'MAS 根目录不存在',
+        detail: '未检测到 MAS 根目录。请确认手机内部存储中是否存在 MAS 文件夹。',
+        isPermissionIssue: false,
+      };
+    case 'mas_root_not_directory':
+      return {
+        summary: 'MAS 根路径不是目录',
+        detail: 'MAS 根路径已被同名文件占用，而非文件夹。',
+        isPermissionIssue: false,
+      };
+    case 'mas_root_unreadable':
+      return {
+        summary: 'MAS 根目录无法访问',
+        detail: detail
+          ? `访问 MAS 根目录时发生读取或权限错误（${detail}）。`
+          : '访问 MAS 根目录时发生读取或权限错误。',
+        isPermissionIssue: false,
+      };
+    case 'game_directory_missing':
+      return {
+        summary: '未找到 game/ 目录',
+        detail: 'MAS 根目录已就绪，但未找到 game/ 子目录。请先在手机上启动一次 MAS 游戏以生成 game 目录。',
+        isPermissionIssue: false,
+      };
+    case 'game_path_not_directory':
+      return {
+        summary: 'game 路径不是目录',
+        detail: 'MAS 根目录下的 game 是文件而非目录。',
+        isPermissionIssue: false,
+      };
+    case 'game_directory_unreadable':
+      return {
+        summary: 'game/ 目录无法访问',
+        detail: detail
+          ? `访问 game/ 目录时发生读取或权限错误（${detail}）。`
+          : '访问 game/ 目录时发生读取或权限错误。',
+        isPermissionIssue: false,
+      };
+    case 'game_directory_verified':
+      return {
+        summary: 'game/ 目录已验证',
+        detail: 'MAS 游戏目录已就绪并验证通过。',
+        isPermissionIssue: false,
+      };
+    default:
+      return {
+        summary: `目录检查未通过（${diagnostic}）`,
+        detail: detail
+          ? `目录检查未通过，错误码：${diagnostic}（${detail}）。`
+          : `目录检查未通过，错误码：${diagnostic}。`,
+        isPermissionIssue: false,
+      };
+  }
+}
+
 interface InstancesViewProps {
   installations: Installation[];
   activeInstallationId: string;
@@ -102,6 +209,8 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
           {installations.map((inst) => {
             const isActive = inst.id === activeInstallationId;
             const isAuthorized = inst.permission_state === 'authorized';
+            const isAndroidInstance = inst.platform === 'android' || isAndroid;
+            const diagInfo = isAndroidInstance ? getAndroidDiagnosticInfo(inst.diagnostic, inst.diagnostic_detail) : null;
 
             return (
               <div
@@ -128,10 +237,14 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
                       {inst.path_hint}
                     </div>
 
-                    <div className="text-[11px] text-neutral-500">{inst.is_valid ? 'game/ 目录已验证' : '找不到 game/ 目录'}</div>
-                    {isAndroid && !inst.is_valid && (
+                    <div className="text-[11px] text-neutral-500">
+                      {isAndroidInstance
+                        ? (inst.is_valid ? 'game/ 目录已验证' : diagInfo?.summary)
+                        : (inst.is_valid ? 'game/ 目录已验证' : '找不到 game/ 目录')}
+                    </div>
+                    {isAndroidInstance && !inst.is_valid && diagInfo && (
                       <div className="mt-2 text-xs text-amber-300/90 bg-amber-950/40 border border-amber-800/40 rounded p-2">
-                        未检测到 MAS 游戏目录。请先在手机上安装并启动一次 MAS 游戏，确认其在 {inst.path_hint} 正常生成 game 目录后再使用本工具。
+                        {diagInfo.detail}
                       </div>
                     )}
                   </div>

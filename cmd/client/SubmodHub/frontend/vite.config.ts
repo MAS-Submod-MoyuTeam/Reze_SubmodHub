@@ -13,6 +13,7 @@ export default defineConfig({
   root: desktopRoot,
   plugins: [react(), tailwindcss(), ...(browserMode ? [] : [wails(path.resolve(currentDir, "bindings"))])],
   resolve: {
+    dedupe: ['@wailsio/runtime'],
     alias: {
       "@": desktopRoot,
       "@wails-bindings": path.resolve(currentDir, "bindings/github.com/reze/submodhub/cmd/client"),

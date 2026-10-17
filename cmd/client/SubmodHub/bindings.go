@@ -23,12 +23,14 @@ import (
 )
 
 type MASStatus struct {
-	Root           string `json:"root"`
-	GamePath       string `json:"game_path"`
-	Valid          bool   `json:"valid"`
-	GameExists     bool   `json:"game_exists"`
-	Submods        int    `json:"submods"`
-	AvailableBytes int64  `json:"available_bytes"`
+	Root             string `json:"root"`
+	GamePath         string `json:"game_path"`
+	Valid            bool   `json:"valid"`
+	GameExists       bool   `json:"game_exists"`
+	Submods          int    `json:"submods"`
+	AvailableBytes   int64  `json:"available_bytes"`
+	Diagnostic       string `json:"diagnostic,omitempty"`
+	DiagnosticDetail string `json:"diagnostic_detail,omitempty"`
 }
 
 type InstallRequest struct {
@@ -170,9 +172,11 @@ type DesktopService struct {
 	apiURL     string
 	stagingMgr *ArchiveStagingManager
 
-	storageGuard      *StorageAccessGuard
-	storageProvider   StorageAccessProvider
-	isAndroidOverride bool
+	storageGuard        *StorageAccessGuard
+	storageProvider     StorageAccessProvider
+	isAndroidOverride   bool
+	androidRootOverride string
+	inspectDir          func(root string) MASStatus
 
 	candidateRegistrationsResolver func(candidateID string) ([]string, error)
 

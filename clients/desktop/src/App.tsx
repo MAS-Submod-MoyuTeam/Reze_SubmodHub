@@ -428,6 +428,8 @@ export default function App() {
       is_running: false,
       disk_available_bytes: item.status.available_bytes !== undefined ? item.status.available_bytes : null,
       last_validated_at: new Date().toISOString(),
+      diagnostic: item.status.diagnostic,
+      diagnostic_detail: item.status.diagnostic_detail,
     }));
     setInstallations(items.length ? items : [UNVERIFIED_INSTALLATION]);
     activeInstallationIdRef.current = nextActiveId;

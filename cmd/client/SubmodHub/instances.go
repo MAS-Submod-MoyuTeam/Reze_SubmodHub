@@ -76,18 +76,62 @@ func (s *DesktopService) saveInstances() error {
 	return nil
 }
 
+func (s *DesktopService) getStorageAccessDiagnostic() (diagnostic string, detail string, ok bool) {
+	if !s.isAndroid() {
+		return "", "", true
+	}
+	provider := s.storageProvider
+	if provider == nil && s.storageGuard != nil {
+		provider = s.storageGuard.provider
+	}
+	if provider == nil {
+		return "storage_provider_unavailable", "", false
+	}
+	status, err := provider.GetStorageAccess()
+	if err != nil {
+		return "storage_access_query_failed", err.Error(), false
+	}
+	state := strings.ToLower(strings.TrimSpace(status.State))
+	switch state {
+	case "granted":
+		return "", "", true
+	case "denied":
+		return "storage_access_denied", "", false
+	case "unsupported":
+		return "storage_access_unsupported", "", false
+	case "error":
+		return "storage_access_error", "", false
+	default:
+		return "storage_access_denied", fmt.Sprintf("unexpected storage state: %s", status.State), false
+	}
+}
+
 func (s *DesktopService) ListMASInstances() (MASInstancesState, error) {
 	if s.isAndroid() {
 		fixedRoot := maspath.AndroidMASRoot
-		status := MASStatus{
-			Root:           fixedRoot,
-			GamePath:       maspath.AndroidGameDirectory(),
-			Valid:          false,
-			GameExists:     false,
-			AvailableBytes: 0,
+		if s.androidRootOverride != "" {
+			fixedRoot = s.androidRootOverride
 		}
-		if s.checkStorageAccess() == nil {
-			status = inspectMASRoot(fixedRoot)
+		gamePath := filepath.Join(fixedRoot, "game")
+
+		diagnostic, detail, ok := s.getStorageAccessDiagnostic()
+		var status MASStatus
+		if !ok {
+			status = MASStatus{
+				Root:             fixedRoot,
+				GamePath:         gamePath,
+				Valid:            false,
+				GameExists:       false,
+				AvailableBytes:   0,
+				Diagnostic:       diagnostic,
+				DiagnosticDetail: detail,
+			}
+		} else {
+			if s.inspectDir != nil {
+				status = s.inspectDir(fixedRoot)
+			} else {
+				status = inspectMASDirectory(fixedRoot)
+			}
 		}
 		return MASInstancesState{
 			Instances: []MASInstance{
@@ -108,18 +152,62 @@ func (s *DesktopService) ListMASInstances() (MASInstancesState, error) {
 	items := make([]MASInstance, len(s.instances))
 	copy(items, s.instances)
 	for i := range items {
-		items[i].Status = inspectMASRoot(items[i].Root)
+		if s.inspectDir != nil {
+			items[i].Status = s.inspectDir(items[i].Root)
+		} else {
+			items[i].Status = inspectMASRoot(items[i].Root)
+		}
 	}
 	return MASInstancesState{Instances: items, ActiveID: s.activeID}, nil
 }
 
-func inspectMASRoot(root string) MASStatus {
+func inspectMASDirectory(root string) MASStatus {
 	game := filepath.Join(root, "game")
-	var avail int64
-	if space, err := core.GetAvailableDiskSpace(root); err == nil {
-		avail = int64(space)
+	status := MASStatus{
+		Root:       root,
+		GamePath:   game,
+		Valid:      false,
+		GameExists: false,
 	}
-	status := MASStatus{Root: root, GamePath: game, Valid: fileExists(root), GameExists: fileExists(game), AvailableBytes: avail}
+
+	rootInfo, err := os.Stat(root)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) || os.IsNotExist(err) {
+			status.Diagnostic = "mas_root_missing"
+		} else {
+			status.Diagnostic = "mas_root_unreadable"
+			status.DiagnosticDetail = err.Error()
+		}
+		return status
+	}
+	if !rootInfo.IsDir() {
+		status.Diagnostic = "mas_root_not_directory"
+		return status
+	}
+
+	status.Valid = true
+	if space, err := core.GetAvailableDiskSpace(root); err == nil {
+		status.AvailableBytes = int64(space)
+	}
+
+	gameInfo, err := os.Stat(game)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) || os.IsNotExist(err) {
+			status.Diagnostic = "game_directory_missing"
+		} else {
+			status.Diagnostic = "game_directory_unreadable"
+			status.DiagnosticDetail = err.Error()
+		}
+		return status
+	}
+	if !gameInfo.IsDir() {
+		status.Diagnostic = "game_path_not_directory"
+		return status
+	}
+
+	status.GameExists = true
+	status.Diagnostic = "game_directory_verified"
+
 	if entries, err := os.ReadDir(filepath.Join(game, "Submods")); err == nil {
 		for _, entry := range entries {
 			if entry.IsDir() {
@@ -128,6 +216,10 @@ func inspectMASRoot(root string) MASStatus {
 		}
 	}
 	return status
+}
+
+func inspectMASRoot(root string) MASStatus {
+	return inspectMASDirectory(root)
 }
 
 func (s *DesktopService) AddMASInstance(label, root string) (MASInstancesState, error) {

@@ -9,6 +9,7 @@ export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
+      dedupe: ['@wailsio/runtime'],
       alias: {
         '@': path.resolve(currentDir, '.'),
         '@wails-bindings': path.resolve(currentDir, '../../cmd/client/SubmodHub/frontend/bindings/github.com/reze/submodhub/cmd/client'),
