@@ -1,6 +1,6 @@
 # Android Wails v3 / All files access feasibility gate
 
-Status (2026-10-16): Cross-compilation and native host integration gate **PASSED** on Linux build server `100.72.137.92`.
+Status (2026-10-17): Cross-compilation and native host integration gate **PASSED** on Linux build server `100.72.137.92`.
 Physical device verification gate: **PENDING SIDELOAD TEST** on physical arm64 Android 11+ device.
 
 The sideloaded Android 11+ APK targets `/storage/emulated/0/MAS/`, with game
@@ -30,9 +30,9 @@ other-directory fallback is permitted.
 - **Version**: `1.0` (versionCode `1`)
 - **minSdkVersion**: `30` (Android 11+)
 - **targetSdkVersion**: `35`
-- **Output APK**: `cmd/client/SubmodHub/bin/submodhub-debug.apk`
-- **Size**: ~28 MB (29,355,595 bytes)
-- **SHA-256**: `8F557A783E5E2CD744BCFD26E083E27C31D103C42336F6431AFD7455EC3121DE`
+- **Output APK**: `cmd/client/SubmodHub/bin/submodhub.apk` (`submodhub-debug.apk`)
+- **Size**: ~42.5 MB (44,573,534 bytes)
+- **SHA-256**: `B864DA416BE128610B350E46DF4EEA17B711B57449E60AE7BE796F5FA7150A26`
 - **Native Architecture**: `arm64-v8a` (`lib/arm64-v8a/libwails.so`, ELF 64-bit LSB shared object)
 - **Core Permissions**:
   - `android.permission.MANAGE_EXTERNAL_STORAGE`
