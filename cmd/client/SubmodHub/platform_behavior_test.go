@@ -4,9 +4,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	core "github.com/reze/submodhub/internal/install"
 	"github.com/reze/submodhub/internal/maspath"
 )
 
@@ -161,7 +161,7 @@ func TestStorageAccess_InitializedThenRevokedGuards(t *testing.T) {
 	// Initialize root and core
 	service.root = temp
 	service.state = filepath.Join(temp, ".submodhub", "state")
-	service.core = core.New(temp, service.state)
+	service.core = service.newCore(temp, service.state)
 
 	if service.core == nil {
 		t.Fatal("expected service.core to be non-nil")
@@ -196,5 +196,53 @@ func TestStorageAccess_InitializedThenRevokedGuards(t *testing.T) {
 	}
 	if _, err := service.GetOperation("op-1"); !errors.Is(err, ErrPermissionLost) {
 		t.Fatalf("GetOperation after revocation: expected ErrPermissionLost, got: %v", err)
+	}
+}
+
+func TestAndroidMASLockMappedToInternalStorage(t *testing.T) {
+	tempRoot := t.TempDir()
+	gameDir := filepath.Join(tempRoot, "game")
+	_ = os.MkdirAll(filepath.Join(gameDir, "Submods"), 0o755)
+
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "instances.json")
+
+	provider := &mockStorageAccessProvider{
+		status: AndroidStorageAccessStatus{State: "granted"},
+	}
+
+	service1 := NewDesktopService()
+	service1.configPath = configPath
+	service1.isAndroidOverride = true
+	service1.androidRootOverride = tempRoot
+	service1.SetStorageAccessProvider(provider)
+
+	// SetMASRoot with android override
+	_, err := service1.SetMASRoot(maspath.AndroidMASRoot)
+	if err != nil {
+		t.Fatalf("SetMASRoot failed: %v", err)
+	}
+
+	// The lock path must be located in configDir/locks and NOT inside root/.submodhub/state
+	lockPath1 := service1.core.LockPath()
+	expectedPrefix := filepath.Join(configDir, "locks")
+	if !strings.HasPrefix(lockPath1, expectedPrefix) {
+		t.Fatalf("expected lock path to be in internal storage %q, got %q", expectedPrefix, lockPath1)
+	}
+	stateLock := filepath.Join(service1.state, "lock")
+	if lockPath1 == stateLock {
+		t.Fatalf("lock path must not be inside shared storage state dir: %q", stateLock)
+	}
+
+	// A second service instance targeting the same MAS root must map to the exact same lock path
+	service2 := NewDesktopService()
+	service2.configPath = configPath
+	service2.isAndroidOverride = true
+	service2.androidRootOverride = tempRoot
+	service2.SetStorageAccessProvider(provider)
+
+	lockPath2 := service2.newCore(service1.root, service1.state).LockPath()
+	if lockPath1 != lockPath2 {
+		t.Fatalf("expected stable lock path mapping: %q != %q", lockPath1, lockPath2)
 	}
 }

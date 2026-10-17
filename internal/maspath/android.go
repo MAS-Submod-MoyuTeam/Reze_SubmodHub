@@ -1,6 +1,8 @@
 package maspath
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path"
@@ -12,12 +14,25 @@ import (
 const AndroidMASRoot = "/storage/emulated/0/MAS/"
 
 var (
-	ErrInvalidAndroidRoot  = errors.New("invalid_mas_root")
-	ErrMASGameDirMissing   = errors.New("mas_game_directory_missing")
+	ErrInvalidAndroidRoot = errors.New("invalid_mas_root")
+	ErrMASGameDirMissing  = errors.New("mas_game_directory_missing")
 )
 
 func AndroidGameDirectory() string {
 	return strings.TrimRight(AndroidMASRoot, "/") + "/game"
+}
+
+// AndroidInstanceLockPath returns a stable lock file path in the app internal storage
+// mapped to the given MAS root. Shared storage (FUSE) does not implement flock (ENOSYS),
+// so lock files for MAS instances on Android must reside in internal app storage.
+func AndroidInstanceLockPath(internalFilesDir, masRoot string) string {
+	base := strings.TrimSpace(internalFilesDir)
+	if base == "" {
+		base = "/data/data/com.reze.submodhub/files"
+	}
+	clean := path.Clean(strings.ReplaceAll(strings.TrimSpace(masRoot), "\\", "/"))
+	sum := sha256.Sum256([]byte(clean))
+	return filepath.Join(base, "locks", "mas_"+hex.EncodeToString(sum[:16])+".lock")
 }
 
 // ValidateAndroidMASRoot validates that root strictly matches the fixed Android MAS root path.

@@ -112,6 +112,7 @@ public class WailsBridge {
     private static native void nativeOnLowMemory();
     private static native void nativeOnPageFinished(String url);
     private static native byte[] nativeServeAsset(String path, String method, String headers);
+    private static native byte[] nativeServeApiRequest(String url, String method, String headers);
     private static native String nativeHandleMessage(String message);
     private static native String nativeHandleRuntimeCall(String payload);
     private static native String nativeGetAssetMimeType(String path);
@@ -225,6 +226,51 @@ public class WailsBridge {
             return nativeServeAsset(path, method, headers);
         } catch (Exception e) {
             Log.e(TAG, "Error serving asset: " + path, e);
+            return null;
+        }
+    }
+
+    public static class ApiResponse {
+        public final int statusCode;
+        public final String mimeType;
+        public final byte[] data;
+
+        public ApiResponse(int statusCode, String mimeType, byte[] data) {
+            this.statusCode = statusCode;
+            this.mimeType = mimeType;
+            this.data = data;
+        }
+    }
+
+    /**
+     * Serve an API request from the Go server, preserving full URL with query
+     * parameters, and returning response status code, Content-Type, and data.
+     */
+    public ApiResponse serveApiRequest(String url, String method, String headers) {
+        if (!initialized) {
+            Log.w(TAG, "Bridge not initialized, cannot serve API request: " + url);
+            return null;
+        }
+        if (DEBUG) Log.d(TAG, "Serving API request: " + url);
+        try {
+            byte[] raw = nativeServeApiRequest(url, method, headers);
+            if (raw == null || raw.length < 6) {
+                return null;
+            }
+            java.nio.ByteBuffer buf = java.nio.ByteBuffer.wrap(raw);
+            int statusCode = buf.getInt();
+            int mimeLen = buf.getShort() & 0xFFFF;
+            if (6 + mimeLen > raw.length) {
+                return null;
+            }
+            byte[] mimeBytes = new byte[mimeLen];
+            buf.get(mimeBytes);
+            String mimeType = new String(mimeBytes, java.nio.charset.StandardCharsets.UTF_8);
+            byte[] body = new byte[buf.remaining()];
+            buf.get(body);
+            return new ApiResponse(statusCode, mimeType, body);
+        } catch (Exception e) {
+            Log.e(TAG, "Error serving API request: " + url, e);
             return null;
         }
     }

@@ -273,6 +273,26 @@ func (s *DesktopService) SetCandidateRegistrationsResolver(fn func(candidateID s
 	s.candidateRegistrationsResolver = fn
 }
 
+func (s *DesktopService) internalStorageDir() string {
+	if s.configPath != "" {
+		return filepath.Dir(s.configPath)
+	}
+	dir, err := getPlatformInternalConfigDir()
+	if err != nil || dir == "" {
+		return "."
+	}
+	return dir
+}
+
+func (s *DesktopService) newCore(root, state string) *core.Installer {
+	installer := core.New(root, state)
+	if s.isAndroid() {
+		lockPath := maspath.AndroidInstanceLockPath(s.internalStorageDir(), root)
+		installer.SetLockPath(lockPath)
+	}
+	return installer
+}
+
 func (s *DesktopService) SetMASRoot(root string) (MASStatus, error) {
 	if s.isAndroid() {
 		if err := maspath.ValidateAndroidMASRoot(root); err != nil {
@@ -293,7 +313,7 @@ func (s *DesktopService) SetMASRoot(root string) (MASStatus, error) {
 	}
 	s.root = root
 	s.state = filepath.Join(root, ".submodhub", "state")
-	s.core = core.New(root, s.state)
+	s.core = s.newCore(root, s.state)
 	s.activePlan = nil
 
 	// Invariant: recover any pending interrupted transactions on startup/set

@@ -172,6 +172,44 @@ public class MainActivity extends AppCompatActivity {
                         );
                     }
 
+                    // For API requests (/api/...) retain full query parameters
+                    // and pass through backend status code and Content-Type.
+                    if (path != null && path.startsWith("/api/")) {
+                        String fullPath = path;
+                        String query = request.getUrl().getQuery();
+                        if (query != null && !query.isEmpty()) {
+                            fullPath = path + "?" + query;
+                        }
+                        if (DEBUG) Log.d(TAG, "SubmodHub API call: " + fullPath);
+
+                        WailsBridge.ApiResponse apiResp = bridge.serveApiRequest(fullPath, request.getMethod(), "{}");
+                        if (apiResp != null) {
+                            java.io.InputStream inputStream = new java.io.ByteArrayInputStream(apiResp.data != null ? apiResp.data : new byte[0]);
+                            java.util.Map<String, String> headers = new java.util.HashMap<>();
+                            headers.put("Access-Control-Allow-Origin", "*");
+                            headers.put("Cache-Control", "no-cache");
+                            headers.put("Content-Type", apiResp.mimeType != null ? apiResp.mimeType : "application/octet-stream");
+
+                            String reasonPhrase = getStatusReason(apiResp.statusCode);
+                            return new WebResourceResponse(
+                                apiResp.mimeType != null ? apiResp.mimeType : "application/octet-stream",
+                                "UTF-8",
+                                apiResp.statusCode > 0 ? apiResp.statusCode : 200,
+                                reasonPhrase,
+                                headers,
+                                inputStream
+                            );
+                        }
+                        return new WebResourceResponse(
+                            "application/json",
+                            "UTF-8",
+                            502,
+                            "Bad Gateway",
+                            new java.util.HashMap<>(),
+                            new java.io.ByteArrayInputStream("{\"error\":\"api_request_failed\"}".getBytes())
+                        );
+                    }
+
                     // Stream captured photos/videos from the cache with HTTP Range
                     // support so <video> can seek/stream a clip of any length.
                     if (path != null && path.startsWith("/__capture__/")) {
@@ -198,6 +236,27 @@ public class MainActivity extends AppCompatActivity {
 
         // Add JavaScript interface for Go communication
         webView.addJavascriptInterface(new WailsJSBridge(bridge, webView), "wails");
+    }
+
+    private static String getStatusReason(int statusCode) {
+        switch (statusCode) {
+            case 200: return "OK";
+            case 201: return "Created";
+            case 204: return "No Content";
+            case 301: return "Moved Permanently";
+            case 302: return "Found";
+            case 304: return "Not Modified";
+            case 400: return "Bad Request";
+            case 401: return "Unauthorized";
+            case 403: return "Forbidden";
+            case 404: return "Not Found";
+            case 409: return "Conflict";
+            case 413: return "Payload Too Large";
+            case 500: return "Internal Server Error";
+            case 502: return "Bad Gateway";
+            case 503: return "Service Unavailable";
+            default: return "OK";
+        }
     }
 
     private void loadApplication() {

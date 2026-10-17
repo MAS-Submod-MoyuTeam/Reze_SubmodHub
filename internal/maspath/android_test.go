@@ -62,3 +62,31 @@ func TestVerifyAndroidMASInstallation(t *testing.T) {
 	}
 }
 
+func TestAndroidInstanceLockPathStability(t *testing.T) {
+	internalDir := t.TempDir()
+
+	p1 := AndroidInstanceLockPath(internalDir, "/storage/emulated/0/MAS")
+	p2 := AndroidInstanceLockPath(internalDir, "/storage/emulated/0/MAS/")
+	p3 := AndroidInstanceLockPath(internalDir, "\\storage\\emulated\\0\\MAS\\")
+
+	if p1 != p2 || p1 != p3 {
+		t.Fatalf("expected lock paths to be strictly equal, got: p1=%q, p2=%q, p3=%q", p1, p2, p3)
+	}
+
+	expectedPrefix := filepath.Join(internalDir, "locks")
+	if !filepath.HasPrefix(p1, expectedPrefix) {
+		t.Fatalf("expected path %q to have prefix %q", p1, expectedPrefix)
+	}
+
+	pOther := AndroidInstanceLockPath(internalDir, "/storage/emulated/0/MAS_TEST")
+	if p1 == pOther {
+		t.Fatalf("expected different lock paths for different roots, got same: %q", p1)
+	}
+
+	// Test default internalDir fallback
+	pDefault := AndroidInstanceLockPath("", "/storage/emulated/0/MAS")
+	if !filepath.HasPrefix(pDefault, filepath.Clean("/data/data/com.reze.submodhub/files/locks")) {
+		t.Fatalf("expected default internalDir fallback, got: %q", pDefault)
+	}
+}
+

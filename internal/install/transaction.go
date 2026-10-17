@@ -129,6 +129,7 @@ func (j *TxJournal) TransitionTo(to string) error {
 }
 
 type InstanceLock struct {
+	key  string
 	path string
 	file *os.File
 }
@@ -139,20 +140,33 @@ var (
 )
 
 func acquireInstanceLock(stateDir string) (*InstanceLock, error) {
+	cleanDir := filepath.Clean(stateDir)
+	lockFile := filepath.Join(cleanDir, "lock")
+	lock, err := acquireInstanceLockPath(lockFile)
+	if err != nil {
+		if e, ok := err.(*Error); ok && e.Path == lockFile {
+			e.Path = stateDir
+		}
+		return nil, err
+	}
+	return lock, nil
+}
+
+func acquireInstanceLockPath(lockFile string) (*InstanceLock, error) {
 	processLockMutex.Lock()
 	defer processLockMutex.Unlock()
 
-	cleanDir := filepath.Clean(stateDir)
-	if _, exists := activeLocks[cleanDir]; exists {
-		return nil, &Error{Code: "instance_busy", Path: stateDir, Err: errors.New("instance locked in current process")}
+	cleanPath := filepath.Clean(lockFile)
+	if _, exists := activeLocks[cleanPath]; exists {
+		return nil, &Error{Code: "instance_busy", Path: cleanPath, Err: errors.New("instance locked in current process")}
 	}
 
-	if err := os.MkdirAll(cleanDir, 0o755); err != nil {
+	dir := filepath.Dir(cleanPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	lockFile := filepath.Join(cleanDir, "lock")
 
-	f, err := os.OpenFile(lockFile, os.O_CREATE|os.O_RDWR, 0o600)
+	f, err := os.OpenFile(cleanPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +174,7 @@ func acquireInstanceLock(stateDir string) (*InstanceLock, error) {
 	if err := lockOSFile(f); err != nil {
 		_ = f.Close()
 		if errors.Is(err, errLockBusy) {
-			return nil, &Error{Code: "instance_busy", Path: stateDir, Err: errors.New("instance locked by another process")}
+			return nil, &Error{Code: "instance_busy", Path: cleanPath, Err: errors.New("instance locked by another process")}
 		}
 		return nil, err
 	}
@@ -172,10 +186,11 @@ func acquireInstanceLock(stateDir string) (*InstanceLock, error) {
 	_ = f.Sync()
 
 	lock := &InstanceLock{
-		path: lockFile,
+		key:  cleanPath,
+		path: cleanPath,
 		file: f,
 	}
-	activeLocks[cleanDir] = lock
+	activeLocks[cleanPath] = lock
 	return lock, nil
 }
 
@@ -186,8 +201,12 @@ func (l *InstanceLock) Release() {
 	processLockMutex.Lock()
 	defer processLockMutex.Unlock()
 
-	dir := filepath.Dir(l.path)
-	delete(activeLocks, dir)
+	if l.key != "" {
+		delete(activeLocks, l.key)
+	} else if l.path != "" {
+		delete(activeLocks, filepath.Clean(l.path))
+		delete(activeLocks, filepath.Dir(l.path))
+	}
 
 	if l.file != nil {
 		_ = unlockOSFile(l.file)

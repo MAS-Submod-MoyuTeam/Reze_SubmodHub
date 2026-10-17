@@ -44,3 +44,48 @@ func TestOSFileLockExclusivity(t *testing.T) {
 	}
 	_ = unlockOSFile(f2)
 }
+
+func TestCustomLockPathExclusivity(t *testing.T) {
+	root := t.TempDir()
+	stateDir := filepath.Join(t.TempDir(), "state")
+	customLockDir := t.TempDir()
+	customLockPath := filepath.Join(customLockDir, "custom.lock")
+
+	inst1 := New(root, stateDir)
+	inst1.SetLockPath(customLockPath)
+	inst2 := New(root, stateDir)
+	inst2.SetLockPath(customLockPath)
+
+	if inst1.LockPath() != customLockPath {
+		t.Fatalf("expected LockPath %q, got %q", customLockPath, inst1.LockPath())
+	}
+
+	lock1, err := inst1.acquireLock()
+	if err != nil {
+		t.Fatalf("inst1 acquireLock failed: %v", err)
+	}
+
+	// Lock file must exist on disk and contain non-empty PID
+	content, err := os.ReadFile(customLockPath)
+	if err != nil {
+		t.Fatalf("failed to read custom lock file: %v", err)
+	}
+	if len(content) == 0 {
+		t.Fatal("expected non-empty PID in custom lock file")
+	}
+
+	// inst2 must fail with instance_busy
+	_, err = inst2.acquireLock()
+	if err == nil || !IsCode(err, "instance_busy") {
+		t.Fatalf("expected instance_busy, got %v", err)
+	}
+
+	lock1.Release()
+
+	// After release, inst2 can acquire
+	lock2, err := inst2.acquireLock()
+	if err != nil {
+		t.Fatalf("inst2 acquireLock failed after release: %v", err)
+	}
+	lock2.Release()
+}

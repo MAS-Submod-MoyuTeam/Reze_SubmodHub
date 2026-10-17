@@ -83,6 +83,7 @@ func IsDisplayableRecoveryError(err error) bool {
 type Installer struct {
 	root                 string
 	state                string
+	lockPath             string
 	blobs                *BlobStore
 	faultHook            func(step string) error
 	crashWithoutRollback bool
@@ -111,7 +112,24 @@ func (i *Installer) SetBlobSyncHook(hook func() error) {
 func (i *Installer) SetCrashWithoutRollback(crash bool) {
 	i.crashWithoutRollback = crash
 }
+
+func (i *Installer) SetLockPath(path string) {
+	if path != "" {
+		i.lockPath = filepath.Clean(path)
+	}
+}
+
+func (i *Installer) LockPath() string {
+	if i.lockPath != "" {
+		return i.lockPath
+	}
+	return filepath.Join(i.state, "lock")
+}
+
 func (i *Installer) acquireLock() (*InstanceLock, error) {
+	if i.lockPath != "" {
+		return acquireInstanceLockPath(i.lockPath)
+	}
 	return acquireInstanceLock(i.state)
 }
 
