@@ -10,7 +10,7 @@ Invoke-WebRequest http://100.72.137.92:18082/healthz
 
 当前 Compose 把 API 绑定到 `100.72.137.92:18082`，仅适用于该 Tailnet 地址。其他主机应先修改 `deploy/compose.yaml` 的绑定地址。服务端使用 PostgreSQL 存目录和版本元数据，归档写入 `deploy/data` 目录。MinIO 适配尚未实现。上传默认关闭，直到身份认证实现并配置。部署前将 `deploy/data` 创建并授予容器 UID 65532 写入权限。
 
-Flarum 配置沿用 MAS_UniSync 的论坛地址，`ADMIN_FLARUM_GROUP_IDS=16,22`；其他 Flarum 组暂不自动授予作者或审核员权限。GitHub 登录暂缓。生产登录必须使用 HTTPS；当前 Tailnet HTTP 测试站通过前后端的临时不安全认证开关进行功能测试，不应用于生产或公开网络。不要将 MAS_UniSync 的会话密钥复制到本项目。
+Flarum 配置沿用 MAS_UniSync 的论坛地址，`ADMIN_FLARUM_GROUP_IDS=16,22`；其他 Flarum 组暂不自动授予作者或审核员权限。GitHub 登录暂缓。生产登录必须使用 HTTPS；公开入口已启用 HTTPS，直接访问 Tailnet HTTP 源站时仍依赖前后端的临时不安全认证开关，且不可用于公网。不要将 MAS_UniSync 的会话密钥复制到本项目。
 
 ## 远端部署
 
@@ -20,14 +20,14 @@ Flarum 配置沿用 MAS_UniSync 的论坛地址，`ADMIN_FLARUM_GROUP_IDS=16,22`
 
 修改后运行 `docker compose --env-file deploy/.env -f deploy/compose.yaml up -d api`，重建 API 容器使环境变量生效；无需重建镜像。
 
-测试站使用 HTTP 时，前端构建需临时设置 `VITE_ALLOW_INSECURE_AUTH=true`，否则浏览器会在发出登录请求前报 `https_required`。此开关只用于测试站构建，不要写入全局环境或生产构建配置。例如在 PowerShell 中执行 `$env:VITE_ALLOW_INSECURE_AUTH='true'; npm run build`，随后上传 `web/dist`。服务端仍需在测试环境配置 `SUBMODHUB_ALLOW_INSECURE_AUTH=true`。
+公开入口为 `https://rezehub.0721play.icu`，由 1Panel OpenResty 反向代理至测试服务器的 `100.72.137.92:18083`。HTTPS 入口不需要 `VITE_ALLOW_INSECURE_AUTH`；该开关仅保留给直接通过 HTTP 测试源站的场景，不要用于公开构建。
 
 部署目录：`/home/sirp/submodhub`。默认 API 端口：`18082`。部署前保存远端目录快照和 Compose 状态；更新只重建 `api`，不删除数据卷。
 
 ```bash
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build api
 docker compose --env-file deploy/.env -f deploy/compose.yaml ps
-curl http://100.72.137.92:18082/healthz
+curl https://rezehub.0721play.icu/healthz
 ```
 
 回滚：恢复上一版源码/Compose 文件后重新执行同一 `up -d --build api` 命令；`deploy/data` 保留。

@@ -23,7 +23,7 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-const defaultAPIURL = "http://100.72.137.92:18082"
+const defaultAPIURL = "https://rezehub.0721play.icu"
 
 var (
 	globalAssetHandlerMu sync.RWMutex
@@ -88,6 +88,15 @@ func desktopAssets(apiURL string, frontend http.Handler) (http.Handler, error) {
 		return nil, errors.New("invalid API URL")
 	}
 	proxy := httputil.NewSingleHostReverseProxy(target)
+	director := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalHost := req.Host
+		director(req)
+		req.Host = target.Host
+		if originalHost != "" {
+			req.Header.Set("X-Forwarded-Host", originalHost)
+		}
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			proxy.ServeHTTP(w, r)

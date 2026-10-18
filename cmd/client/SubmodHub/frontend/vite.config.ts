@@ -26,7 +26,7 @@ export default defineConfig({
     proxy: browserMode
       ? {
           "/local": "http://127.0.0.1:18083",
-          "/api": "http://100.72.137.92:18082",
+          "/api": "https://rezehub.0721play.icu",
         }
       : undefined,
   },

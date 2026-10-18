@@ -245,7 +245,7 @@ func NewDesktopService() *DesktopService {
 	}
 	apiURL := os.Getenv("SUBMODHUB_API_URL")
 	if apiURL == "" {
-		apiURL = "http://100.72.137.92:18082"
+		apiURL = "https://rezehub.0721play.icu"
 	}
 	return &DesktopService{
 		root:            root,

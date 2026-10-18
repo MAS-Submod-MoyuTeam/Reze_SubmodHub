@@ -16,7 +16,7 @@ export default defineConfig(() => {
       },
     },
     server: {
-      proxy: { '/api': { target: process.env.SUBMODHUB_API_TARGET || 'http://100.72.137.92:18082', changeOrigin: true } },
+      proxy: { '/api': { target: process.env.SUBMODHUB_API_TARGET || 'https://rezehub.0721play.icu', changeOrigin: true } },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
