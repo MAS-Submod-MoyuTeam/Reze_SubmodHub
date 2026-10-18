@@ -23,6 +23,7 @@ import (
 	"github.com/reze/submodhub/internal/auth"
 	"github.com/reze/submodhub/internal/github"
 	packagezip "github.com/reze/submodhub/internal/package"
+	"github.com/reze/submodhub/internal/version"
 )
 
 type Author struct {
@@ -305,12 +306,13 @@ func New(c Catalog) http.Handler {
 func NewStoreHandler(s *Store) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		status := map[string]any{"status": "ok"}
+		status := map[string]any{"status": "ok", "version": version.Version}
 		if diag := s.GetGitHubSyncDiagnostics(); diag != nil {
 			status["github_sync"] = diag
 		}
 		writeJSON(w, 200, status)
 	})
+	mux.HandleFunc("/api/v1/version", s.versionInfo)
 	mux.HandleFunc("/api/v1/mods", s.listMods)
 	mux.HandleFunc("/api/v1/registrations/match", s.handleMatchRegistrations)
 	mux.HandleFunc("/api/v1/session", s.session)

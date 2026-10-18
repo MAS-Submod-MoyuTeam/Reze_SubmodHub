@@ -58,6 +58,18 @@ Take a moment to familiarize yourself with your project structure:
 
 Happy coding with Wails3! If you encounter any issues or have questions, don't hesitate to consult the documentation or reach out to the Wails community.
 
+## 版本号
+
+客户端版本由仓库根目录的 `VERSION` 文件统一管理，并自动写入 Windows 版本资源、Android `versionName` / `versionCode` 和界面标题栏。
+
+```bash
+go run ./cmd/version              # 查看当前版本
+go run ./cmd/version -check       # 校验所有派生元数据是否一致
+go run ./cmd/version -set 0.9.1   # 升级版本并同步元数据
+```
+
+完整说明见 [`docs/VERSIONING.md`](../../../docs/VERSIONING.md)。
+
 ## 子模组覆盖文件与卸载自动还原机制
 
 本客户端采用基于内容寻址与多层覆盖的事务性安装引擎（`schema_version = 2`），彻底解决子模组覆盖冲突及任意顺序卸载时的文件还原问题：

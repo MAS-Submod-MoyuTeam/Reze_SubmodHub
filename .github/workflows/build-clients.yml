@@ -1,0 +1,287 @@
+name: Build clients
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Builds for the same branch run one at a time so two pushes cannot race while
+# creating the version's GitHub release.
+concurrency:
+  group: build-clients-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION_FILE: go.mod
+  NODE_VERSION: "22"
+  WAILS_VERSION: "v3.0.0-beta.27"
+  NDK_VERSION: "27.2.12479018"
+
+jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache-dependency-path: |
+            go.sum
+            cmd/client/SubmodHub/go.sum
+
+      - name: Verify version metadata
+        run: go run ./cmd/version -check
+
+      - name: Resolve version
+        id: resolve
+        run: |
+          version="$(go run ./cmd/version)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### SubmodHub v${version}"
+            echo ""
+            echo "Tag: \`v${version}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    name: Windows client
+    needs: version
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache-dependency-path: |
+            go.sum
+            cmd/client/SubmodHub/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: cmd/client/SubmodHub/frontend/package-lock.json
+
+      - name: Add Go binaries to PATH
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_PATH -Value (Join-Path (go env GOPATH) 'bin')
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: Build Windows client
+        working-directory: cmd/client/SubmodHub
+        env:
+          SUBMODHUB_VERSION: ${{ needs.version.outputs.version }}
+        run: wails3 task windows:build
+
+      - name: Package artifact
+        shell: pwsh
+        run: |
+          $version = "${{ needs.version.outputs.version }}"
+          $stage = "out/windows"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "cmd/client/SubmodHub/bin/submodhub.exe" "$stage/SubmodHub.exe"
+          Copy-Item "VERSION" "$stage/VERSION.txt"
+          Compress-Archive -Path "$stage/*" -DestinationPath "out/submodhub-windows-amd64-$version.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: submodhub-windows-amd64
+          path: out/submodhub-windows-amd64-*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  android:
+    name: Android client
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache-dependency-path: |
+            go.sum
+            cmd/client/SubmodHub/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: cmd/client/SubmodHub/frontend/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Add Go binaries to PATH
+        run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: Restore Android signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=()
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then missing+=("ANDROID_KEYSTORE_BASE64"); fi
+          if [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then missing+=("ANDROID_KEYSTORE_PASSWORD"); fi
+          if [ -z "$ANDROID_KEY_ALIAS" ]; then missing+=("ANDROID_KEY_ALIAS"); fi
+          if [ -z "$ANDROID_KEY_PASSWORD" ]; then missing+=("ANDROID_KEY_PASSWORD"); fi
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing repository secrets: ${missing[*]}. Android releases must be signed with a fixed keystore so later versions can be installed over earlier ones."
+            exit 1
+          fi
+
+          keystore="$RUNNER_TEMP/submodhub-release.keystore"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$keystore"
+          chmod 600 "$keystore"
+          keytool -list -keystore "$keystore" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" > /dev/null
+          {
+            echo "ANDROID_KEYSTORE_FILE=$keystore"
+            echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
+            echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS"
+            echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build Android client
+        working-directory: cmd/client/SubmodHub
+        env:
+          SUBMODHUB_VERSION: ${{ needs.version.outputs.version }}
+        run: wails3 task android:package
+
+      - name: Verify APK signature
+        run: |
+          apksigner="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -1)"
+          "$apksigner" verify --print-certs cmd/client/SubmodHub/bin/submodhub.apk | tee apk-signature.txt
+          if grep -q "CN=Android Debug" apk-signature.txt; then
+            echo "::error::The APK is debug-signed; check the Android signing secrets."
+            exit 1
+          fi
+
+      - name: Package artifact
+        run: |
+          version="${{ needs.version.outputs.version }}"
+          mkdir -p out
+          cp cmd/client/SubmodHub/bin/submodhub.apk "out/submodhub-android-arm64-${version}.apk"
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: submodhub-android-arm64
+          path: out/submodhub-android-arm64-*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove signing keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/submodhub-release.keystore"
+
+  release:
+    name: Publish versioned release
+    needs: [version, windows, android]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: List artifacts
+        run: |
+          cd out
+          sha256sum submodhub-* > SHA256SUMS.txt
+          echo "--- SHA256SUMS.txt ---"
+          cat SHA256SUMS.txt
+
+      - name: Check whether the release exists
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ needs.version.outputs.tag }}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release ${{ needs.version.outputs.tag }} already exists; keeping the publish artifacts as workflow artifacts only."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Release ${{ needs.version.outputs.tag }} does not exist yet; it will be created now."
+          fi
+
+      - name: Create GitHub release
+        if: steps.release.outputs.exists == 'false'
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > release-notes.md <<EOF
+          ## SubmodHub ${VERSION}
+
+          ### 下载
+
+          - **Windows (amd64)**：\`submodhub-windows-amd64-${VERSION}.zip\`，解压后运行 \`SubmodHub.exe\`。
+          - **Android (arm64)**：\`submodhub-android-arm64-${VERSION}.apk\`，适用于 arm64 真机侧载安装。
+
+          ### 校验
+
+          下载后可用随附的 \`SHA256SUMS.txt\` 校验文件完整性：
+
+          \`\`\`bash
+          sha256sum -c SHA256SUMS.txt
+          \`\`\`
+
+          构建提交：\`${{ github.sha }}\`
+          EOF
+          gh release create "${TAG}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "SubmodHub ${VERSION}" \
+            --notes-file release-notes.md \
+            out/*
+
+      - name: Summarize outcome
+        run: |
+          {
+            echo "### Client build v${{ needs.version.outputs.version }}"
+            echo ""
+            if [ "${{ steps.release.outputs.exists }}" = "true" ]; then
+              echo "Release \`${{ needs.version.outputs.tag }}\` already existed. Build outputs are attached to this workflow run as artifacts."
+            else
+              echo "Created release \`${{ needs.version.outputs.tag }}\` and attached:"
+              for asset in out/*; do echo "- \`$(basename "$asset")\`"; done
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

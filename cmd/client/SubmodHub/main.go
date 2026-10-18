@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/reze/submodhub/internal/version"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -123,7 +124,7 @@ func main() {
 		Services: []application.Service{application.NewService(service)},
 		Assets:   application.AssetOptions{Handler: handler},
 	})
-	app.Window.NewWithOptions(application.WebviewWindowOptions{Title: "SubmodHub", Width: 1280, Height: 800, BackgroundColour: application.NewRGB(10, 12, 16), URL: "/"})
+	app.Window.NewWithOptions(application.WebviewWindowOptions{Title: "SubmodHub " + version.Version, Width: 1280, Height: 800, BackgroundColour: application.NewRGB(10, 12, 16), URL: "/"})
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}

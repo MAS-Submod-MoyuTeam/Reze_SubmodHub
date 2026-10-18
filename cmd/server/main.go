@@ -9,6 +9,7 @@ import (
 
 	"github.com/reze/submodhub/internal/auth"
 	"github.com/reze/submodhub/internal/httpapi"
+	"github.com/reze/submodhub/internal/version"
 )
 
 func main() {
@@ -79,6 +80,6 @@ func main() {
 		log.Printf("GitHub Releases background sync started (interval: %s)", store.GitHubSyncInterval)
 	}
 
-	log.Printf("SubmodHub API listening on %s", addr)
+	log.Printf("SubmodHub API %s listening on %s", version.Current().String(), addr)
 	log.Fatal(http.ListenAndServe(addr, httpapi.NewStoreHandler(store)))
 }

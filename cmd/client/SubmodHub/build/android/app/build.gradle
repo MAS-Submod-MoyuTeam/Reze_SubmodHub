@@ -2,6 +2,28 @@ plugins {
     id 'com.android.application'
 }
 
+// Release version. The repository-root VERSION file is the single source of
+// truth; CI (and release scripts) may override it with SUBMODHUB_VERSION.
+def resolveAppVersion = {
+    def fromEnv = System.getenv("SUBMODHUB_VERSION")
+    if (fromEnv != null && !fromEnv.trim().isEmpty()) {
+        fromEnv.trim()
+    } else {
+        // rootProject.projectDir is cmd/client/SubmodHub/build/android.
+        def versionFile = new File(rootProject.projectDir, "../../../../../VERSION")
+        versionFile.exists() ? versionFile.text.trim() : "0.0.0"
+    }
+}
+
+def appVersionName = resolveAppVersion()
+// versionCode must be numeric, so strip build metadata (`+build.5`) and the
+// pre-release suffix (`-beta.1`) before reading MAJOR.MINOR.PATCH.
+def appVersionCore = appVersionName.split("\\+")[0].split("-")[0]
+def appVersionParts = appVersionCore.tokenize(".")
+def appVersionCode = appVersionParts.size() >= 3
+        ? appVersionParts[0].toInteger() * 10000 + appVersionParts[1].toInteger() * 100 + appVersionParts[2].toInteger()
+        : 1
+
 android {
     namespace 'com.wails.app'
     compileSdk 35
@@ -14,8 +36,8 @@ android {
         applicationId "com.reze.submodhub"
         minSdk 30
         targetSdk 35
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
 
         // Configure supported ABIs
         ndk {

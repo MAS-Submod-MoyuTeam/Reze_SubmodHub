@@ -59,6 +59,12 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <span className="font-semibold text-neutral-100 tracking-tight text-sm">
             SubmodHub
           </span>
+          <span
+            className="text-[10px] text-neutral-500 font-mono"
+            title={`SubmodHub v${__APP_VERSION__}`}
+          >
+            v{__APP_VERSION__}
+          </span>
           <span className="hidden text-[11px] text-neutral-400 font-mono lg:inline">
             {isAndroid ? 'Android' : 'PC Client'}
           </span>

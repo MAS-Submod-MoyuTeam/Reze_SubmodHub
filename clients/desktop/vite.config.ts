@@ -1,13 +1,26 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'node:fs';
 import path from 'path';
 import {defineConfig} from 'vite';
 
 const currentDir = import.meta.dirname ?? path.resolve('.');
+const repoRoot = path.resolve(currentDir, '../..');
+
+// The repository-root VERSION file is the single source of truth for the
+// release version; it is compiled into the bundle so this standalone desktop
+// entry does not depend on the Wails Vite config for `__APP_VERSION__`.
+const versionFile = path.join(repoRoot, 'VERSION');
+const appVersion = fs.existsSync(versionFile)
+  ? fs.readFileSync(versionFile, 'utf8').trim()
+  : '0.0.0-dev';
 
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
+    define: {
+      __APP_VERSION__: JSON.stringify(appVersion),
+    },
     resolve: {
       dedupe: ['@wailsio/runtime'],
       alias: {

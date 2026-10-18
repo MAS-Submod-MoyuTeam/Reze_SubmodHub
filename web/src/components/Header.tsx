@@ -43,12 +43,20 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal }) => {
     <header className="sticky top-0 z-40 bg-white border-b border-neutral-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
         {/* Zone 1: Single text element wordmark */}
-        <button
-          onClick={() => setActiveTab('catalog')}
-          className="text-lg font-semibold tracking-tight text-neutral-950 hover:text-emerald-700 transition-colors shrink-0"
-        >
-          SubmodHub
-        </button>
+        <div className="flex items-baseline gap-2 shrink-0">
+          <button
+            onClick={() => setActiveTab('catalog')}
+            className="text-lg font-semibold tracking-tight text-neutral-950 hover:text-emerald-700 transition-colors shrink-0"
+          >
+            SubmodHub
+          </button>
+          <span
+            className="hidden sm:inline text-[10px] font-mono text-neutral-400"
+            title={`当前版本 v${__APP_VERSION__}`}
+          >
+            v{__APP_VERSION__}
+          </span>
+        </div>
 
         {/* Zone 2: 4-6 clean text navigation links */}
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-neutral-600">

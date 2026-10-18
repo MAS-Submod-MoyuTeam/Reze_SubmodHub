@@ -162,6 +162,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           />
           <span>{isRefreshing ? '正在同步云端契约...' : '刷新模组目录缓存'}</span>
         </button>
+
+        {/* Build identity */}
+        <div className="flex items-center justify-between px-1 text-[10px] font-mono text-neutral-500">
+          <span>SubmodHub</span>
+          <span title={`SubmodHub v${__APP_VERSION__}`}>v{__APP_VERSION__}</span>
+        </div>
       </div>
     </aside>
   );
