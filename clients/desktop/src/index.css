@@ -24,6 +24,17 @@
   background: rgba(255, 255, 255, 0.28);
 }
 
+/* Frameless Wails windows: the custom title bar declares its own drag and
+   no-drag regions. The custom properties are inherited, so interactive
+   children override the drag region with .wails-no-drag. */
+.wails-drag {
+  --wails-draggable: drag;
+}
+
+.wails-no-drag {
+  --wails-draggable: no-drag;
+}
+
 /* Accessibility: Honor reduced motion preferences globally */
 @media (prefers-reduced-motion: reduce) {
   *,

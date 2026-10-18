@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Events, Window } from '@wailsio/runtime';
 import {
   FolderGit2,
   HardDrive,
-  ShieldCheck,
   AlertTriangle,
   Wifi,
   WifiOff,
   Minus,
   Square,
+  Copy,
   X,
   ChevronDown,
   CheckCircle2,
@@ -30,6 +31,16 @@ interface TitleBarProps {
   isAndroid?: boolean;
 }
 
+/**
+ * True when the page runs inside the native Wails shell. In a plain browser
+ * preview (and in unit tests) the runtime window API must not be called.
+ */
+function hasNativeWindow(): boolean {
+  if (typeof window === 'undefined') return false;
+  const wails = (window as unknown as { _wails?: { environment?: unknown } })._wails;
+  return Boolean(wails?.environment);
+}
+
 export const TitleBar: React.FC<TitleBarProps> = ({
   installations,
   activeInstallationId,
@@ -44,12 +55,67 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   isAndroid = false,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [isMaximised, setIsMaximised] = useState(false);
   const activeInst = installations.find((i) => i.id === activeInstallationId) || {
     label: '尚未选择 MAS', path_hint: '', is_valid: false, mas_version: '',
   };
 
+  // Keep the maximise/restore icon in sync with native window state changes
+  // (custom buttons, Win+Up/Win+Down, snap layouts, double-clicking the bar).
+  useEffect(() => {
+    if (isAndroid || !hasNativeWindow()) return;
+
+    let active = true;
+    void Window.IsMaximised()
+      .then((value) => {
+        if (active) setIsMaximised(value);
+      })
+      .catch(() => {
+        // The window may be closing; the icon state is not critical.
+      });
+
+    const offMaximise = Events.On(Events.Types.Common.WindowMaximise, () => setIsMaximised(true));
+    const offUnmaximise = Events.On(Events.Types.Common.WindowUnMaximise, () => setIsMaximised(false));
+    const offRestore = Events.On(Events.Types.Common.WindowRestore, () => setIsMaximised(false));
+
+    return () => {
+      active = false;
+      offMaximise();
+      offUnmaximise();
+      offRestore();
+    };
+  }, [isAndroid]);
+
+  const runWindowCommand = (command: () => Promise<void>) => {
+    if (isAndroid || !hasNativeWindow()) return;
+    void command().catch(() => {
+      // Ignore races with window shutdown.
+    });
+  };
+
+  const handleMinimise = () => runWindowCommand(() => Window.Minimise());
+  const handleToggleMaximise = () => runWindowCommand(() => Window.ToggleMaximise());
+  const handleClose = () => runWindowCommand(() => Window.Close());
+
+  // Any element the Wails drag region must ignore counts as interactive here:
+  // native hit-testing already excludes `.wails-no-drag`, but the DOM double
+  // click listener still bubbles from those areas up to the header.
+  const HEADER_INTERACTIVE_SELECTOR =
+    'button, a, input, select, textarea, [role="button"], .wails-no-drag';
+
+  const handleHeaderDoubleClick = (event: React.MouseEvent<HTMLElement>) => {
+    if (isAndroid) return;
+    const target = event.target as HTMLElement | null;
+    if (!target || typeof target.closest !== 'function') return;
+    if (target.closest(HEADER_INTERACTIVE_SELECTOR)) return;
+    handleToggleMaximise();
+  };
+
   return (
-    <header className="min-h-[calc(2.5rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-3 select-none shrink-0 z-40 text-xs">
+    <header
+      className={`min-h-[calc(2.5rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-3 select-none shrink-0 z-40 text-xs ${isAndroid ? '' : 'wails-drag'}`}
+      onDoubleClick={handleHeaderDoubleClick}
+    >
       {/* Left zone: Brand and Version */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <div className="flex items-center gap-2 shrink-0">
@@ -76,7 +142,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         <div className="relative min-w-0">
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 rounded bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-200 transition-colors text-xs max-w-full"
+            className="wails-no-drag flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 rounded bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-200 transition-colors text-xs max-w-full"
             title={activeInst.path_hint}
           >
             <HardDrive className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
@@ -92,10 +158,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           {dropdownOpen && (
             <>
               <div
-                className="fixed inset-0 z-40"
+                className="wails-no-drag fixed inset-0 z-40"
                 onClick={() => setDropdownOpen(false)}
               />
-              <div className="absolute left-0 mt-1 w-80 max-w-[calc(100vw-1.5rem)] bg-neutral-900 border border-neutral-700 rounded-md shadow-xl py-1 z-50">
+              <div className="wails-no-drag absolute left-0 mt-1 w-80 max-w-[calc(100vw-1.5rem)] bg-neutral-900 border border-neutral-700 rounded-md shadow-xl py-1 z-50">
                 <div className="px-3 py-1.5 text-[11px] font-medium text-neutral-400 border-b border-neutral-800">
                   选择或管理 MAS 游戏实例
                 </div>
@@ -146,7 +212,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <button
             onClick={() => void onLaunchGame()}
             disabled={!activeInst.is_valid || isLaunchingGame}
-            className="flex h-[26px] shrink-0 items-center gap-1.5 rounded bg-emerald-700 px-2.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className="wails-no-drag flex h-[26px] shrink-0 items-center gap-1.5 rounded bg-emerald-700 px-2.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
             title={activeInst.is_valid ? `启动 ${activeInst.label} 的 DDLC.exe` : '请先选择有效的 MAS 实例'}
             aria-label={isLaunchingGame ? '启动中' : '启动游戏'}
           >
@@ -167,7 +233,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         ) : isGameRunning ? (
           <div
             onClick={onToggleGameRunning}
-            className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/70 border border-amber-800/80 text-amber-300 cursor-pointer hover:bg-amber-900/60 transition-colors"
+            className="wails-no-drag flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/70 border border-amber-800/80 text-amber-300 cursor-pointer hover:bg-amber-900/60 transition-colors"
             title="点击可模拟退出游戏。当 MAS 运行时，为防止 Ren'Py 运行时损坏，写操作被物理锁定。"
           >
             <Lock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
@@ -176,7 +242,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         ) : (
           <div
             onClick={onToggleGameRunning}
-            className="flex items-center gap-1.5 text-neutral-400 text-[11px] cursor-pointer hover:text-neutral-200"
+            className="wails-no-drag flex items-center gap-1.5 text-neutral-400 text-[11px] cursor-pointer hover:text-neutral-200"
             title="点击可模拟启动 MAS 游戏测试进程锁"
           >
             <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
@@ -187,7 +253,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         {/* Offline / Online Network Indicator */}
         <div
           onClick={onToggleOffline}
-          className="flex items-center gap-1.5 text-neutral-400 text-[11px] cursor-pointer hover:text-neutral-200"
+          className="wails-no-drag flex items-center gap-1.5 text-neutral-400 text-[11px] cursor-pointer hover:text-neutral-200"
           title="点击可模拟切换离线/在线状态"
         >
           {isOffline ? (
@@ -207,22 +273,35 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       {/* Right zone: Window Controls */}
       <div className="flex items-center">
         {!isAndroid && (
-          <div className="hidden md:flex items-center">
+          <div className="wails-no-drag flex items-center">
             <button
+              type="button"
+              onClick={handleMinimise}
               className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors"
               title="最小化"
+              aria-label="最小化"
             >
               <Minus className="w-3.5 h-3.5" />
             </button>
             <button
+              type="button"
+              onClick={handleToggleMaximise}
               className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors"
-              title="最大化"
+              title={isMaximised ? '还原' : '最大化'}
+              aria-label={isMaximised ? '还原' : '最大化'}
             >
-              <Square className="w-3 h-3" />
+              {isMaximised ? (
+                <Copy className="w-3.5 h-3.5 -scale-x-100" />
+              ) : (
+                <Square className="w-3 h-3" />
+              )}
             </button>
             <button
+              type="button"
+              onClick={handleClose}
               className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-white hover:bg-red-600 transition-colors"
               title="关闭"
+              aria-label="关闭"
             >
               <X className="w-3.5 h-3.5" />
             </button>

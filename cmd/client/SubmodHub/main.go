@@ -124,7 +124,18 @@ func main() {
 		Services: []application.Service{application.NewService(service)},
 		Assets:   application.AssetOptions{Handler: handler},
 	})
-	app.Window.NewWithOptions(application.WebviewWindowOptions{Title: "SubmodHub " + version.Version, Width: 1280, Height: 800, BackgroundColour: application.NewRGB(10, 12, 16), URL: "/"})
+	// The desktop client renders its own title bar in the web UI
+	// (clients/desktop/src/components/TitleBar.tsx). Keep the native window
+	// frameless so Windows does not draw a second, non-functional caption bar
+	// above it. Android already has no window frame and ignores this option.
+	app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:            "SubmodHub " + version.Version,
+		Width:            1280,
+		Height:           800,
+		BackgroundColour: application.NewRGB(10, 12, 16),
+		URL:              "/",
+		Frameless:        !isAndroidPlatform,
+	})
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}

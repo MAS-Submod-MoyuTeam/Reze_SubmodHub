@@ -8,6 +8,8 @@ export {
 
 export type {
     AdoptRequest,
+    AndroidStorageAccessRequestResult,
+    AndroidStorageAccessStatus,
     ArchiveInstallRequest,
     ArchiveInstallResult,
     ExecutePlanRequest,
@@ -30,5 +32,6 @@ export type {
     StageArchiveRequest,
     StageProgress,
     StagedArchiveInfo,
+    StorageAccessProvider,
     SubmodRegistration
 } from "./models.js";

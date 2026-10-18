@@ -49,6 +49,10 @@ export function GetAPIURL(): $CancellablePromise<string> {
     return $Call.ByID(644102822);
 }
 
+export function GetAndroidStorageAccess(): $CancellablePromise<$models.AndroidStorageAccessStatus> {
+    return $Call.ByID(3169108985);
+}
+
 export function GetMASStatus(): $CancellablePromise<$models.MASStatus> {
     return $Call.ByID(767909844);
 }
@@ -83,6 +87,10 @@ export function ListMASInstances(): $CancellablePromise<$models.MASInstancesStat
 
 export function ListOperations(): $CancellablePromise<$models.OperationDetail[] | null> {
     return $Call.ByID(3166334435);
+}
+
+export function MatchRegistrations(names: string[] | null): $CancellablePromise<string> {
+    return $Call.ByID(3843471556, names);
 }
 
 export function PreviewAdopt(request: $models.AdoptRequest): $CancellablePromise<$models.PlanResult> {
@@ -121,6 +129,10 @@ export function RemoveMASInstance(id: string): $CancellablePromise<$models.MASIn
     return $Call.ByID(3113281931, id);
 }
 
+export function RequestAndroidStorageAccess(): $CancellablePromise<$models.AndroidStorageAccessRequestResult> {
+    return $Call.ByID(3207918244);
+}
+
 export function RollbackOperation(operationID: string): $CancellablePromise<void> {
     return $Call.ByID(1120775822, operationID);
 }
@@ -147,6 +159,10 @@ export function SetCandidateRegistrationsResolver(fn: any): $CancellablePromise<
 
 export function SetMASRoot(root: string): $CancellablePromise<$models.MASStatus> {
     return $Call.ByID(958382738, root);
+}
+
+export function SetStorageAccessProvider(provider: $models.StorageAccessProvider): $CancellablePromise<void> {
+    return $Call.ByID(1505346527, provider);
 }
 
 export function StageArchive(request: $models.StageArchiveRequest): $CancellablePromise<$models.StagedArchiveInfo> {

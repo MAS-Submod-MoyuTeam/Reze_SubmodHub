@@ -22,6 +22,20 @@ export interface AdoptRequest {
     "files": string[] | null;
 }
 
+export interface AndroidStorageAccessRequestResult {
+    "opened": boolean;
+    "error"?: string;
+}
+
+export interface AndroidStorageAccessStatus {
+    /**
+     * "granted" | "denied" | "unsupported" | "error"
+     */
+    "state": string;
+    "root": string;
+    "game_path": string;
+}
+
 export interface ArchiveInstallRequest {
     "category": string;
     "operation_id": string;
@@ -270,6 +284,8 @@ export interface StagedArchiveInfo {
     "sprite_selection_hash"?: string;
     "selected_sprite_set_count"?: number;
 }
+
+export type StorageAccessProvider = any;
 
 /**
  * SubmodRegistration is a single Submod(...) registration extracted from a script.
