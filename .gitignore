@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# Local Android release signing keys and credentials
+/.android-signing/
+
 # Editor/IDE
 # .idea/
 # .vscode/
