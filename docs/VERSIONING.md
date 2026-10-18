@@ -62,14 +62,14 @@ go run ./cmd/version -set 0.9.1
 - 任务顺序：解析版本并校验元数据 → 构建 Windows 客户端 → 构建 Android 客户端 → 发布检查。
 - **无论 Release 是否已存在**，两个客户端产物都会上传为本次 workflow run 的 artifact（保留 30 天）。
 - 发布任务会检查 `vX.Y.Z` Release：
-  - 不存在 → 以当前提交创建 Release，并附加 `submodhub-windows-amd64-X.Y.Z.zip` 和 `submodhub-android-arm64-X.Y.Z.apk`；
+  - 不存在 → 以当前提交创建 Release，并附加 `submodhub-windows-amd64-X.Y.Z.exe` 和 `submodhub-android-arm64-X.Y.Z.apk`；
   - 已存在 → 不改动 Release，只保留 workflow artifact。
 - 同一分支的构建串行执行，避免两个运行同时创建同一个 Release。
 
 产物命名：
 
 ```text
-submodhub-windows-amd64-<version>.zip   # 内含 SubmodHub.exe 与 VERSION.txt
+submodhub-windows-amd64-<version>.exe   # 独立可执行文件，下载后直接运行
 submodhub-android-arm64-<version>.apk   # arm64 真机安装包
 ```
 

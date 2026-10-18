@@ -91,17 +91,14 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ needs.version.outputs.version }}"
-          $stage = "out/windows"
-          New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item "cmd/client/SubmodHub/bin/submodhub.exe" "$stage/SubmodHub.exe"
-          Copy-Item "VERSION" "$stage/VERSION.txt"
-          Compress-Archive -Path "$stage/*" -DestinationPath "out/submodhub-windows-amd64-$version.zip"
+          New-Item -ItemType Directory -Force -Path "out" | Out-Null
+          Copy-Item "cmd/client/SubmodHub/bin/submodhub.exe" "out/submodhub-windows-amd64-$version.exe"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: submodhub-windows-amd64
-          path: out/submodhub-windows-amd64-*.zip
+          path: out/submodhub-windows-amd64-*.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -257,7 +254,7 @@ jobs:
 
           ### 下载
 
-          - **Windows (amd64)**：\`submodhub-windows-amd64-${VERSION}.zip\`，解压后运行 \`SubmodHub.exe\`。
+          - **Windows (amd64)**：\`submodhub-windows-amd64-${VERSION}.exe\`，下载后直接运行，无需解压。
           - **Android (arm64)**：\`submodhub-android-arm64-${VERSION}.apk\`，适用于 arm64 真机侧载安装。
 
           ### 校验
