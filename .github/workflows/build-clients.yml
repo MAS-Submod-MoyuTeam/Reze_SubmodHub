@@ -147,6 +147,8 @@ jobs:
         run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Install Wails CLI
+        env:
+          CGO_ENABLED: "0"
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
 
       - name: Restore Android signing keystore
