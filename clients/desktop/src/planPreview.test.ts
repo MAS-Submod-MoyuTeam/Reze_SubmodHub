@@ -16,6 +16,7 @@ test('backend preview replaces mock actions and carries restoration counts and b
       current_hash: 'after', target_hash: 'before', current_exists: true, target_exists: true,
       backup_required: true, reason: 'restore original' }],
     blockers: ['external_change'], risks: [{ type: 'overlap', path: 'game/original.rpy', description: 'overlap' }],
+    cleanup_paths: ['game/original.rpyc'],
     summary: { restores_original: 1, restores_layer: 0, metadata_only: 0, deletes_added: 0, writes_new: 0 },
   };
   const plan = mapPlanPreview(preview, metadata);
@@ -28,6 +29,7 @@ test('backend preview replaces mock actions and carries restoration counts and b
   assert.deepEqual(plan.summary, preview.summary);
   assert.deepEqual(plan.blockers, preview.blockers);
   assert.deepEqual(plan.risks, preview.risks);
+  assert.deepEqual(plan.cleanup_paths, ['game/original.rpyc']);
   assert.equal(plan.backend_operation_id, 'op');
 });
 

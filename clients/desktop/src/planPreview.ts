@@ -23,6 +23,7 @@ export function mapPlanPreview(preview: Awaited<ReturnType<typeof PreviewArchive
     backups_required: (preview.actions || []).filter((action) => action.backup_required).length,
     blockers: preview.blockers || [],
     risks: preview.risks || [],
+    cleanup_paths: (preview as { cleanup_paths?: string[] }).cleanup_paths || [],
     summary: preview.summary,
     sprite_set_ids: (preview as { sprite_set_ids?: string[] }).sprite_set_ids || metadata.sprite_set_ids,
     sprite_selection_hash: (preview as { sprite_selection_hash?: string }).sprite_selection_hash || metadata.sprite_selection_hash,

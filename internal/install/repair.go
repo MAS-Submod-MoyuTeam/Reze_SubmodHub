@@ -154,5 +154,6 @@ func (i *Installer) PreviewRepair(targetID, operationID string) (*Plan, error) {
 		}
 		plan.Actions = append(plan.Actions, PlanAction{Path: filepath.ToSlash(record.DisplayPath), Key: key, Action: action, CurrentSource: targetLayer.InstallationID, TargetSource: targetLayer.InstallationID, CurrentHash: currentHash, TargetHash: targetLayer.Hash, CurrentExists: currentHash != "", TargetExists: true, Mode: targetLayer.Mode})
 	}
+	planCompiledCacheCleanup(plan)
 	return plan, nil
 }

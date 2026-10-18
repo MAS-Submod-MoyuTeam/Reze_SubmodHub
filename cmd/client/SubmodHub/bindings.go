@@ -109,6 +109,7 @@ type PlanResult struct {
 	SpriteSelectionHash    string              `json:"sprite_selection_hash,omitempty"`
 	SelectedSpriteSetCount int                 `json:"selected_sprite_set_count,omitempty"`
 	Actions                []PlanPreviewAction `json:"actions"`
+	CleanupPaths           []string            `json:"cleanup_paths,omitempty"`
 	Blockers               []string            `json:"blockers"`
 	Risks                  []PlanPreviewRisk   `json:"risks"`
 	Summary                PlanPreviewSummary  `json:"summary"`
@@ -880,6 +881,7 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 		SpriteSelectionHash:    effectiveSpriteSelectionHash,
 		SelectedSpriteSetCount: selectedSpriteSetCount,
 		Actions:                actions,
+		CleanupPaths:           plan.CleanupPaths,
 		Blockers:               plan.Blockers,
 		Risks:                  risks,
 		Summary: PlanPreviewSummary{
@@ -1007,6 +1009,7 @@ func (s *DesktopService) PreviewUninstallWithOpID(targetID, uninstallOpID string
 		Kind:        "uninstall",
 		TargetID:    targetID,
 		Actions:     actions,
+		CleanupPaths: plan.CleanupPaths,
 		Blockers:    plan.Blockers,
 		Risks:       risks,
 		Summary: PlanPreviewSummary{
@@ -1098,6 +1101,7 @@ func (s *DesktopService) PreviewPriority(priorities map[string]int) (PlanResult,
 		ModTitle:    "模组优先级调整",
 		Version:     "",
 		Actions:     actions,
+		CleanupPaths: plan.CleanupPaths,
 		Blockers:    plan.Blockers,
 		Risks:       []PlanPreviewRisk{},
 		Summary: PlanPreviewSummary{
@@ -1156,7 +1160,7 @@ func (s *DesktopService) PreviewRepair(targetID string) (PlanResult, error) {
 	s.activePlanRequest = plan.TargetInstallationID
 	s.mu.Unlock()
 
-	return PlanResult{PlanID: plan.PlanID, OperationID: plan.OperationID, Root: plan.Root, Generation: plan.Generation, Kind: "repair", TargetID: plan.TargetInstallationID, ModTitle: plan.ModTitle, Version: plan.Version, Actions: actions, Blockers: plan.Blockers, Risks: risks, SpriteSetIDs: plan.SpriteSetIDs, SpriteSelectionHash: plan.SpriteSelectionHash, SelectedSpriteSetCount: plan.SelectedSpriteSetCount, Summary: PlanPreviewSummary{WritesNew: plan.Summary.WritesNew, MetadataOnly: plan.Summary.MetadataOnly}}, nil
+	return PlanResult{PlanID: plan.PlanID, OperationID: plan.OperationID, Root: plan.Root, Generation: plan.Generation, Kind: "repair", TargetID: plan.TargetInstallationID, ModTitle: plan.ModTitle, Version: plan.Version, Actions: actions, CleanupPaths: plan.CleanupPaths, Blockers: plan.Blockers, Risks: risks, SpriteSetIDs: plan.SpriteSetIDs, SpriteSelectionHash: plan.SpriteSelectionHash, SelectedSpriteSetCount: plan.SelectedSpriteSetCount, Summary: PlanPreviewSummary{WritesNew: plan.Summary.WritesNew, MetadataOnly: plan.Summary.MetadataOnly}}, nil
 }
 
 func (s *DesktopService) PreviewUninstall(targetID string) (PlanResult, error) {

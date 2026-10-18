@@ -451,6 +451,33 @@ func (tx *TransactionContext) Execute() error {
 			}
 		}
 
+		// 3b. Purge generated cache files for scripts written, restored or deleted
+		// above. This is part of the transaction's safety contract: committing
+		// while an orphan .rpyc remains would let Ren'Py keep loading uninstalled
+		// or stale code, and after the manifest update there would be no
+		// installation record left to retry from. Any real removal failure rolls
+		// the whole operation back so the source files and record stay intact.
+		for _, rel := range tx.plan.CleanupPaths {
+			cleanupPath, joinErr := SafeJoinAndValidateBounds(inst.root, rel)
+			if joinErr != nil {
+				return &Error{
+					Code:        "cache_cleanup_failed",
+					OperationID: tx.plan.OperationID,
+					Path:        rel,
+					Err:         joinErr,
+				}
+			}
+			if rmErr := removeGeneratedCacheFile(cleanupPath); rmErr != nil {
+				return &Error{
+					Code:        "cache_cleanup_failed",
+					OperationID: tx.plan.OperationID,
+					Path:        rel,
+					Err:         fmt.Errorf("close the game and clear read-only/permission, then retry: %w", rmErr),
+				}
+			}
+			cleanEmptyDirs(filepath.Dir(cleanupPath), inst.root)
+		}
+
 		// 4. Update manifest
 		journal.Phase = TxPhaseCommitting
 		journal.LastPath = "manifest.json"

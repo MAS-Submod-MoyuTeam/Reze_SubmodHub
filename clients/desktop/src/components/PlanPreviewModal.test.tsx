@@ -223,3 +223,27 @@ test('PlanPreviewModal: adopt plan displays adopt header badge and metadata acti
   assert.ok(html.includes('仅移归属 (METADATA)'));
   assert.ok(html.includes('game/Submods/AdoptA/main.rpy'));
 });
+
+test('PlanPreviewModal: uninstall shows generated Ren\'Py cache cleanup list', () => {
+  const plan = makeMockPlan({
+    kind: 'uninstall',
+    cleanup_paths: [
+      'game/Submods/Demo/main.rpyc',
+      'game/python-packages/__pycache__/demo_lib.cpython-311.pyc',
+    ],
+  });
+
+  const html = renderToStaticMarkup(
+    <PlanPreviewModal
+      plan={plan}
+      activeInstallation={makeMockInstallation()}
+      isGameRunning={false}
+      onClose={() => {}}
+      onApplyPlan={() => {}}
+    />
+  );
+
+  assert.ok(html.includes('编译残留清理'));
+  assert.ok(html.includes('game/Submods/Demo/main.rpyc'));
+  assert.ok(html.includes('demo_lib.cpython-311.pyc'));
+});

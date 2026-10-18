@@ -217,6 +217,7 @@ export interface PlanResult {
     "sprite_selection_hash"?: string;
     "selected_sprite_set_count"?: number;
     "actions": PlanPreviewAction[] | null;
+    "cleanup_paths"?: string[] | null;
     "blockers": string[] | null;
     "risks": PlanPreviewRisk[] | null;
     "summary": PlanPreviewSummary;

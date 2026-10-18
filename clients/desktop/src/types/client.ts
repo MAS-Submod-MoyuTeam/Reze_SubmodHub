@@ -151,6 +151,7 @@ export interface Plan {
   summary?: { restores_original: number; restores_layer: number; metadata_only: number; deletes_added: number; writes_new: number };
   blockers?: string[];
   risks?: Array<{ type: string; path?: string; description: string }>;
+  cleanup_paths?: string[];
   sprite_set_ids?: string[];
   sprite_selection_hash?: string;
   selected_sprite_set_count?: number;

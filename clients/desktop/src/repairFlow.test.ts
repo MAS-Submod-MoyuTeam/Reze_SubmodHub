@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getPlanActionText, resolveModInstallationId } from './planExecution';
+import { getPlanActionText, resolveModInstallationId, describeExecutionError } from './planExecution';
 import type { InstalledItem, PlanKind } from './types/client';
 
 test('resolveModInstallationId: resolves mod installation target rather than MAS instance ID', () => {
@@ -58,4 +58,18 @@ test('getPlanActionText: distinguishes repair from uninstall, install, and updat
 
   assert.equal(makeToastError('repair', 'corrupted'), '真实修复失败：corrupted');
   assert.equal(makeToastError('uninstall', 'corrupted'), '真实卸载失败：corrupted');
+});
+
+test('describeExecutionError: cache cleanup failure explains rollback and retry path', () => {
+  const message = describeExecutionError(
+    new Error('cache_cleanup_failed (op=un_x, path=game/Submods/X/main.rpyc): Access is denied.')
+  );
+  assert.match(message, /清理 Ren'Py 编译缓存失败/);
+  assert.match(message, /未提交/);
+  assert.match(message, /回滚/);
+  assert.match(message, /完全关闭游戏/);
+  assert.match(message, /只读属性/);
+  assert.match(message, /cache_cleanup_failed/);
+
+  assert.equal(describeExecutionError(new Error('boom')), 'boom');
 });

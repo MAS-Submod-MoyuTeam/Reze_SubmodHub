@@ -393,6 +393,7 @@ func (s *DesktopService) PreviewAdopt(request AdoptRequest) (PlanResult, error) 
 		Version:     effectiveVersion,
 		Priority:    request.Priority,
 		Actions:     actions,
+		CleanupPaths: plan.CleanupPaths,
 		Blockers:    plan.Blockers,
 		Risks:       []PlanPreviewRisk{},
 		Summary: PlanPreviewSummary{

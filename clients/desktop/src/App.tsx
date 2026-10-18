@@ -27,7 +27,7 @@ import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } fr
 import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewAdopt, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive, GetAndroidStorageAccess, RequestAndroidStorageAccess, isAndroid } from './wails';
 import { INITIAL_OPERATIONS } from './data/mockData';
 import { createInstalledLoadCoordinator, LoadingStatus } from './installedLoading';
-import { getPlanActionText, resolveModInstallationId } from './planExecution';
+import { getPlanActionText, resolveModInstallationId, describeExecutionError } from './planExecution';
 import {
   Installation,
   ModSummary,
@@ -846,8 +846,10 @@ export default function App() {
             showToast(`${plan.mod_title} 后端事务已提交，但通信响应异常：${errObj.message}`);
           } else if (finalSession?.operation.state === 'unknown') {
             showToast(`真实${actionText}状态未知（后端状态查询失败）：${errObj.message}`);
+          } else if (finalSession?.operation.state === 'needs_manual_recovery') {
+            showToast(`真实${actionText}需要手动恢复：${describeExecutionError(errObj)}`);
           } else {
-            showToast(`真实${actionText}失败：${errObj.message}`);
+            showToast(`真实${actionText}失败：${describeExecutionError(errObj)}`);
           }
         }
       } finally {
@@ -933,8 +935,10 @@ export default function App() {
             showToast(`${plan.mod_title} 后端事务已提交，但通信响应异常：${errObj.message}`);
           } else if (finalSession?.operation.state === 'unknown') {
             showToast(`真实${actionText}状态未知（后端状态查询失败）：${errObj.message}`);
+          } else if (finalSession?.operation.state === 'needs_manual_recovery') {
+            showToast(`真实${actionText}需要手动恢复：${describeExecutionError(errObj)}`);
           } else {
-            showToast(`真实${actionText}失败：${errObj.message}`);
+            showToast(`真实${actionText}失败：${describeExecutionError(errObj)}`);
           }
         }
         return;

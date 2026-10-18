@@ -61,6 +61,7 @@ type Plan struct {
 	SpriteSelectionHash    string       `json:"sprite_selection_hash,omitempty"`
 	SelectedSpriteSetCount int          `json:"selected_sprite_set_count,omitempty"`
 	Actions                []PlanAction `json:"actions"`
+	CleanupPaths           []string     `json:"cleanup_paths,omitempty"`
 	Blockers               []string     `json:"blockers"`
 	Risks                  []PlanRisk   `json:"risks"`
 	Summary                PlanSummary  `json:"summary"`
@@ -427,6 +428,7 @@ func PlanInstall(m *Manifest, root string, blobs *BlobStore, op InstallOperation
 	}
 
 	plan.NewManifest = projManifest
+	planCompiledCacheCleanup(plan)
 	return plan, nil
 }
 
@@ -594,6 +596,7 @@ func PlanUninstall(m *Manifest, root string, blobs *BlobStore, targetID, uninsta
 
 	delete(projManifest.Installations, instKey)
 	plan.NewManifest = projManifest
+	planCompiledCacheCleanup(plan)
 	return plan, nil
 }
 

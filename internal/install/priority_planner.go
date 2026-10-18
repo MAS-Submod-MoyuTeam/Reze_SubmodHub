@@ -169,5 +169,6 @@ func PlanPriority(m *Manifest, root string, blobs *BlobStore, req PriorityChange
 	}
 
 	plan.NewManifest = projManifest
+	planCompiledCacheCleanup(plan)
 	return plan, nil
 }

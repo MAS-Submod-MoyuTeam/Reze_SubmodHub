@@ -801,6 +801,20 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                   </div>
                 )}
 
+                {/* Generated Ren'Py cache cleanup for rewritten scripts */}
+                {previewPlan?.cleanup_paths?.length > 0 && (
+                  <div className="p-2.5 rounded-lg bg-sky-950/40 border border-sky-800/80 text-[11px] text-neutral-300">
+                    <div className="font-semibold text-sky-300">
+                      Ren&apos;Py 编译残留清理: {previewPlan.cleanup_paths.length} 个文件
+                    </div>
+                    <div className="mt-1 font-mono max-h-24 overflow-y-auto space-y-0.5">
+                      {previewPlan.cleanup_paths.map((path: string) => (
+                        <div key={path} className="break-all">• {path}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Actions list */}
                 {previewPlan && formattedActions.length > 0 && (
                   <div className="space-y-2.5">

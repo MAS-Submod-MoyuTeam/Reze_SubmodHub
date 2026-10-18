@@ -424,6 +424,29 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
             </div>
           )}
 
+          {/* Generated Ren'Py / Python Cache Cleanup */}
+          {plan.cleanup_paths && plan.cleanup_paths.length > 0 && (
+            <div className="p-3.5 rounded-lg bg-sky-950/40 border border-sky-800/80 flex items-start gap-3 text-xs">
+              <FileCheck className="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-1.5">
+                <div className="font-semibold text-sky-300">
+                  Ren&apos;Py 编译残留清理 ({plan.cleanup_paths.length} 个文件)
+                </div>
+                <p className="text-neutral-300 leading-relaxed">
+                  这些文件由 Ren&apos;Py / Python 从模组源码自动生成。源码被删除或覆盖后若继续保留，
+                  引擎可能仍加载旧脚本（没有对应 .rpy 的 .rpyc 也会被加载），因此随本次计划一并删除；
+                  游戏下次启动时会按需重新编译。若任一缓存无法删除（例如被占用或只读），
+                  本次操作会整体回滚，不会留下半完成状态，修复后即可重试。
+                </p>
+                <ul className="font-mono text-[11px] text-neutral-300 space-y-0.5 max-h-32 overflow-y-auto">
+                  {plan.cleanup_paths.map((path) => (
+                    <li key={path} className="break-all">• {path}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
           {/* Detailed File Changes List */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-neutral-300">
