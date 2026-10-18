@@ -10,6 +10,18 @@ tasks:
     cmds:
       - go mod tidy
 
+  install:shared:deps:
+    summary: Install shared UI dependencies
+    run: once
+    dir: ../../..
+    sources:
+      - package.json
+      - package-lock.json
+    generates:
+      - node_modules
+    cmds:
+      - npm ci
+
   install:desktop:deps:
     summary: Install shared desktop frontend dependencies
     run: once
@@ -102,6 +114,7 @@ tasks:
     deps:
       - task: install:frontend:deps
       - task: install:desktop:deps
+      - task: install:shared:deps
       - task: generate:bindings
         vars:
           BUILD_FLAGS:
