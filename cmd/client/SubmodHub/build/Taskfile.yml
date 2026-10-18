@@ -10,6 +10,21 @@ tasks:
     cmds:
       - go mod tidy
 
+  install:desktop:deps:
+    summary: Install shared desktop frontend dependencies
+    run: once
+    dir: ../../../clients/desktop
+    sources:
+      - package.json
+      - package-lock.json
+    generates:
+      - node_modules
+    preconditions:
+      - sh: npm version
+        msg: "Looks like npm isn't installed. Npm is part of the Node installer: https://nodejs.org/en/download/"
+    cmds:
+      - npm install
+
   install:frontend:deps:
     summary: Install frontend dependencies
     run: once
@@ -86,6 +101,7 @@ tasks:
       - dist/**/*
     deps:
       - task: install:frontend:deps
+      - task: install:desktop:deps
       - task: generate:bindings
         vars:
           BUILD_FLAGS:
