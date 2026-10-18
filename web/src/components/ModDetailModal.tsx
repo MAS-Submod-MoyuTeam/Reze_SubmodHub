@@ -1,4 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
+
+// Polyfill import.meta.env in non-Vite environments (e.g. Node.js unit tests)
+if (!(import.meta as any).env) {
+  (import.meta as any).env = {};
+}
 import { useApp } from '../context/AppContext';
 import { ModVersion, DownloadDescriptor } from '../types/submodhub';
 import { fetchModImages, fetchVerifiedArchive } from '../../../ui/catalog-api';
@@ -21,6 +26,7 @@ import {
   Copy,
   Check,
   Terminal,
+  EyeOff,
 } from 'lucide-react';
 
 interface ModDetailModalProps {
@@ -36,7 +42,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
   onClose,
   onTriggerClientPlan,
 }) => {
-  const { mods, versions, scanReports, getDownloadDescriptor, showToast, currentUser, unpublishVersion, markVersionDeprecated, clearVersionDeprecation, deleteVersion, setDetailModalModId } = useApp();
+  const { mods, versions, scanReports, getDownloadDescriptor, showToast, currentUser, unpublishVersion, markVersionDeprecated, clearVersionDeprecation, deleteVersion, setDetailModalModId, unpublishMod } = useApp();
 
   // If modId provided, or derived from downloadVersionId
   const effectiveModId =
@@ -63,7 +69,54 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
 
   const [downloadDescriptor, setDownloadDescriptor] = useState<DownloadDescriptor | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [unpublishingModId, setUnpublishingModId] = useState<string | null>(null);
   const [detailImages, setDetailImages] = useState<string[]>([]);
+
+  const isAdmin = Boolean(currentUser?.roles.includes('admin'));
+
+  const isMountedRef = useRef(false);
+  const currentModIdRef = useRef(effectiveModId);
+  const inFlightModIdsRef = useRef<Set<string>>(new Set());
+
+  // Keep this in sync during render rather than in a passive effect: a stale
+  // request can resolve after the modal has already been switched to another
+  // mod, but before a passive effect would have updated the ref.
+  currentModIdRef.current = effectiveModId;
+
+  // Ref callbacks fire synchronously on commit/unmount, so a stale request
+  // cannot observe the modal as mounted after it was closed.
+  const handleModalRootRef = useCallback((node: HTMLDivElement | null) => {
+    isMountedRef.current = node !== null;
+  }, []);
+
+  // Only the mod currently displayed owns the "unpublishing" state. Requests
+  // left in flight for another mod must not leak a disabled button into it.
+  const isUnpublishingMod = Boolean(effectiveModId) && unpublishingModId === effectiveModId;
+
+  const handleUnpublishMod = async () => {
+    if (!currentMod || inFlightModIdsRef.current.has(currentMod.id)) return;
+    const targetModId = currentMod.id;
+    const confirmed = window.confirm(
+      `确认下架项目「${currentMod.title}」？该项目将从公开目录隐藏，版本、归档和详情图会保留。`
+    );
+    if (!confirmed) return;
+
+    inFlightModIdsRef.current.add(targetModId);
+    setUnpublishingModId(targetModId);
+    try {
+      const ok = await unpublishMod(targetModId);
+      // The modal may have been closed and another mod opened while the
+      // request was in flight; never close the newly selected mod.
+      if (ok && isMountedRef.current && currentModIdRef.current === targetModId) {
+        onClose();
+      }
+    } finally {
+      inFlightModIdsRef.current.delete(targetModId);
+      if (isMountedRef.current) {
+        setUnpublishingModId((previous) => (previous === targetModId ? null : previous));
+      }
+    }
+  };
 
   useEffect(() => {
     if (!currentMod || currentMod.category === 'spritepack') { setDetailImages([]); return; }
@@ -136,7 +189,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs">
+    <div ref={handleModalRootRef} className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs">
       <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
         {/* Header */}
         <div className="px-6 py-4 border-b border-neutral-200 flex items-center justify-between shrink-0 bg-neutral-50/50">
@@ -436,14 +489,27 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-3 border-t border-neutral-200 bg-neutral-50/50 flex items-center justify-between text-xs text-neutral-500">
+        <div className="px-6 py-3 border-t border-neutral-200 bg-neutral-50/50 flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-500">
           <span>推荐安装优先级: {currentMod.recommended_priority}</span>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-200/80 rounded transition-colors"
-          >
-            关闭
-          </button>
+          <div className="flex items-center gap-2">
+            {isAdmin && currentMod.is_published && (
+              <button
+                type="button"
+                onClick={handleUnpublishMod}
+                disabled={isUnpublishingMod}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors disabled:opacity-50"
+              >
+                <EyeOff className="w-3.5 h-3.5" />
+                {isUnpublishingMod ? '正在下架项目...' : '下架项目'}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="px-4 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-200/80 rounded transition-colors"
+            >
+              关闭
+            </button>
+          </div>
         </div>
       </div>
     </div>

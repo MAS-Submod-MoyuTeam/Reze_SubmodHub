@@ -48,7 +48,7 @@ interface Toast {
   code?: string;
 }
 
-interface AppContextType {
+export interface AppContextType {
   // Navigation & View
   activeTab: NavTab;
   setActiveTab: (tab: NavTab) => void;
@@ -114,7 +114,7 @@ interface AppContextType {
   markVersionDeprecated: (versionId: string, reason: string) => Promise<void>;
   clearVersionDeprecation: (versionId: string) => Promise<void>;
   deleteVersion: (versionId: string) => Promise<void>;
-  unpublishMod: (modId: string) => Promise<void>;
+  unpublishMod: (modId: string) => Promise<boolean>;
   deleteModDraft: (modId: string) => Promise<void>;
   editVersion: (versionId: string, version: string, releaseNotes: string, dependencies?: ModVersion['dependencies']) => Promise<boolean>;
 
@@ -140,7 +140,7 @@ interface AppContextType {
   removeToast: (id: string) => void;
 }
 
-const AppContext = createContext<AppContextType | undefined>(undefined);
+export const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Navigation
@@ -1020,10 +1020,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     catch (error) { showToast('error', `删除版本失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
   }, [showToast]);
 
-  const unpublishMod = useCallback(async (modId: string): Promise<void> => {
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-    try { await unpublishAuthorModRequest(base, modId); setMods((prev) => prev.map((mod) => mod.id === modId ? { ...mod, is_published: false } : mod)); showToast('success', '模组已从公开目录下架；版本、归档和详情图均已保留。'); }
-    catch (error) { showToast('error', `模组下架失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
+  const unpublishMod = useCallback(async (modId: string): Promise<boolean> => {
+    const base = `${((import.meta as any).env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    try {
+      await unpublishAuthorModRequest(base, modId);
+      setMods((prev) => prev.map((mod) => mod.id === modId ? { ...mod, is_published: false } : mod));
+      showToast('success', '模组已从公开目录下架；版本、归档和详情图均已保留。');
+      return true;
+    } catch (error) {
+      showToast('error', `模组下架失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+      return false;
+    }
   }, [showToast]);
 
   const deleteModDraft = useCallback(async (modId: string): Promise<void> => {

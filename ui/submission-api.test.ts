@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, createAuthorMod, reorderModImages, uploadModImages, updateAuthorModSource, syncAuthorModGitHub } from './submission-api';
+import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, createAuthorMod, reorderModImages, uploadModImages, updateAuthorModSource, syncAuthorModGitHub, unpublishAuthorMod } from './submission-api';
 
 test('loads the authenticated author workspace', async () => {
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -153,3 +153,16 @@ test('retries transient gateway errors without retrying JSON API errors', async 
   assert.equal(summary.skipped, 1);
   assert.equal(attempts, 3);
 });
+
+test('unpublishes author mod through authenticated endpoint', async () => {
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), '/api/v1/author/mods/mod_test/unpublish');
+    assert.equal(init?.method, 'POST');
+    assert.equal(init?.credentials, 'same-origin');
+    return new Response(JSON.stringify({ id: 'mod_test', unpublished: true }), { status: 200 });
+  }) as typeof fetch;
+  const result = await unpublishAuthorMod('/api/v1', 'mod_test', fetcher);
+  assert.equal(result.id, 'mod_test');
+  assert.equal(result.unpublished, true);
+});
+

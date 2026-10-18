@@ -13,7 +13,7 @@ export function SpritepackSets({ modID, showToast }: SpritepackSetsProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
-  const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+  const base = `${(import.meta.env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
 
   useEffect(() => {
     let active = true;
