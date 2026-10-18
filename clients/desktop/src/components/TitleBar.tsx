@@ -49,10 +49,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   };
 
   return (
-    <header className="h-10 bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-3 select-none shrink-0 z-40 text-xs">
+    <header className="min-h-[calc(2.5rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-3 select-none shrink-0 z-40 text-xs">
       {/* Left zone: Brand and Version */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div className="flex items-center gap-2 shrink-0">
           <div className="w-5 h-5 rounded bg-emerald-600 flex items-center justify-center text-white font-bold text-xs shadow-xs">
             S
           </div>
@@ -64,23 +64,23 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           </span>
         </div>
 
-        <div className="h-3.5 w-px bg-neutral-800 mx-1" />
+        <div className="h-3.5 w-px bg-neutral-800 mx-0.5 sm:mx-1 shrink-0" />
 
         {/* MAS Instance Selector Dropdown */}
-        <div className="relative">
+        <div className="relative min-w-0">
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center gap-2 px-2.5 py-1 rounded bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-200 transition-colors text-xs"
+            className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 rounded bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-200 transition-colors text-xs max-w-full"
             title={activeInst.path_hint}
           >
-            <HardDrive className="w-3.5 h-3.5 text-neutral-400" />
-            <span className="font-medium max-w-[100px] lg:max-w-[180px] truncate">
+            <HardDrive className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+            <span className="font-medium max-w-[90px] sm:max-w-[140px] lg:max-w-[180px] truncate">
               {activeInst.label}
             </span>
-            {activeInst.is_valid && <span className="text-[10px] px-1 py-0.2 bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 rounded font-mono">
+            {activeInst.is_valid && <span className="text-[10px] px-1 py-0.2 bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 rounded font-mono shrink-0">
               {activeInst.mas_version}
             </span>}
-            <ChevronDown className="w-3 h-3 text-neutral-400" />
+            <ChevronDown className="w-3 h-3 text-neutral-400 shrink-0" />
           </button>
 
           {dropdownOpen && (
@@ -89,7 +89,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 className="fixed inset-0 z-40"
                 onClick={() => setDropdownOpen(false)}
               />
-              <div className="absolute left-0 mt-1 w-80 bg-neutral-900 border border-neutral-700 rounded-md shadow-xl py-1 z-50">
+              <div className="absolute left-0 mt-1 w-80 max-w-[calc(100vw-1.5rem)] bg-neutral-900 border border-neutral-700 rounded-md shadow-xl py-1 z-50">
                 <div className="px-3 py-1.5 text-[11px] font-medium text-neutral-400 border-b border-neutral-800">
                   选择或管理 MAS 游戏实例
                 </div>

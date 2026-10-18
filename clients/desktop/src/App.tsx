@@ -1100,7 +1100,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-neutral-950 text-neutral-100 overflow-hidden font-sans">
+    <div className="flex flex-col h-screen h-[100dvh] w-screen bg-neutral-950 text-neutral-100 overflow-hidden font-sans">
       {/* 1. PC / Android Native Title Bar */}
       <TitleBar
         installations={installations}
@@ -1141,7 +1141,7 @@ export default function App() {
       )}
 
       {/* 2. Main Desktop Workspace (Sidebar + Dynamic Viewport) */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Sidebar Navigation */}
         <Sidebar
           activeTab={activeTab}
@@ -1161,7 +1161,7 @@ export default function App() {
         />
 
         {/* Center Main Viewport */}
-        <main className="flex-1 flex flex-col overflow-hidden relative pb-16 md:pb-0">
+        <main className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden relative">
           <StorageAccessBanner
             isAndroid={isAndroidDevice}
             storageState={storageState}
@@ -1274,9 +1274,9 @@ export default function App() {
 
           {/* Toast Notification */}
           {toastMessage && (
-            <div className="absolute bottom-4 right-4 z-50 px-4 py-2.5 rounded-lg bg-neutral-900 border border-neutral-700 shadow-xl text-xs text-neutral-200 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-150">
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              <span>{toastMessage}</span>
+            <div className="absolute bottom-4 right-4 max-w-[calc(100vw-2rem)] z-50 px-4 py-2.5 rounded-lg bg-neutral-900 border border-neutral-700 shadow-xl text-xs text-neutral-200 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-150 break-words pointer-events-auto">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+              <span className="min-w-0">{toastMessage}</span>
             </div>
           )}
         </main>

@@ -242,13 +242,13 @@ export const ModDetailModal: React.FC<Props> = ({
     (installationSnapshot?.versionId && manifestVersionId && installationSnapshot.versionId !== manifestVersionId)
   );
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section role="dialog" aria-modal="true" aria-label={`${mod.title} 详情`} className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-2xl">
-      <header className="flex shrink-0 items-start justify-between gap-4 border-b border-neutral-800 px-5 py-4">
-        <div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-neutral-400"><span className="font-semibold text-emerald-400">{mod.category === 'spritepack' ? 'Spritepack 服饰配件' : 'Submod 功能模组'}</span><span>·</span><span>作者: {mod.author.display_name}</span>{mod.mas_version_range && <><span>·</span><span>兼容 MAS {mod.mas_version_range}</span></>}</div><h2 className="text-base font-bold">{mod.title}</h2></div>
-        <button onClick={onClose} title="关闭详情" aria-label="关闭详情" className="shrink-0 rounded p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-white"><X className="h-5 w-5" /></button>
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-2 sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section role="dialog" aria-modal="true" aria-label={`${mod.title} 详情`} className="flex max-h-[92dvh] sm:max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-2xl">
+      <header className="flex shrink-0 items-start justify-between gap-3 border-b border-neutral-800 px-4 sm:px-5 py-3 sm:py-4">
+        <div className="min-w-0 flex-1"><div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-neutral-400"><span className="font-semibold text-emerald-400">{mod.category === 'spritepack' ? 'Spritepack 服饰配件' : 'Submod 功能模组'}</span><span>·</span><span className="truncate max-w-[160px]">作者: {mod.author.display_name}</span>{mod.mas_version_range && <><span>·</span><span>兼容 MAS {mod.mas_version_range}</span></>}</div><h2 className="text-sm sm:text-base font-bold break-words">{mod.title}</h2></div>
+        <button onClick={onClose} title="关闭详情" aria-label="关闭详情" className="shrink-0 rounded-lg p-2 text-neutral-400 hover:bg-neutral-800 hover:text-white min-w-[40px] min-h-[40px] flex items-center justify-center"><X className="h-5 w-5" /></button>
       </header>
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5 text-xs leading-relaxed">
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-3.5 sm:p-5 text-xs leading-relaxed">
         <section className="space-y-2"><h3 className="font-semibold text-neutral-100">详细简介</h3><div className="rounded border border-neutral-800 bg-neutral-950 p-3 text-neutral-300"><Markdown value={mod.description || mod.summary || '暂无简介'} /></div></section>
         {images.length > 0 && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{images.map((url, index) => <img key={url} src={url} alt={`${mod.title} 详情图 ${index + 1}`} loading="lazy" className="max-h-80 w-full rounded border border-neutral-800 bg-neutral-950 object-contain" />)}</div>}
         {loading && <p className="text-neutral-400">正在读取详情...</p>}
@@ -328,7 +328,7 @@ export const ModDetailModal: React.FC<Props> = ({
       </div>
       {progress && <div role="status" aria-label="下载进度" className="shrink-0 space-y-1.5 border-t border-neutral-800 bg-neutral-900 px-5 py-3 text-xs"><div className="flex justify-between gap-3 text-neutral-300"><span>{progress.stage === 'connecting' ? '正在连接下载源' : progress.stage === 'verifying' ? '正在校验' : '正在下载'}</span><span className="font-mono tabular-nums">{progress.total > 0 ? `${progressPercent}% · ${formatBytes(progress.received)} / ${formatBytes(progress.total)}` : formatBytes(progress.received)}</span></div><div className="h-2 overflow-hidden rounded bg-neutral-700" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.total > 0 ? progressPercent : undefined}><div className={`h-full bg-emerald-500 transition-[width] duration-150 ${progress.total > 0 ? '' : 'w-full animate-pulse'}`} style={progress.total > 0 ? { width: `${progressPercent}%` } : undefined} /></div></div>}
       {mod.category === 'spritepack' ? (
-        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-800 p-4 text-xs">
+        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-800 p-3 sm:p-4 text-xs">
           <span className="text-neutral-400">
             {isInstalled
               ? `${hasUpdate ? '可更新' : '已安装'} ${installedVersion || ''}`
@@ -496,7 +496,7 @@ export const ModDetailModal: React.FC<Props> = ({
         </footer>
       ) : (
         selected && (
-          <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-800 p-4 text-xs">
+          <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-800 p-3 sm:p-4 text-xs">
             <span className="text-neutral-400">{isInstalled ? `${hasUpdate ? '可更新' : '已安装'} ${installedVersion || ''}` : '选择版本后下载或安装'}</span>
             <div className="flex flex-wrap gap-2">
               {isInstalled && onStartUninstallPlan && (

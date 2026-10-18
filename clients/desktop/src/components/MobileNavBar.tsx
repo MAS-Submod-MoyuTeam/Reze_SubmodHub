@@ -46,7 +46,7 @@ export const MobileNavBar: React.FC<MobileNavBarProps> = ({
   ];
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-zinc-950/95 backdrop-blur border-t border-zinc-800 pb-[env(safe-area-inset-bottom)]">
+    <nav className="md:hidden shrink-0 z-40 bg-zinc-950/95 backdrop-blur border-t border-zinc-800 pb-[env(safe-area-inset-bottom,0px)]">
       <div className="grid grid-cols-5 h-14">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;

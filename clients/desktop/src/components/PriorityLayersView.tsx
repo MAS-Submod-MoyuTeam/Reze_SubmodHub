@@ -431,7 +431,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-950">
       {/* Top Header */}
-      <div className="p-4 border-b border-neutral-800 bg-neutral-900/50 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
+      <div className="p-3 sm:p-4 border-b border-neutral-800 bg-neutral-900/50 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
         <div>
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-emerald-400" />
@@ -449,12 +449,12 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs shrink-0">
+        <div className="flex flex-wrap items-center gap-2 text-xs shrink-0 w-full md:w-auto">
           <button
             onClick={() => loadOverview(currentInstanceId)}
             disabled={loadingOverview || isApplying}
             title="重新获取当前 MAS 实例的优先级数据"
-            className="p-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white disabled:opacity-40 transition-colors"
+            className="p-2 sm:p-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white disabled:opacity-40 transition-colors cursor-pointer min-h-[36px] sm:min-h-0 flex items-center justify-center"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loadingOverview ? 'animate-spin' : ''}`} />
           </button>
@@ -462,7 +462,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
           <button
             onClick={handleReset}
             disabled={(!hasChanges && !hasInputErrors) || isApplying}
-            className="px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5"
+            className="px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5 cursor-pointer min-h-[36px] sm:min-h-0"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>撤销重置</span>
@@ -471,7 +471,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
           <button
             onClick={handlePreview}
             disabled={!hasChanges || hasInputErrors || previewLoading || isApplying}
-            className="px-3.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5 font-medium"
+            className="px-3.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5 font-medium cursor-pointer min-h-[36px] sm:min-h-0"
           >
             {previewLoading ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
@@ -485,7 +485,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
             onClick={handleApply}
             disabled={!applyCheck.canApply}
             title={applyCheck.reason || '应用新优先级并写入 MAS 磁盘'}
-            className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold disabled:opacity-40 transition-colors flex items-center gap-1.5 shadow-xs"
+            className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold disabled:opacity-40 transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer min-h-[36px] sm:min-h-0"
           >
             {isApplying ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -566,30 +566,30 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                       : 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 truncate">
-                      <span className="w-6 text-center font-mono font-bold text-xs text-neutral-400">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                      <span className="w-6 text-center font-mono font-bold text-xs text-neutral-400 shrink-0 mt-0.5">
                         #{index + 1}
                       </span>
-                      <div className="truncate">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-neutral-100 text-xs truncate">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-neutral-100 text-xs break-words max-w-[200px] sm:max-w-none" title={item.title}>
                             {item.title}
                           </span>
-                          <span className="text-[10px] text-neutral-400 font-mono">
+                          <span className="text-[10px] text-neutral-400 font-mono shrink-0">
                             v{item.version}
                           </span>
                         </div>
-                        <div className="text-[11px] text-neutral-400 mt-0.5 truncate flex items-center gap-2">
-                          <span>{item.author}</span>
+                        <div className="text-[11px] text-neutral-400 mt-1 flex flex-wrap items-center gap-1.5">
+                          <span className="truncate max-w-[120px]">{item.author}</span>
                           <span>·</span>
                           <span>{item.category === 'submod' ? '功能模组' : '外观材质包'}</span>
                           <span>·</span>
-                          <span className="font-mono text-[10px] text-neutral-500">
+                          <span className="font-mono text-[10px] text-neutral-500 whitespace-nowrap">
                             生效文件: {item.active_files} / 总文件: {item.total_files}
                           </span>
                           {item.overridden_files > 0 && (
-                            <span className="font-mono text-[10px] text-amber-500">
+                            <span className="font-mono text-[10px] text-amber-500 whitespace-nowrap">
                               (被覆盖: {item.overridden_files})
                             </span>
                           )}
@@ -598,7 +598,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                     </div>
 
                     {/* Priority Value Input & Stepper */}
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center justify-end gap-2 shrink-0 self-end sm:self-center pt-1 sm:pt-0">
                       <div className="flex flex-col items-end">
                         <div className="flex items-center gap-1.5">
                           <span className="text-[11px] text-neutral-400">优先级:</span>
@@ -628,14 +628,14 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                         <button
                           onClick={() => handleStepDelta(item.mod_id, 10)}
                           title="提高优先级 (+10)"
-                          className="p-1 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded transition-colors"
+                          className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer"
                         >
                           <ArrowUp className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleStepDelta(item.mod_id, -10)}
                           title="降低优先级 (-10)"
-                          className="p-1 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded transition-colors"
+                          className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer"
                         >
                           <ArrowDown className="w-3.5 h-3.5" />
                         </button>

@@ -155,15 +155,15 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-950">
       {/* Top Header & Sub-Tabs */}
-      <div className="p-4 border-b border-neutral-800 bg-neutral-900/50 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-2">
+      <div className="p-3 sm:p-4 border-b border-neutral-800 bg-neutral-900/50 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-2 max-w-full overflow-hidden">
           {/* Segmented Tab Controls */}
-          <div className="flex items-center gap-1 p-1 bg-neutral-900 border border-neutral-800 rounded-lg text-xs" role="tablist">
+          <div className="flex items-center gap-1 p-1 bg-neutral-900 border border-neutral-800 rounded-lg text-xs overflow-x-auto max-w-full no-scrollbar" role="tablist">
             <button
               role="tab"
               aria-selected={subTab === 'managed'}
               onClick={() => setSubTab('managed')}
-              className={`px-3 py-1 font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1 font-medium rounded-md transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 subTab === 'managed'
                   ? 'bg-neutral-800 text-white shadow-xs'
                   : 'text-neutral-400 hover:text-neutral-200'
@@ -176,7 +176,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
               role="tab"
               aria-selected={subTab === 'unmanaged'}
               onClick={() => setSubTab('unmanaged')}
-              className={`px-3 py-1 font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1 font-medium rounded-md transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 subTab === 'unmanaged'
                   ? 'bg-neutral-800 text-white shadow-xs'
                   : 'text-neutral-400 hover:text-neutral-200'
@@ -189,7 +189,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
               role="tab"
               aria-selected={subTab === 'spritepacks'}
               onClick={() => setSubTab('spritepacks')}
-              className={`px-3 py-1 font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1 font-medium rounded-md transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 subTab === 'spritepacks'
                   ? 'bg-neutral-800 text-white'
                   : 'text-neutral-400 hover:text-neutral-200'
@@ -202,7 +202,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
         </div>
 
         {/* Global Action Buttons */}
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           {subTab === 'spritepacks' ? (
             <button
               onClick={onRefreshSpritepacks}
@@ -529,147 +529,277 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                     <p>当前 MAS 实例尚未安装任何托管模组。</p>
                   </div>
                 ) : (
-                  <div className="border border-neutral-800 rounded-xl overflow-hidden bg-neutral-900/60">
-                    <table className="w-full text-left text-xs font-sans">
-                      <thead className="bg-neutral-950/80 text-neutral-400 text-[11px] border-b border-neutral-800 uppercase tracking-wider font-medium">
-                        <tr>
-                          <th className="py-2.5 px-4">模组名称 / 作者</th>
-                          <th className="py-2.5 px-3">已装版本</th>
-                          <th className="py-2.5 px-3">最新版本</th>
-                          <th className="py-2.5 px-3">优先级</th>
-                          <th className="py-2.5 px-3">文件与占用</th>
-                          <th className="py-2.5 px-3">完整性</th>
-                          <th className="py-2.5 px-4 text-right">操作</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-neutral-800/60">
-                        {managedMods.map((item) => (
-                          <tr key={item.mod_id} className="hover:bg-neutral-800/30 transition-colors">
-                            {/* Name and Author */}
-                            <td className="py-3 px-4">
-                              <div className="font-semibold text-neutral-100">{item.title}</div>
-                              <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 mt-0.5">
-                                <span>{item.author_name}</span>
+                  <>
+                    {/* Desktop Table View */}
+                    <div className="hidden md:block border border-neutral-800 rounded-xl overflow-hidden bg-neutral-900/60">
+                      <table className="w-full text-left text-xs font-sans">
+                        <thead className="bg-neutral-950/80 text-neutral-400 text-[11px] border-b border-neutral-800 uppercase tracking-wider font-medium">
+                          <tr>
+                            <th className="py-2.5 px-4">模组名称 / 作者</th>
+                            <th className="py-2.5 px-3">已装版本</th>
+                            <th className="py-2.5 px-3">最新版本</th>
+                            <th className="py-2.5 px-3">优先级</th>
+                            <th className="py-2.5 px-3">文件与占用</th>
+                            <th className="py-2.5 px-3">完整性</th>
+                            <th className="py-2.5 px-4 text-right">操作</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-800/60">
+                          {managedMods.map((item) => (
+                            <tr key={item.mod_id} className="hover:bg-neutral-800/30 transition-colors">
+                              {/* Name and Author */}
+                              <td className="py-3 px-4">
+                                <div className="font-semibold text-neutral-100">{item.title}</div>
+                                <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 mt-0.5">
+                                  <span>{item.author_name}</span>
+                                  <span aria-hidden="true">·</span>
+                                  <span>{item.category === 'submod' ? '功能模组' : '外观包'}</span>
+                                </div>
+                              </td>
+
+                              {/* Installed Version */}
+                              <td className="py-3 px-3 font-mono text-neutral-200">
+                                {item.installed_version}
+                              </td>
+
+                              {/* Latest Version */}
+                              <td className="py-3 px-3 font-mono">
+                                {item.has_update ? (
+                                  <span className="text-amber-400 font-semibold flex items-center gap-1">
+                                    <span>{item.latest_version}</span>
+                                    <span className="text-[10px] px-1 py-0.2 bg-amber-950 border border-amber-800 rounded">
+                                      可更新
+                                    </span>
+                                  </span>
+                                ) : (
+                                  <span className="text-neutral-400">{item.latest_version}</span>
+                                )}
+                              </td>
+
+                              {/* Priority */}
+                              <td className="py-3 px-3 font-mono text-neutral-300">
+                                <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-xs">
+                                  优先级 {item.priority}
+                                </span>
+                              </td>
+
+                              {/* File counts and size */}
+                              <td className="py-3 px-3 font-mono text-neutral-400 text-[11px]">
+                                <div>{item.files_count} 个托管文件</div>
+                                <div className="text-neutral-400 tabular-nums">{formatBytes(item.size_bytes)}</div>
+                              </td>
+
+                              {/* Integrity Status */}
+                              <td className="py-3 px-3">
+                                {item.integrity_status === 'intact' ? (
+                                  <span className="text-emerald-400 text-[11px] flex items-center gap-1 font-mono">
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span>未被改动</span>
+                                  </span>
+                                ) : item.integrity_status === 'modified' ? (
+                                  <span className="text-amber-400 text-[11px] flex items-center gap-1 font-mono">
+                                    <AlertTriangle className="w-3.5 h-3.5" />
+                                    <span>检测到外部改动</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-neutral-400 text-[11px]">待验证</span>
+                                )}
+                              </td>
+
+                              {/* Actions */}
+                              <td className="py-3 px-4 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {item.has_update && (
+                                    <button
+                                      disabled={isModsActionBlocked}
+                                      onClick={() => {
+                                        const dummyMod: ModSummary = {
+                                          id: item.mod_id,
+                                          title: item.title,
+                                          summary: item.summary,
+                                          author: { id: 'usr', display_name: item.author_name },
+                                          category: item.category,
+                                          tags: [],
+                                          supported_platforms: ['windows'],
+                                          mas_version_range: '>=0.12.0',
+                                          recommended_priority: item.priority,
+                                          latest_version_id: item.latest_version_id,
+                                          latest_version: item.latest_version,
+                                          size_bytes: item.size_bytes,
+                                          sha256: item.sha256,
+                                          updated_at: '2026-10-01T00:00:00Z',
+                                          downloads_count: 0,
+                                        };
+                                        onStartUpdatePlan(dummyMod);
+                                      }}
+                                      className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-400 hover:bg-amber-300 text-neutral-900 transition-colors shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                      title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法规划更新' : '正在读取模组列表…') : undefined}
+                                    >
+                                      规划更新
+                                    </button>
+                                  )}
+
+                                  <button
+                                    disabled={isModsActionBlocked}
+                                    onClick={() => onInspectFiles(item)}
+                                    className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法查看文件' : '正在读取模组列表…') : '查看该模组托管的所有本地文件路径及哈希'}
+                                  >
+                                    文件清单
+                                  </button>
+
+                                  <button
+                                    disabled={isModsActionBlocked}
+                                    onClick={() => onStartRepairPlan(item)}
+                                    className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法修复' : '正在读取模组列表…') : '预览从已校验的托管材料恢复文件；覆盖前备份，缺少材料时失败'}
+                                  >
+                                    修复
+                                  </button>
+
+                                  <button
+                                    disabled={isModsActionBlocked}
+                                    onClick={() => onStartUninstallPlan(item)}
+                                    className="px-2 py-1 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法卸载' : '正在读取模组列表…') : '生成卸载计划，直接删除当前文件，不恢复安装前备份'}
+                                  >
+                                    卸载
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Card View */}
+                    <div className="md:hidden space-y-3">
+                      {managedMods.map((item) => (
+                        <div
+                          key={item.mod_id}
+                          className="p-3.5 rounded-xl border border-neutral-800 bg-neutral-900/70 space-y-2.5"
+                        >
+                          {/* Top: Title, Category, Priority */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <h4 className="font-semibold text-neutral-100 text-sm break-words leading-tight">
+                                {item.title}
+                              </h4>
+                              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-400 mt-1">
+                                <span className="truncate max-w-[140px]">{item.author_name}</span>
                                 <span aria-hidden="true">·</span>
                                 <span>{item.category === 'submod' ? '功能模组' : '外观包'}</span>
                               </div>
-                            </td>
+                            </div>
+                            <span className="shrink-0 px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-xs font-mono text-neutral-300">
+                              优先级 {item.priority}
+                            </span>
+                          </div>
 
-                            {/* Installed Version */}
-                            <td className="py-3 px-3 font-mono text-neutral-200">
-                              {item.installed_version}
-                            </td>
-
-                            {/* Latest Version */}
-                            <td className="py-3 px-3 font-mono">
+                          {/* Middle: Versions, Files & Integrity */}
+                          <div className="grid grid-cols-2 gap-2 p-2.5 bg-neutral-950/60 rounded-lg border border-neutral-800/80 text-[11px]">
+                            <div className="space-y-0.5">
+                              <div className="text-neutral-500">版本状态</div>
+                              <div className="font-mono text-neutral-200">已装: {item.installed_version}</div>
                               {item.has_update ? (
-                                <span className="text-amber-400 font-semibold flex items-center gap-1">
-                                  <span>{item.latest_version}</span>
-                                  <span className="text-[10px] px-1 py-0.2 bg-amber-950 border border-amber-800 rounded">
+                                <div className="text-amber-400 font-semibold font-mono flex items-center gap-1">
+                                  <span>最新: {item.latest_version}</span>
+                                  <span className="text-[9px] px-1 bg-amber-950 border border-amber-800 rounded">
                                     可更新
                                   </span>
-                                </span>
+                                </div>
                               ) : (
-                                <span className="text-neutral-400">{item.latest_version}</span>
+                                <div className="text-neutral-400 font-mono">最新: {item.latest_version}</div>
                               )}
-                            </td>
+                            </div>
 
-                            {/* Priority */}
-                            <td className="py-3 px-3 font-mono text-neutral-300">
-                              <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-xs">
-                                优先级 {item.priority}
-                              </span>
-                            </td>
-
-                            {/* File counts and size */}
-                            <td className="py-3 px-3 font-mono text-neutral-400 text-[11px]">
-                              <div>{item.files_count} 个托管文件</div>
-                              <div className="text-neutral-400 tabular-nums">{formatBytes(item.size_bytes)}</div>
-                            </td>
-
-                            {/* Integrity Status */}
-                            <td className="py-3 px-3">
-                              {item.integrity_status === 'intact' ? (
-                                <span className="text-emerald-400 text-[11px] flex items-center gap-1 font-mono">
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>未被改动</span>
-                                </span>
-                              ) : item.integrity_status === 'modified' ? (
-                                <span className="text-amber-400 text-[11px] flex items-center gap-1 font-mono">
-                                  <AlertTriangle className="w-3.5 h-3.5" />
-                                  <span>检测到外部改动</span>
-                                </span>
-                              ) : (
-                                <span className="text-neutral-400 text-[11px]">待验证</span>
-                              )}
-                            </td>
-
-                            {/* Actions */}
-                            <td className="py-3 px-4 text-right">
-                              <div className="flex items-center justify-end gap-1.5">
-                                {item.has_update && (
-                                  <button
-                                    disabled={isModsActionBlocked}
-                                    onClick={() => {
-                                      const dummyMod: ModSummary = {
-                                        id: item.mod_id,
-                                        title: item.title,
-                                        summary: item.summary,
-                                        author: { id: 'usr', display_name: item.author_name },
-                                        category: item.category,
-                                        tags: [],
-                                        supported_platforms: ['windows'],
-                                        mas_version_range: '>=0.12.0',
-                                        recommended_priority: item.priority,
-                                        latest_version_id: item.latest_version_id,
-                                        latest_version: item.latest_version,
-                                        size_bytes: item.size_bytes,
-                                        sha256: item.sha256,
-                                        updated_at: '2026-10-01T00:00:00Z',
-                                        downloads_count: 0,
-                                      };
-                                      onStartUpdatePlan(dummyMod);
-                                    }}
-                                    className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-400 hover:bg-amber-300 text-neutral-900 transition-colors shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法规划更新' : '正在读取模组列表…') : undefined}
-                                  >
-                                    规划更新
-                                  </button>
-                                )}
-
-                                <button
-                                  disabled={isModsActionBlocked}
-                                  onClick={() => onInspectFiles(item)}
-                                  className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法查看文件' : '正在读取模组列表…') : '查看该模组托管的所有本地文件路径及哈希'}
-                                >
-                                  文件清单
-                                </button>
-
-                                <button
-                                  disabled={isModsActionBlocked}
-                                  onClick={() => onStartRepairPlan(item)}
-                                  className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法修复' : '正在读取模组列表…') : '预览从已校验的托管材料恢复文件；覆盖前备份，缺少材料时失败'}
-                                >
-                                  修复
-                                </button>
-
-                                <button
-                                  disabled={isModsActionBlocked}
-                                  onClick={() => onStartUninstallPlan(item)}
-                                  className="px-2 py-1 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法卸载' : '正在读取模组列表…') : '生成卸载计划，直接删除当前文件，不恢复安装前备份'}
-                                >
-                                  卸载
-                                </button>
+                            <div className="space-y-0.5">
+                              <div className="text-neutral-500">文件与完整性</div>
+                              <div className="text-neutral-300 font-mono">
+                                {item.files_count} 个文件 · {formatBytes(item.size_bytes)}
                               </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                              <div>
+                                {item.integrity_status === 'intact' ? (
+                                  <span className="text-emerald-400 flex items-center gap-1 font-mono">
+                                    <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                    <span>未被改动</span>
+                                  </span>
+                                ) : item.integrity_status === 'modified' ? (
+                                  <span className="text-amber-400 flex items-center gap-1 font-mono">
+                                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                                    <span>外部改动</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-neutral-400">待验证</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Actions: Mobile Card Action Buttons */}
+                          <div className="pt-1 flex flex-wrap items-center gap-1.5 justify-end">
+                            {item.has_update && (
+                              <button
+                                disabled={isModsActionBlocked}
+                                onClick={() => {
+                                  const dummyMod: ModSummary = {
+                                    id: item.mod_id,
+                                    title: item.title,
+                                    summary: item.summary,
+                                    author: { id: 'usr', display_name: item.author_name },
+                                    category: item.category,
+                                    tags: [],
+                                    supported_platforms: ['windows'],
+                                    mas_version_range: '>=0.12.0',
+                                    recommended_priority: item.priority,
+                                    latest_version_id: item.latest_version_id,
+                                    latest_version: item.latest_version,
+                                    size_bytes: item.size_bytes,
+                                    sha256: item.sha256,
+                                    updated_at: '2026-10-01T00:00:00Z',
+                                    downloads_count: 0,
+                                  };
+                                  onStartUpdatePlan(dummyMod);
+                                }}
+                                className="px-3 py-1.5 text-xs font-semibold rounded bg-amber-400 hover:bg-amber-300 text-neutral-900 transition-colors shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法规划更新' : '正在读取模组列表…') : undefined}
+                              >
+                                规划更新
+                              </button>
+                            )}
+
+                            <button
+                              disabled={isModsActionBlocked}
+                              onClick={() => onInspectFiles(item)}
+                              className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法查看文件' : '正在读取模组列表…') : '查看该模组托管的所有本地文件路径及哈希'}
+                            >
+                              文件清单
+                            </button>
+
+                            <button
+                              disabled={isModsActionBlocked}
+                              onClick={() => onStartRepairPlan(item)}
+                              className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法修复' : '正在读取模组列表…') : '预览从已校验的托管材料恢复文件；覆盖前备份，缺少材料时失败'}
+                            >
+                              修复
+                            </button>
+
+                            <button
+                              disabled={isModsActionBlocked}
+                              onClick={() => onStartUninstallPlan(item)}
+                              className="px-2.5 py-1.5 text-xs text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-900/60 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-rose-900/50"
+                              title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法卸载' : '正在读取模组列表…') : '生成卸载计划，直接删除当前文件，不恢复安装前备份'}
+                            >
+                              卸载
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
             )}
@@ -704,7 +834,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                         className="p-4 rounded-xl bg-neutral-900/70 border border-neutral-800 flex flex-col md:flex-row md:items-center justify-between gap-4"
                       >
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="px-2 py-0.5 text-[10px] rounded bg-amber-950 text-amber-300 border border-amber-800 font-mono">
                               未托管发现项
                             </span>
@@ -750,7 +880,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                        <div className="flex flex-wrap items-center gap-2 shrink-0 self-end md:self-center">
                           <button
                             disabled={isModsActionBlocked}
                             onClick={() => onInspectFiles(item)}

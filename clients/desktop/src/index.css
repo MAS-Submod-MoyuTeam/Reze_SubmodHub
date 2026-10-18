@@ -42,6 +42,14 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 @supports (padding-top: env(safe-area-inset-top)) {
   .safe-top {
     padding-top: env(safe-area-inset-top);
@@ -50,4 +58,5 @@ body {
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
 

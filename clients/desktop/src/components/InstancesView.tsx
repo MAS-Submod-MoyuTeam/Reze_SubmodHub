@@ -173,7 +173,7 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-950">
       {/* Header */}
-      <div className="p-4 border-b border-neutral-800 bg-neutral-900/50 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
+      <div className="p-3 sm:p-4 border-b border-neutral-800 bg-neutral-900/50 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
         <div>
           <div className="flex items-center gap-2">
             <FolderCog className="w-4 h-4 text-emerald-400" />
@@ -188,22 +188,22 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {!isAndroid && (
             <button
               onClick={() => setShowAddModal(true)}
-              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
               <FolderPlus className="w-3.5 h-3.5" />
               <span>手选添加新 MAS 目录...</span>
             </button>
           )}
-          <button onClick={() => void onRefreshInstances()} className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white flex items-center gap-1" title="重新检查目录"><RefreshCw className="w-3.5 h-3.5" />重新检查</button>
+          <button onClick={() => void onRefreshInstances()} className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white flex items-center gap-1 cursor-pointer" title="重新检查目录"><RefreshCw className="w-3.5 h-3.5" />重新检查</button>
         </div>
       </div>
 
       {/* Main List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4">
         {/* Instances Grid */}
         <div className="space-y-3">
           {installations.map((inst) => {
@@ -275,19 +275,19 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
 
       {/* Add Custom Instance Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs select-none">
-          <div className="bg-neutral-900 border border-neutral-700 rounded-xl w-full max-w-lg overflow-hidden shadow-2xl">
-            <div className="p-4 border-b border-neutral-800 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs select-none">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-xl w-full max-w-lg max-h-[92dvh] sm:max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-3 sm:p-4 border-b border-neutral-800 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-neutral-100 text-sm">手选并验证 MAS 游戏目录</h3>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="text-neutral-400 hover:text-white"
+                className="p-1 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <div className="p-4 space-y-3 text-xs">
+            <div className="p-3 sm:p-4 space-y-3 text-xs overflow-y-auto grow">
               <div>
                 <label className="text-neutral-300 font-medium block mb-1">
                   实例显示标签 (Label)
@@ -305,7 +305,7 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
                 <label className="text-neutral-300 font-medium block mb-1">
                   根目录绝对路径 (Root Path Hint)
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="text"
                     value={newPath}
@@ -318,7 +318,7 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
                   />
                   <button
                     onClick={() => void onBrowseDirectory().then((path) => { if (path) { setNewPath(path); setValidationError(null); } }).catch((error) => setValidationError(String(error)))}
-                    className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg shrink-0"
+                    className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg shrink-0 cursor-pointer text-center"
                   >
                     浏览...
                   </button>
@@ -326,7 +326,7 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
               </div>
 
               {validationError && (
-                <div className="p-3 rounded-lg bg-rose-950/80 border border-rose-800 text-rose-200 text-xs font-mono">
+                <div className="p-3 rounded-lg bg-rose-950/80 border border-rose-800 text-rose-200 text-xs font-mono break-all">
                   {validationError}
                 </div>
               )}
@@ -334,17 +334,17 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
               <div className="text-neutral-400 text-[11px]">所选目录需要包含 game/ 子目录。</div>
             </div>
 
-            <div className="p-4 border-t border-neutral-800 bg-neutral-950 flex justify-end gap-2 text-xs">
+            <div className="p-3 sm:p-4 border-t border-neutral-800 bg-neutral-950 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 text-xs shrink-0">
               <button
                 onClick={() => setShowAddModal(false)}
-                className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg"
+                className="min-h-[38px] sm:min-h-0 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg cursor-pointer text-center"
               >
                 取消
               </button>
               <button
                 onClick={() => void handleCreate()}
                 disabled={isAdding}
-                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg shadow-xs"
+                className="min-h-[38px] sm:min-h-0 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold rounded-lg shadow-xs cursor-pointer text-center"
               >
                 验证并添加实例
               </button>

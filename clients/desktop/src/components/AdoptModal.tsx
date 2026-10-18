@@ -210,23 +210,23 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
   const previewPaths = showAllFiles ? allPaths : allPaths.slice(0, 5);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs select-none">
-      <div className="bg-neutral-900 border border-neutral-700 rounded-xl w-full max-w-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs select-none">
+      <div className="bg-neutral-900 border border-neutral-700 rounded-xl w-full max-w-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[92dvh] sm:max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-900/90 shrink-0">
-          <div className="flex items-center gap-2">
-            <FolderGit2 className="w-4 h-4 text-emerald-400" />
-            <h3 className="font-bold text-neutral-100 text-sm">
+        <div className="p-3 sm:p-4 border-b border-neutral-800 flex items-center justify-between gap-3 bg-neutral-900/90 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <FolderGit2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <h3 className="font-bold text-neutral-100 text-sm truncate">
               显式收养为托管模组向导 (Adopt Unmanaged Mod)
             </h3>
           </div>
-          <button onClick={onClose} className="text-neutral-400 hover:text-white cursor-pointer">
+          <button onClick={onClose} className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors shrink-0 cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-4 space-y-4 text-xs overflow-y-auto grow">
+        <div className="p-3 sm:p-4 space-y-4 text-xs overflow-y-auto grow">
           <div className="p-3 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-300 leading-relaxed">
             将当前散落于 MAS 目录内的未托管脚本/素材纳入 SubmodHub 的持久化 Ledger。收养后该模组将受版本控制、支持冲突计算与模组优先级调节。卸载收养模组时将安全保留原始文件。
           </div>
@@ -421,20 +421,20 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-neutral-800 bg-neutral-950/80 flex justify-end gap-2 text-xs shrink-0">
+        <div className="p-3 sm:p-4 border-t border-neutral-800 bg-neutral-950/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 text-xs shrink-0">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg cursor-pointer"
+            className="min-h-[40px] sm:min-h-0 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg cursor-pointer flex items-center justify-center text-center"
           >
             取消
           </button>
           <button
             disabled={selectedPaths.size === 0 || !modId.trim() || Boolean(candidateValidationError) || (isAmbiguous && !activeCandidate)}
             onClick={handleAdopt}
-            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
+            className="min-h-[40px] sm:min-h-0 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-xs flex items-center justify-center gap-1.5 cursor-pointer text-center"
           >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>确认收养并写入 Ledger ({selectedPaths.size} 个文件)</span>
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">确认收养并写入 Ledger ({selectedPaths.size} 个文件)</span>
           </button>
         </div>
       </div>

@@ -200,12 +200,12 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                         setCopiedExpected(true);
                         setTimeout(() => setCopiedExpected(false), 2000);
                       }}
-                      className="text-neutral-400 hover:text-neutral-200"
+                      className="text-neutral-400 hover:text-neutral-200 cursor-pointer"
                     >
                       {copiedExpected ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                     </button>
                   </div>
-                  <div className="text-emerald-400 bg-neutral-900 p-1.5 rounded truncate selection:bg-neutral-800">
+                  <div className="text-emerald-400 bg-neutral-900 p-1.5 rounded break-all selection:bg-neutral-800">
                     {externalDrift.expected_hash}
                   </div>
                 </div>
@@ -220,12 +220,12 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                         setCopiedActual(true);
                         setTimeout(() => setCopiedActual(false), 2000);
                       }}
-                      className="text-neutral-400 hover:text-neutral-200"
+                      className="text-neutral-400 hover:text-neutral-200 cursor-pointer"
                     >
                       {copiedActual ? <Check className="w-3 h-3 text-amber-400" /> : <Copy className="w-3 h-3" />}
                     </button>
                   </div>
-                  <div className="text-amber-400 bg-neutral-900 p-1.5 rounded truncate selection:bg-neutral-800">
+                  <div className="text-amber-400 bg-neutral-900 p-1.5 rounded break-all selection:bg-neutral-800">
                     {externalDrift.actual_hash}
                   </div>
                 </div>
@@ -233,21 +233,21 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
             </div>
 
             {/* Resolution Options */}
-            <div className="flex items-center justify-between pt-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1">
               <span className="text-[11px] text-amber-200/80">
                 请选择处理策略（决定权在用户手中）：
               </span>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                 <button
                   onClick={() => onResolveDrift(externalDrift.id, 'keep_local')}
-                  className="px-3 py-1.5 text-xs font-semibold bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors border border-neutral-700"
+                  className="px-3 py-1.5 text-xs font-semibold bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors border border-neutral-700 cursor-pointer text-center"
                 >
                   保留本地文件（跳过该文件并继续更新）
                 </button>
                 <button
                   onClick={() => onResolveDrift(externalDrift.id, 'overwrite_with_backup')}
-                  className="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-neutral-950 rounded-lg transition-colors shadow-xs"
+                  className="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-neutral-950 rounded-lg transition-colors shadow-xs cursor-pointer text-center"
                 >
                   覆盖并建立保护性备份
                 </button>
@@ -287,7 +287,8 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
             <span>权威状态源：客户端持久化 Ledger</span>
           </div>
 
-          <div className="border border-neutral-800 rounded-xl overflow-hidden bg-neutral-900/40">
+          {/* Desktop Table View */}
+          <div className="hidden md:block border border-neutral-800 rounded-xl overflow-hidden bg-neutral-900/40">
             <table className="w-full text-left text-xs font-sans">
               <thead className="bg-neutral-950 text-neutral-400 text-[11px] border-b border-neutral-800 uppercase font-medium">
                 <tr>
@@ -361,7 +362,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                             {op.can_rollback ? (
                               <button
                                 onClick={() => onRecoverOperation(op.operation_id)}
-                                className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1"
+                                className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
                                 title="重新校验磁盘冲突；若人工处理已恢复则安全回滚，未解决则由后端防护阻断"
                               >
                                 <RotateCcw className="w-3 h-3" />
@@ -380,7 +381,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                           (op.can_rollback || op.state === 'recoverable') && (
                             <button
                               onClick={() => onRecoverOperation(op.operation_id)}
-                              className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1"
+                              className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
                               title="安全回滚未完成事务到操作前状态"
                             >
                               <RotateCcw className="w-3 h-3" />
@@ -391,7 +392,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
 
                         <button
                           onClick={() => setLogModalOp(op)}
-                          className="px-2 py-1 text-xs text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded transition-colors"
+                          className="px-2 py-1 text-xs text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded transition-colors cursor-pointer"
                         >
                           详情
                         </button>
@@ -402,13 +403,109 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
               </tbody>
             </table>
           </div>
+
+          {/* Mobile Card View */}
+          <div className="md:hidden space-y-3">
+            {operations.map((op) => (
+              <div
+                key={op.operation_id}
+                className="p-3.5 rounded-xl border border-neutral-800 bg-neutral-900/60 space-y-2.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-neutral-100 text-sm">{op.mod_title}</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-neutral-800 uppercase text-neutral-300 font-mono">
+                        {op.kind}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-neutral-400 font-mono break-all mt-0.5">
+                      {op.operation_id}
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-neutral-400 font-mono shrink-0">
+                    {new Date(op.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  {getStateBadge(op.state)}
+                  {op.backup_id && (
+                    <span className="text-[11px] text-neutral-400 font-mono flex items-center gap-1 truncate max-w-[180px]" title={op.backup_id}>
+                      <FolderArchive className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{op.backup_id}</span>
+                    </span>
+                  )}
+                </div>
+
+                <div className="p-2.5 bg-neutral-950/70 rounded-lg border border-neutral-800/80 text-[11px] space-y-1">
+                  <div className="text-neutral-300 font-sans">{op.progress?.stage || '无进度信息'}</div>
+                  <div className="text-neutral-400 font-mono">
+                    {op.progress?.processed_files ?? 0} / {op.progress?.total_files ?? 0} 文件 ({op.progress?.percent ?? 0}%)
+                  </div>
+                  {op.progress?.current_file && (
+                    <div className="text-[10px] text-neutral-500 font-mono truncate" title={op.progress.current_file}>
+                      {op.progress.current_file}
+                    </div>
+                  )}
+                  {op.error?.message && (
+                    <div className="text-rose-400 font-sans break-words pt-1">
+                      {op.error.message}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 justify-end pt-0.5">
+                  {op.state === 'needs_manual_recovery' ? (
+                    <>
+                      {op.can_rollback ? (
+                        <button
+                          onClick={() => onRecoverOperation(op.operation_id)}
+                          className="px-3 py-1.5 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
+                          title="重新校验磁盘冲突；若人工处理已恢复则安全回滚，未解决则由后端防护阻断"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>重新校验并安全回滚</span>
+                        </button>
+                      ) : (
+                        <span
+                          className="px-2.5 py-1 text-xs text-rose-400 bg-rose-950/60 rounded border border-rose-800/80 font-mono"
+                          title={op.error?.message || '日志或恢复材料损坏，无法自动回滚'}
+                        >
+                          恢复材料损坏
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    (op.can_rollback || op.state === 'recoverable') && (
+                      <button
+                        onClick={() => onRecoverOperation(op.operation_id)}
+                        className="px-3 py-1.5 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
+                        title="安全回滚未完成事务到操作前状态"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>安全回滚</span>
+                      </button>
+                    )
+                  )}
+
+                  <button
+                    onClick={() => setLogModalOp(op)}
+                    className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer"
+                  >
+                    详情
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* Log / Detail Modal */}
       {logModalOp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs select-none">
-          <div className="bg-neutral-900 border border-neutral-700 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs select-none">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-xl w-full max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden shadow-2xl">
             <div className="p-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950">
               <div className="flex items-center gap-2 text-xs font-mono">
                 <Terminal className="w-4 h-4 text-emerald-400" />

@@ -125,13 +125,13 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs select-none">
-      <div className="bg-neutral-900 border border-neutral-700/80 rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs select-none">
+      <div className="bg-neutral-900 border border-neutral-700/80 rounded-xl w-full max-w-4xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="p-4 border-b border-neutral-800 bg-neutral-900/90 flex items-start justify-between shrink-0">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800/80 uppercase">
+        <div className="p-3 sm:p-4 border-b border-neutral-800 bg-neutral-900/90 flex items-start justify-between gap-3 shrink-0">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800/80 uppercase shrink-0">
                 {plan.kind === 'install'
                   ? '安装计划预览'
                   : plan.kind === 'update'
@@ -142,23 +142,24 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                   ? '收养计划预览'
                   : '修复计划预览'}
               </span>
-              <h2 className="text-base font-bold text-neutral-100">
+              <h2 className="text-sm sm:text-base font-bold text-neutral-100 break-words">
                 {plan.mod_title} <span className="font-mono text-emerald-400">{plan.version_str}</span>
               </h2>
             </div>
-            <div className="flex items-center gap-2 text-xs text-neutral-400 mt-1 font-mono">
-              <span>规划计划单据 ID: {plan.plan_id}</span>
-              <span aria-hidden="true">·</span>
+            <div className="flex items-center gap-2 text-xs text-neutral-400 mt-1 font-mono flex-wrap">
+              <span className="break-all">规划单据 ID: {plan.plan_id}</span>
+              <span aria-hidden="true" className="hidden sm:inline">·</span>
               <span className={`flex items-center gap-1 ${isExpired ? 'text-rose-400 font-bold' : 'text-amber-400'}`}>
-                <Clock className="w-3.5 h-3.5" />
-                <span>{isExpired ? '计划已过期，请重新预览' : `计划有效期剩余: ${formatSeconds(timeLeft)}`}</span>
+                <Clock className="w-3.5 h-3.5 shrink-0" />
+                <span>{isExpired ? '计划已过期，请重新预览' : `剩余: ${formatSeconds(timeLeft)}`}</span>
               </span>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-lg transition-colors"
+            className="p-1.5 sm:p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors shrink-0"
+            title="关闭预览"
           >
             <X className="w-5 h-5" />
           </button>
@@ -398,12 +399,12 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
 
           {/* Overwrite Confirmation Checkbox */}
           {hasOverwrites && (
-            <div className="p-3 rounded-lg bg-amber-950/60 border border-amber-800/80 flex items-center justify-between text-xs text-amber-200">
+            <div className="p-3 rounded-lg bg-amber-950/60 border border-amber-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-amber-200">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
                 <span>本操作将覆盖部分已有文件或游戏原文件，请知悉并明确确认。</span>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer font-medium select-none text-amber-300 bg-amber-900/40 px-2.5 py-1 rounded border border-amber-700/60 hover:bg-amber-900/60 transition-colors">
+              <label className="flex items-center gap-2 cursor-pointer font-medium select-none text-amber-300 bg-amber-900/40 px-2.5 py-1.5 rounded border border-amber-700/60 hover:bg-amber-900/60 transition-colors shrink-0 self-start sm:self-center">
                 <input
                   type="checkbox"
                   checked={overwriteConfirmed}
@@ -432,8 +433,8 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               </span>
             </div>
 
-            <div className="border border-neutral-800 rounded-lg overflow-hidden font-mono text-xs">
-              <table className="w-full text-left">
+            <div className="border border-neutral-800 rounded-lg overflow-x-auto font-mono text-xs">
+              <table className="w-full text-left min-w-[560px]">
                 <thead className="bg-neutral-950 text-neutral-400 text-[11px] border-b border-neutral-800">
                   <tr>
                     <th className="py-2 px-3">动作</th>
@@ -477,8 +478,8 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 border-t border-neutral-800 bg-neutral-900/95 flex items-center justify-between shrink-0">
-          <div className="text-xs text-neutral-400">
+        <div className="p-3 sm:p-4 border-t border-neutral-800 bg-neutral-900/95 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+          <div className="text-xs text-neutral-400 break-words leading-relaxed min-w-0">
             {!canConfirm ? (
               <span className="text-rose-400 font-medium">
                 {isGameRunning
@@ -506,10 +507,10 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2.5 shrink-0 w-full sm:w-auto">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700/80 rounded-lg transition-colors"
+              className="min-h-[44px] sm:min-h-0 px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700/80 rounded-lg transition-colors flex items-center justify-center cursor-pointer text-center"
             >
               放弃并取消
             </button>
@@ -520,14 +521,14 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                 }
               }}
               disabled={!canConfirm}
-              className={`px-5 py-2 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 shadow-sm ${
+              className={`min-h-[44px] sm:min-h-0 px-5 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm text-center ${
                 canConfirm
                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
                   : 'bg-neutral-800 text-neutral-400 cursor-not-allowed border border-neutral-700/50'
               }`}
             >
-              {!canConfirm && isGameRunning && <Lock className="w-3.5 h-3.5" />}
-              <span>确认执行写入 (ApplyPlan)</span>
+              {!canConfirm && isGameRunning && <Lock className="w-3.5 h-3.5 shrink-0" />}
+              <span className="truncate">确认执行写入 (ApplyPlan)</span>
             </button>
           </div>
         </div>
