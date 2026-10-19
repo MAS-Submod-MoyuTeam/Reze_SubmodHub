@@ -13,6 +13,7 @@ import {
 import { SpritepackSelection } from './SpritepackSelection';
 import { createModDetailTracker, executeDetailLoad, type LoadReason } from '../modDetailTracker';
 import type { LoadingStatus } from '../installedLoading';
+import { sortVersionHistory } from '../versionHistory';
 
 interface Props {
   mod: ModSummary | null;
@@ -189,11 +190,7 @@ export const ModDetailModal: React.FC<Props> = ({
 
   if (!mod) return null;
   const selected = versions.find((version) => version.id === selectedVersionId) || versions[0];
-  const orderedVersions = [...versions].sort((a, b) => {
-    if (a.id === mod.latest_version_id) return -1;
-    if (b.id === mod.latest_version_id) return 1;
-    return (b.created_at || '').localeCompare(a.created_at || '');
-  });
+  const orderedVersions = sortVersionHistory(versions, mod.latest_version_id);
   const copyHash = async () => {
     if (!selected) return;
     await navigator.clipboard.writeText(selected.sha256);
