@@ -131,6 +131,8 @@ interface InstancesViewProps {
   onRefreshInstances: () => Promise<void>;
   onBrowseDirectory: () => Promise<string>;
   isAndroid?: boolean;
+  onOpenAppUpdate?: () => void;
+  hasAppUpdate?: boolean;
 }
 
 export const InstancesView: React.FC<InstancesViewProps> = ({
@@ -142,6 +144,8 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
   onRefreshInstances,
   onBrowseDirectory,
   isAndroid = false,
+  onOpenAppUpdate,
+  hasAppUpdate = false,
 }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newLabel, setNewLabel] = useState('');
@@ -269,6 +273,31 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
               </div>
             );
           })}
+        </div>
+
+        {/* Mobile App Update Entry */}
+        <div className="md:hidden p-4 rounded-xl border border-neutral-800 bg-neutral-900/60 space-y-2">
+          <div className="flex items-center justify-between text-xs font-medium text-neutral-300">
+            <span>应用版本与更新</span>
+            <span className="font-mono text-neutral-500">v{__APP_VERSION__}</span>
+          </div>
+          <p className="text-[11px] text-neutral-400">
+            检查并安装 SubmodHub 客户端的新版本（支持 Android APK 与 Windows 客户端更新）。
+          </p>
+          {onOpenAppUpdate && (
+            <button
+              type="button"
+              onClick={onOpenAppUpdate}
+              className={`w-full py-2 px-3 text-xs font-medium rounded-lg border transition-colors flex items-center justify-center gap-2 ${
+                hasAppUpdate
+                  ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 hover:bg-emerald-600/30'
+                  : 'bg-neutral-800 border-neutral-700 text-neutral-200 hover:bg-neutral-700'
+              }`}
+            >
+              <span>{hasAppUpdate ? '发现新版本，点击查看' : '检查应用更新'}</span>
+              {hasAppUpdate && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
+            </button>
+          )}
         </div>
 
       </div>

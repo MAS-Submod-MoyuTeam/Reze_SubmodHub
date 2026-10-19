@@ -158,6 +158,12 @@ func (s *DesktopService) ScanInstalledSpritepacks() ([]Spritepack, error) {
 }
 
 func (s *DesktopService) CreateSpriteGift(file string) (string, error) {
+	finish, err := s.mutations.begin()
+	if err != nil {
+		return "", err
+	}
+	defer finish()
+
 	if err := s.checkStorageAccess(); err != nil {
 		return "", err
 	}
@@ -198,6 +204,12 @@ type SpritepackDeleteResult struct {
 }
 
 func (s *DesktopService) DeleteSpritepack(file string) (SpritepackDeleteResult, error) {
+	finish, err := s.mutations.begin()
+	if err != nil {
+		return SpritepackDeleteResult{}, err
+	}
+	defer finish()
+
 	if err := s.checkStorageAccess(); err != nil {
 		return SpritepackDeleteResult{}, err
 	}

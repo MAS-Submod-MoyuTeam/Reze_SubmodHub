@@ -105,6 +105,27 @@ export const GetAndroidStorageAccess = () =>
 export const RequestAndroidStorageAccess = () =>
   invoke<AndroidStorageAccessRequestResult>('RequestAndroidStorageAccess', () => Call.ByName('main.DesktopService.RequestAndroidStorageAccess'));
 
+export const ConfirmAppUpdateStartup = () =>
+  browserMode ? Promise.resolve() : Call.ByName('main.DesktopService.ConfirmAppUpdateStartup');
+
+export const CheckForAppUpdate = () =>
+  invoke<any>('CheckForAppUpdate', () => Call.ByName('main.DesktopService.CheckForAppUpdate'));
+
+export const DownloadAppUpdate = () =>
+  invoke<any>('DownloadAppUpdate', () => Call.ByName('main.DesktopService.DownloadAppUpdate'));
+
+export const CancelAppUpdate = () =>
+  invoke<any>('CancelAppUpdate', () => Call.ByName('main.DesktopService.CancelAppUpdate'));
+
+export const GetAppUpdateStatus = () =>
+  invoke<any>('GetAppUpdateStatus', () => Call.ByName('main.DesktopService.GetAppUpdateStatus'));
+
+export const InstallAppUpdate = () =>
+  invoke<any>('InstallAppUpdate', () => Call.ByName('main.DesktopService.InstallAppUpdate'));
+
+export const OpenAppUpdateSettings = () =>
+  invoke<boolean>('OpenAppUpdateSettings', () => Call.ByName('main.DesktopService.OpenAppUpdateSettings'));
+
 export const isAndroid = (): boolean => {
   if (typeof window !== 'undefined') {
     if ((window as any).wails?.platform?.() === 'android') return true;

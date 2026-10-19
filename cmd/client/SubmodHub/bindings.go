@@ -181,6 +181,9 @@ type DesktopService struct {
 
 	candidateRegistrationsResolver func(candidateID string) ([]string, error)
 
+	appUpdater *AppUpdateBindings
+	mutations  clientMutationGate
+
 	activePlan          *core.Plan
 	activePlanRequest   any
 	activePlanArchiveID string
@@ -248,6 +251,7 @@ func NewDesktopService() *DesktopService {
 	if apiURL == "" {
 		apiURL = "https://rezehub.0721play.icu"
 	}
+	appUpdater, _ := newAppUpdateBindings(nil, filepath.Join(cacheDir, appUpdateCacheDirectory), "")
 	return &DesktopService{
 		root:            root,
 		configPath:      filepath.Join(configBase, "instances.json"),
@@ -255,6 +259,7 @@ func NewDesktopService() *DesktopService {
 		stagingMgr:      mgr,
 		storageProvider: provider,
 		storageGuard:    guard,
+		appUpdater:      appUpdater,
 	}
 }
 
@@ -295,6 +300,12 @@ func (s *DesktopService) newCore(root, state string) *core.Installer {
 }
 
 func (s *DesktopService) SetMASRoot(root string) (MASStatus, error) {
+	finish, err := s.mutations.begin()
+	if err != nil {
+		return MASStatus{}, err
+	}
+	defer finish()
+
 	if s.isAndroid() {
 		if err := maspath.ValidateAndroidMASRoot(root); err != nil {
 			return MASStatus{}, ErrInvalidMASRoot
@@ -369,6 +380,12 @@ func (s *DesktopService) ScanLocalSubmods() ([]LocalSubmod, error) {
 }
 
 func (s *DesktopService) ApplyFile(request InstallRequest) (string, error) {
+	finish, err := s.mutations.begin()
+	if err != nil {
+		return "", err
+	}
+	defer finish()
+
 	if err := s.checkStorageAccess(); err != nil {
 		return "", err
 	}
@@ -380,7 +397,7 @@ func (s *DesktopService) ApplyFile(request InstallRequest) (string, error) {
 	if request.OperationID == "" {
 		return "", errors.New("operation_id_required")
 	}
-	err := s.core.Apply(core.Operation{ID: request.OperationID, Changes: []core.Change{{Path: request.Path, Content: []byte(request.Content), ExpectedSHA256: request.ExpectedSHA}}})
+	err = s.core.Apply(core.Operation{ID: request.OperationID, Changes: []core.Change{{Path: request.Path, Content: []byte(request.Content), ExpectedSHA256: request.ExpectedSHA}}})
 	if err != nil {
 		return "", err
 	}
@@ -559,6 +576,12 @@ func (s *DesktopService) GetOperation(operationID string) (*OperationDetail, err
 }
 
 func (s *DesktopService) RollbackOperation(operationID string) error {
+	finish, err := s.mutations.begin()
+	if err != nil {
+		return err
+	}
+	defer finish()
+
 	if err := s.checkStorageAccess(); err != nil {
 		return err
 	}
@@ -1001,17 +1024,17 @@ func (s *DesktopService) PreviewUninstallWithOpID(targetID, uninstallOpID string
 	}
 
 	return PlanResult{
-		PlanID:      plan.PlanID,
-		OperationID: plan.OperationID,
-		BackupID:    fmt.Sprintf("snapshot_%s", plan.OperationID),
-		Root:        s.root,
-		Generation:  plan.Generation,
-		Kind:        "uninstall",
-		TargetID:    targetID,
-		Actions:     actions,
+		PlanID:       plan.PlanID,
+		OperationID:  plan.OperationID,
+		BackupID:     fmt.Sprintf("snapshot_%s", plan.OperationID),
+		Root:         s.root,
+		Generation:   plan.Generation,
+		Kind:         "uninstall",
+		TargetID:     targetID,
+		Actions:      actions,
 		CleanupPaths: plan.CleanupPaths,
-		Blockers:    plan.Blockers,
-		Risks:       risks,
+		Blockers:     plan.Blockers,
+		Risks:        risks,
 		Summary: PlanPreviewSummary{
 			RestoresOriginal: plan.Summary.RestoresOriginal,
 			RestoresLayer:    plan.Summary.RestoresLayer,
@@ -1091,19 +1114,19 @@ func (s *DesktopService) PreviewPriority(priorities map[string]int) (PlanResult,
 	}
 
 	return PlanResult{
-		PlanID:      plan.PlanID,
-		OperationID: plan.OperationID,
-		BackupID:    fmt.Sprintf("snapshot_%s", plan.OperationID),
-		Root:        s.root,
-		Generation:  plan.Generation,
-		Kind:        "priority",
-		TargetID:    "priority_adjustment",
-		ModTitle:    "模组优先级调整",
-		Version:     "",
-		Actions:     actions,
+		PlanID:       plan.PlanID,
+		OperationID:  plan.OperationID,
+		BackupID:     fmt.Sprintf("snapshot_%s", plan.OperationID),
+		Root:         s.root,
+		Generation:   plan.Generation,
+		Kind:         "priority",
+		TargetID:     "priority_adjustment",
+		ModTitle:     "模组优先级调整",
+		Version:      "",
+		Actions:      actions,
 		CleanupPaths: plan.CleanupPaths,
-		Blockers:    plan.Blockers,
-		Risks:       []PlanPreviewRisk{},
+		Blockers:     plan.Blockers,
+		Risks:        []PlanPreviewRisk{},
 		Summary: PlanPreviewSummary{
 			RestoresOriginal: plan.Summary.RestoresOriginal,
 			RestoresLayer:    plan.Summary.RestoresLayer,
@@ -1171,6 +1194,12 @@ func (s *DesktopService) PreviewUninstall(targetID string) (PlanResult, error) {
 }
 
 func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstallResult, error) {
+	finish, err := s.mutations.begin()
+	if err != nil {
+		return ArchiveInstallResult{}, err
+	}
+	defer finish()
+
 	if err := s.checkStorageAccess(); err != nil {
 		return ArchiveInstallResult{}, err
 	}

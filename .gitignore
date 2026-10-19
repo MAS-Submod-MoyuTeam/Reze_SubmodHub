@@ -44,6 +44,10 @@ playwright-report/
 # Temporary mobile UI verification screenshots
 /mobile-*.png
 
+# Local Go build cache and temporary verification artifacts
+/.gocache/
+/tmp/
+
 # Frontend dependencies and build output
 node_modules/
 dist/

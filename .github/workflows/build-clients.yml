@@ -87,6 +87,11 @@ jobs:
           SUBMODHUB_VERSION: ${{ needs.version.outputs.version }}
         run: wails3 task windows:build
 
+      - name: Build Windows independent updater
+        shell: pwsh
+        run: |
+          go build -buildmode=exe -ldflags="-s -w" -o "out/updater.exe" ./cmd/updater
+
       - name: Package artifact
         shell: pwsh
         run: |
@@ -98,7 +103,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: submodhub-windows-amd64
-          path: out/submodhub-windows-amd64-*.exe
+          path: |
+            out/submodhub-windows-amd64-*.exe
+            out/updater.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -225,7 +232,7 @@ jobs:
       - name: List artifacts
         run: |
           cd out
-          sha256sum submodhub-* > SHA256SUMS.txt
+          sha256sum submodhub-* updater.exe > SHA256SUMS.txt
           echo "--- SHA256SUMS.txt ---"
           cat SHA256SUMS.txt
 

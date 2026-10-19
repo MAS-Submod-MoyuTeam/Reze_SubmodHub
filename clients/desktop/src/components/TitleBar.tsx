@@ -29,6 +29,8 @@ interface TitleBarProps {
   onLaunchGame: () => Promise<void>;
   isLaunchingGame: boolean;
   isAndroid?: boolean;
+  onOpenAppUpdate?: () => void;
+  hasAppUpdate?: boolean;
 }
 
 /**
@@ -53,6 +55,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onLaunchGame,
   isLaunchingGame,
   isAndroid = false,
+  onOpenAppUpdate,
+  hasAppUpdate = false,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isMaximised, setIsMaximised] = useState(false);
@@ -125,12 +129,29 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <span className="font-semibold text-neutral-100 tracking-tight text-sm">
             SubmodHub
           </span>
-          <span
-            className="text-[10px] text-neutral-500 font-mono"
-            title={`SubmodHub v${__APP_VERSION__}`}
-          >
-            v{__APP_VERSION__}
-          </span>
+          {onOpenAppUpdate ? (
+            <button
+              type="button"
+              onClick={onOpenAppUpdate}
+              className={`wails-no-drag flex items-center gap-1 text-[10px] font-mono transition-colors hover:text-neutral-200 ${
+                hasAppUpdate ? 'text-emerald-400 font-semibold' : 'text-neutral-500'
+              }`}
+              title={`点击检查更新 (当前 v${__APP_VERSION__})`}
+              aria-label={`检查应用更新，当前版本 v${__APP_VERSION__}`}
+            >
+              <span>v{__APP_VERSION__}</span>
+              {hasAppUpdate && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              )}
+            </button>
+          ) : (
+            <span
+              className="text-[10px] text-neutral-500 font-mono"
+              title={`SubmodHub v${__APP_VERSION__}`}
+            >
+              v{__APP_VERSION__}
+            </span>
+          )}
           <span className="hidden text-[11px] text-neutral-400 font-mono lg:inline">
             {isAndroid ? 'Android' : 'PC Client'}
           </span>

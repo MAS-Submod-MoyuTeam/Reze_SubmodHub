@@ -58,6 +58,12 @@ func (s *DesktopService) loadInstances() error {
 }
 
 func (s *DesktopService) saveInstances() error {
+	finish, err := s.mutations.begin()
+	if err != nil {
+		return err
+	}
+	defer finish()
+
 	if err := os.MkdirAll(filepath.Dir(s.configPath), 0o700); err != nil {
 		return err
 	}

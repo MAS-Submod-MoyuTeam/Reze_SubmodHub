@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/reze/submodhub/internal/updater"
 	"github.com/reze/submodhub/internal/version"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -108,6 +109,12 @@ func desktopAssets(apiURL string, frontend http.Handler) (http.Handler, error) {
 }
 
 func main() {
+	if err := updater.RecoverStartup(""); errors.Is(err, updater.ErrRecoveryStarted) {
+		return
+	} else if err != nil {
+		log.Printf("Update recovery: %v", err)
+	}
+
 	service := NewDesktopService()
 	apiURL := os.Getenv("SUBMODHUB_API_URL")
 	if apiURL == "" {

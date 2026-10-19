@@ -3,4 +3,7 @@
     <!-- Camera captures are written here and shared with the camera app via the
          FileProvider. -->
     <cache-path name="captures" path="captures/" />
+    <!-- Staged APK updates downloaded by SubmodHub -->
+    <cache-path name="submodhub_updates" path="submodhub_updates/" />
+    <files-path name="submodhub_files" path="." />
 </paths>

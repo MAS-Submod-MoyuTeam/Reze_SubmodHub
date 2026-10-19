@@ -89,6 +89,7 @@ public class MainActivity extends AppCompatActivity {
         bridge = new WailsBridge(this);
         bridge.initialize();
         SubmodHubStorageAccess.init(this);
+        SubmodHubAppUpdate.init(this);
 
         // Set up WebView
         setupWebView();
@@ -506,6 +507,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (SubmodHubAppUpdate.onActivityResult(requestCode, resultCode)) return;
         if (requestCode == PHOTO_CAPTURE_REQUEST || requestCode == VIDEO_CAPTURE_REQUEST) {
             handleCaptureResult(resultCode, data);
             return;
@@ -831,12 +833,14 @@ public class MainActivity extends AppCompatActivity {
         if (bridge != null) {
             bridge.onResume();
         }
+        SubmodHubAppUpdate.onResume();
         SubmodHubStorageAccess.onResume(this);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        SubmodHubAppUpdate.onPause();
         if (bridge != null) {
             bridge.onPause();
         }

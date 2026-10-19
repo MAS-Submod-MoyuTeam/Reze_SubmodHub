@@ -23,6 +23,8 @@ interface SidebarProps {
   recoverableOpsCount: number;
   onRefreshCatalog: () => void;
   isRefreshing: boolean;
+  onOpenAppUpdate?: () => void;
+  hasAppUpdate?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -34,6 +36,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   recoverableOpsCount,
   onRefreshCatalog,
   isRefreshing,
+  onOpenAppUpdate,
+  hasAppUpdate = false,
 }) => {
   const formatBytes = (bytes: number) => {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
@@ -163,10 +167,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span>{isRefreshing ? '正在同步云端契约...' : '刷新模组目录缓存'}</span>
         </button>
 
-        {/* Build identity */}
+        {/* Build identity & App update trigger */}
         <div className="flex items-center justify-between px-1 text-[10px] font-mono text-neutral-500">
           <span>SubmodHub</span>
-          <span title={`SubmodHub v${__APP_VERSION__}`}>v{__APP_VERSION__}</span>
+          {onOpenAppUpdate ? (
+            <button
+              onClick={onOpenAppUpdate}
+              className={`flex items-center gap-1 hover:text-neutral-300 transition-colors ${
+                hasAppUpdate ? 'text-emerald-400 font-semibold' : ''
+              }`}
+              title={`点击检查更新 (当前 v${__APP_VERSION__})`}
+            >
+              <span>v{__APP_VERSION__}</span>
+              {hasAppUpdate && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+            </button>
+          ) : (
+            <span title={`SubmodHub v${__APP_VERSION__}`}>v{__APP_VERSION__}</span>
+          )}
         </div>
       </div>
     </aside>

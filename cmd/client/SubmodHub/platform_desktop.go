@@ -41,3 +41,7 @@ func getPlatformInternalConfigDir() (string, error) {
 func getPlatformInternalCacheDir() (string, error) {
 	return filepath.Join(os.TempDir(), "submodhub_client_stage"), nil
 }
+
+func newPlatformUpdateBridge() PlatformUpdateBridge {
+	return &desktopUpdateBridge{}
+}

@@ -283,3 +283,32 @@ export interface ExternalChangeDrift {
   detected_at: string;
   status: 'paused' | 'resolved';
 }
+
+export type AppUpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'verifying'
+  | 'ready'
+  | 'installing'
+  | 'awaiting_user'
+  | 'completed'
+  | 'failed'
+  | 'rolled_back'
+  | 'cancelled';
+
+export interface AppUpdateState {
+  status: AppUpdateStatus;
+  current_version: string;
+  latest_version?: string;
+  release_notes?: string;
+  download_progress: number;
+  downloaded_bytes: number;
+  total_bytes: number;
+  staged_path?: string;
+  error?: string;
+  can_install: boolean;
+  requires_user_action: boolean;
+  requires_install_permission: boolean;
+}

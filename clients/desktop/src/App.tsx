@@ -13,6 +13,7 @@ import { OperationsView } from './components/OperationsView';
 import { InstancesView } from './components/InstancesView';
 import { AdoptModal } from './components/AdoptModal';
 import { FileInspectModal } from './components/FileInspectModal';
+import { AppUpdateModal } from './components/AppUpdateModal';
 import { ExecutionProgressBar } from './components/ExecutionProgressBar';
 import { ExecutionCoordinator } from './executionCoordinator';
 import { StorageAccessBanner } from './components/StorageAccessBanner';
@@ -24,7 +25,7 @@ import {
   type InstanceSyncReason,
 } from './storagePermissionSync';
 import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
-import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewAdopt, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive, GetAndroidStorageAccess, RequestAndroidStorageAccess, isAndroid } from './wails';
+import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewAdopt, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive, GetAndroidStorageAccess, RequestAndroidStorageAccess, ConfirmAppUpdateStartup, CheckForAppUpdate, DownloadAppUpdate, CancelAppUpdate, GetAppUpdateStatus, InstallAppUpdate, OpenAppUpdateSettings, isAndroid } from './wails';
 import { INITIAL_OPERATIONS } from './data/mockData';
 import { createInstalledLoadCoordinator, LoadingStatus } from './installedLoading';
 import { getPlanActionText, resolveModInstallationId, describeExecutionError } from './planExecution';
@@ -38,6 +39,7 @@ import {
   PlanChange,
   ExecutionSession,
   SpriteSelectionPlanContext,
+  AppUpdateState,
 } from './types/client';
 
 const UNVERIFIED_INSTALLATION: Installation = {
@@ -113,6 +115,147 @@ export default function App() {
     setSpritepacksError(coordinator.getSpritepacksError());
     setIsSpritepacksInitialLoading(coordinator.isSpritepacksInitialLoading());
     setIsSpritepacksRefreshing(coordinator.isSpritepacksRefreshing());
+  };
+
+  // App auto-update state
+  const [isAppUpdateOpen, setIsAppUpdateOpen] = useState(false);
+  const [appUpdateState, setAppUpdateState] = useState<AppUpdateState>({
+    status: 'idle',
+    current_version: __APP_VERSION__,
+    download_progress: 0,
+    downloaded_bytes: 0,
+    total_bytes: 0,
+    can_install: false,
+    requires_user_action: false,
+    requires_install_permission: false,
+  });
+  const appUpdateRequestRef = useRef(0);
+  const appUpdatePollRef = useRef(false);
+  const appUpdateStartupRef = useRef(false);
+  const appUpdateInstallRef = useRef(false);
+
+  const pollAppUpdate = async () => {
+    if (appUpdatePollRef.current || appUpdateInstallRef.current) return;
+    appUpdatePollRef.current = true;
+    const request = appUpdateRequestRef.current;
+    try {
+      const state = await GetAppUpdateStatus();
+      if (state && request === appUpdateRequestRef.current) {
+        setAppUpdateState((prev) => ({ ...prev, error: undefined, ...state }));
+      }
+    } catch {
+      // Keep the last known state; the next poll or foreground event retries.
+    } finally {
+      appUpdatePollRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    if (!['downloading', 'verifying', 'awaiting_user'].includes(appUpdateState.status)) return;
+    const timer = setInterval(pollAppUpdate, 500);
+    return () => clearInterval(timer);
+  }, [appUpdateState.status]);
+
+  useEffect(() => {
+    const onFocus = () => { void pollAppUpdate(); };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void pollAppUpdate();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isAppUpdateOpen) void pollAppUpdate();
+  }, [isAppUpdateOpen]);
+
+  const handleCheckAppUpdate = async () => {
+    const request = ++appUpdateRequestRef.current;
+    setAppUpdateState((prev) => ({ ...prev, status: 'checking', error: undefined }));
+    try {
+      const state = await CheckForAppUpdate();
+      if (request !== appUpdateRequestRef.current) return;
+      ++appUpdateRequestRef.current;
+      setAppUpdateState((prev) => ({ ...prev, error: undefined, ...state }));
+    } catch (err: any) {
+      if (request !== appUpdateRequestRef.current) return;
+      ++appUpdateRequestRef.current;
+      setAppUpdateState((prev) => ({
+        ...prev,
+        status: 'failed',
+        error: err?.message || '检查更新失败',
+      }));
+    }
+  };
+
+  const handleDownloadAppUpdate = async () => {
+    const request = ++appUpdateRequestRef.current;
+    // Immediately show downloading state to prevent UI freeze/race
+    setAppUpdateState((prev) => ({ ...prev, status: 'downloading', error: undefined }));
+    try {
+      const state = await DownloadAppUpdate();
+      if (request !== appUpdateRequestRef.current) return;
+      ++appUpdateRequestRef.current;
+      setAppUpdateState((prev) => ({ ...prev, error: undefined, ...state }));
+      // Ensure immediate status poll
+      void pollAppUpdate();
+    } catch (err: any) {
+      if (request !== appUpdateRequestRef.current) return;
+      ++appUpdateRequestRef.current;
+      setAppUpdateState((prev) => ({
+        ...prev,
+        status: 'failed',
+        error: err?.message || '启动下载失败',
+      }));
+    }
+  };
+
+  const handleCancelAppUpdate = async () => {
+    const request = ++appUpdateRequestRef.current;
+    try {
+      const state = await CancelAppUpdate();
+      if (request !== appUpdateRequestRef.current) return;
+      ++appUpdateRequestRef.current;
+      setAppUpdateState((prev) => ({ ...prev, error: undefined, ...state }));
+    } catch {
+      if (request !== appUpdateRequestRef.current) return;
+      ++appUpdateRequestRef.current;
+      // Reconcile with the backend if the cancellation response was lost.
+      void pollAppUpdate();
+    }
+  };
+
+  const handleInstallAppUpdate = async () => {
+    if (appUpdateInstallRef.current || appUpdateState.status !== 'ready') return;
+    appUpdateInstallRef.current = true;
+    ++appUpdateRequestRef.current;
+    setAppUpdateState((prev) => ({ ...prev, status: 'installing', error: undefined }));
+    try {
+      const state = await InstallAppUpdate();
+      setAppUpdateState((prev) => ({ ...prev, error: undefined, ...state }));
+    } catch (err: any) {
+      // The backend releases its claim on failure and remains authoritative.
+      try {
+        const state = await GetAppUpdateStatus();
+        setAppUpdateState((prev) => ({ ...prev, ...state, error: err?.message || '安装更新失败' }));
+      } catch {
+        setAppUpdateState((prev) => ({ ...prev, status: 'ready', error: err?.message || '安装更新失败，请重试' }));
+      }
+    } finally {
+      appUpdateInstallRef.current = false;
+    }
+  };
+
+  const handleOpenAppUpdateSettings = async () => {
+    try {
+      await OpenAppUpdateSettings();
+    } catch {
+      // Ignore
+    }
   };
 
   // States & Scenario Simulation
@@ -464,8 +607,26 @@ export default function App() {
 
   useEffect(() => {
     void loadCatalog();
-    void ListMASInstances().then((state) => syncInstances(state as MASInstancesState, { reason: 'init' }))
-      .catch((error) => showToast(`实例列表读取失败：${String(error)}`));
+    void ListMASInstances().then((state) => {
+      syncInstances(state as MASInstancesState, { reason: 'init' });
+      // This effect runs after React has committed the normal application UI.
+      // Remote catalog availability is deliberately not a startup prerequisite.
+      return ConfirmAppUpdateStartup();
+    }).then(async () => {
+      if (appUpdateStartupRef.current) return;
+      appUpdateStartupRef.current = true;
+      if (appUpdateRequestRef.current !== 0) return;
+      const request = appUpdateRequestRef.current;
+      try {
+        const state = await GetAppUpdateStatus();
+        if (request !== appUpdateRequestRef.current) return;
+        setAppUpdateState((prev) => ({ ...prev, error: undefined, ...state }));
+        // Preserve staged updates and all work already owned by the updater.
+        if (state.status === 'idle') await handleCheckAppUpdate();
+      } catch {
+        // Startup update discovery is optional; manual checks remain available.
+      }
+    }).catch((error) => showToast(`启动初始化失败：${String(error)}`));
     void refreshOperations();
   }, []);
 
@@ -1118,6 +1279,8 @@ export default function App() {
         onLaunchGame={() => handleLaunchInstance(activeInstallationId)}
         isLaunchingGame={isLaunchingGame}
         isAndroid={isAndroidDevice}
+        onOpenAppUpdate={() => setIsAppUpdateOpen(true)}
+        hasAppUpdate={appUpdateState.status === 'available' || appUpdateState.status === 'ready'}
       />
 
       {executionSession && executionSession.installation_id === activeInstallationId && (
@@ -1162,6 +1325,8 @@ export default function App() {
           recoverableOpsCount={recoverableOpsCount}
           onRefreshCatalog={handleRefreshCatalog}
           isRefreshing={isRefreshing}
+          onOpenAppUpdate={() => setIsAppUpdateOpen(true)}
+          hasAppUpdate={appUpdateState.status === 'available' || appUpdateState.status === 'ready'}
         />
 
         {/* Center Main Viewport */}
@@ -1273,6 +1438,8 @@ export default function App() {
               onRefreshInstances={handleRefreshInstances}
               onBrowseDirectory={BrowseMASDirectory}
               isAndroid={isAndroidDevice}
+              onOpenAppUpdate={() => setIsAppUpdateOpen(true)}
+              hasAppUpdate={appUpdateState.status === 'available' || appUpdateState.status === 'ready'}
             />
           )}
 
@@ -1369,6 +1536,19 @@ export default function App() {
           onClose={() => setInspectTarget(null)}
         />
       )}
+
+      {/* 8. App Auto-Update Modal */}
+      <AppUpdateModal
+        isOpen={isAppUpdateOpen}
+        onClose={() => setIsAppUpdateOpen(false)}
+        updateState={appUpdateState}
+        onCheckUpdate={handleCheckAppUpdate}
+        onDownloadUpdate={handleDownloadAppUpdate}
+        onInstallUpdate={handleInstallAppUpdate}
+        onCancelUpdate={handleCancelAppUpdate}
+        onOpenSettings={handleOpenAppUpdateSettings}
+        isAndroid={isAndroidDevice}
+      />
     </div>
   );
 }
