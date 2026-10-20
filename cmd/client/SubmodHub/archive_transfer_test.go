@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -45,6 +46,44 @@ func setupTestMASRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+func TestStageRetriesExpiredDescriptorAndReportsCompletion(t *testing.T) {
+	data, hash := createTestZip(t, map[string]string{"Submods/Test/file.txt": "ok"})
+	attempts, reports := 0, 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/versions/v/download":
+			attempts++
+			if attempts == 2 && r.URL.Query().Get("delivery") != "builtin" {
+				t.Error("retry did not request builtin fallback")
+			}
+			expiry := time.Now().Add(time.Hour)
+			if attempts == 1 {
+				expiry = time.Now().Add(-time.Minute)
+			}
+			json.NewEncoder(w).Encode(map[string]any{"url": "/archive", "sha256": hash, "size_bytes": len(data), "expires_at": expiry.Format(time.RFC3339), "completion_token": strings.Repeat("a", 64)})
+		case "/archive":
+			w.Write(data)
+		case "/api/v1/versions/v/download-complete":
+			reports++
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			if body["sha256"] != hash {
+				t.Error("incorrect completion hash")
+			}
+			w.Write([]byte(`{"recorded":true}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	m, _ := NewArchiveStagingManager(t.TempDir())
+	defer m.Close()
+	_, err := m.Stage(context.Background(), StageArchiveRequest{APIBase: srv.URL + "/api/v1", VersionID: "v", OperationID: "op"})
+	if err != nil || attempts != 2 || reports != 1 {
+		t.Fatalf("retry/receipt: %v attempts=%d reports=%d", err, attempts, reports)
+	}
 }
 
 func TestStageArchiveLifecycle(t *testing.T) {
@@ -241,7 +280,6 @@ func TestPreviewArchiveRejectLargeBase64(t *testing.T) {
 	}
 }
 
-
 func TestStageArchiveOriginAndProtocolConstraints(t *testing.T) {
 	// 1. Cross-origin archive URL in descriptor
 	crossOriginServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -389,7 +427,6 @@ func TestArchiveStagingStartupAndManualCleanup(t *testing.T) {
 	}
 }
 
-
 func TestStageArchivePackagedModeUsesConfiguredAPIURL(t *testing.T) {
 	zipData, zipHash := createTestZip(t, map[string]string{
 		"Submods/PackagedMod/header.txt": "packaged-mode-data",
@@ -521,7 +558,6 @@ func TestStageArchiveCancelRaceBeforeRegistration(t *testing.T) {
 		t.Fatalf("lingering temp files in stageDir: %d", len(entries))
 	}
 }
-
 
 func TestStageArchiveAllowsConfiguredHTTPBase(t *testing.T) {
 	zipData, zipHash := createTestZip(t, map[string]string{

@@ -1,6 +1,26 @@
+import { fetchDownloadNodes, saveDownloadNode, deleteDownloadNode, testDownloadNode } from './settings-api.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fetchSettings, updateSettings, testGitHubProxy, type SiteSettings, type ProxyTestResponse } from './settings-api.js';
+
+test('download node writes use explicit fields and keep blank secret semantics', async () => {
+ const calls: Array<{url: string; init?: RequestInit}> = [];
+ const fetcher: typeof fetch = async (input, init) => {
+ calls.push({url:String(input),init}); return Response.json({items:[],revision:2,builtin_fallback:true,master_key_configured:true});
+ };
+ const node = {id:'relay',name:'Relay',type:'github_relay' as const,enabled:true,weight:1,capabilities:['github'],base_url:'https://relay.example',password:'',credential_ciphertext:'must-not-send',credential_configured:true};
+ await saveDownloadNode(node,1,'csrf',true,'/api/v1',fetcher);
+ const sent=JSON.parse(String(calls[0].init?.body)); assert.equal(sent.node.password,'');assert.equal(sent.node.credential_ciphertext,undefined);assert.equal(sent.node.credential_configured,undefined);assert.equal(calls[0].init?.method,'PUT');assert.equal(new Headers(calls[0].init?.headers).get('X-CSRF-Token'),'csrf');
+ await fetchDownloadNodes('/api/v1',fetcher);
+ await deleteDownloadNode('relay',2,'csrf','/api/v1',fetcher);
+ await testDownloadNode('relay',2,'csrf','/api/v1',fetcher);
+ assert.equal(calls[2].init?.method,'DELETE');assert.equal(calls[3].url,'/api/v1/admin/download-nodes/relay/test');
+});
+
+test('normalizes blank lines in storage origins only when saving', async()=>{
+ const fetcher:typeof fetch=async(_input,init)=>{const body=JSON.parse(String(init?.body));assert.deepEqual(body.node.allowed_download_origins,['https://cdn.example']);return Response.json({items:[],revision:1});};
+ await saveDownloadNode({id:'n',name:'n',type:'cloudreve',enabled:true,weight:1,capabilities:['cloudreve'],password:'',allowed_download_origins:['  https://cdn.example  ','','  ']},0,'csrf',true,'/api/v1',fetcher);
+});
 
 test('fetchSettings returns settings from endpoint', async () => {
   const mockResponse: SiteSettings = {

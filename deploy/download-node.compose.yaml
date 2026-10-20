@@ -1,0 +1,25 @@
+# Standalone relay deployment; no API database, archive volume or Cloudreve secrets.
+name: submodhub-download-node
+services:
+  download-node:
+    build:
+      context: ..
+      dockerfile: deploy/download-node.Dockerfile
+    restart: unless-stopped
+    environment:
+      DOWNLOAD_NODE_ID: ${DOWNLOAD_NODE_ID:?set node id matching the Web configuration}
+      DOWNLOAD_NODE_KEY: ${DOWNLOAD_NODE_KEY:?set random key of at least 32 bytes}
+      DOWNLOAD_NODE_ADDR: ":8080"
+      DOWNLOAD_NODE_CONCURRENCY: ${DOWNLOAD_NODE_CONCURRENCY:-8}
+      DOWNLOAD_NODE_GITHUB_PROXY: ${DOWNLOAD_NODE_GITHUB_PROXY:-}
+    ports:
+      - "127.0.0.1:${DOWNLOAD_NODE_PORT:-18084}:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 192m
+    pids_limit: 64
+# Terminate HTTPS in the host reverse proxy. Copy download-node.nginx.conf,
+# use this published port, and configure certificates for your own public name.

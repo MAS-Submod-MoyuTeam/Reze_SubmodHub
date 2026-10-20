@@ -14,6 +14,8 @@ export interface CatalogMod {
   recommended_priority?: number;
   latest_version_id: string;
   downloads_count?: number;
+  client_reported_downloads?: number;
+  download_attempts?: number;
   latest_version?: string;
   size_bytes?: number;
   sha256?: string;
@@ -46,6 +48,10 @@ export interface CatalogEntry {
 }
 
 export interface ArchiveDescriptor {
+  delivery_type?: 'builtin' | 'cloudreve' | 'github_relay';
+  node_id?: string;
+  allowed_download_origins?: string[];
+  completion_token?: string;
   url: string;
   expires_at: string;
   sha256: string;
@@ -229,7 +235,10 @@ export async function fetchVerifiedArchive(
   onProgress?.({ received: 0, total: descriptor.size_bytes, stage: 'connecting' });
   const serviceURL = new URL(base, typeof window === 'undefined' ? 'http://localhost/' : window.location.href);
   const archiveURL = new URL(descriptor.url, serviceURL);
-  const response = await fetcher(archiveURL.href, { signal });
+  const external = archiveURL.origin !== serviceURL.origin;
+  if (archiveURL.username || archiveURL.password || archiveURL.hash) throw new Error('download_origin_forbidden');
+  if (external && (archiveURL.protocol !== 'https:' || !descriptor.allowed_download_origins?.includes(archiveURL.origin) || /^(localhost(?:\.|$)|.*\.localhost$|127\.|0\.|10\.|192\.168\.|169\.254\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|\[)/i.test(archiveURL.hostname))) throw new Error('download_origin_forbidden');
+  const response = await fetcher(archiveURL.href, { signal, credentials: external ? 'omit' : 'same-origin', redirect: 'error', referrerPolicy: 'no-referrer' });
   if (!response.ok) {
     const errorBody = await response.json().catch(() => null) as { code?: string } | null;
     throw new Error(errorBody?.code || `http_${response.status}`);

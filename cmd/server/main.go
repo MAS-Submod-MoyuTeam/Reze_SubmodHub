@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/reze/submodhub/internal/auth"
+	"github.com/reze/submodhub/internal/delivery"
 	"github.com/reze/submodhub/internal/httpapi"
 	"github.com/reze/submodhub/internal/version"
 )
@@ -39,6 +40,12 @@ func main() {
 	}
 	if err != nil {
 		log.Fatal(err)
+	}
+	if key := os.Getenv("SUBMODHUB_DELIVERY_MASTER_KEY"); key != "" {
+		store.DeliverySecrets, err = delivery.NewSecrets(key)
+		if err != nil {
+			log.Fatal("invalid SUBMODHUB_DELIVERY_MASTER_KEY: expected base64 encoded 32 bytes")
+		}
 	}
 	store.UploadToken = os.Getenv("SUBMODHUB_UPLOAD_TOKEN")
 	store.AutoPublish = os.Getenv("SUBMODHUB_AUTO_PUBLISH") == "true"
@@ -80,6 +87,8 @@ func main() {
 		log.Printf("GitHub Releases background sync started (interval: %s)", store.GitHubSyncInterval)
 	}
 
+	store.StartDeliveryMetricsWorker(context.Background())
+	store.StartDeliveryWorker(context.Background())
 	log.Printf("SubmodHub API %s listening on %s", version.Current().String(), addr)
 	log.Fatal(http.ListenAndServe(addr, httpapi.NewStoreHandler(store)))
 }

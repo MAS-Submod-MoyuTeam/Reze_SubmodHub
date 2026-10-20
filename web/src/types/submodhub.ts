@@ -41,6 +41,8 @@ export interface ModSummary {
   recommended_priority: number;
   latest_version_id: string;
   downloads_count: number;
+  client_reported_downloads?: number;
+  download_attempts?: number;
   updated_at: string;
   created_at: string;
   thumbnail?: string;

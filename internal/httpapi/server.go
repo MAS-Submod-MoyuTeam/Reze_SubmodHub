@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/reze/submodhub/internal/auth"
+	"github.com/reze/submodhub/internal/delivery"
 	"github.com/reze/submodhub/internal/github"
 	packagezip "github.com/reze/submodhub/internal/package"
 	"github.com/reze/submodhub/internal/version"
@@ -81,33 +82,35 @@ type VersionSourceLocation struct {
 	DownloadURL string `json:"download_url"`
 }
 type Mod struct {
-	ID                  string     `json:"id"`
-	Title               string     `json:"title"`
-	Summary             string     `json:"summary"`
-	Description         string     `json:"description,omitempty"`
-	Author              Author     `json:"author"`
-	Category            string     `json:"category"`
-	Tags                []string   `json:"tags"`
-	SupportedPlatforms  []string   `json:"supported_platforms"`
-	MASVersionRange     string     `json:"mas_version_range"`
-	RecommendedPriority int        `json:"recommended_priority"`
-	LatestVersionID     string     `json:"latest_version_id"`
-	LatestVersion       string     `json:"latest_version"`
-	SizeBytes           int64      `json:"size_bytes"`
-	SHA256              string     `json:"sha256"`
-	DownloadsCount      int64      `json:"downloads_count"`
-	ImagePaths          []string   `json:"image_paths,omitempty"`
-	Unpublished         bool       `json:"unpublished,omitempty"`
-	SourceType          string     `json:"source_type,omitempty"`
-	GitHubOwner         string     `json:"github_owner,omitempty"`
-	GitHubRepo          string     `json:"github_repo,omitempty"`
-	GitHubAssetRegex    string     `json:"github_asset_regex,omitempty"`
-	GitHubSourceCode    bool       `json:"github_source_code,omitempty"`
-	GitHubLastSyncAt    *time.Time `json:"github_last_sync_at,omitempty"`
-	GitHubLastSyncError string     `json:"github_last_sync_error,omitempty"`
-	GitHubLastReleaseID int64      `json:"github_last_release_id,omitempty"`
-	GitHubETag          string     `json:"github_etag,omitempty"`
-	GitHubBackoffUntil  *time.Time `json:"github_backoff_until,omitempty"`
+	DownloadAttempts        int64      `json:"download_attempts"`
+	ClientReportedDownloads int64      `json:"client_reported_downloads"`
+	ID                      string     `json:"id"`
+	Title                   string     `json:"title"`
+	Summary                 string     `json:"summary"`
+	Description             string     `json:"description,omitempty"`
+	Author                  Author     `json:"author"`
+	Category                string     `json:"category"`
+	Tags                    []string   `json:"tags"`
+	SupportedPlatforms      []string   `json:"supported_platforms"`
+	MASVersionRange         string     `json:"mas_version_range"`
+	RecommendedPriority     int        `json:"recommended_priority"`
+	LatestVersionID         string     `json:"latest_version_id"`
+	LatestVersion           string     `json:"latest_version"`
+	SizeBytes               int64      `json:"size_bytes"`
+	SHA256                  string     `json:"sha256"`
+	DownloadsCount          int64      `json:"downloads_count"`
+	ImagePaths              []string   `json:"image_paths,omitempty"`
+	Unpublished             bool       `json:"unpublished,omitempty"`
+	SourceType              string     `json:"source_type,omitempty"`
+	GitHubOwner             string     `json:"github_owner,omitempty"`
+	GitHubRepo              string     `json:"github_repo,omitempty"`
+	GitHubAssetRegex        string     `json:"github_asset_regex,omitempty"`
+	GitHubSourceCode        bool       `json:"github_source_code,omitempty"`
+	GitHubLastSyncAt        *time.Time `json:"github_last_sync_at,omitempty"`
+	GitHubLastSyncError     string     `json:"github_last_sync_error,omitempty"`
+	GitHubLastReleaseID     int64      `json:"github_last_release_id,omitempty"`
+	GitHubETag              string     `json:"github_etag,omitempty"`
+	GitHubBackoffUntil      *time.Time `json:"github_backoff_until,omitempty"`
 }
 
 func (m Mod) GetSourceType() string {
@@ -175,15 +178,17 @@ type SettingsAuditEvent struct {
 }
 
 type Catalog struct {
-	Mods          []Mod                        `json:"mods"`
-	Versions      map[string]Version           `json:"versions"`
-	Submissions   []Submission                 `json:"submissions,omitempty"`
-	ReviewAudit   []ReviewAuditEvent           `json:"review_audit,omitempty"`
-	ScanReports   map[string]packagezip.Report `json:"scan_reports,omitempty"`
-	RoleGrants    map[string][]string          `json:"role_grants,omitempty"`
-	RoleAudit     []RoleAuditEvent             `json:"role_audit,omitempty"`
-	Settings      SiteSettings                 `json:"settings"`
-	SettingsAudit []SettingsAuditEvent         `json:"settings_audit,omitempty"`
+	ArchiveMirrors []ArchiveMirror              `json:"archive_mirrors,omitempty"`
+	DeliveryNodes  []DeliveryNode               `json:"delivery_nodes,omitempty"`
+	Mods           []Mod                        `json:"mods"`
+	Versions       map[string]Version           `json:"versions"`
+	Submissions    []Submission                 `json:"submissions,omitempty"`
+	ReviewAudit    []ReviewAuditEvent           `json:"review_audit,omitempty"`
+	ScanReports    map[string]packagezip.Report `json:"scan_reports,omitempty"`
+	RoleGrants     map[string][]string          `json:"role_grants,omitempty"`
+	RoleAudit      []RoleAuditEvent             `json:"role_audit,omitempty"`
+	Settings       SiteSettings                 `json:"settings"`
+	SettingsAudit  []SettingsAuditEvent         `json:"settings_audit,omitempty"`
 }
 
 const maxModImageSize = 10 << 20
@@ -224,6 +229,9 @@ type RoleAuditEvent struct {
 	At       time.Time `json:"at"`
 }
 type Store struct {
+	receipts           receiptRuntime
+	deliveryRuntime    deliveryRuntime
+	DeliverySecrets    *delivery.Secrets
 	mu                 sync.RWMutex
 	Catalog            Catalog
 	DataDir            string
@@ -319,6 +327,8 @@ func NewStoreHandler(s *Store) http.Handler {
 	mux.HandleFunc("/api/v1/auth/flarum/login", s.loginFlarum)
 	mux.HandleFunc("/api/v1/auth/logout", s.logout)
 	mux.HandleFunc("/api/v1/admin/users/", s.updateUserRoles)
+	mux.HandleFunc("/api/v1/admin/download-nodes", s.handleDeliveryNodes)
+	mux.HandleFunc("/api/v1/admin/download-nodes/", s.handleDeliveryNodes)
 	mux.HandleFunc("/api/v1/admin/settings", s.handleAdminSettings)
 	mux.HandleFunc("/api/v1/admin/settings/github-proxy/test", s.handleAdminSettingsTestGitHubProxy)
 	mux.HandleFunc("/api/v1/author/mods", s.authorMods)
@@ -1425,6 +1435,14 @@ func (s *Store) modResource(w http.ResponseWriter, r *http.Request) {
 	writeError(w, 404, "not_found", "resource was not found")
 }
 func (s *Store) downloadDescriptor(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/download-complete") {
+		s.downloadComplete(w, r)
+		return
+	}
+	if r.Method != http.MethodGet && !strings.HasSuffix(r.URL.Path, "/deprecate") && !strings.HasSuffix(r.URL.Path, "/unpublish") && !strings.HasSuffix(r.URL.Path, "/mark-latest") {
+		writeError(w, 405, "method_not_allowed", "GET required")
+		return
+	}
 	if strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/deprecate") {
 		s.deprecateVersion(w, r)
 		return
@@ -1449,7 +1467,19 @@ func (s *Store) downloadDescriptor(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "not_found", "published archive was not found")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"url": "/api/v1/archives/" + v.ID, "expires_at": time.Now().Add(15 * time.Minute).UTC().Format(time.RFC3339), "sha256": v.SHA256, "size_bytes": v.SizeBytes})
+	description := s.resolveDelivery(r, v)
+	token, err := s.issueDownloadAttempt(v)
+	if err != nil {
+		if errors.Is(err, errDeliveryPublicationChanged) {
+			writeError(w, 404, "not_found", "published archive was not found")
+			return
+		}
+		writeError(w, 500, "storage_error", "download attempt not saved")
+		return
+	}
+	description.CompletionToken = token
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, 200, description)
 }
 func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/author/versions/"), "/"), "/")

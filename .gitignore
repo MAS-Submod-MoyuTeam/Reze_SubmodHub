@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# Local Android Gradle cache
+/cmd/client/SubmodHub/build/android/.gradle/
+
 # Local Android release signing keys and credentials
 /.android-signing/
 
@@ -47,6 +50,11 @@ playwright-report/
 # Local Go build cache and temporary verification artifacts
 /.gocache/
 /tmp/
+
+# Local recovery backups and generated task drafts
+/permission-recovery/
+/docs/aegis/work/2026-10-20-download-delivery-nodes/*-draft*.json
+/docs/aegis/work/2026-10-20-download-delivery-nodes/gate-input-pack.json
 
 # Frontend dependencies and build output
 node_modules/

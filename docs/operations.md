@@ -1,5 +1,7 @@
 # SubmodHub Docker 运行
 
+下载交付节点、Cloudreve 凭据主密钥、独立探针与备份要求见 [下载交付运维](download-delivery.md)。
+
 ## 本地
 
 ```powershell

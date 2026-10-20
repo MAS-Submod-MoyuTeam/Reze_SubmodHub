@@ -3,6 +3,24 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { fetchDownloadDescriptor, fetchModVersion, fetchPublishedCatalog, fetchSpriteManifest, fetchSpriteSets, fetchVerifiedArchive, fetchVerifiedSpriteSelection } from './catalog-api';
 
+test('external archive requires declared origin and omits credentials', async () => {
+ const bytes=new TextEncoder().encode('zip');const hash=createHash('sha256').update(bytes).digest('hex');
+ let allowed=true;let downloads=0;
+ const fetcher: typeof fetch=async (input,init)=>{
+ if(String(input).includes('/versions/'))return Response.json({url:'https://cdn.example/archive',expires_at:new Date(Date.now()+60000).toISOString(),sha256:hash,size_bytes:3,allowed_download_origins:allowed?['https://cdn.example']:[]});
+ downloads++;assert.equal(init?.credentials,'omit');assert.equal(init?.redirect,'error');assert.equal(new Headers(init?.headers).has('Authorization'),false);return new Response(bytes);
+ };
+ await fetchVerifiedArchive('v','https://api.example/api/v1',fetcher);assert.equal(downloads,1);
+ allowed=false;await assert.rejects(fetchVerifiedArchive('v','https://api.example/api/v1',fetcher),/download_origin_forbidden/);assert.equal(downloads,1);
+});
+
+test('rejects private and reserved external origins even when declared',async()=>{
+ for(const host of ['172.16.0.1','172.31.255.255','100.64.0.1','100.127.255.255','[fd00::1]','[::1]']){
+ let requests=0;const fetcher:typeof fetch=async()=>{requests++;return Response.json({url:`https://${host}/archive`,expires_at:new Date(Date.now()+60000).toISOString(),sha256:'a'.repeat(64),size_bytes:3,allowed_download_origins:[`https://${host}`]});};
+ await assert.rejects(fetchVerifiedArchive('v','https://api.example/api/v1',fetcher),/download_origin_forbidden/);assert.equal(requests,1);
+ }
+});
+
 test('loads sprite manifest with version_id and verifies a selected ZIP hash', async () => {
   const bytes = new TextEncoder().encode('selected sprite ZIP');
   const hash = createHash('sha256').update(bytes).digest('hex');

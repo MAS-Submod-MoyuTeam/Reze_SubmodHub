@@ -1,5 +1,7 @@
 # GitHub 全链路代理与服务端下载中转实施计划
 
+> 2026-10-20：本计划的“客户端强制同源、每次中转先整包落盘”约束由[下载交付节点计划](2026-10-20-download-delivery-nodes.md)及对应代码替代；主API GitHub出站代理、同步和内置回落职责保留。当前部署验收状态见新计划，本文历史描述不代表已上线新行为。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use aegis:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将原“用户角色”页扩展为管理员设置页，可配置全站 GitHub 代理；GitHub API、同步与客户端下载的 GitHub 上游请求均由服务端经代理执行。

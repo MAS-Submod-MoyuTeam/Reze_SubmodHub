@@ -21,6 +21,7 @@ import (
 )
 
 type StageArchiveRequest struct {
+	forceBuiltin        bool
 	APIBase             string   `json:"api_base"`
 	VersionID           string   `json:"version_id"`
 	OperationID         string   `json:"operation_id"`
@@ -71,10 +72,14 @@ type StageProgress struct {
 }
 
 type ArchiveDescriptor struct {
-	URL       string `json:"url"`
-	ExpiresAt string `json:"expires_at"`
-	SHA256    string `json:"sha256"`
-	SizeBytes int64  `json:"size_bytes"`
+	CompletionToken        string   `json:"completion_token"`
+	DeliveryType           string   `json:"delivery_type"`
+	NodeID                 string   `json:"node_id"`
+	AllowedDownloadOrigins []string `json:"allowed_download_origins"`
+	URL                    string   `json:"url"`
+	ExpiresAt              string   `json:"expires_at"`
+	SHA256                 string   `json:"sha256"`
+	SizeBytes              int64    `json:"size_bytes"`
 }
 
 const (
@@ -272,7 +277,7 @@ func (m *ArchiveStagingManager) Cancel(operationID string) {
 	m.progress[operationID] = StageProgress{Stage: "error", Error: "cancelled"}
 }
 
-func (m *ArchiveStagingManager) Stage(ctx context.Context, req StageArchiveRequest) (StagedArchiveInfo, error) {
+func (m *ArchiveStagingManager) stageAttempt(ctx context.Context, req StageArchiveRequest) (StagedArchiveInfo, error) {
 	if req.OperationID == "" {
 		return StagedArchiveInfo{}, errors.New("operation_id_required")
 	}
@@ -563,6 +568,9 @@ func (m *ArchiveStagingManager) Stage(ctx context.Context, req StageArchiveReque
 
 	// 1. Fetch archive descriptor
 	descURL := fmt.Sprintf("%s/versions/%s/download", apiBase, url.PathEscape(req.VersionID))
+	if req.forceBuiltin {
+		descURL += "?delivery=builtin"
+	}
 	dReq, err := http.NewRequestWithContext(ctx, http.MethodGet, descURL, nil)
 	if err != nil {
 		m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: err.Error()})
@@ -620,28 +628,14 @@ func (m *ArchiveStagingManager) Stage(ctx context.Context, req StageArchiveReque
 	m.reservations[req.OperationID] = desc.SizeBytes
 	m.mu.Unlock()
 
-	// 2. Validate descriptor download URL: reject protocol-relative and cross-origin
-	if strings.HasPrefix(desc.URL, "//") {
-		m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "protocol_relative_url_rejected"})
-		return StagedArchiveInfo{}, errors.New("protocol_relative_url_rejected")
-	}
-
-	relParsed, err := url.Parse(desc.URL)
+	// 2. Validate API-authorized HTTPS delivery origins.
+	archiveParsed, err := validateArchiveDeliveryURL(baseParsed, desc.URL, desc.AllowedDownloadOrigins)
 	if err != nil {
-		m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "invalid_descriptor_url"})
-		return StagedArchiveInfo{}, fmt.Errorf("parse descriptor url failed: %w", err)
+		m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: err.Error()})
+		return StagedArchiveInfo{}, err
 	}
-	archiveParsed := baseParsed.ResolveReference(relParsed)
-
-	if archiveParsed.Host != baseParsed.Host {
-		m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "cross_origin_archive_url_rejected"})
-		return StagedArchiveInfo{}, fmt.Errorf("cross_origin_archive_url_rejected: %s", archiveParsed.Host)
-	}
-	// Allow scheme if it matches the configured API base scheme, or is https, or is local test host
-	if archiveParsed.Scheme != baseParsed.Scheme && archiveParsed.Scheme != "https" && !isLocalTestHost(archiveParsed.Hostname()) {
-		m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "insecure_archive_url_rejected"})
-		return StagedArchiveInfo{}, fmt.Errorf("insecure_archive_url_rejected: %s", archiveParsed.Scheme)
-	}
+	deliveryClient := archiveDeliveryClient(baseParsed, desc.AllowedDownloadOrigins)
+	defer deliveryClient.CloseIdleConnections()
 
 	// 3. Create temp staged file
 	tmpFile, err := os.CreateTemp(m.stageDir, "stage-*.zip")
@@ -666,10 +660,10 @@ func (m *ArchiveStagingManager) Stage(ctx context.Context, req StageArchiveReque
 		m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: err.Error()})
 		return StagedArchiveInfo{}, err
 	}
-	aRes, err := safeClient.Do(aReq)
+	aRes, err := deliveryClient.Do(aReq)
 	if err != nil {
-		m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: err.Error()})
-		return StagedArchiveInfo{}, fmt.Errorf("download archive failed: %w", err)
+		m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "download_transport_failed"})
+		return StagedArchiveInfo{}, errors.New("download_transport_failed")
 	}
 	defer aRes.Body.Close()
 
@@ -735,6 +729,10 @@ func (m *ArchiveStagingManager) Stage(ctx context.Context, req StageArchiveReque
 		return StagedArchiveInfo{}, errors.New("download_hash_mismatch")
 	}
 
+	// A completion report is best effort and cannot invalidate a verified archive.
+	if desc.CompletionToken != "" {
+		reportArchiveCompletion(ctx, safeClient, apiBase, req.VersionID, desc)
+	}
 	// 6. Generate unguessable handle
 	archiveID, err := generateSecureArchiveID()
 	if err != nil {

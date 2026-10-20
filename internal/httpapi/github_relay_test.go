@@ -246,7 +246,17 @@ func TestGitHubRelayScenarios(t *testing.T) {
 		},
 	}
 
-	server := httptest.NewServer(NewStoreHandler(store))
+	finished := make(chan struct{}, 1)
+	handler := NewStoreHandler(store)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler.ServeHTTP(w, r)
+		if r.Method == "GET" && r.URL.Path == "/api/v1/archives/v-relay-ok" {
+			select {
+			case finished <- struct{}{}:
+			default:
+			}
+		}
+	}))
 	defer server.Close()
 
 	// 1. Success relay download: GET /api/v1/archives/v-relay-ok
@@ -268,7 +278,13 @@ func TestGitHubRelayScenarios(t *testing.T) {
 	if atomic.LoadInt32(&proxyHits) == 0 {
 		t.Fatal("expected proxy hits > 0 for relay download")
 	}
-	// Verify download count incremented on successful verified stream
+	// Verify download count incremented on successful verified stream.
+	// A client Content-Length EOF can precede the handler's hash/count commit.
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("relay handler did not finish")
+	}
 	store.mu.RLock()
 	cnt := store.Catalog.Mods[0].DownloadsCount
 	store.mu.RUnlock()
@@ -706,7 +722,6 @@ func TestRelayContextCancellation(t *testing.T) {
 		t.Fatalf("semaphore slot not released after cancellation: %d", len(store.downloadSem))
 	}
 }
-
 
 // TestRelayReadIdleTimeout verifies that if upstream hangs mid-stream without sending bytes,
 // relay times out via idle read timeout and releases the semaphore slot.

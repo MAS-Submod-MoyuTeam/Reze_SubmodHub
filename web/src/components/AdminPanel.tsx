@@ -1,3 +1,4 @@
+import { DownloadNodeSettings } from './DownloadNodeSettings';
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Globe, RefreshCw, ShieldCheck, UserRoundCog, XCircle } from 'lucide-react';
 import { getFlarumUserRoles, readSession, setFlarumUserRoles } from '../../../ui/auth-api';
@@ -149,6 +150,7 @@ export const AdminPanel: React.FC = () => {
         <h1 className="text-lg font-bold text-neutral-900 mt-1">设置</h1>
       </div>
 
+      <DownloadNodeSettings apiBase={apiBase} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* GitHub Proxy Settings Card */}
         <div className="bg-white border border-neutral-200 rounded-lg p-5 space-y-5">
