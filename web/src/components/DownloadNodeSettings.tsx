@@ -45,7 +45,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
  };
  const test=async(node: DownloadNode)=>{
  if(busy||!settings)return;setBusy(true);setError('');setNotice('');
- try{const session=await readSession(apiBase);const result=await testDownloadNode(node.id,settings.revision,session.csrf_token,apiBase);if(result.ok)setNotice(`连接测试通过（${result.elapsed_ms} ms）。仅验证认证与目录元数据，尚未验证大包上传和写权限。`);else setError(failure(new Error(result.error_code)));setSettings(await fetchDownloadNodes(apiBase));}
+ try{const session=await readSession(apiBase);const result=await testDownloadNode(node.id,settings.revision,session.csrf_token,apiBase);if(result.ok)setNotice(`连接测试通过（${result.elapsed_ms} ms）。仅验证认证与目录元数据，尚未验证文件上传及大包交付。`);else setError(failure(new Error(result.error_code)));setSettings(await fetchDownloadNodes(apiBase));}
  catch(err){setError(failure(err));}finally{setInput(old=>({...old,password:''}));setBusy(false);}
  };
  return <section className="bg-white border border-neutral-200 rounded-lg p-5 space-y-5" aria-labelledby="download-nodes-title">
@@ -67,7 +67,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
  {input.type==='cloudreve'?<>
  <label className="text-xs space-y-1 sm:col-span-2">Cloudreve API 地址<input type="url" required placeholder="https://disk.example/api/v3" className={field} value={input.api_base_url||''} onChange={e=>setInput({...input,api_base_url:e.target.value})}/></label>
  <label className="text-xs space-y-1">网页登录用户名<input required autoComplete="off" className={field} value={input.username||''} onChange={e=>setInput({...input,username:e.target.value})}/></label>
- <label className="text-xs space-y-1">项目专用目录<input required className={field} value={input.directory||''} onChange={e=>setInput({...input,directory:e.target.value})}/></label>
+ <label className="text-xs space-y-1">项目专用目录<input required className={field} value={input.directory||''} onChange={e=>setInput({...input,directory:e.target.value})}/><span className="block text-neutral-500">测试连接或上传时，目录不存在会自动创建。</span></label>
  <label className="text-xs space-y-1 sm:col-span-2">下载与上传从机允许的 HTTPS origin（每行一个）<textarea required rows={3} placeholder="https://storage.example:29991" className={field} value={(input.allowed_download_origins||[]).join('\n')} onChange={e=>setInput({...input,allowed_download_origins:e.target.value.split('\n')})}/></label>
  </>:<label className="text-xs space-y-1 sm:col-span-2">节点 HTTPS 服务地址<input type="url" required placeholder="https://relay.example" className={field} value={input.base_url||''} onChange={e=>setInput({...input,base_url:e.target.value})}/></label>}
  <label className="text-xs space-y-1 sm:col-span-2">{input.type==='cloudreve'?'网页登录密码':'节点授权密钥（至少32字节）'}<input type="password" autoComplete="new-password" required={!editing} className={field} value={input.password} onChange={e=>setInput({...input,password:e.target.value})}/><span className="block text-neutral-500">{editing?'留空保留原凭据；输入新值即替换。':'仅发送到本站管理 API，加密保存在服务端。'}</span></label>

@@ -48,7 +48,7 @@ func (s *Store) testDeliveryNode(w http.ResponseWriter, r *http.Request, id stri
 		client, err = s.cloudreveClient(n)
 		if err == nil {
 			var listing cloudreve.Listing
-			listing, err = client.List(ctx, n.Directory)
+			listing, err = client.EnsureDirectory(ctx, n.Directory)
 			if err == nil && listing.Policy.Type != "local" && listing.Policy.Type != "remote" {
 				err = errors.New("cloudreve_upload_policy_unsupported")
 			}

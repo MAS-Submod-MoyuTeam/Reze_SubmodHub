@@ -8,7 +8,7 @@
 
 离线轮换命令：停止API并备份后，设置旧 `SUBMODHUB_DELIVERY_MASTER_KEY`、新 `SUBMODHUB_DELIVERY_NEW_MASTER_KEY`、`SUBMODHUB_DATA_DIR`，PostgreSQL另设同一 `POSTGRES_DSN`，执行 `go run ./cmd/delivery-rekey -confirm-offline-backup`。全量解密及重加密成功才提交一次快照；任一损坏凭据或保存失败均回滚。成功后部署环境改为新主密钥，再启动API。不要在API运行期间另进程写快照。
 
-管理员在设置页添加 Cloudreve 节点：网页登录凭据、`https://.../api/v3`、已存在的项目专用目录、实际上传/下载从机 HTTPS origin（含自定义端口）。WebDAV 凭据不能替代网页登录密码。密码留空保留旧值；删除节点只删配置/凭据，不删网盘对象。默认连接测试只验证认证与目录元数据，不证明写权限、大包或客户端可达。
+管理员在设置页添加 Cloudreve 节点：网页登录凭据、`https://.../api/v3`、项目专用目录（如 `/SubmodHub`，连接测试和首次上传时发现目录不存在会自动创建）、实际上传/下载从机 HTTPS origin（含自定义端口）。WebDAV 凭据不能替代网页登录密码。密码留空保留旧值；删除节点只删配置/凭据，不删网盘对象。默认连接测试验证认证与目录元数据，允许创建缺失的配置目录，不创建测试归档；仅Cloudreve明确返回目录不存在时才创建，认证、权限、网络错误不会触发创建。创建后重新读取确认，并容忍并发请求已先创建成功。测试仍不证明大包上传或客户端可达。
 
 镜像 worker 全局并发1，每15秒扫描发布目录，只补当前 GitHub latest 和已发布站内普通包，每个启用 Cloudreve 独立补齐。状态 pending/uploading/ready/failed 持久化，启动恢复 uploading，失败指数退避、最多8次。ready 前独立无Cookie读回验 SHA-256。支持 v3 local/remote 策略，其他策略返回不支持。源归档保留。设置页显示当前节点revision的镜像状态数量，失败任务可点击“重试失败镜像”，仅重置failed任务，保留ready对象。客户端过期/暂态失败最多重取一次描述，通过 `?delivery=builtin` 明确请求内置回落，从零下载；哈希错误不重试安装。
 

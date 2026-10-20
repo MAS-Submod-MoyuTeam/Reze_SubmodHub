@@ -26,7 +26,7 @@ func (c *Client) Upload(ctx context.Context, directory, name string, source io.R
 	if size <= 0 || size > 128<<20 || name == "" || path.Base(name) != name || strings.ContainsAny(name, "/\\") || !strings.HasPrefix(directory, "/") {
 		return Object{}, errors.New("cloudreve_upload_invalid")
 	}
-	listing, err := c.List(ctx, directory)
+	listing, err := c.EnsureDirectory(ctx, directory)
 	if err != nil {
 		return Object{}, err
 	}
