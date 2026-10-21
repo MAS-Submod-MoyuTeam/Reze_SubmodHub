@@ -22,7 +22,17 @@ function endpoint(base: string, path: string) { return `${base.replace(/\/$/, ''
 export interface AuthorModInput { title: string; summary: string; description?: string; author_display_name?: string; category: 'submod' | 'spritepack'; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean }
 export async function createAuthorMod(base: string, input: AuthorModInput, fetcher: typeof fetch = fetch): Promise<ApiMod> { return json(await fetcher(endpoint(base, '/author/mods'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })); }
 export async function updateAuthorMod(base: string, id: string, input: AuthorModInput, fetcher: typeof fetch = fetch): Promise<ApiMod> { return json(await fetcher(endpoint(base, `/author/mods/${encodeURIComponent(id)}`), { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })); }
-export async function listAuthorWorkspace(base: string, fetcher: typeof fetch = fetch): Promise<Array<{ mod: ApiMod; versions: ApiVersion[]; scan_reports?: Record<string, ServerScanReport> }>> { const result = await json<{ items: Array<{ mod: ApiMod; versions: ApiVersion[]; scan_reports?: Record<string, ServerScanReport> }> }>(await fetcher(endpoint(base, '/author/mods'), { credentials: 'same-origin' })); return result.items; }
+export interface ApiAuthorModItem { mod: ApiMod; is_published: boolean }
+export interface ApiAuthorSubmission extends ApiSubmission { mod_title: string; author_name: string; version_str: string; category: 'submod' | 'spritepack'; current_version?: ApiVersion }
+export async function listAuthorWorkspace(base: string, query: ReviewPageQuery & { focusModId?: string }, signal?: AbortSignal, fetcher: typeof fetch = fetch): Promise<ApiPage<ApiAuthorModItem>> {
+  const params = new URLSearchParams({ page: String(query.page), page_size: String(query.pageSize) });
+  if (query.focusModId) params.set('focus_mod_id', query.focusModId);
+  return json(await fetcher(endpoint(base, `/author/mods?${params}`), { credentials: 'same-origin', signal }));
+}
+export async function listAuthorVersions(base: string, modId: string, query: ReviewPageQuery, signal?: AbortSignal, fetcher: typeof fetch = fetch): Promise<ApiPage<ApiVersion> & { scan_reports: Record<string, ServerScanReport> }> {
+  const params = new URLSearchParams({ page: String(query.page), page_size: String(query.pageSize) });
+  return json(await fetcher(endpoint(base, `/author/mods/${encodeURIComponent(modId)}/versions?${params}`), { credentials: 'same-origin', signal }));
+}
 export async function createAuthorVersion(base: string, modID: string, version: string, releaseNotes: string, dependencies: unknown[] = [], fetcher: typeof fetch = fetch): Promise<ApiVersion> { return json(await fetcher(endpoint(base, `/author/mods/${encodeURIComponent(modID)}/versions`), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version, release_notes: releaseNotes, dependencies }) })); }
 export async function submitAuthorVersion(base: string, versionID: string, markLatest = true, fetcher: typeof fetch = fetch): Promise<ApiSubmission> { return json(await fetcher(endpoint(base, `/author/versions/${encodeURIComponent(versionID)}/submit`), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mark_latest: markLatest }) })); }
 export async function markPublishedVersionLatest(base: string, versionID: string, fetcher: typeof fetch = fetch): Promise<ApiMod> { return json(await fetcher(endpoint(base, `/versions/${encodeURIComponent(versionID)}/mark-latest`), { method: 'POST', credentials: 'same-origin' })); }
@@ -38,7 +48,11 @@ export async function listReviewSubmissions(base: string, query: ReviewPageQuery
   if (query.state && query.state !== 'all') params.set('state', query.state);
   return json(await fetcher(endpoint(base, `/review/submissions?${params}`), { credentials: 'same-origin', signal }));
 }
-export async function listAuthorSubmissions(base: string, fetcher: typeof fetch = fetch): Promise<ApiSubmission[]> { const result = await json<{ items: ApiSubmission[] }>(await fetcher(endpoint(base, '/author/submissions'), { credentials: 'same-origin' })); return result.items; }
+export async function listAuthorSubmissions(base: string, query: ReviewPageQuery, signal?: AbortSignal, fetcher: typeof fetch = fetch): Promise<ApiPage<ApiAuthorSubmission>> {
+  const params = new URLSearchParams({ page: String(query.page), page_size: String(query.pageSize) });
+  if (query.state && query.state !== 'all') params.set('state', query.state);
+  return json(await fetcher(endpoint(base, `/author/submissions?${params}`), { credentials: 'same-origin', signal }));
+}
 export async function listReviewAudit(base: string, query: ReviewPageQuery, signal?: AbortSignal, fetcher: typeof fetch = fetch): Promise<ApiPage<ApiReviewAudit>> {
   const params = new URLSearchParams({ page: String(query.page), page_size: String(query.pageSize) });
   return json(await fetcher(endpoint(base, `/review/audit?${params}`), { credentials: 'same-origin', signal }));

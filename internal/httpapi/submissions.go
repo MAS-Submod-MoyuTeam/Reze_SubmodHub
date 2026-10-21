@@ -254,15 +254,7 @@ func (s *Store) authorSubmissions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.mu.RLock()
-	items := make([]Submission, 0)
-	for _, item := range s.Catalog.Submissions {
-		if item.AuthorID == session.User.ID {
-			items = append(items, item)
-		}
-	}
-	s.mu.RUnlock()
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "next_cursor": nil})
+	s.authorSubmissionPage(w, r, session.User.ID)
 }
 
 func (s *Store) reviewSubmissionResource(w http.ResponseWriter, r *http.Request) {

@@ -100,6 +100,16 @@
 | `GET /spritepacks/{mod_id}/preview` | 公开 | `set,item` 及可选 `version_id`；返回预览图片 PNG |
 | `GET /spritepacks/{mod_id}/download` | 公开 | `sets`（逗号分隔集合 ID）及可选 `version_id`；响应头带 `X-Archive-SHA256`, `X-Version-ID` 与 `Content-Length` |
 
+### 作者专属工作区分页（已实施）
+
+作者的“我的模组”“候选与发布版本”“提交历史”独立使用 `page,page_size`，默认 1/20、最多 100 条，响应均含 `items,total,page,page_size`；空列表和越界回退规则与审核列表一致。工作区界面默认每页 10 条，可切换 20/50 条。
+
+- `GET /author/mods` 仅返回当前作者的 `{mod,is_published}`，不内嵌版本和扫描报告；按 ID 倒序。可用 `focus_mod_id` 定位本人目标模组所在页，支持创建或从历史修订跳转。
+- `GET /author/mods/{id}/versions` 仅返回本人模组的当前页版本，附 `scan_reports`（只包含当前页版本的报告）；版本按创建时间、ID 倒序，缺失时间置后；隐藏归档路径和内部 GitHub 下载源。
+- `GET /author/submissions` 支持 `state` 筛选；返回本人当前页提交、显示名称、版本号、理由、脱敏快照和 `current_version`，用于历史扫描报告与驳回修订。
+
+管理员也不能通过作者接口读取其他作者的工作区。前端只在对应标签打开时加载，切换模组重置版本页，旧请求取消并忽略；操作后刷新当前分页，每分钟刷新可见页。全局上下文不再于登录或定时器中加载整个作者工作区。扫描报告仍可随单页版本/历史返回，因此单个报告很大时仍有详情接口拆分空间。本次不改变内存目录存储。
+
 ### 审核列表分页（已实施）
 
 `GET /review/submissions` 和 `GET /review/audit` 使用页码响应 `{items,total,page,page_size}`，不使用公共目录的游标结构。`page` 默认 1；`page_size` 默认 20，范围 1–100；非法、空或重复的分页参数返回 400 `validation_failed`。提交列表另返回跨筛选的 `pending_count`（所有 `ready_for_review` 提交数）。`state` 可省略或为 `all,ready_for_review,approved,rejected,published`，未知值返回 400。

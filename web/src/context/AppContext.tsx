@@ -29,9 +29,8 @@ import {
 } from '../data/mockData';
 import { fetchDownloadDescriptor, fetchPublishedCatalog, fetchPublishedVersions } from '../../../ui/catalog-api';
 import { loginFlarum as loginFlarumRequest, logout as logoutRequest, readSession, Session } from '../../../ui/auth-api';
-import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, listAuthorSubmissions, listAuthorWorkspace, markPublishedVersionLatest, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages, syncAuthorModGitHub, type SyncSummary } from '../../../ui/submission-api';
+import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, markPublishedVersionLatest, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages, syncAuthorModGitHub, type SyncSummary } from '../../../ui/submission-api';
 import { mapServerScanReport } from './scanReport';
-import { isAuthorModPublished } from '../../../ui/submission-api';
 
 export type NavTab =
   | 'catalog'
@@ -47,6 +46,8 @@ interface Toast {
   message: string;
   code?: string;
 }
+
+export interface AuthorPageData { mods?: ModSummary[]; versions?: ModVersion[]; scanReports?: Record<string, ScanReport>; submissions?: Submission[] }
 
 export interface AppContextType {
   // Navigation & View
@@ -92,6 +93,8 @@ export interface AppContextType {
     latestVersion?: ModVersion;
   };
   getDownloadDescriptor: (versionId: string) => Promise<DownloadDescriptor>;
+
+  cacheAuthorPage: (page: AuthorPageData) => void;
 
   // Author Actions
   createModDraft: (data: Partial<ModSummary>) => Promise<string>;
@@ -271,84 +274,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     readSession(base).then(applySession).catch(() => applySession({ user: null, roles: [], csrf_token: '' }));
   }, [applySession]);
 
-  useEffect(() => {
-    if (!currentUser) return;
-    let cancelled = false;
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-    const refreshWorkspace = () => listAuthorWorkspace(base).then((items) => {
-      if (cancelled) return;
-      const restoredReports = Object.fromEntries(items.flatMap(({ versions: entries, scan_reports: reports }) => entries.flatMap((version) => {
-        const report = version.scan_report_id && reports?.[version.scan_report_id];
-        return report ? [[version.scan_report_id!, mapServerScanReport(version.id, report)] as const] : [];
-      })));
-      const ownMods: ModSummary[] = items.map(({ mod, versions: ownVersions }) => ({
-        id: mod.id, title: mod.title, summary: mod.summary || '', description: mod.description || mod.summary || '',
-        author: mod.author, category: mod.category, tags: mod.tags || [],
-        supported_platforms: (mod.supported_platforms || []) as ModSummary['supported_platforms'],
-        mas_version_range: mod.mas_version_range || '', recommended_priority: mod.recommended_priority || 0,
-        latest_version_id: mod.latest_version_id || '', downloads_count: 0, created_at: '', updated_at: '',
-        is_published: isAuthorModPublished(mod, ownVersions),
-        source_type: mod.source_type || 'local',
-        github_owner: mod.github_owner || '',
-        github_repo: mod.github_repo || '',
-        github_asset_regex: mod.github_asset_regex || '',
-        github_source_code: Boolean(mod.github_source_code),
-        github_last_sync_at: mod.github_last_sync_at,
-        github_last_sync_error: mod.github_last_sync_error,
-        github_last_release_id: mod.github_last_release_id,
-        github_backoff_until: mod.github_backoff_until,
-      }));
-      const ownVersions: ModVersion[] = items.flatMap(({ versions: entries }) => entries.map((version) => ({
-        id: version.id, mod_id: version.mod_id, version: version.version, state: version.state as ModVersion['state'],
-        size_bytes: version.size_bytes, sha256: version.sha256, release_notes: version.release_notes || '',
-        dependencies: (version.dependencies || []) as ModVersion['dependencies'], scan_report_id: version.scan_report_id,
-        deprecated: version.deprecated, deprecation_reason: version.deprecation_reason,
-        created_at: version.created_at || '', is_immutable: version.state === 'published' || version.state === 'approved',
-      })));
-      setMods((prev) => [...ownMods, ...prev.filter((mod) => !ownMods.some((owned) => owned.id === mod.id))]);
-      setVersions((prev) => [...ownVersions, ...prev.filter((version) => !ownVersions.some((owned) => owned.id === version.id))]);
-      setScanReports((prev) => ({ ...prev, ...restoredReports }));
-    }).catch(() => { if (!cancelled) setIsOffline(true); });
-    void refreshWorkspace();
-    const interval = window.setInterval(() => { void refreshWorkspace(); }, 60_000);
-    return () => { cancelled = true; window.clearInterval(interval); };
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (!currentUser) return;
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-    const load = listAuthorSubmissions(base);
-    load
-      .then((remote) => {
-        setScanReports((prev) => ({ ...prev, ...Object.fromEntries(remote.flatMap((item) => item.scan_report_snapshot ? [[`scan_submission_${item.id}`, mapServerScanReport(item.version_id, item.scan_report_snapshot)] as const] : [])) }));
-        setSubmissions(remote.map((item) => {
-          const existing = submissions.find((entry) => entry.id === item.id);
-          const mod = mods.find((entry) => entry.id === item.mod_id);
-          const version = versions.find((entry) => entry.id === item.version_id);
-          return {
-            id: item.id,
-            mod_id: item.mod_id,
-            version_id: item.version_id,
-            mod_title: mod?.title || item.mod_id,
-            version_str: item.version_snapshot?.version || version?.version || item.version_id,
-            scan_report_id: item.scan_report_snapshot ? `scan_submission_${item.id}` : undefined,
-            category: mod?.category || 'submod',
-            author_id: item.author_id,
-            author_name: mod?.author.display_name || item.author_id,
-            submitted_at: item.created_at || existing?.submitted_at || new Date().toISOString(),
-            state: item.state as Submission['state'],
-            mark_latest: item.mark_latest,
-            reviewer_id: item.reviewer_id || existing?.reviewer_id,
-            reviewer_name: existing?.reviewer_name,
-            decision_reason: item.reason,
-            decided_at: item.decided_at || existing?.decided_at,
-            published_at: item.published_at || existing?.published_at,
-          };
-        }));
-        setIsOffline(false);
-      })
-      .catch((error) => showToast('error', `审核队列加载失败：${error instanceof Error ? error.message : 'unknown_error'}`));
-  }, [currentUser, mods, versions]);
+  const cacheAuthorPage = useCallback((page: AuthorPageData) => {
+    if (page.mods) setMods((prev) => [...page.mods!, ...prev.filter((item) => !page.mods!.some((entry) => entry.id === item.id))]);
+    if (page.versions) setVersions((prev) => [...page.versions!, ...prev.filter((item) => !page.versions!.some((entry) => entry.id === item.id))]);
+    if (page.scanReports) setScanReports((prev) => ({ ...prev, ...page.scanReports }));
+    if (page.submissions) setSubmissions((prev) => [...page.submissions!, ...prev.filter((item) => !page.submissions!.some((entry) => entry.id === item.id))]);
+  }, []);
 
   const showToast = useCallback((type: Toast['type'], message: string, code?: string) => {
     const id = 'toast_' + Math.random().toString(36).substring(2, 9);
@@ -1100,40 +1031,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
       try {
         const summary = await syncAuthorModGitHub(base, modId);
-        // Refresh author workspace
-        const items = await listAuthorWorkspace(base);
-        const restoredReports = Object.fromEntries(items.flatMap(({ versions: entries, scan_reports: reports }) => entries.flatMap((version) => {
-          const report = version.scan_report_id && reports?.[version.scan_report_id];
-          return report ? [[version.scan_report_id!, mapServerScanReport(version.id, report)] as const] : [];
-        })));
-        const ownMods: ModSummary[] = items.map(({ mod, versions: ownVersions }) => ({
-          id: mod.id, title: mod.title, summary: mod.summary || '', description: mod.description || mod.summary || '',
-          author: mod.author, category: mod.category, tags: mod.tags || [],
-          supported_platforms: (mod.supported_platforms || []) as ModSummary['supported_platforms'],
-          mas_version_range: mod.mas_version_range || '', recommended_priority: mod.recommended_priority || 0,
-          latest_version_id: mod.latest_version_id || '', downloads_count: 0, created_at: '', updated_at: '',
-          is_published: isAuthorModPublished(mod, ownVersions),
-          source_type: mod.source_type || 'local',
-          github_owner: mod.github_owner || '',
-          github_repo: mod.github_repo || '',
-          github_asset_regex: mod.github_asset_regex || '',
-          github_source_code: Boolean(mod.github_source_code),
-          github_last_sync_at: mod.github_last_sync_at,
-          github_last_sync_error: mod.github_last_sync_error,
-          github_last_release_id: mod.github_last_release_id,
-        github_backoff_until: mod.github_backoff_until,
-        }));
-        const ownVersions: ModVersion[] = items.flatMap(({ versions: entries }) => entries.map((version) => ({
-          id: version.id, mod_id: version.mod_id, version: version.version, state: version.state as ModVersion['state'],
-          size_bytes: version.size_bytes, sha256: version.sha256, release_notes: version.release_notes || '',
-          dependencies: (version.dependencies || []) as ModVersion['dependencies'], scan_report_id: version.scan_report_id,
-          deprecated: version.deprecated, deprecation_reason: version.deprecation_reason,
-          created_at: version.created_at || '', is_immutable: version.state === 'published' || version.state === 'approved',
-        })));
-        setMods((prev) => [...ownMods, ...prev.filter((mod) => !ownMods.some((owned) => owned.id === mod.id))]);
-        setVersions((prev) => [...ownVersions, ...prev.filter((version) => !ownVersions.some((owned) => owned.id === version.id))]);
-        setScanReports((prev) => ({ ...prev, ...restoredReports }));
-
         if (summary.failed > 0 && summary.created === 0) {
           showToast('error', `GitHub 同步失败: ${summary.last_error || '未知错误'}`);
         } else if (summary.created > 0) {
@@ -1182,6 +1079,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTagFilter,
       getModWithVersions,
       getDownloadDescriptor,
+      cacheAuthorPage,
       createModDraft,
       updateModDraft,
       syncModReleases,

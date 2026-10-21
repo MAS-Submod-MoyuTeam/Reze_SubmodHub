@@ -19,11 +19,11 @@ func TestAuthorWorkspaceListsOnlyOwnedDraftsWithoutArchivePaths(t *testing.T) {
 			{ID: "other", Title: "Other", Author: Author{ID: "someone-else"}},
 		},
 		Versions: map[string]Version{
-			"draft": {ID: "draft", ModID: "mine", State: "uploaded", ScanReportID: "scan_draft", ArchivePath: "/private/archive.zip"},
+			"draft":  {ID: "draft", ModID: "mine", State: "uploaded", ScanReportID: "scan_draft", ArchivePath: "/private/archive.zip"},
 			"hidden": {ID: "hidden", ModID: "other", State: "uploaded", ScanReportID: "scan_hidden"},
 		},
 		ScanReports: map[string]packagezip.Report{
-			"scan_draft": {Warnings: []string{"binary content: game/Submods/mine/helper.dll"}},
+			"scan_draft":  {Warnings: []string{"binary content: game/Submods/mine/helper.dll"}},
 			"scan_hidden": {Warnings: []string{"private report"}},
 		},
 	})
@@ -57,12 +57,30 @@ func TestAuthorWorkspaceListsOnlyOwnedDraftsWithoutArchivePaths(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Items) != 1 || result.Items[0].Mod.ID != "mine" || len(result.Items[0].Versions) != 1 || result.Items[0].Versions[0].ID != "draft" || result.Items[0].Versions[0].ArchivePath != "" {
-		t.Fatalf("unexpected author workspace: %+v", result.Items)
+	if len(result.Items) != 1 || result.Items[0].Mod.ID != "mine" || len(result.Items[0].Versions) != 0 || len(result.Items[0].ScanReports) != 0 {
+		t.Fatalf("mod list must be lightweight and owned: %+v", result.Items)
 	}
-	if len(result.Items[0].ScanReports) != 1 || result.Items[0].ScanReports["scan_draft"].Warnings[0] != "binary content: game/Submods/mine/helper.dll" {
-		t.Fatalf("author scan report missing or leaked: %+v", result.Items[0].ScanReports)
+	req, _ = http.NewRequest(http.MethodGet, server.URL+"/api/v1/author/mods/mine/versions?page=1&page_size=10", nil)
+	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
+	res, err = server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer res.Body.Close()
+	var versions struct {
+		Items       []Version                    `json:"items"`
+		ScanReports map[string]packagezip.Report `json:"scan_reports"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&versions); err != nil {
+		t.Fatal(err)
+	}
+	if len(versions.Items) != 1 || versions.Items[0].ID != "draft" || versions.Items[0].ArchivePath != "" {
+		t.Fatalf("versions: %+v", versions.Items)
+	}
+	if len(versions.ScanReports) != 1 || versions.ScanReports["scan_draft"].Warnings[0] != "binary content: game/Submods/mine/helper.dll" {
+		t.Fatal("missing or leaked report")
+	}
+
 }
 
 func TestAdminCanUnpublishOtherAuthorModAndPreserveArtifacts(t *testing.T) {

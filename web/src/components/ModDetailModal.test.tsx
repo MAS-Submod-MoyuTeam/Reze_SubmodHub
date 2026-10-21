@@ -47,6 +47,7 @@ const sampleVersion: ModVersion = {
 
 function createMockContext(overrides: Partial<AppContextType> = {}): AppContextType {
   return {
+    cacheAuthorPage: () => {},
     activeTab: 'catalog',
     setActiveTab: () => {},
     selectedModId: null,

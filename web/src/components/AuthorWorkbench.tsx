@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useApp } from '../context/AppContext';
+import { useAuthorWorkspace } from './useAuthorWorkspace';
+import { Pagination } from './Pagination';
 import { ModCategory, Platform, ModSummary, ModDependency, ModVersion, ScannedFile, ModSourceType } from '../types/submodhub';
 import { validateGitHubSourceInput, formatLastSyncTime, getGitHubRepoUrl } from './sourceConfig';
 import { formatVersionCreatedAt } from './versionDate';
@@ -34,6 +35,8 @@ import {
 } from 'lucide-react';
 
 export const AuthorWorkbench: React.FC = () => {
+  const workspace = useAuthorWorkspace();
+  const { workbenchView, setWorkbenchView, userMods, activeMod, activeModVersions, authorSubmissions, selectedModId, setSelectedModId, modRequest, versionRequest, historyRequest } = workspace;
   const {
     currentUser,
     hasRole,
@@ -57,16 +60,10 @@ export const AuthorWorkbench: React.FC = () => {
     editVersion,
     syncModReleases,
     showToast,
-  } = useApp();
+  } = workspace.app;
 
   // Author role check
   const isAuthor = Boolean(currentUser);
-
-  // Active Mod in Workbench
-  const userMods = mods.filter(
-    (m) => m.author.id === currentUser?.id || currentUser?.roles.includes('author')
-  );
-  const [selectedModId, setSelectedModId] = useState<string>(() => userMods[0]?.id || '');
 
   // Mod Draft Creation Dialog
   const [isNewModModalOpen, setIsNewModModalOpen] = useState(false);
@@ -114,17 +111,9 @@ export const AuthorWorkbench: React.FC = () => {
   const [isGithubImportOpen, setIsGithubImportOpen] = useState(false);
   const [githubReleaseUrl, setGithubReleaseUrl] = useState('');
 
-  // Submissions Tab vs Workbench Mod Tab
-  const [workbenchView, setWorkbenchView] = useState<'mods' | 'submissions'>('mods');
-
   // Currently inspected Scan Report modal
   const [inspectingReportId, setInspectingReportId] = useState<string | null>(null);
 
-  const activeMod = mods.find((m) => m.id === selectedModId) || userMods[0];
-  const activeModVersions = versions.filter((v) => v.mod_id === activeMod?.id);
-  const authorSubmissions = submissions.filter(
-    (s) => s.author_id === currentUser?.id || currentUser?.roles.includes('author')
-  );
   const pendingDetailPreviewUrls = useMemo(() => new Map(pendingDetailImages.map((file, index) => [pendingDetailImageKeys[index], URL.createObjectURL(file)])), [pendingDetailImages, pendingDetailImageKeys]);
   useEffect(() => () => { pendingDetailPreviewUrls.forEach((url) => URL.revokeObjectURL(url)); }, [pendingDetailPreviewUrls]);
   const detailImageItems = detailImageOrder.map((key) => ({ key, url: key.startsWith('new:') ? pendingDetailPreviewUrls.get(key) : key, pending: key.startsWith('new:') }));
@@ -456,7 +445,7 @@ export const AuthorWorkbench: React.FC = () => {
                   : 'text-neutral-600'
               }`}
             >
-              提交历史与修订 ({authorSubmissions.length})
+              提交历史与修订{historyRequest.data ? ` (${historyRequest.data.total})` : ''}
             </button>
           </div>
 
@@ -479,11 +468,14 @@ export const AuthorWorkbench: React.FC = () => {
               <p className="text-xs text-neutral-500">查看各版本的审核流转状态与驳回理由。</p>
             </div>
             <span className="text-xs font-mono text-neutral-400">
-              共 {authorSubmissions.length} 条记录
+              共 {historyRequest.data?.total ?? '…'} 条记录
             </span>
           </div>
 
-          {authorSubmissions.length === 0 ? (
+          <div className="flex flex-wrap gap-1 text-xs">{[{id:'all',label:'全部'},{id:'ready_for_review',label:'待审核'},{id:'published',label:'已发布'},{id:'rejected',label:'已驳回'}].map((filter) => <button key={filter.id} onClick={() => workspace.changeHistoryState(filter.id)} className={`min-h-8 rounded px-3 ${workspace.historyState === filter.id ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600'}`}>{filter.label}</button>)}</div>
+          {historyRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">正在加载提交历史…</p>}
+          {historyRequest.error && <p role="alert" className="text-xs text-rose-700">提交历史加载失败：{historyRequest.error} <button onClick={historyRequest.reload} className="underline">重试</button></p>}
+          {historyRequest.data && (authorSubmissions.length === 0 ? (
             <div className="py-12 text-center text-xs text-neutral-400">暂无提交审核记录</div>
           ) : (
             <div className="divide-y divide-neutral-100">
@@ -581,7 +573,8 @@ export const AuthorWorkbench: React.FC = () => {
                 );
               })}
             </div>
-          )}
+          ))}
+          {historyRequest.data && <Pagination label="作者提交历史" total={historyRequest.data.total} page={historyRequest.data.page} pageSize={workspace.historyPageSize} onPageChange={workspace.changeHistoryPage} onPageSizeChange={workspace.changeHistoryPageSize} />}
         </div>
       ) : (
         /* Mods & Candidate Versions Management View */
@@ -590,7 +583,7 @@ export const AuthorWorkbench: React.FC = () => {
           <div className="bg-white border border-neutral-200 rounded-lg p-5 space-y-4 lg:col-span-1">
             <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
               <h2 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
-                我的模组列表 ({userMods.length})
+                我的模组列表 ({modRequest.data?.total ?? '…'})
               </h2>
               <button
                 onClick={openNewModEditor}
@@ -600,6 +593,8 @@ export const AuthorWorkbench: React.FC = () => {
               </button>
             </div>
 
+            {modRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">正在加载我的模组…</p>}
+            {modRequest.error && <p role="alert" className="text-xs text-rose-700">模组列表加载失败：{modRequest.error} <button onClick={modRequest.reload} className="underline">重试</button></p>}
             <div className="space-y-1.5">
               {userMods.map((m) => {
                 const isSelected = m.id === activeMod?.id;
@@ -630,6 +625,7 @@ export const AuthorWorkbench: React.FC = () => {
                 );
               })}
             </div>
+            {modRequest.data && <Pagination label="我的模组" total={modRequest.data.total} page={modRequest.data.page} pageSize={workspace.modPageSize} onPageChange={workspace.changeModPage} onPageSizeChange={workspace.changeModPageSize} />}
           </div>
 
           {/* Right Column: Selected Mod Management & Versions */}
@@ -770,14 +766,14 @@ export const AuthorWorkbench: React.FC = () => {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
-                      候选与发布版本列表 ({activeModVersions.length})
+                      候选与发布版本列表 ({versionRequest.data?.total ?? '…'})
                     </h3>
                     <span className="text-[11px] text-neutral-400">
                       上传 ZIP 归档后将自动触发静态解析流水线
                     </span>
                   </div>
 
-                  {activeModVersions.length === 0 ? (
+                  {versionRequest.loading ? <p role="status" className="text-xs text-neutral-500">正在加载版本…</p> : versionRequest.error ? <p role="alert" className="text-xs text-rose-700">版本加载失败：{versionRequest.error} <button onClick={versionRequest.reload} className="underline">重试</button></p> : activeModVersions.length === 0 ? (
                     <div className="py-8 text-center border border-dashed border-neutral-200 rounded-lg space-y-2">
                       <p className="text-xs text-neutral-500">当前模组尚无任何候选版本。</p>
                       <button
@@ -789,6 +785,8 @@ export const AuthorWorkbench: React.FC = () => {
                     </div>
                   ) : (
                     <div className="space-y-3">
+                      {versionRequest.loading && <p role="status" className="text-xs text-neutral-500">正在加载版本…</p>}
+                      {versionRequest.error && <p role="alert" className="text-xs text-rose-700">版本加载失败：{versionRequest.error} <button onClick={versionRequest.reload} className="underline">重试</button></p>}
                       {activeModVersions.map((v) => {
                         const report = v.scan_report_id ? scanReports[v.scan_report_id] : null;
                         const hasBlockers = report && report.blockers.length > 0;
@@ -997,6 +995,7 @@ export const AuthorWorkbench: React.FC = () => {
                       })}
                     </div>
                   )}
+                  {versionRequest.data && <Pagination label="候选与发布版本" total={versionRequest.data.total} page={versionRequest.data.page} pageSize={workspace.versionPageSize} onPageChange={workspace.changeVersionPage} onPageSizeChange={workspace.changeVersionPageSize} />}
                 </div>
                 )}
               </>

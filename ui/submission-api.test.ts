@@ -2,14 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, createAuthorMod, reorderModImages, uploadModImages, updateAuthorModSource, syncAuthorModGitHub, unpublishAuthorMod } from './submission-api';
 
-test('loads the authenticated author workspace', async () => {
+test('loads one authenticated author mod page without nested versions', async () => {
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    assert.equal(String(input), '/api/v1/author/mods');
+    assert.equal(String(input), '/api/v1/author/mods?page=2&page_size=10');
     assert.equal(init?.credentials, 'same-origin');
-    return new Response(JSON.stringify({ items: [{ mod: { id: 'mine' }, versions: [{ id: 'draft', state: 'draft' }] }] }), { status: 200 });
+    return Response.json({ items: [{ mod: { id: 'mine' }, is_published: false }], total: 11, page: 2, page_size: 10 });
   }) as typeof fetch;
-  const result = await listAuthorWorkspace('/api/v1', fetcher);
-  assert.equal(result[0].versions[0].id, 'draft');
+  const result = await listAuthorWorkspace('/api/v1', { page: 2, pageSize: 10 }, undefined, fetcher);
+  assert.equal(result.items[0].mod.id, 'mine');
+  assert.equal(result.total, 11);
 });
 
 test('clears a version deprecation with the authenticated endpoint', async () => {

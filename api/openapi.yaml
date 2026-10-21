@@ -99,10 +99,35 @@ paths:
                 roles: {type: array, uniqueItems: true, items: {type: string, enum: [author, reviewer]}}
       responses: {'200': {description: Updated role grant}, 'default': {$ref: '#/components/responses/Error'}}
   /author/mods:
+    get:
+      operationId: listAuthorWorkspace
+      description: Own mods only; returns {items:[{mod,is_published}],total,page,page_size}. No nested versions or scan reports. Sorted by ID descending.
+      parameters:
+        - {$ref: '#/components/parameters/ReviewPage'}
+        - {$ref: '#/components/parameters/ReviewPageSize'}
+        - {name: focus_mod_id, in: query, description: Locate the page containing this owned mod, schema: {type: string}}
+      responses: {'200': {description: Own mod page}, 'default': {$ref: '#/components/responses/Error'}}
     post:
       operationId: createAuthorMod
       responses: {'201': {description: Draft mod}, 'default': {$ref: '#/components/responses/Error'}}
+  /author/submissions:
+    get:
+      operationId: listAuthorSubmissions
+      description: Own submission history only; {items,total,page,page_size}, newest first. Items include reason, display labels, sanitized snapshots and current_version for revision.
+      parameters:
+        - {$ref: '#/components/parameters/ReviewPage'}
+        - {$ref: '#/components/parameters/ReviewPageSize'}
+        - {name: state, in: query, schema: {type: string, enum: [all, ready_for_review, approved, rejected, published]}}
+      responses: {'200': {description: Own submission page}, 'default': {$ref: '#/components/responses/Error'}}
   /author/mods/{mod_id}/versions:
+    get:
+      operationId: listAuthorVersions
+      description: Own mod versions only; {items,scan_reports,total,page,page_size}. Reports belong only to versions on this page. Sorted by created_at then ID descending, missing dates last.
+      parameters:
+        - {name: mod_id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/ReviewPage'}
+        - {$ref: '#/components/parameters/ReviewPageSize'}
+      responses: {'200': {description: Own version page}, 'default': {$ref: '#/components/responses/Error'}}
     post:
       operationId: createAuthorVersion
       parameters: [{name: mod_id, in: path, required: true, schema: {type: string}}]

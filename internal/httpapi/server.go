@@ -374,34 +374,7 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
-		s.mu.RLock()
-		items := make([]struct {
-			Mod         Mod                          `json:"mod"`
-			Versions    []Version                    `json:"versions"`
-			ScanReports map[string]packagezip.Report `json:"scan_reports"`
-		}, 0)
-		for _, mod := range s.Catalog.Mods {
-			if mod.Author.ID != session.User.ID {
-				continue
-			}
-			item := struct {
-				Mod         Mod                          `json:"mod"`
-				Versions    []Version                    `json:"versions"`
-				ScanReports map[string]packagezip.Report `json:"scan_reports"`
-			}{Mod: mod, Versions: []Version{}, ScanReports: map[string]packagezip.Report{}}
-			for _, version := range s.Catalog.Versions {
-				if version.ModID == mod.ID {
-					version.ArchivePath = ""
-					item.Versions = append(item.Versions, resolveVersionDependencies(s.Catalog, version))
-					if report, ok := s.Catalog.ScanReports[version.ScanReportID]; ok {
-						item.ScanReports[version.ScanReportID] = report
-					}
-				}
-			}
-			items = append(items, item)
-		}
-		s.mu.RUnlock()
-		writeJSON(w, 200, map[string]any{"items": items})
+		s.authorModPage(w, r, session.User.ID)
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -704,6 +677,10 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/author/mods/"), "/"), "/")
+	if len(parts) == 2 && parts[1] == "versions" && r.Method == http.MethodGet {
+		s.authorVersionPage(w, r, session.User.ID, parts[0])
+		return
+	}
 	if len(parts) == 2 && parts[1] == "images" {
 		switch r.Method {
 		case http.MethodDelete:
