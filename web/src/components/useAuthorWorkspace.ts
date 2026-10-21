@@ -5,13 +5,14 @@ import type { ModSummary, ModVersion, Submission } from '../types/submodhub';
 import { listAuthorWorkspace, listAuthorVersions, listAuthorSubmissions, type ApiAuthorModItem, type ApiAuthorSubmission, type ApiVersion } from '../../../ui/submission-api';
 import { useReviewPage } from './useReviewPage';
 
-export function mapAuthorMod({ mod, is_published }: ApiAuthorModItem): ModSummary {
+export function mapAuthorMod({ mod, is_published, has_published_version, has_archived_version, has_pending_review, candidate_version_id }: ApiAuthorModItem): ModSummary {
   return {
     ...mod, description: mod.description || mod.summary || '', tags: mod.tags || [],
     supported_platforms: (mod.supported_platforms || []) as ModSummary['supported_platforms'],
     mas_version_range: mod.mas_version_range || '', recommended_priority: mod.recommended_priority || 0,
-    latest_version_id: mod.latest_version_id || '', downloads_count: 0, created_at: '', updated_at: '',
+    latest_version_id: mod.latest_version_id || '', downloads_count: 0, created_at: mod.created_at || '', updated_at: '',
     is_published, source_type: mod.source_type || 'local', github_source_code: Boolean(mod.github_source_code),
+    has_published_version, has_archived_version, has_pending_review, candidate_version_id: candidate_version_id || undefined,
   };
 }
 
@@ -37,7 +38,7 @@ export function useAuthorWorkspace() {
   const userId = app.currentUser?.id;
   const [workbenchView, setWorkbenchView] = useState<'mods' | 'submissions'>('mods');
   const [selectedModId, setSelectedId] = useState('');
-  const [modPage, setModPage] = useState(1);
+  const [modCursor, setModCursor] = useState('');
   const [modPageSize, setModPageSize] = useState(10);
   const [versionPage, setVersionPage] = useState(1);
   const [versionPageSize, setVersionPageSize] = useState(10);
@@ -54,12 +55,12 @@ export function useAuthorWorkspace() {
   }, [userId, refresh]);
   const base = `${(import.meta.env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
   const loadMods = useCallback(async (signal: AbortSignal) => {
-    const result = await listAuthorWorkspace(base, { page: modPage, pageSize: modPageSize, focusModId }, signal);
+    const result = await listAuthorWorkspace(base, { pageSize: modPageSize, cursor: modCursor, focusModId }, signal);
     const items = result.items.map(mapAuthorMod);
     if (!signal.aborted) cacheAuthorPage({ mods: items });
     return { ...result, items };
-  }, [base, modPage, modPageSize, focusModId, userId, revision, cacheAuthorPage]);
-  const modRequest = useReviewPage(loadMods, !!userId && workbenchView === 'mods');
+  }, [base, modCursor, modPageSize, focusModId, userId, revision, cacheAuthorPage]);
+  const modRequest = useReviewPage(loadMods, !!userId && workbenchView === 'mods', `mods|${userId}|${modCursor}|${modPageSize}|${focusModId}`);
   const userMods = (modRequest.data?.items || []).map((item) => app.mods.find((mod) => mod.id === item.id) || item);
   const activeMod = userMods.find((mod) => mod.id === selectedModId) || userMods[0];
   const activeModId = activeMod?.id;
@@ -73,23 +74,34 @@ export function useAuthorWorkspace() {
     if (!signal.aborted) cacheAuthorPage({ versions: items, scanReports: reports });
     return { ...result, items };
   }, [base, activeModId, versionPage, versionPageSize, userId, revision, cacheAuthorPage]);
-  const versionRequest = useReviewPage(loadVersions, !!userId && !!activeModId && workbenchView === 'mods');
+  const versionRequest = useReviewPage(loadVersions, !!userId && !!activeModId && workbenchView === 'mods', `versions|${userId}|${activeModId}|${versionPage}|${versionPageSize}`);
   const activeModVersions = (versionRequest.data?.items || []).map((item) => app.versions.find((version) => version.id === item.id) || item);
   const loadHistory = useCallback(async (signal: AbortSignal) => {
     const result = await listAuthorSubmissions(base, { page: historyPage, pageSize: historyPageSize, state: historyState }, signal);
     const items = result.items.map(mapSubmission);
     const reports = Object.fromEntries(result.items.flatMap((item) => item.scan_report_snapshot ? [[`scan_submission_${item.id}`, mapServerScanReport(item.version_id, item.scan_report_snapshot)]] : []));
     const versions = result.items.flatMap((item) => item.current_version ? [mapAuthorVersion(item.current_version)] : []);
-    if (!signal.aborted) cacheAuthorPage({ submissions: items, versions, scanReports: reports });
+    if (!signal.aborted) cacheAuthorPage({ versions, scanReports: reports });
     return { ...result, items };
   }, [base, historyPage, historyPageSize, historyState, userId, revision, cacheAuthorPage]);
-  const historyRequest = useReviewPage(loadHistory, !!userId && workbenchView === 'submissions');
-  useEffect(() => { if (modRequest.data) setModPage(modRequest.data.page); }, [modRequest.data]);
+  const historyRequest = useReviewPage(loadHistory, !!userId && workbenchView === 'submissions', `history|${userId}|${historyPage}|${historyPageSize}|${historyState}`);
+  // The server resolves the focused mod to the window that holds it and returns
+  // that window's own cursor; adopting it keeps refreshes and paging on the same
+  // window instead of re-centering on the focused mod or falling back to the top.
+  // A window can also empty out when another session deletes the rows it covered,
+  // so step back instead of showing a blank list.
+  useEffect(() => {
+    if (!modRequest.data) return;
+    setModCursor(!modRequest.data.items.length && modRequest.data.prev_cursor ? modRequest.data.prev_cursor : modRequest.data.cursor || '');
+    setFocusModId('');
+  }, [modRequest.data]);
   useEffect(() => { if (versionRequest.data) setVersionPage(versionRequest.data.page); }, [versionRequest.data]);
   useEffect(() => { if (historyRequest.data) setHistoryPage(historyRequest.data.page); }, [historyRequest.data]);
   const setSelectedModId = (id: string) => {
     setSelectedId(id); setVersionPage(1);
-    if (!userMods.some((mod) => mod.id === id)) setFocusModId(id);
+    // A mod outside the visible window needs a jump: drop the current window so
+    // the server can resolve the focused mod to its own window.
+    if (!userMods.some((mod) => mod.id === id)) { setModCursor(''); setFocusModId(id); }
   };
   // All existing mutation paths refresh the visible query, including source sync.
   // Refresh on failure too: another session may have changed the server state.
@@ -103,12 +115,16 @@ export function useAuthorWorkspace() {
     clearVersionDeprecation: wrap(app.clearVersionDeprecation), deleteVersion: wrap(app.deleteVersion), unpublishMod: wrap(app.unpublishMod),
     deleteModDraft: wrap(app.deleteModDraft), editVersion: wrap(app.editVersion), syncModReleases: wrap(app.syncModReleases),
   };
+  // Windows move one cursor step at a time: the server supplies the keyset
+  // position of the neighbouring window, so no client-side page arithmetic runs.
+  const showModWindow = (cursor: string) => { setFocusModId(''); setModCursor(cursor); setSelectedId(''); setVersionPage(1); };
   return { app: { ...app, ...actions }, workbenchView, setWorkbenchView, selectedModId, setSelectedModId,
     userMods, activeMod, activeModVersions, authorSubmissions: historyRequest.data?.items || [],
     modRequest, versionRequest, historyRequest,
     modPageSize, versionPageSize, historyPageSize, historyState,
-    changeModPage: (page: number) => { setFocusModId(''); setModPage(page); setSelectedId(''); setVersionPage(1); },
-    changeModPageSize: (size: number) => { setFocusModId(''); setModPageSize(size); setModPage(1); setSelectedId(''); setVersionPage(1); },
+    previousModWindow: () => showModWindow(modRequest.data?.prev_cursor || ''),
+    nextModWindow: () => showModWindow(modRequest.data?.next_cursor || ''),
+    changeModPageSize: (size: number) => { setFocusModId(''); setModCursor(''); setModPageSize(size); setSelectedId(''); setVersionPage(1); },
     changeVersionPage: setVersionPage,
     changeVersionPageSize: (size: number) => { setVersionPageSize(size); setVersionPage(1); },
     changeHistoryPage: setHistoryPage,

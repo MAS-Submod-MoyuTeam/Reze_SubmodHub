@@ -57,6 +57,12 @@ export interface ModSummary {
   github_last_sync_error?: string;
   github_last_release_id?: number;
   github_backoff_until?: string;
+  // Author workspace state derived from every version of the mod, so upload and
+  // delete affordances never depend on the versions visible on the current page.
+  has_published_version?: boolean;
+  has_archived_version?: boolean;
+  has_pending_review?: boolean;
+  candidate_version_id?: string;
 }
 
 export type VersionState =

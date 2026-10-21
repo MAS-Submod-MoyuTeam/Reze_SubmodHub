@@ -99,6 +99,7 @@ type Mod struct {
 	SizeBytes               int64      `json:"size_bytes"`
 	SHA256                  string     `json:"sha256"`
 	DownloadsCount          int64      `json:"downloads_count"`
+	CreatedAt               *time.Time `json:"created_at,omitempty"`
 	ImagePaths              []string   `json:"image_paths,omitempty"`
 	Unpublished             bool       `json:"unpublished,omitempty"`
 	SourceType              string     `json:"source_type,omitempty"`
@@ -422,6 +423,9 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 	if srcType == "" {
 		srcType = "local"
 	}
+	// The creation timestamp is the mod's own sort key; it never tracks version
+	// activity, so a strict creation order stays available to list consumers.
+	createdAt := time.Now().UTC()
 	mod := Mod{
 		ID:                  id,
 		Title:               strings.TrimSpace(req.Title),
@@ -433,6 +437,7 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		SupportedPlatforms:  req.SupportedPlatforms,
 		MASVersionRange:     req.MASVersionRange,
 		RecommendedPriority: req.RecommendedPriority,
+		CreatedAt:           &createdAt,
 		SourceType:          srcType,
 		GitHubOwner:         strings.TrimSpace(req.GitHubOwner),
 		GitHubRepo:          strings.TrimSpace(req.GitHubRepo),

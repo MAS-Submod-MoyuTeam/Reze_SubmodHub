@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuthorWorkspace } from './useAuthorWorkspace';
 import { Pagination } from './Pagination';
+import { SpritepackPanel } from './SpritepackPanel';
 import { ModCategory, Platform, ModSummary, ModDependency, ModVersion, ScannedFile, ModSourceType } from '../types/submodhub';
 import { validateGitHubSourceInput, formatLastSyncTime, getGitHubRepoUrl } from './sourceConfig';
 import { formatVersionCreatedAt } from './versionDate';
@@ -36,14 +37,13 @@ import {
 
 export const AuthorWorkbench: React.FC = () => {
   const workspace = useAuthorWorkspace();
-  const { workbenchView, setWorkbenchView, userMods, activeMod, activeModVersions, authorSubmissions, selectedModId, setSelectedModId, modRequest, versionRequest, historyRequest } = workspace;
+  const { workbenchView, setWorkbenchView, userMods, activeMod, activeModVersions, authorSubmissions, setSelectedModId, modRequest, versionRequest, historyRequest } = workspace;
   const {
     currentUser,
     hasRole,
     mods,
     versions,
     scanReports,
-    submissions,
     createModDraft,
     updateModDraft,
     createCandidateVersion,
@@ -354,8 +354,7 @@ export const AuthorWorkbench: React.FC = () => {
 
   const handleSpritepackUpload = async (file: File) => {
     if (!activeMod) return;
-    const candidate = activeModVersions.find((version) => ['draft', 'uploaded', 'rejected', 'scanning'].includes(version.state));
-    const versionId = candidate?.id || await createCandidateVersion(activeMod.id, 'current', '');
+    const versionId = activeMod.candidate_version_id || await createCandidateVersion(activeMod.id, 'current', '');
     if (versionId) await handleUploadArchive(versionId, file);
   };
 
@@ -625,7 +624,23 @@ export const AuthorWorkbench: React.FC = () => {
                 );
               })}
             </div>
-            {modRequest.data && <Pagination label="我的模组" total={modRequest.data.total} page={modRequest.data.page} pageSize={workspace.modPageSize} onPageChange={workspace.changeModPage} onPageSizeChange={workspace.changeModPageSize} />}
+            {modRequest.data && (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 pt-3 text-xs text-neutral-500">
+                <span aria-live="polite">
+                  共 {modRequest.data.total} 条{userMods.length ? ` · ${modRequest.data.start + 1}–${modRequest.data.start + userMods.length}` : ''}
+                </span>
+                <div className="flex flex-wrap items-center gap-1">
+                  <label className="flex items-center gap-1">
+                    每页
+                    <select aria-label="我的模组每页条数" value={workspace.modPageSize} onChange={(event) => workspace.changeModPageSize(Number(event.target.value))} className="min-h-8 rounded border border-neutral-200 bg-white px-1 text-neutral-700">
+                      {[10, 20, 50].map((size) => <option key={size} value={size}>{size} 条</option>)}
+                    </select>
+                  </label>
+                  <button type="button" disabled={!modRequest.data.prev_cursor} onClick={workspace.previousModWindow} className="min-w-8 min-h-8 px-2 rounded border border-neutral-200 text-neutral-600 hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed">上一页</button>
+                  <button type="button" disabled={!modRequest.data.next_cursor} onClick={workspace.nextModWindow} className="min-w-8 min-h-8 px-2 rounded border border-neutral-200 text-neutral-600 hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed">下一页</button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right Column: Selected Mod Management & Versions */}
@@ -681,7 +696,7 @@ export const AuthorWorkbench: React.FC = () => {
                       <Pencil className="w-3.5 h-3.5" />
                       编辑模组
                     </button>
-                    {activeMod.is_published ? <button type="button" onClick={() => { if (window.confirm('确认下架这个模组？版本、归档和详情图会保留。')) void unpublishMod(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors"><EyeOff className="w-3.5 h-3.5" />下架模组</button> : activeModVersions.every((version) => version.state !== 'published') && <button type="button" onClick={() => { if (window.confirm('确认删除草稿模组？候选版本、扫描记录和详情图会一并删除。')) void deleteModDraft(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-700 border border-rose-200 hover:bg-rose-50 rounded transition-colors">删除草稿模组</button>}
+                    {activeMod.is_published ? <button type="button" onClick={() => { if (window.confirm('确认下架这个模组？版本、归档和详情图会保留。')) void unpublishMod(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors"><EyeOff className="w-3.5 h-3.5" />下架模组</button> : activeMod.has_archived_version === false && <button type="button" onClick={() => { if (window.confirm('确认删除草稿模组？候选版本、扫描记录和详情图会一并删除。')) void deleteModDraft(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-700 border border-rose-200 hover:bg-rose-50 rounded transition-colors">删除草稿模组</button>}
                     {activeMod.source_type === 'github_releases' ? (
                       <button
                         type="button"
@@ -714,54 +729,33 @@ export const AuthorWorkbench: React.FC = () => {
                 </div>
 
                 {activeMod.category === 'spritepack' ? (
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <h3 className="text-xs font-bold text-neutral-900 uppercase">当前精灵包</h3>
-                      <button
-                        type="button"
-                        disabled={isUploading || activeModVersions.some((version) => version.state === 'ready_for_review')}
-                        onClick={() => {
-                          uploadVersionIdRef.current = 'spritepack:new';
-                          if (archiveInputRef.current) archiveInputRef.current.value = '';
-                          archiveInputRef.current?.click();
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded disabled:opacity-40"
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        {activeModVersions.some((version) => version.state === 'published') ? '上传替换包' : '上传精灵包 ZIP'}
-                      </button>
-                    </div>
-                    {activeModVersions.some((version) => version.state === 'published') && <p className="text-xs text-neutral-600">已有公开精灵包。替换包审核通过后将成为唯一可下载的包。</p>}
-                    {!activeModVersions.length && <p className="text-xs text-neutral-500">尚未上传精灵包。</p>}
-                    {activeModVersions.filter((version) => version.state !== 'published' && version.state !== 'unpublished').map((version) => {
-                      const report = version.scan_report_id ? scanReports[version.scan_report_id] : null;
-                      return (
-                        <div key={version.id} className="border border-neutral-200 rounded-md p-4 space-y-3 text-xs">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="font-semibold text-neutral-800">待发布包 · {version.state}</span>
-                            {version.state !== 'ready_for_review' && <button onClick={() => { if (window.confirm('确认删除此草稿包？')) void deleteVersion(version.id); }} className="text-rose-700">删除草稿</button>}
-                          </div>
-                          {report?.sprite_sets && (
-                            <div className="space-y-2">
-                              <div className="font-medium text-neutral-700">识别到 {report.sprite_sets.length} 套 · {report.sprite_sets.reduce((count, set) => count + set.items.length, 0)} 个 JSON 项目</div>
-                              <div className="max-h-48 overflow-y-auto border border-neutral-200 rounded p-2 space-y-1">
-                                {report.sprite_sets.map((set) => <div key={set.id}><span className="font-medium">{set.name}</span><span className="text-neutral-500"> · {set.items.map((item) => item.display_name).join('、')}</span></div>)}
-                              </div>
-                            </div>
-                          )}
-                          {report?.blockers?.length ? <p className="text-rose-700">扫描阻断：{report.blockers.join('；')}</p> : null}
-                          {version.state === 'uploaded' && report && (
-                            <button disabled={Boolean(report.blockers?.length) || submittingVersionId === version.id} onClick={async () => {
-                              setSubmittingVersionId(version.id);
-                              try { await submitVersionForReview(version.id, true); } finally { setSubmittingVersionId(null); }
-                            }} className="px-3 py-1.5 bg-emerald-700 text-white rounded disabled:opacity-40 flex items-center gap-1.5">
-                              <Send className="w-3.5 h-3.5" />提交审核
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <SpritepackPanel
+                    hasPublishedVersion={activeMod.has_published_version === true}
+                    hasPendingReview={activeMod.has_pending_review === true}
+                    uploading={isUploading}
+                    loading={versionRequest.loading}
+                    error={versionRequest.error}
+                    loaded={Boolean(versionRequest.data)}
+                    versions={activeModVersions}
+                    scanReports={scanReports}
+                    submittingVersionId={submittingVersionId}
+                    total={versionRequest.data?.total ?? 0}
+                    page={versionRequest.data?.page ?? 1}
+                    pageSize={workspace.versionPageSize}
+                    onUpload={() => {
+                      uploadVersionIdRef.current = 'spritepack:new';
+                      if (archiveInputRef.current) archiveInputRef.current.value = '';
+                      archiveInputRef.current?.click();
+                    }}
+                    onRetry={versionRequest.reload}
+                    onDeleteVersion={(versionId) => { if (window.confirm('确认删除此草稿包？')) void deleteVersion(versionId); }}
+                    onSubmitReview={(versionId) => {
+                      setSubmittingVersionId(versionId);
+                      void submitVersionForReview(versionId, true).finally(() => setSubmittingVersionId(null));
+                    }}
+                    onPageChange={workspace.changeVersionPage}
+                    onPageSizeChange={workspace.changeVersionPageSize}
+                  />
                 ) : (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -785,8 +779,6 @@ export const AuthorWorkbench: React.FC = () => {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {versionRequest.loading && <p role="status" className="text-xs text-neutral-500">正在加载版本…</p>}
-                      {versionRequest.error && <p role="alert" className="text-xs text-rose-700">版本加载失败：{versionRequest.error} <button onClick={versionRequest.reload} className="underline">重试</button></p>}
                       {activeModVersions.map((v) => {
                         const report = v.scan_report_id ? scanReports[v.scan_report_id] : null;
                         const hasBlockers = report && report.blockers.length > 0;

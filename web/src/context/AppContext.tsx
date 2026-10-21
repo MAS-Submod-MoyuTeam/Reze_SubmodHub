@@ -10,7 +10,6 @@ import {
   ModSummary,
   ModVersion,
   ScanReport,
-  Submission,
   AuditLog,
   Installation,
   InstalledMod,
@@ -21,7 +20,6 @@ import {
 } from '../types/submodhub';
 import {
   INITIAL_SCAN_REPORTS,
-  INITIAL_SUBMISSIONS,
   INITIAL_AUDIT_LOGS,
   INITIAL_INSTALLATIONS,
   INITIAL_INSTALLED_MODS,
@@ -47,7 +45,7 @@ interface Toast {
   code?: string;
 }
 
-export interface AuthorPageData { mods?: ModSummary[]; versions?: ModVersion[]; scanReports?: Record<string, ScanReport>; submissions?: Submission[] }
+export interface AuthorPageData { mods?: ModSummary[]; versions?: ModVersion[]; scanReports?: Record<string, ScanReport> }
 
 export interface AppContextType {
   // Navigation & View
@@ -75,7 +73,6 @@ export interface AppContextType {
   mods: ModSummary[];
   versions: ModVersion[];
   scanReports: Record<string, ScanReport>;
-  submissions: Submission[];
   auditLogs: AuditLog[];
   searchQuery: string;
   setSearchQuery: (q: string) => void;
@@ -161,7 +158,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [mods, setMods] = useState<ModSummary[]>([]);
   const [versions, setVersions] = useState<ModVersion[]>([]);
   const [scanReports, setScanReports] = useState<Record<string, ScanReport>>(INITIAL_SCAN_REPORTS);
-  const [submissions, setSubmissions] = useState<Submission[]>(INITIAL_SUBMISSIONS);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDIT_LOGS);
 
   // Search & Filters
@@ -278,7 +274,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (page.mods) setMods((prev) => [...page.mods!, ...prev.filter((item) => !page.mods!.some((entry) => entry.id === item.id))]);
     if (page.versions) setVersions((prev) => [...page.versions!, ...prev.filter((item) => !page.versions!.some((entry) => entry.id === item.id))]);
     if (page.scanReports) setScanReports((prev) => ({ ...prev, ...page.scanReports }));
-    if (page.submissions) setSubmissions((prev) => [...page.submissions!, ...prev.filter((item) => !page.submissions!.some((entry) => entry.id === item.id))]);
   }, []);
 
   const showToast = useCallback((type: Toast['type'], message: string, code?: string) => {
@@ -637,15 +632,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return false;
       }
 
-      const mod = mods.find((m) => m.id === v.mod_id);
       const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
       try {
         const remote = await submitAuthorVersion(base, versionId, markLatest);
-        setSubmissions((prev) => prev.some((item) => item.id === remote.id) ? prev : [{
-          id: remote.id, mod_id: remote.mod_id, version_id: remote.version_id, mod_title: mod?.title || remote.mod_id,
-          version_str: v.version, category: mod?.category || 'submod', author_id: remote.author_id,
-          author_name: currentUser?.display_name || '作者', submitted_at: remote.created_at || new Date().toISOString(), state: remote.state as Submission['state'], mark_latest: remote.mark_latest,
-        }, ...prev]);
         setVersions((prev) => prev.map((item) => item.id === versionId ? { ...item, state: remote.state as ModVersion['state'] } : item));
         showToast('success', `候选版本 ${v.version} 已提交服务端审核队列。`);
         return true;
@@ -654,7 +643,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return false;
       }
     },
-    [versions, scanReports, mods, currentUser, showToast]
+    [versions, scanReports, showToast]
   );
 
   // Review pages own their remote lists; only update known author/catalog entries here.
@@ -668,10 +657,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const remote = action === 'publish'
         ? await publishReview(base, submissionId)
         : await decideReview(base, submissionId, action, reason);
-      setSubmissions((prev) => prev.map((item) => item.id === submissionId ? {
-        ...item, state: remote.state as Submission['state'], decision_reason: remote.reason,
-        reviewer_id: remote.reviewer_id, decided_at: remote.decided_at, published_at: remote.published_at,
-      } : item));
       setVersions((prev) => prev.map((item) => item.id === remote.version_id ? {
         ...item, state: remote.state as ModVersion['state'], published_at: remote.published_at,
         is_immutable: remote.state === 'published' || remote.state === 'approved',
@@ -760,7 +745,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteVersion = useCallback(async (versionId: string): Promise<void> => {
     const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-    try { await deleteAuthorVersion(base, versionId); setVersions((prev) => prev.filter((v) => v.id !== versionId)); setSubmissions((prev) => prev.filter((s) => s.version_id !== versionId)); showToast('success', '版本已删除。'); }
+    try { await deleteAuthorVersion(base, versionId); setVersions((prev) => prev.filter((v) => v.id !== versionId)); showToast('success', '版本已删除。'); }
     catch (error) { showToast('error', `删除版本失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
   }, [showToast]);
 
@@ -779,7 +764,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteModDraft = useCallback(async (modId: string): Promise<void> => {
     const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-    try { await deleteAuthorModRequest(base, modId); setMods((prev) => prev.filter((mod) => mod.id !== modId)); setVersions((prev) => prev.filter((version) => version.mod_id !== modId)); setSubmissions((prev) => prev.filter((submission) => submission.mod_id !== modId)); showToast('success', '草稿模组及其候选内容已删除。'); }
+    try { await deleteAuthorModRequest(base, modId); setMods((prev) => prev.filter((mod) => mod.id !== modId)); setVersions((prev) => prev.filter((version) => version.mod_id !== modId)); showToast('success', '草稿模组及其候选内容已删除。'); }
     catch (error) { showToast('error', `删除草稿模组失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
   }, [showToast]);
 
@@ -1067,7 +1052,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       mods,
       versions,
       scanReports,
-      submissions,
       auditLogs,
       searchQuery,
       setSearchQuery,
@@ -1131,7 +1115,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       mods,
       versions,
       scanReports,
-      submissions,
       auditLogs,
       searchQuery,
       categoryFilter,

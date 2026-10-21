@@ -1,18 +1,15 @@
 import type { ServerScanReport } from '../web/src/context/scanReport';
 
-export function isAuthorModPublished(
-  mod: { id: string; latest_version_id?: string; unpublished?: boolean },
-  versions: Array<{ id: string; mod_id: string; state: string }>,
-): boolean {
-  return !mod.unpublished && versions.some((version) =>
-    version.id === mod.latest_version_id && version.mod_id === mod.id && version.state === 'published');
-}
-
-export interface ApiMod { id: string; title: string; summary: string; description?: string; category: 'submod' | 'spritepack'; author: { id: string; display_name: string }; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; latest_version_id?: string; unpublished?: boolean; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean; github_last_sync_at?: string; github_last_sync_error?: string; github_last_release_id?: number; github_backoff_until?: string }
+export interface ApiMod { id: string; title: string; summary: string; description?: string; category: 'submod' | 'spritepack'; author: { id: string; display_name: string }; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; latest_version_id?: string; created_at?: string; unpublished?: boolean; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean; github_last_sync_at?: string; github_last_sync_error?: string; github_last_release_id?: number; github_backoff_until?: string }
 export interface ApiVersion { id: string; mod_id: string; version: string; state: string; release_notes: string; size_bytes: number; sha256: string; dependencies: unknown[]; created_at?: string; scan_report_id?: string; deprecated?: boolean; deprecation_reason?: string; image_paths?: string[] }
 export interface ApiSubmission { id: string; mod_id: string; version_id: string; author_id: string; state: string; mark_latest?: boolean; reason?: string; reviewer_id?: string; created_at?: string; decided_at?: string; published_at?: string; version_snapshot?: ApiVersion; scan_report_snapshot?: ServerScanReport }
 export interface ApiPage<T> { items: T[]; total: number; page: number; page_size: number }
+// Author mod windows are keyset based: `cursor` reproduces the returned window
+// (null on the first one), `next_cursor`/`prev_cursor` step one window at a time.
+// `start` is the 0-based index of the first row and is for display only.
+export interface ApiCursorPage<T> { items: T[]; total: number; page_size: number; start: number; cursor: string | null; next_cursor: string | null; prev_cursor: string | null }
 export interface ReviewPageQuery { page: number; pageSize: number; state?: string }
+export interface AuthorModQuery { pageSize: number; cursor?: string; focusModId?: string }
 export interface ApiReviewSubmission { id: string; mod_id: string; version_id: string; author_id: string; state: string; created_at: string; mod_title: string; author_name: string; version_str: string; category: 'submod' | 'spritepack' }
 export interface ApiReviewDetail { submission: ApiSubmission; mod: ApiMod; version: ApiVersion; scan_report?: ServerScanReport }
 export interface ApiReviewAudit { id: string; timestamp: string; actor_id: string; actor_name: string; actor_role: string; action: string; target_type: string; target_id: string; target_label: string; reason: string; details?: Record<string, unknown> }
@@ -22,10 +19,11 @@ function endpoint(base: string, path: string) { return `${base.replace(/\/$/, ''
 export interface AuthorModInput { title: string; summary: string; description?: string; author_display_name?: string; category: 'submod' | 'spritepack'; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean }
 export async function createAuthorMod(base: string, input: AuthorModInput, fetcher: typeof fetch = fetch): Promise<ApiMod> { return json(await fetcher(endpoint(base, '/author/mods'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })); }
 export async function updateAuthorMod(base: string, id: string, input: AuthorModInput, fetcher: typeof fetch = fetch): Promise<ApiMod> { return json(await fetcher(endpoint(base, `/author/mods/${encodeURIComponent(id)}`), { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })); }
-export interface ApiAuthorModItem { mod: ApiMod; is_published: boolean }
+export interface ApiAuthorModItem { mod: ApiMod; is_published: boolean; has_published_version: boolean; has_archived_version: boolean; has_pending_review: boolean; candidate_version_id?: string }
 export interface ApiAuthorSubmission extends ApiSubmission { mod_title: string; author_name: string; version_str: string; category: 'submod' | 'spritepack'; current_version?: ApiVersion }
-export async function listAuthorWorkspace(base: string, query: ReviewPageQuery & { focusModId?: string }, signal?: AbortSignal, fetcher: typeof fetch = fetch): Promise<ApiPage<ApiAuthorModItem>> {
-  const params = new URLSearchParams({ page: String(query.page), page_size: String(query.pageSize) });
+export async function listAuthorWorkspace(base: string, query: AuthorModQuery, signal?: AbortSignal, fetcher: typeof fetch = fetch): Promise<ApiCursorPage<ApiAuthorModItem>> {
+  const params = new URLSearchParams({ page_size: String(query.pageSize) });
+  if (query.cursor) params.set('cursor', query.cursor);
   if (query.focusModId) params.set('focus_mod_id', query.focusModId);
   return json(await fetcher(endpoint(base, `/author/mods?${params}`), { credentials: 'same-origin', signal }));
 }

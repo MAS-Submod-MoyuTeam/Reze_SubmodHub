@@ -68,6 +68,54 @@ type reviewSubmissionItem struct {
 	Category   string    `json:"category"`
 }
 
+// submissionDisplay is the shared projection of one submission's mod context.
+type submissionDisplay struct {
+	Mod      Mod
+	Title    string
+	Author   string
+	Category string
+	Version  string
+}
+
+// submissionDisplayRows resolves titles, author names, categories and version
+// labels for the selected page of submissions. The review queue and the author
+// history both read this projection so they cannot drift apart.
+func (s *Store) submissionDisplayRows(indices []int) map[int]submissionDisplay {
+	mods := make(map[string]Mod)
+	for _, index := range indices {
+		mods[s.Catalog.Submissions[index].ModID] = Mod{}
+	}
+	for _, mod := range s.Catalog.Mods {
+		if _, wanted := mods[mod.ID]; wanted {
+			mods[mod.ID] = mod
+		}
+	}
+	rows := make(map[int]submissionDisplay, len(indices))
+	for _, index := range indices {
+		sub := s.Catalog.Submissions[index]
+		mod := mods[sub.ModID]
+		version := s.Catalog.Versions[sub.VersionID].Version
+		if sub.VersionSnapshot != nil {
+			version = sub.VersionSnapshot.Version
+		}
+		if version == "" {
+			version = sub.VersionID
+		}
+		title, author, category := mod.Title, mod.Author.DisplayName, mod.Category
+		if title == "" {
+			title = sub.ModID
+		}
+		if author == "" {
+			author = sub.AuthorID
+		}
+		if category == "" {
+			category = "submod"
+		}
+		rows[index] = submissionDisplay{Mod: mod, Title: title, Author: author, Category: category, Version: version}
+	}
+	return rows
+}
+
 func (s *Store) reviewSubmissionPage(query reviewPageQuery) map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -89,38 +137,13 @@ func (s *Store) reviewSubmissionPage(query reviewPageQuery) map[string]any {
 		return a.CreatedAt.After(b.CreatedAt)
 	})
 	page, start, end := query.bounds(len(indices))
-	// Resolve titles only for the selected page; do not clone full submissions.
-	mods := make(map[string]Mod)
-	for _, index := range indices[start:end] {
-		mods[s.Catalog.Submissions[index].ModID] = Mod{}
-	}
-	for _, mod := range s.Catalog.Mods {
-		if _, wanted := mods[mod.ID]; wanted {
-			mods[mod.ID] = mod
-		}
-	}
+	// Resolve labels only for the selected page; do not clone full submissions.
+	rows := s.submissionDisplayRows(indices[start:end])
 	items := make([]reviewSubmissionItem, 0, end-start)
 	for _, index := range indices[start:end] {
 		sub := s.Catalog.Submissions[index]
-		mod := mods[sub.ModID]
-		version := s.Catalog.Versions[sub.VersionID].Version
-		if sub.VersionSnapshot != nil {
-			version = sub.VersionSnapshot.Version
-		}
-		if version == "" {
-			version = sub.VersionID
-		}
-		title, author, category := mod.Title, mod.Author.DisplayName, mod.Category
-		if title == "" {
-			title = sub.ModID
-		}
-		if author == "" {
-			author = sub.AuthorID
-		}
-		if category == "" {
-			category = "submod"
-		}
-		items = append(items, reviewSubmissionItem{ID: sub.ID, ModID: sub.ModID, VersionID: sub.VersionID, AuthorID: sub.AuthorID, State: sub.State, CreatedAt: sub.CreatedAt, ModTitle: title, AuthorName: author, Version: version, Category: category})
+		row := rows[index]
+		items = append(items, reviewSubmissionItem{ID: sub.ID, ModID: sub.ModID, VersionID: sub.VersionID, AuthorID: sub.AuthorID, State: sub.State, CreatedAt: sub.CreatedAt, ModTitle: row.Title, AuthorName: row.Author, Version: row.Version, Category: row.Category})
 	}
 	return map[string]any{"items": items, "total": len(indices), "page": page, "page_size": query.PageSize, "pending_count": pending}
 }

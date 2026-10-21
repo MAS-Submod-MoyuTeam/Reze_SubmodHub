@@ -101,12 +101,12 @@ paths:
   /author/mods:
     get:
       operationId: listAuthorWorkspace
-      description: Own mods only; returns {items:[{mod,is_published}],total,page,page_size}. No nested versions or scan reports. Sorted by ID descending.
+      description: Own mods only; returns one keyset window {items:[{mod,is_published,has_published_version,has_archived_version,has_pending_review,candidate_version_id}],total,page_size,start,cursor,next_cursor,prev_cursor}. No nested versions or scan reports. The version-derived flags cover every version of the mod, not just the current window, and `candidate_version_id` names the newest still-editable version that uploads should reuse. Sorted by the mod's own created_at, newest first, missing created_at last, mod ID descending as tie-break. Windows are anchored on that (created_at, ID) key, so concurrent writes never shift a later window: `cursor` reproduces the returned window (null on the first one), `next_cursor`/`prev_cursor` point at the neighbour windows, and `start` is the 0-based index of the first row, for display only. `focus_mod_id` resolves an owned mod to the window that contains it and returns that window's own cursor; an id the caller does not own is ignored.
       parameters:
-        - {$ref: '#/components/parameters/ReviewPage'}
         - {$ref: '#/components/parameters/ReviewPageSize'}
-        - {name: focus_mod_id, in: query, description: Locate the page containing this owned mod, schema: {type: string}}
-      responses: {'200': {description: Own mod page}, 'default': {$ref: '#/components/responses/Error'}}
+        - {name: cursor, in: query, description: Keyset cursor of the window to return; omit for the first window, schema: {type: string}}
+        - {name: focus_mod_id, in: query, description: Return the window containing this owned mod, schema: {type: string}}
+      responses: {'200': {description: One keyset window of own mods}, 'default': {$ref: '#/components/responses/Error'}}
     post:
       operationId: createAuthorMod
       responses: {'201': {description: Draft mod}, 'default': {$ref: '#/components/responses/Error'}}
@@ -183,6 +183,17 @@ components:
         total: {type: integer, minimum: 0}
         page: {type: integer, minimum: 1}
         page_size: {type: integer, minimum: 1, maximum: 100}
+    CursorPageMetadata:
+      type: object
+      description: Keyset window metadata. `start` is a display index; navigation uses the cursors only.
+      required: [total, page_size, start, cursor, next_cursor, prev_cursor]
+      properties:
+        total: {type: integer, minimum: 0}
+        page_size: {type: integer, minimum: 1, maximum: 100}
+        start: {type: integer, minimum: 0}
+        cursor: {type: [string, 'null']}
+        next_cursor: {type: [string, 'null']}
+        prev_cursor: {type: [string, 'null']}
     ReviewSubmissionSummary:
       type: object
       required: [id, mod_id, version_id, author_id, state, created_at, mod_title, author_name, version_str, category]

@@ -66,7 +66,6 @@ function createMockContext(overrides: Partial<AppContextType> = {}): AppContextT
     mods: [sampleMod],
     versions: [sampleVersion],
     scanReports: {},
-    submissions: [],
     auditLogs: [],
     searchQuery: '',
     setSearchQuery: () => {},

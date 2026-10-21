@@ -2,15 +2,26 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, createAuthorMod, reorderModImages, uploadModImages, updateAuthorModSource, syncAuthorModGitHub, unpublishAuthorMod } from './submission-api';
 
-test('loads one authenticated author mod page without nested versions', async () => {
+test('loads one authenticated author mod window without nested versions', async () => {
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    assert.equal(String(input), '/api/v1/author/mods?page=2&page_size=10');
+    assert.equal(String(input), '/api/v1/author/mods?page_size=10&cursor=next-window');
     assert.equal(init?.credentials, 'same-origin');
-    return Response.json({ items: [{ mod: { id: 'mine' }, is_published: false }], total: 11, page: 2, page_size: 10 });
+    return Response.json({ items: [{ mod: { id: 'mine' }, is_published: false }], total: 11, page_size: 10, start: 10, cursor: 'next-window', next_cursor: null, prev_cursor: 'first-window' });
   }) as typeof fetch;
-  const result = await listAuthorWorkspace('/api/v1', { page: 2, pageSize: 10 }, undefined, fetcher);
+  const result = await listAuthorWorkspace('/api/v1', { pageSize: 10, cursor: 'next-window' }, undefined, fetcher);
   assert.equal(result.items[0].mod.id, 'mine');
   assert.equal(result.total, 11);
+  assert.equal(result.start, 10);
+  assert.equal(result.prev_cursor, 'first-window');
+});
+
+test('asks the author window endpoint to focus one owned mod', async () => {
+  const fetcher = (async (input: RequestInfo | URL) => {
+    assert.equal(String(input), '/api/v1/author/mods?page_size=10&focus_mod_id=mod_new');
+    return Response.json({ items: [], total: 0, page_size: 10, start: 0, cursor: null, next_cursor: null, prev_cursor: null });
+  }) as typeof fetch;
+  const result = await listAuthorWorkspace('/api/v1', { pageSize: 10, focusModId: 'mod_new' }, undefined, fetcher);
+  assert.equal(result.total, 0);
 });
 
 test('clears a version deprecation with the authenticated endpoint', async () => {
