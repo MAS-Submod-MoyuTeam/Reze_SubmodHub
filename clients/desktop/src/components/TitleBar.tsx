@@ -124,10 +124,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <div className="flex items-center gap-2 shrink-0">
           <div className="w-5 h-5 rounded bg-emerald-600 flex items-center justify-center text-white font-bold text-xs shadow-xs">
-            S
+            R
           </div>
           <span className="font-semibold text-neutral-100 tracking-tight text-sm">
-            SubmodHub
+            RezeHub
           </span>
           {onOpenAppUpdate ? (
             <button
@@ -147,7 +147,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           ) : (
             <span
               className="text-[10px] text-neutral-500 font-mono"
-              title={`SubmodHub v${__APP_VERSION__}`}
+              title={`RezeHub v${__APP_VERSION__}`}
             >
               v{__APP_VERSION__}
             </span>

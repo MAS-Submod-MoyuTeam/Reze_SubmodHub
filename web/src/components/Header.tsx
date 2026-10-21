@@ -48,7 +48,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal }) => {
             onClick={() => setActiveTab('catalog')}
             className="text-lg font-semibold tracking-tight text-neutral-950 hover:text-emerald-700 transition-colors shrink-0"
           >
-            SubmodHub
+            RezeHub
           </button>
           <span
             className="hidden sm:inline text-[10px] font-mono text-neutral-400"
