@@ -53,6 +53,9 @@ playwright-report/
 
 # Local recovery backups and generated task drafts
 /permission-recovery/
+
+# Local ACL backup artifacts written by sandbox/permission diagnostics
+/.acl-recovery/
 /docs/aegis/work/2026-10-20-download-delivery-nodes/*-draft*.json
 /docs/aegis/work/2026-10-20-download-delivery-nodes/gate-input-pack.json
 
