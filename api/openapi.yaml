@@ -121,7 +121,24 @@ paths:
   /review/submissions:
     get:
       operationId: listReviewSubmissions
-      responses: {'200': {description: Submission page}, 'default': {$ref: '#/components/responses/Error'}}
+      description: Administrator-only lightweight summaries, newest first by created_at then ID; out-of-range pages clamp to the last page.
+      parameters:
+        - {$ref: '#/components/parameters/ReviewPage'}
+        - {$ref: '#/components/parameters/ReviewPageSize'}
+        - {name: state, in: query, schema: {type: string, enum: [all, ready_for_review, approved, rejected, published]}}
+      responses:
+        '200': {description: Submission page, content: {application/json: {schema: {$ref: '#/components/schemas/ReviewSubmissionPage'}}}}
+        'default': {$ref: '#/components/responses/Error'}
+  /review/audit:
+    get:
+      operationId: listReviewAudit
+      description: Administrator-only events, newest first by timestamp then ID; out-of-range pages clamp to the last page.
+      parameters:
+        - {$ref: '#/components/parameters/ReviewPage'}
+        - {$ref: '#/components/parameters/ReviewPageSize'}
+      responses:
+        '200': {description: Audit page, content: {application/json: {schema: {$ref: '#/components/schemas/ReviewAuditPage'}}}}
+        'default': {$ref: '#/components/responses/Error'}
   /review/submissions/{submission_id}/{action}:
     post:
       operationId: reviewSubmissionAction
@@ -130,7 +147,62 @@ paths:
         - {name: action, in: path, required: true, schema: {type: string, enum: [decision, publish]}}
       responses: {'200': {description: Updated submission}, 'default': {$ref: '#/components/responses/Error'}}
 components:
+  parameters:
+    ReviewPage: {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+    ReviewPageSize: {name: page_size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
   schemas:
+    ReviewPageMetadata:
+      type: object
+      required: [total, page, page_size]
+      properties:
+        total: {type: integer, minimum: 0}
+        page: {type: integer, minimum: 1}
+        page_size: {type: integer, minimum: 1, maximum: 100}
+    ReviewSubmissionSummary:
+      type: object
+      required: [id, mod_id, version_id, author_id, state, created_at, mod_title, author_name, version_str, category]
+      properties:
+        id: {type: string}
+        mod_id: {type: string}
+        version_id: {type: string}
+        author_id: {type: string}
+        state: {type: string}
+        created_at: {type: string, format: date-time}
+        mod_title: {type: string}
+        author_name: {type: string}
+        version_str: {type: string}
+        category: {type: string, enum: [submod, spritepack]}
+    ReviewSubmissionPage:
+      allOf:
+        - {$ref: '#/components/schemas/ReviewPageMetadata'}
+        - type: object
+          required: [items, pending_count]
+          properties:
+            items: {type: array, items: {$ref: '#/components/schemas/ReviewSubmissionSummary'}}
+            pending_count: {type: integer, minimum: 0}
+    ReviewAuditPage:
+      allOf:
+        - {$ref: '#/components/schemas/ReviewPageMetadata'}
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                required: [id, timestamp, actor_id, actor_name, actor_role, action, target_type, target_id, target_label, reason]
+                properties:
+                  id: {type: string}
+                  timestamp: {type: string, format: date-time}
+                  actor_id: {type: string}
+                  actor_name: {type: string}
+                  actor_role: {type: string}
+                  action: {type: string}
+                  target_type: {type: string}
+                  target_id: {type: string}
+                  target_label: {type: string}
+                  reason: {type: string}
+                  details: {type: object}
     Mod:
       type: object
       required: [id, title, category, supported_platforms]

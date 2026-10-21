@@ -88,17 +88,27 @@
 | `GET /author/versions/{version_id}/scan` | 作者 | 完整扫描报告与当前状态 |
 | `POST /author/versions/{version_id}/submit` | 作者 | `ready_for_review`；返回 Submission |
 | `GET /author/submissions` | 作者 | 提交历史及审核理由 |
-| `GET /review/submissions` | 审核员 | `state,cursor,limit`；待审队列 |
-| `GET /review/submissions/{id}` | 审核员 | 元数据、ZIP 文件树、扫描报告、历史 |
+| `GET /review/submissions` | 管理员 | `state,page,page_size`；轻量提交摘要及 `total,page,page_size,pending_count` |
+| `GET /review/submissions/{id}` | 管理员 | 元数据、ZIP 文件树、扫描报告、历史 |
 | `POST /review/submissions/{id}/decision` | 审核员 | `{decision:"approve|reject",reason}`；批准即发布 |
 | `POST /review/submissions/{id}/publish` | 审核员 | 仅兼容历史 `approved` 记录的补发 |
-| `GET /review/audit` | 审核员 | 游标分页的审核/下架事件 |
+| `GET /review/audit` | 管理员 | `page,page_size`；`{items,total,page,page_size}` 审核/下架事件 |
 | `POST /admin/users/{id}/roles` | 管理员 | `{roles:["author"|"reviewer"]}`；目标 ID 为 `flarum:<numeric_id>`；显式角色集，空数组撤销附加角色并记录审计；不能通过此接口授予 `admin` |
 | `POST /admin/versions/{id}/unpublish` | 管理员 | `{reason}`；可恢复的下架 |
 | `POST /author/github-imports` | 作者 | Release URL/asset 标识导入为草稿，并走相同扫描审核 |
 | `GET /spritepacks/{mod_id}` | 公开 | 可选 `version_id`；返回 `{sets:[...], version_id}`；版本不匹配返回 409 `sprite_version_changed` |
 | `GET /spritepacks/{mod_id}/preview` | 公开 | `set,item` 及可选 `version_id`；返回预览图片 PNG |
 | `GET /spritepacks/{mod_id}/download` | 公开 | `sets`（逗号分隔集合 ID）及可选 `version_id`；响应头带 `X-Archive-SHA256`, `X-Version-ID` 与 `Content-Length` |
+
+### 审核列表分页（已实施）
+
+`GET /review/submissions` 和 `GET /review/audit` 使用页码响应 `{items,total,page,page_size}`，不使用公共目录的游标结构。`page` 默认 1；`page_size` 默认 20，范围 1–100；非法、空或重复的分页参数返回 400 `validation_failed`。提交列表另返回跨筛选的 `pending_count`（所有 `ready_for_review` 提交数）。`state` 可省略或为 `all,ready_for_review,approved,rejected,published`，未知值返回 400。
+
+两种列表按创建/事件时间倒序、ID 倒序打破同时间并列。提交摘要包含 `id,mod_id,version_id,author_id,state,created_at,mod_title,author_name,version_str,category`；不携带版本快照、扫描报告或文件树，选中后请求详情。不存在对应模组/版本时，摘要使用 ID 作为显示值；有提交版本快照时使用快照版本号。
+
+越界页码回到当前末页，空列表返回 `items:[],total:0,page:1`。审核结果可能改变筛选数量，前端以服务端返回的有效页为准。分页请求相互独立，不提供跨请求的历史快照；并发新增可能改变页边界。切换页码/筛选时取消并忽略旧请求，加载失败保留重试入口，审核成功后重新查询当前页与计数，失败保留理由。审核数据只在打开工作台时加载，审计只在打开对应标签时加载。
+
+当前存储以进程内目录为查询源；本次限制响应大小、摘要构造与前端渲染，不改变目录整体载入方式。筛选、总数和排序仍在内存执行，后续存储规模增长时应在存储层承接查询。
 
 路径是目标契约，后端实现时若有调整，须同步 OpenAPI 与本文，再交给前端。
 

@@ -2,26 +2,7 @@ import React from 'react';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Pagination, paginate } from './Pagination';
-
-const items = Array.from({ length: 23 }, (_, index) => index + 1);
-
-test('pagination covers all records without gaps or duplicates and keeps a partial last page', () => {
-  const pages = [1, 2, 3].map((page) => paginate(items, page, 10));
-  assert.deepEqual(pages.flatMap((page) => page.items), items);
-  assert.deepEqual(pages[2], { page: 3, totalPages: 3, items: [21, 22, 23], start: 21, end: 23 });
-});
-
-test('filtering or removing the final page clamps to a valid page', () => {
-  assert.equal(paginate(items.slice(0, 10), 3, 10).page, 1);
-  assert.deepEqual(paginate([], 3, 10), { page: 1, totalPages: 1, items: [], start: 0, end: 0 });
-  assert.equal(paginate(items, 0, 10).page, 1);
-});
-
-test('page size changes preserve the full collection', () => {
-  assert.equal(paginate(items, 1, 20).items.length, 20);
-  assert.deepEqual(paginate(items, 2, 20).items, [21, 22, 23]);
-});
+import { Pagination } from './Pagination';
 
 test('controls expose current page, bounded page buttons and disabled boundaries', () => {
   const render = (total: number, page: number) => renderToStaticMarkup(<Pagination label="提交队列" total={total} page={page} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />);

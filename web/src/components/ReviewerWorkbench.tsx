@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { MarkdownText } from './MarkdownText';
-import { Pagination, paginate } from './Pagination';
+import { Pagination } from './Pagination';
+import { useReviewPage } from './useReviewPage';
+import { mapServerScanReport } from '../context/scanReport';
 import { formatVersionLabel } from './versionHistory';
-import { getReviewSubmission } from '../../../ui/submission-api';
-import { Submission, ScanReport, ScannedFile } from '../types/submodhub';
+import { getReviewSubmission, listReviewSubmissions, listReviewAudit } from '../../../ui/submission-api';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -25,11 +26,6 @@ export const ReviewerWorkbench: React.FC = () => {
   const {
     currentUser,
     hasRole,
-    submissions,
-    versions,
-    mods,
-    scanReports,
-    auditLogs,
     approveSubmission,
     rejectSubmission,
     publishApprovedVersion,
@@ -47,44 +43,29 @@ export const ReviewerWorkbench: React.FC = () => {
   const [queuePageSize, setQueuePageSize] = useState(10);
   const [auditPage, setAuditPage] = useState(1);
   const [auditPageSize, setAuditPageSize] = useState(20);
-  const filteredSubmissions = submissions.filter((submission) => statusFilter === 'all' || submission.state === statusFilter);
-  const queue = paginate(filteredSubmissions, queuePage, queuePageSize);
-  const audit = paginate(auditLogs, auditPage, auditPageSize);
+  const base = `${(import.meta.env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+  const userId = currentUser?.id;
+  const loadQueue = React.useCallback((signal: AbortSignal) => listReviewSubmissions(base, { page: queuePage, pageSize: queuePageSize, state: statusFilter }, signal), [base, queuePage, queuePageSize, statusFilter, userId]);
+  const loadAudit = React.useCallback((signal: AbortSignal) => listReviewAudit(base, { page: auditPage, pageSize: auditPageSize }, signal), [base, auditPage, auditPageSize, userId]);
+  const queueRequest = useReviewPage(loadQueue, isReviewer && activeReviewTab === 'queue');
+  const auditRequest = useReviewPage(loadAudit, isReviewer && activeReviewTab === 'audit');
+  const queue = queueRequest.data;
+  const audit = auditRequest.data;
+  React.useEffect(() => { if (queue && queue.page !== queuePage) setQueuePage(queue.page); }, [queue, queuePage]);
+  React.useEffect(() => { if (audit && audit.page !== auditPage) setAuditPage(audit.page); }, [audit, auditPage]);
 
-  // Keep inspection inside the visible page, including after a review changes the filter results.
   const [selectedSubId, setSelectedSubId] = useState('');
-  const activeSubmission = queue.items.find((submission) => submission.id === selectedSubId) || queue.items[0];
+  const activeSubmission = queue?.items.find((submission) => submission.id === selectedSubId) || queue?.items[0];
   const activeSubmissionId = activeSubmission?.id;
-  React.useEffect(() => {
-    setQueuePage(queue.page);
-  }, [queue.page]);
-  React.useEffect(() => {
-    setAuditPage(audit.page);
-  }, [audit.page]);
-  React.useEffect(() => {
-    setSelectedSubId(activeSubmissionId || '');
-  }, [activeSubmissionId]);
-  const [reviewDetail, setReviewDetail] = useState<{ mod?: { title?: string; summary?: string; tags?: string[]; supported_platforms?: string[] }; version?: { release_notes?: string; version?: string; size_bytes?: number; sha256?: string; dependencies?: Array<{ mod_id?: string; mod_title?: string; version_range?: string; required?: boolean }> }; scan_report?: { files?: Array<{ source?: string; target?: string; size?: number; sha256?: string; class?: string }>; unsupported?: string[]; warnings?: string[]; conflicts?: unknown[]; sprite_sets?: Array<{ id: string; name: string; items: Array<{ display_name: string }> }> } } | null>(null);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    setReviewDetail(null);
-    if (!activeSubmissionId || !isReviewer) return;
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-    getReviewSubmission(base, activeSubmissionId)
-      .then((detail) => { if (!cancelled) setReviewDetail(detail as typeof reviewDetail); })
-      .catch(() => { if (!cancelled) setReviewDetail(null); });
-    return () => { cancelled = true; };
-  }, [activeSubmissionId, isReviewer]);
-
-  // Decision Modal
+  const activeSubmissionState = activeSubmission?.state;
+  const loadDetail = React.useCallback((signal: AbortSignal) => getReviewSubmission(base, activeSubmissionId!, (input, init) => fetch(input, { ...init, signal })), [base, activeSubmissionId, activeSubmissionState, userId]);
+  const detailRequest = useReviewPage(loadDetail, isReviewer && !!activeSubmissionId && activeReviewTab === 'queue');
+  const reviewDetail = detailRequest.data;
+  const activeReport = React.useMemo(() => reviewDetail?.scan_report ? mapServerScanReport(reviewDetail.version.id, reviewDetail.scan_report) : null, [reviewDetail]);
   const [decisionModalMode, setDecisionModalMode] = useState<'approve' | 'reject' | null>(null);
   const [decisionReason, setDecisionReason] = useState('');
-
-  const activeVer = versions.find((v) => v.id === activeSubmission?.version_id);
-  const activeReportId = activeSubmission?.scan_report_id || activeVer?.scan_report_id;
-  const activeReport = activeReportId ? scanReports[activeReportId] : null;
-  const activeMod = mods.find((m) => m.id === activeSubmission?.mod_id);
+  const [decisionSubmissionId, setDecisionSubmissionId] = useState('');
+  const [actionPending, setActionPending] = useState(false);
 
   if (!isReviewer) {
     return (
@@ -100,6 +81,7 @@ export const ReviewerWorkbench: React.FC = () => {
 
   const handleOpenDecisionModal = (mode: 'approve' | 'reject') => {
     setDecisionModalMode(mode);
+    setDecisionSubmissionId(activeSubmissionId || '');
     setDecisionReason(
       mode === 'approve'
         ? '已查阅 ZIP 静态检测报告，未发现需阻断发布的问题。'
@@ -109,21 +91,32 @@ export const ReviewerWorkbench: React.FC = () => {
 
   const handleConfirmDecision = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeSubmission || !decisionModalMode) return;
-
-    if (decisionModalMode === 'approve') {
-      await approveSubmission(activeSubmission.id, decisionReason);
-    } else {
-      await rejectSubmission(activeSubmission.id, decisionReason);
-    }
-
-    setDecisionModalMode(null);
-    setDecisionReason('');
+    if (!decisionSubmissionId || !decisionModalMode || actionPending) return;
+    setActionPending(true);
+    try {
+      const success = decisionModalMode === 'approve'
+        ? await approveSubmission(decisionSubmissionId, decisionReason)
+        : await rejectSubmission(decisionSubmissionId, decisionReason);
+      if (success) {
+        setDecisionModalMode(null);
+        setDecisionReason('');
+        queueRequest.reload();
+        auditRequest.reload();
+        detailRequest.reload();
+      }
+    } finally { setActionPending(false); }
   };
 
   const handleConfirmPublish = async () => {
-    if (!activeSubmission) return;
-    await publishApprovedVersion(activeSubmission.id);
+    if (!activeSubmission || actionPending) return;
+    setActionPending(true);
+    try {
+      if (await publishApprovedVersion(activeSubmission.id)) {
+        queueRequest.reload();
+        auditRequest.reload();
+        detailRequest.reload();
+      }
+    } finally { setActionPending(false); }
   };
 
   return (
@@ -152,7 +145,7 @@ export const ReviewerWorkbench: React.FC = () => {
               activeReviewTab === 'queue' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
             }`}
           >
-            待审队列 ({submissions.filter((s) => s.state === 'ready_for_review').length})
+            待审队列 ({queue?.pending_count ?? '…'})
           </button>
           <button
             onClick={() => setActiveReviewTab('audit')}
@@ -160,7 +153,7 @@ export const ReviewerWorkbench: React.FC = () => {
               activeReviewTab === 'audit' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
             }`}
           >
-            审核与下架审计流水 ({auditLogs.length})
+            审核与下架审计流水{audit ? ` (${audit.total})` : ''}
           </button>
         </div>
       </div>
@@ -178,12 +171,14 @@ export const ReviewerWorkbench: React.FC = () => {
               </p>
             </div>
             <span className="text-xs font-mono text-neutral-400">
-              共 {auditLogs.length} 条审计记录
+              共 {audit?.total ?? '…'} 条审计记录
             </span>
           </div>
 
+          {auditRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">正在加载审计流水…</p>}
+          {auditRequest.error && <p role="alert" className="text-xs text-rose-700">审计流水加载失败：{auditRequest.error} <button type="button" onClick={auditRequest.reload} className="underline">重试</button></p>}
           <div className="divide-y divide-neutral-100">
-            {audit.items.map((log) => {
+            {audit?.items.map((log) => {
               const actionColors: Record<string, string> = {
                 version_publish: 'bg-emerald-50 text-emerald-800 border-emerald-200',
                 submission_approve: 'bg-sky-50 text-sky-800 border-sky-200',
@@ -224,8 +219,8 @@ export const ReviewerWorkbench: React.FC = () => {
               );
             })}
           </div>
-          {auditLogs.length === 0 && <p className="py-8 text-center text-xs text-neutral-500">暂无审计记录</p>}
-          <Pagination label="审计流水" total={auditLogs.length} page={audit.page} pageSize={auditPageSize} onPageChange={setAuditPage} onPageSizeChange={(size) => { setAuditPageSize(size); setAuditPage(1); }} />
+          {audit && audit.total === 0 && <p className="py-8 text-center text-xs text-neutral-500">暂无审计记录</p>}
+          {audit && <Pagination label="审计流水" total={audit.total} page={audit.page} pageSize={auditPageSize} onPageChange={setAuditPage} onPageSizeChange={(size) => { setAuditPageSize(size); setAuditPage(1); }} />}
         </div>
       ) : (
         /* Review Queue & Inspection Panel */
@@ -234,7 +229,7 @@ export const ReviewerWorkbench: React.FC = () => {
           <div className="bg-white border border-neutral-200 rounded-lg p-5 space-y-4 lg:col-span-1">
             <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
               <h2 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
-                待审提交队列 ({filteredSubmissions.length})
+                审核与发布队列 ({queue?.total ?? '…'})
               </h2>
             </div>
 
@@ -261,13 +256,12 @@ export const ReviewerWorkbench: React.FC = () => {
               ))}
             </div>
 
+            {queueRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">正在加载提交队列…</p>}
+            {queueRequest.error && <p role="alert" className="text-xs text-rose-700">提交队列加载失败：{queueRequest.error} <button type="button" onClick={queueRequest.reload} className="underline">重试</button></p>}
             {/* Submissions items */}
             <div className="space-y-2">
-              {queue.items.map((sub) => {
+              {queue?.items.map((sub) => {
                 const isSelected = sub.id === activeSubmission?.id;
-                const v = versions.find((ver) => ver.id === sub.version_id);
-                const reportId = sub.scan_report_id || v?.scan_report_id;
-                const report = reportId ? scanReports[reportId] : null;
 
                 return (
                   <button
@@ -303,23 +297,13 @@ export const ReviewerWorkbench: React.FC = () => {
                       </span>
                     </div>
 
-                    {report && (
-                      <div className="flex items-center gap-2 text-[10px] text-neutral-400 font-mono">
-                        <span>{report.resource_stats.total_files} 文件</span>
-                        <span>·</span>
-                        <span className={report.blockers.length > 0 ? 'text-rose-600 font-bold' : ''}>
-                          {report.blockers.length} 阻断
-                        </span>
-                        <span>·</span>
-                        <span>{report.warnings.length} 警告</span>
-                      </div>
-                    )}
+
                   </button>
                 );
               })}
             </div>
-            {filteredSubmissions.length === 0 && <p className="py-8 text-center text-xs text-neutral-500">当前筛选下暂无提交</p>}
-            <Pagination label="提交队列" total={filteredSubmissions.length} page={queue.page} pageSize={queuePageSize} onPageChange={(page) => { setQueuePage(page); setSelectedSubId(''); }} onPageSizeChange={(size) => { setQueuePageSize(size); setQueuePage(1); setSelectedSubId(''); }} />
+            {queue && queue.total === 0 && <p className="py-8 text-center text-xs text-neutral-500">当前筛选下暂无提交</p>}
+            {queue && <Pagination label="提交队列" total={queue.total} page={queue.page} pageSize={queuePageSize} onPageChange={(page) => { setQueuePage(page); setSelectedSubId(''); }} onPageSizeChange={(size) => { setQueuePageSize(size); setQueuePage(1); setSelectedSubId(''); }} />}
           </div>
 
           {/* Right Column: Deep Inspection & Audit Actions */}
@@ -335,7 +319,7 @@ export const ReviewerWorkbench: React.FC = () => {
                       <span>提交人: {activeSubmission.author_name}</span>
                       <span>·</span>
                       <span className="font-mono text-neutral-700">
-                        {new Date(activeSubmission.submitted_at).toLocaleString()}
+                        {new Date(activeSubmission.created_at).toLocaleString()}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -361,7 +345,7 @@ export const ReviewerWorkbench: React.FC = () => {
                   {/* Decision & Publish Buttons */}
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
                     {/* Approve / Reject Actions */}
-                    {activeSubmission.state === 'ready_for_review' && (
+                    {activeSubmission.state === 'ready_for_review' && reviewDetail && (
                       <>
                         <button
                           onClick={() => handleOpenDecisionModal('reject')}
@@ -381,21 +365,23 @@ export const ReviewerWorkbench: React.FC = () => {
                     )}
 
                     {/* Legacy approvals created before automatic publication can still be released. */}
-                    {activeSubmission.state === 'approved' && (
+                    {activeSubmission.state === 'approved' && reviewDetail && (
                       <div className="flex items-center gap-2">
-                        <button onClick={handleConfirmPublish} className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded flex items-center gap-1.5 transition-colors shadow-xs"><Sparkles className="w-3.5 h-3.5" />发布不可变版本</button>
+                        <button onClick={handleConfirmPublish} disabled={actionPending} className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded flex items-center gap-1.5 transition-colors shadow-xs"><Sparkles className="w-3.5 h-3.5" />发布不可变版本</button>
                       </div>
                     )}
                   </div>
                 </div>
 
+                {detailRequest.loading && <p role="status" className="text-xs text-neutral-500">正在加载提交详情…</p>}
+                {detailRequest.error && <p role="alert" className="text-xs text-rose-700">提交详情加载失败：{detailRequest.error} <button type="button" onClick={detailRequest.reload} className="underline">重试</button></p>}
                 {/* Independent Audit & Immutable Note Banner */}
                 {reviewDetail && (
                   <div className="border border-sky-200 bg-sky-50/50 rounded-lg p-4 space-y-3 text-xs">
                     <h3 className="font-bold text-sky-950">本次提交变更摘要</h3>
                     <div><span className="font-semibold">模组简介：</span>{reviewDetail.mod?.summary || '未填写'}</div>
                     <div><span className="font-semibold">版本说明：</span><MarkdownText value={reviewDetail.version?.release_notes || '未填写'} /></div>
-                    <div><span className="font-semibold">前置依赖：</span>{reviewDetail.version?.dependencies?.map((item) => `${item.mod_title || item.mod_id} ${item.version_range || '*'}`).join('、') || '无'}</div>
+                    <div><span className="font-semibold">前置依赖：</span>{(reviewDetail.version?.dependencies as Array<{ mod_title?: string; mod_id?: string; version_range?: string }> | undefined)?.map((item) => `${item.mod_title || item.mod_id} ${item.version_range || '*'}`).join('、') || '无'}</div>
                     <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-700">
                       <span>归档大小：{reviewDetail.version?.size_bytes || 0} bytes</span>
                       <span className="font-mono">SHA-256：{reviewDetail.version?.sha256 || '-'}</span>
@@ -558,7 +544,7 @@ export const ReviewerWorkbench: React.FC = () => {
               </>
             ) : (
               <div className="py-12 text-center text-xs text-neutral-400">
-                当前待审队列暂无条目
+                {queueRequest.loading ? '正在加载队列…' : queueRequest.error ? '队列加载失败，请重试' : '当前筛选下暂无提交'}
               </div>
             )}
           </div>
@@ -574,7 +560,7 @@ export const ReviewerWorkbench: React.FC = () => {
                 {decisionModalMode === 'approve' ? '确认通过审核 (Approve)' : '驳回模组版本申请 (Reject)'}
               </h3>
               <button
-                onClick={() => setDecisionModalMode(null)}
+                disabled={actionPending} onClick={() => setDecisionModalMode(null)}
                 className="text-neutral-400 hover:text-neutral-600 text-xs"
               >
                 取消
@@ -615,7 +601,7 @@ export const ReviewerWorkbench: React.FC = () => {
                   取消
                 </button>
                 <button
-                  type="submit"
+                  type="submit" disabled={actionPending}
                   className={`px-4 py-1.5 font-medium rounded text-white transition-colors ${
                     decisionModalMode === 'approve'
                       ? 'bg-sky-700 hover:bg-sky-800'

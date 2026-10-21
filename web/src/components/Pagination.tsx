@@ -1,12 +1,5 @@
 import React from 'react';
 
-export function paginate<T>(items: readonly T[], requestedPage: number, pageSize: number) {
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
-  const page = Math.max(1, Math.min(requestedPage, totalPages));
-  const start = (page - 1) * pageSize;
-  return { page, totalPages, items: items.slice(start, start + pageSize), start: items.length ? start + 1 : 0, end: Math.min(start + pageSize, items.length) };
-}
-
 type PaginationProps = {
   label: string;
   total: number;

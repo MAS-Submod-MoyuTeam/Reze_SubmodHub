@@ -29,7 +29,7 @@ import {
 } from '../data/mockData';
 import { fetchDownloadDescriptor, fetchPublishedCatalog, fetchPublishedVersions } from '../../../ui/catalog-api';
 import { loginFlarum as loginFlarumRequest, logout as logoutRequest, readSession, Session } from '../../../ui/auth-api';
-import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, listAuthorSubmissions, listAuthorWorkspace, listReviewAudit, listReviewSubmissions, markPublishedVersionLatest, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages, syncAuthorModGitHub, type SyncSummary } from '../../../ui/submission-api';
+import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, listAuthorSubmissions, listAuthorWorkspace, markPublishedVersionLatest, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages, syncAuthorModGitHub, type SyncSummary } from '../../../ui/submission-api';
 import { mapServerScanReport } from './scanReport';
 import { isAuthorModPublished } from '../../../ui/submission-api';
 
@@ -103,9 +103,9 @@ export interface AppContextType {
   setLatestPublishedVersion: (versionId: string) => Promise<void>;
 
   // Reviewer Actions
-  approveSubmission: (submissionId: string, reason: string) => Promise<void>;
-  rejectSubmission: (submissionId: string, reason: string) => Promise<void>;
-  publishApprovedVersion: (submissionId: string) => Promise<void>;
+  approveSubmission: (submissionId: string, reason: string) => Promise<boolean>;
+  rejectSubmission: (submissionId: string, reason: string) => Promise<boolean>;
+  publishApprovedVersion: (submissionId: string) => Promise<boolean>;
 
   // Admin Actions
   updateUserRoles: (userId: string, newRoles: UserRole[], reason: string) => void;
@@ -317,7 +317,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (!currentUser) return;
     const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-    const load = currentUser.roles.includes('admin') ? listReviewSubmissions(base) : listAuthorSubmissions(base);
+    const load = listAuthorSubmissions(base);
     load
       .then((remote) => {
         setScanReports((prev) => ({ ...prev, ...Object.fromEntries(remote.flatMap((item) => item.scan_report_snapshot ? [[`scan_submission_${item.id}`, mapServerScanReport(item.version_id, item.scan_report_snapshot)] as const] : [])) }));
@@ -348,23 +348,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsOffline(false);
       })
       .catch((error) => showToast('error', `审核队列加载失败：${error instanceof Error ? error.message : 'unknown_error'}`));
-    if (currentUser.roles.includes('admin')) {
-      listReviewAudit(base).then((remote) => {
-        setAuditLogs(remote.map((item) => ({
-          id: item.id,
-          timestamp: item.timestamp,
-          actor_id: item.actor_id,
-          actor_name: item.actor_name,
-          actor_role: item.actor_role,
-          action: item.action as AuditLog['action'],
-          target_type: item.target_type as AuditLog['target_type'],
-          target_id: item.target_id,
-          target_label: item.target_label,
-          reason: item.reason,
-          details: item.details,
-        })));
-      }).catch((error) => showToast('error', `审核审计加载失败：${error instanceof Error ? error.message : 'unknown_error'}`));
-    }
   }, [currentUser, mods, versions]);
 
   const showToast = useCallback((type: Toast['type'], message: string, code?: string) => {
@@ -743,207 +726,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [versions, scanReports, mods, currentUser, showToast]
   );
 
-  // Reviewer Actions
-  const approveSubmission = useCallback(
-    async (submissionId: string, reason: string): Promise<void> => {
-      if (!currentUser || !currentUser.roles.includes('admin')) {
-        showToast('error', '缺少审核员权限 (reviewer)。', 'forbidden');
-        return;
-      }
-
-      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-      let published;
-      try {
-        published = await decideReview(base, submissionId, 'approve', reason);
-      } catch (error) {
-        showToast('error', `服务端批准失败：${error instanceof Error ? error.message : 'unknown_error'}`);
-        return;
-      }
-      await refreshPublishedCatalog().catch(() => setIsOffline(true));
-      setSubmissions((prev) =>
-        prev.map((s) =>
-          s.id === submissionId
-            ? {
-                ...s,
-                state: 'published',
-                reviewer_id: currentUser.id,
-                reviewer_name: currentUser.display_name,
-                decision_reason: reason,
-                decided_at: published.decided_at || new Date().toISOString(),
-                published_at: published.published_at || new Date().toISOString(),
-              }
-            : s
-        )
-      );
-
-      const sub = submissions.find((s) => s.id === submissionId);
-      if (sub) {
-        setVersions((prev) =>
-          prev.map((v) => (v.id === sub.version_id ? { ...v, state: 'published', published_at: published.published_at || new Date().toISOString(), is_immutable: true } : v))
-        );
-
-        // Record Audit Log
-        const auditItem: AuditLog = {
-          id: 'audit_' + Date.now(),
-          timestamp: new Date().toISOString(),
-          actor_id: currentUser.id,
-          actor_name: currentUser.display_name,
-          actor_role: 'reviewer',
-          action: 'submission_approve',
-          target_type: 'submission',
-          target_id: sub.id,
-          target_label: `${sub.mod_title} (${sub.version_str}) 审核批准`,
-          reason,
-        };
-        setAuditLogs((prev) => [auditItem, ...prev]);
-      }
-
-      showToast('success', '审核通过，版本已自动发布到模组目录。');
-    },
-    [currentUser, submissions, showToast, refreshPublishedCatalog]
-  );
-
-  const rejectSubmission = useCallback(
-    async (submissionId: string, reason: string): Promise<void> => {
-      if (!currentUser || !currentUser.roles.includes('admin')) {
-        showToast('error', '缺少审核员权限 (reviewer)。', 'forbidden');
-        return;
-      }
-      if (!reason.trim()) {
-        showToast('error', '驳回必须填写具体的安全或规范理由。', 'validation_failed');
-        return;
-      }
-
-      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-      try {
-        await decideReview(base, submissionId, 'reject', reason);
-      } catch (error) {
-        showToast('error', `服务端驳回失败：${error instanceof Error ? error.message : 'unknown_error'}`);
-        return;
-      }
-      const rejectedSubmission = submissions.find((item) => item.id === submissionId);
-      const rejectedVersion = versions.find((item) => item.id === rejectedSubmission?.version_id);
-      const rejectedReport = rejectedVersion?.scan_report_id ? scanReports[rejectedVersion.scan_report_id] : undefined;
-      const historicalReportId = rejectedReport ? `scan_submission_${submissionId}` : undefined;
-      if (rejectedReport && historicalReportId) {
-        setScanReports((prev) => ({ ...prev, [historicalReportId]: { ...rejectedReport, id: historicalReportId } }));
-      }
-      setSubmissions((prev) =>
-        prev.map((s) =>
-          s.id === submissionId
-            ? {
-                ...s,
-                state: 'rejected',
-                reviewer_id: currentUser.id,
-                reviewer_name: currentUser.display_name,
-                decision_reason: reason,
-                scan_report_id: historicalReportId,
-                decided_at: new Date().toISOString(),
-              }
-            : s
-        )
-      );
-
-      const sub = submissions.find((s) => s.id === submissionId);
-      if (sub) {
-        setVersions((prev) =>
-          prev.map((v) => (v.id === sub.version_id ? { ...v, state: 'rejected' } : v))
-        );
-
-        // Record Audit Log
-        const auditItem: AuditLog = {
-          id: 'audit_' + Date.now(),
-          timestamp: new Date().toISOString(),
-          actor_id: currentUser.id,
-          actor_name: currentUser.display_name,
-          actor_role: 'reviewer',
-          action: 'submission_reject',
-          target_type: 'submission',
-          target_id: sub.id,
-          target_label: `${sub.mod_title} (${sub.version_str}) 审核驳回`,
-          reason,
-        };
-        setAuditLogs((prev) => [auditItem, ...prev]);
-      }
-
-      showToast('warning', `已驳回申请，作者将能在工作台查阅驳回理由并进行版本修订。`);
-    },
-    [currentUser, submissions, versions, scanReports, showToast]
-  );
-
-  const publishApprovedVersion = useCallback(
-    async (submissionId: string): Promise<void> => {
-      const sub = submissions.find((s) => s.id === submissionId);
-      if (!sub) return;
-
-      const v = versions.find((item) => item.id === sub.version_id);
-
-      const now = new Date().toISOString();
-      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-      try {
-        await publishReview(base, submissionId);
-      } catch (error) {
-        showToast('error', `服务端发布失败：${error instanceof Error ? error.message : 'unknown_error'}`);
-        return;
-      }
-
-      await refreshPublishedCatalog().catch(() => setIsOffline(true));
-
-      // Mark version as published & immutable
-      if (v) setVersions((prev) =>
-        prev.map((item) =>
-          item.id === v.id
-            ? {
-                ...item,
-                state: 'published',
-                published_at: now,
-                is_immutable: true,
-              }
-            : item
-        )
-      );
-
-      // Update Mod latest_version_id and published status
-      setMods((prev) =>
-        prev.map((m) =>
-          m.id === sub.mod_id
-            ? {
-                ...m,
-                latest_version_id: sub.mark_latest === false && m.latest_version_id ? m.latest_version_id : sub.version_id,
-                is_published: true,
-                updated_at: now,
-              }
-            : m
-        )
-      );
-
-      // Update submission state
-      setSubmissions((prev) =>
-        prev.map((s) =>
-          s.id === submissionId ? { ...s, state: 'published', published_at: now } : s
-        )
-      );
-
-      // Audit Log
-      const auditItem: AuditLog = {
-        id: 'audit_' + Date.now(),
-        timestamp: now,
-        actor_id: currentUser?.id || 'sys',
-        actor_name: currentUser?.display_name || '系统',
-        actor_role: 'reviewer',
-        action: 'version_publish',
-        target_type: 'version',
-        target_id: sub.version_id,
-        target_label: `${sub.mod_title} (${v?.version || sub.version_id}) 正式发布`,
-        reason: '发布不可变版本，对外公开分发并更新目录索引',
-        details: { sha256: v?.sha256 || '', size_bytes: v?.size_bytes || 0 },
-      };
-      setAuditLogs((prev) => [auditItem, ...prev]);
-
-      showToast('success', `不可变版本 ${v?.version || sub.version_id} 发布成功！已上线公开目录 (POST /review/submissions/{id}/publish)`);
-    },
-    [submissions, versions, currentUser, showToast, refreshPublishedCatalog]
-  );
+  // Review pages own their remote lists; only update known author/catalog entries here.
+  const performReview = useCallback(async (submissionId: string, action: 'approve' | 'reject' | 'publish', reason = ''): Promise<boolean> => {
+    if (!currentUser?.roles.includes('admin')) {
+      showToast('error', '缺少管理员权限。', 'forbidden');
+      return false;
+    }
+    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    try {
+      const remote = action === 'publish'
+        ? await publishReview(base, submissionId)
+        : await decideReview(base, submissionId, action, reason);
+      setSubmissions((prev) => prev.map((item) => item.id === submissionId ? {
+        ...item, state: remote.state as Submission['state'], decision_reason: remote.reason,
+        reviewer_id: remote.reviewer_id, decided_at: remote.decided_at, published_at: remote.published_at,
+      } : item));
+      setVersions((prev) => prev.map((item) => item.id === remote.version_id ? {
+        ...item, state: remote.state as ModVersion['state'], published_at: remote.published_at,
+        is_immutable: remote.state === 'published' || remote.state === 'approved',
+      } : item));
+      if (remote.state === 'published') await refreshPublishedCatalog().catch(() => setIsOffline(true));
+      showToast('success', action === 'reject' ? '已驳回申请，审核理由已保存。' : '审核通过，版本已发布。');
+      return true;
+    } catch (error) {
+      showToast('error', `审核操作失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+      return false;
+    }
+  }, [currentUser, showToast, refreshPublishedCatalog]);
+  const approveSubmission = useCallback((id: string, reason: string) => performReview(id, 'approve', reason), [performReview]);
+  const rejectSubmission = useCallback((id: string, reason: string) => performReview(id, 'reject', reason), [performReview]);
+  const publishApprovedVersion = useCallback((id: string) => performReview(id, 'publish'), [performReview]);
 
   // Admin Actions
   const updateUserRoles = useCallback(

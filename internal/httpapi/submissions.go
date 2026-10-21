@@ -210,10 +210,12 @@ func (s *Store) reviewAudit(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.mu.RLock()
-	items := append([]ReviewAuditEvent(nil), s.Catalog.ReviewAudit...)
-	s.mu.RUnlock()
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "next_cursor": nil})
+	query, err := parseReviewPage(r, false)
+	if err != nil {
+		writeError(w, 400, "validation_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.reviewAuditPage(query))
 }
 
 func reviewAuditID() string {
@@ -235,10 +237,12 @@ func (s *Store) reviewSubmissions(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	items := append([]Submission(nil), s.Catalog.Submissions...)
-	writeJSON(w, 200, map[string]any{"items": items, "next_cursor": nil})
+	query, err := parseReviewPage(r, true)
+	if err != nil {
+		writeError(w, 400, "validation_failed", err.Error())
+		return
+	}
+	writeJSON(w, 200, s.reviewSubmissionPage(query))
 }
 
 func (s *Store) authorSubmissions(w http.ResponseWriter, r *http.Request) {
