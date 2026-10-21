@@ -58,11 +58,15 @@ CI/CD 流水线在 GitHub Release 中发布以下命名规范的资产：
 
 | 平台与架构 | 资产文件名模式 | 说明 |
 |---|---|---|
-| Windows x64 | `submodhub-windows-amd64-<version>.exe` | 单文件便携版客户端 |
-| Windows Arm64 | `submodhub-windows-arm64-<version>.exe` | Windows on Arm 客户端 |
+| Windows x64 | `submodhub-windows-amd64.exe` | 单文件便携版客户端，文件名不含版本号 |
+| Windows Arm64 | `submodhub-windows-arm64.exe` | Windows on Arm 资产命名约定（当前流水线仅构建 x64） |
 | Windows 更新器 | `updater.exe` | 独立更新执行工具 |
 | Android Arm64 | `submodhub-android-arm64-<version>.apk` | Android 侧载安装包 |
 | 校验文件 | `SHA256SUMS.txt` | 包含所有资产的 SHA-256 哈希值 |
+
+Windows 自动更新在原可执行文件路径替换内容，文件名保持不变。发布文件使用不含版本号的稳定名称，避免成功更新后文件名仍显示旧版本；实际版本以程序内显示为准，Release 标签标识下载版本。资产选择器仍可识别历史带版本号的 Windows 文件名。
+
+若已使用 `submodhub-windows-amd64-0.9.2.exe` 等旧名称，请在更新完成并退出程序后，手动改为 `submodhub-windows-amd64.exe`，并同步调整已有快捷方式。存在未完成的更新或回滚时，应先完成恢复再改名，避免改变更新任务记录的目标路径。
 
 ---
 

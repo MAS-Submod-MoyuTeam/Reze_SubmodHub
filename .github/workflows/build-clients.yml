@@ -95,16 +95,15 @@ jobs:
       - name: Package artifact
         shell: pwsh
         run: |
-          $version = "${{ needs.version.outputs.version }}"
           New-Item -ItemType Directory -Force -Path "out" | Out-Null
-          Copy-Item "cmd/client/SubmodHub/bin/submodhub.exe" "out/submodhub-windows-amd64-$version.exe"
+          Copy-Item "cmd/client/SubmodHub/bin/submodhub.exe" "out/submodhub-windows-amd64.exe"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: submodhub-windows-amd64
           path: |
-            out/submodhub-windows-amd64-*.exe
+            out/submodhub-windows-amd64.exe
             out/updater.exe
           if-no-files-found: error
           retention-days: 30
@@ -261,7 +260,8 @@ jobs:
 
           ### 下载
 
-          - **Windows (amd64)**：\`submodhub-windows-amd64-${VERSION}.exe\`，下载后直接运行，无需解压。
+          - **Windows (amd64)**：\`submodhub-windows-amd64.exe\`，下载后直接运行，无需解压。文件名不含版本号，当前版本以程序内显示为准。
+          - **旧版 Windows 文件名**：若此前下载的文件名含版本号（如 \`submodhub-windows-amd64-0.9.2.exe\`），自动更新会保留原文件名。请在更新完成并退出程序后，将其改为 \`submodhub-windows-amd64.exe\`，并同步调整已有快捷方式；若有未完成的更新或回滚，请先完成恢复再改名。
           - **Android (arm64)**：\`submodhub-android-arm64-${VERSION}.apk\`，适用于 arm64 真机侧载安装。
 
           ### 校验
