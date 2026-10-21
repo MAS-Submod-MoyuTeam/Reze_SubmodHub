@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { MarkdownText } from './MarkdownText';
+import { Pagination, paginate } from './Pagination';
 import { formatVersionLabel } from './versionHistory';
 import { getReviewSubmission } from '../../../ui/submission-api';
 import { Submission, ScanReport, ScannedFile } from '../types/submodhub';
@@ -42,31 +43,48 @@ export const ReviewerWorkbench: React.FC = () => {
   // Filter in queue
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  // Active submission for deep inspection
-  const [selectedSubId, setSelectedSubId] = useState<string>(() => submissions[0]?.id || '');
+  const [queuePage, setQueuePage] = useState(1);
+  const [queuePageSize, setQueuePageSize] = useState(10);
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditPageSize, setAuditPageSize] = useState(20);
+  const filteredSubmissions = submissions.filter((submission) => statusFilter === 'all' || submission.state === statusFilter);
+  const queue = paginate(filteredSubmissions, queuePage, queuePageSize);
+  const audit = paginate(auditLogs, auditPage, auditPageSize);
+
+  // Keep inspection inside the visible page, including after a review changes the filter results.
+  const [selectedSubId, setSelectedSubId] = useState('');
+  const activeSubmission = queue.items.find((submission) => submission.id === selectedSubId) || queue.items[0];
+  const activeSubmissionId = activeSubmission?.id;
+  React.useEffect(() => {
+    setQueuePage(queue.page);
+  }, [queue.page]);
+  React.useEffect(() => {
+    setAuditPage(audit.page);
+  }, [audit.page]);
+  React.useEffect(() => {
+    setSelectedSubId(activeSubmissionId || '');
+  }, [activeSubmissionId]);
   const [reviewDetail, setReviewDetail] = useState<{ mod?: { title?: string; summary?: string; tags?: string[]; supported_platforms?: string[] }; version?: { release_notes?: string; version?: string; size_bytes?: number; sha256?: string; dependencies?: Array<{ mod_id?: string; mod_title?: string; version_range?: string; required?: boolean }> }; scan_report?: { files?: Array<{ source?: string; target?: string; size?: number; sha256?: string; class?: string }>; unsupported?: string[]; warnings?: string[]; conflicts?: unknown[]; sprite_sets?: Array<{ id: string; name: string; items: Array<{ display_name: string }> }> } } | null>(null);
 
   React.useEffect(() => {
-    if (!selectedSubId) return;
+    let cancelled = false;
+    setReviewDetail(null);
+    if (!activeSubmissionId || !isReviewer) return;
     const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-    getReviewSubmission(base, selectedSubId).then((detail) => setReviewDetail(detail as typeof reviewDetail)).catch(() => setReviewDetail(null));
-  }, [selectedSubId]);
+    getReviewSubmission(base, activeSubmissionId)
+      .then((detail) => { if (!cancelled) setReviewDetail(detail as typeof reviewDetail); })
+      .catch(() => { if (!cancelled) setReviewDetail(null); });
+    return () => { cancelled = true; };
+  }, [activeSubmissionId, isReviewer]);
 
   // Decision Modal
   const [decisionModalMode, setDecisionModalMode] = useState<'approve' | 'reject' | null>(null);
   const [decisionReason, setDecisionReason] = useState('');
 
-  const activeSubmission = submissions.find((s) => s.id === selectedSubId) || submissions[0];
   const activeVer = versions.find((v) => v.id === activeSubmission?.version_id);
   const activeReportId = activeSubmission?.scan_report_id || activeVer?.scan_report_id;
   const activeReport = activeReportId ? scanReports[activeReportId] : null;
   const activeMod = mods.find((m) => m.id === activeSubmission?.mod_id);
-
-  // Filtered queue
-  const filteredSubmissions = submissions.filter((s) => {
-    if (statusFilter === 'all') return true;
-    return s.state === statusFilter;
-  });
 
   if (!isReviewer) {
     return (
@@ -165,7 +183,7 @@ export const ReviewerWorkbench: React.FC = () => {
           </div>
 
           <div className="divide-y divide-neutral-100">
-            {auditLogs.map((log) => {
+            {audit.items.map((log) => {
               const actionColors: Record<string, string> = {
                 version_publish: 'bg-emerald-50 text-emerald-800 border-emerald-200',
                 submission_approve: 'bg-sky-50 text-sky-800 border-sky-200',
@@ -206,6 +224,8 @@ export const ReviewerWorkbench: React.FC = () => {
               );
             })}
           </div>
+          {auditLogs.length === 0 && <p className="py-8 text-center text-xs text-neutral-500">暂无审计记录</p>}
+          <Pagination label="审计流水" total={auditLogs.length} page={audit.page} pageSize={auditPageSize} onPageChange={setAuditPage} onPageSizeChange={(size) => { setAuditPageSize(size); setAuditPage(1); }} />
         </div>
       ) : (
         /* Review Queue & Inspection Panel */
@@ -229,7 +249,7 @@ export const ReviewerWorkbench: React.FC = () => {
               ].map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setStatusFilter(tab.id)}
+                  onClick={() => { setStatusFilter(tab.id); setQueuePage(1); setSelectedSubId(''); }}
                   className={`px-2 py-0.5 rounded transition-colors ${
                     statusFilter === tab.id
                       ? 'bg-neutral-900 text-white font-medium'
@@ -243,7 +263,7 @@ export const ReviewerWorkbench: React.FC = () => {
 
             {/* Submissions items */}
             <div className="space-y-2">
-              {filteredSubmissions.map((sub) => {
+              {queue.items.map((sub) => {
                 const isSelected = sub.id === activeSubmission?.id;
                 const v = versions.find((ver) => ver.id === sub.version_id);
                 const reportId = sub.scan_report_id || v?.scan_report_id;
@@ -298,6 +318,8 @@ export const ReviewerWorkbench: React.FC = () => {
                 );
               })}
             </div>
+            {filteredSubmissions.length === 0 && <p className="py-8 text-center text-xs text-neutral-500">当前筛选下暂无提交</p>}
+            <Pagination label="提交队列" total={filteredSubmissions.length} page={queue.page} pageSize={queuePageSize} onPageChange={(page) => { setQueuePage(page); setSelectedSubId(''); }} onPageSizeChange={(size) => { setQueuePageSize(size); setQueuePage(1); setSelectedSubId(''); }} />
           </div>
 
           {/* Right Column: Deep Inspection & Audit Actions */}
