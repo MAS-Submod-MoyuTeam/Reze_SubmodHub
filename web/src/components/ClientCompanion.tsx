@@ -70,7 +70,7 @@ export const ClientCompanion: React.FC = () => {
               {activeInstallation.platform === 'android' ? 'Android 端 (SAF 架构)' : 'Windows 端 (Wails v3 架构)'}
             </span>
             <span>·</span>
-            <span>SubmodHub 客户端 Go 契约运行仿真器</span>
+            <span>RezeHub 客户端 Go 契约运行仿真器</span>
           </div>
           <h1 className="text-lg font-bold text-neutral-900 tracking-tight mt-0.5">
             MAS 实例授权、安装预览计划 (Plan) 与外部哈希防漂移护栏
@@ -182,7 +182,7 @@ export const ClientCompanion: React.FC = () => {
                     <span className="font-mono text-neutral-500">{formatVersionLabel(mod.version)}</span>
                     {mod.is_managed ? (
                       <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
-                        SubmodHub 托管
+                        RezeHub 托管
                       </span>
                     ) : (
                       <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200 font-semibold">

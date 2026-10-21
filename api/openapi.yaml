@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Reze SubmodHub API
+  title: RezeHub API
   version: 0.1.0
   description: Target REST contract for the WebUI and Wails clients.
 servers:

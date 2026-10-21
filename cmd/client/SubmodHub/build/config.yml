@@ -6,9 +6,9 @@ version: '3'
 # This information is used to generate the build assets.
 info:
   companyName: "My Company" # The name of the company
-  productName: "My Product" # The name of the application
+  productName: "RezeHub" # The name of the application
   productIdentifier: "com.mycompany.myproduct" # The unique product identifier
-  description: "A program that does X" # The application description
+  description: "MAS submod manager" # The application description
   copyright: "(c) 2025, My Company" # Copyright text
   comments: "Some Product Comments" # Comments
   version: "0.9.3" # The application version

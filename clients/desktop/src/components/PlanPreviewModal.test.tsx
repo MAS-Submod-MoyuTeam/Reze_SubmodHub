@@ -201,7 +201,7 @@ test('PlanPreviewModal: adopt plan displays adopt header badge and metadata acti
       {
         target_path: 'game/Submods/AdoptA/main.rpy',
         action: 'METADATA_ONLY',
-        reason: '将现有本地文件收养并纳入 SubmodHub Ledger 持久化管理',
+        reason: '将现有本地文件收养并纳入 RezeHub Ledger 持久化管理',
         backup_required: false,
       },
     ],

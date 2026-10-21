@@ -50,7 +50,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
           <div className="flex items-center gap-2">
             <Lock className="w-4 h-4 text-emerald-700" />
             <h3 className="text-sm font-semibold text-neutral-900">
-              {currentUser ? '当前会话与账号关联' : '登录 SubmodHub'}
+              {currentUser ? '当前会话与账号关联' : '登录 RezeHub'}
             </h3>
           </div>
           <button

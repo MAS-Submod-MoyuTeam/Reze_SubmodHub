@@ -282,7 +282,7 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
             <span className="font-mono text-neutral-500">v{__APP_VERSION__}</span>
           </div>
           <p className="text-[11px] text-neutral-400">
-            检查并安装 SubmodHub 客户端的新版本（支持 Android APK 与 Windows 客户端更新）。
+            检查并安装 RezeHub 客户端的新版本（支持 Android APK 与 Windows 客户端更新）。
           </p>
           {onOpenAppUpdate && (
             <button

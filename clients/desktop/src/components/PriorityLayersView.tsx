@@ -546,7 +546,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                 <Layers className="w-8 h-8 text-neutral-600 mb-1" />
                 <p className="font-medium text-neutral-400">当前 MAS 实例暂无受管模组</p>
                 <p className="text-[11px] text-neutral-500 max-w-sm">
-                  仅由 SubmodHub 托管安装的模组参与模组优先级管理。请先从模组目录安装模组。
+                  仅由 RezeHub 托管安装的模组参与模组优先级管理。请先从模组目录安装模组。
                 </p>
               </div>
             )}

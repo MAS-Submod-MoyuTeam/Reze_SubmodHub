@@ -1,5 +1,5 @@
 /**
- * SubmodHub 前端功能与接口契约 TypeScript 类型定义
+ * RezeHub 前端功能与接口契约 TypeScript 类型定义
  * 依据: docs/aegis/specs/2026-09-25-submodhub-design.md
  */
 

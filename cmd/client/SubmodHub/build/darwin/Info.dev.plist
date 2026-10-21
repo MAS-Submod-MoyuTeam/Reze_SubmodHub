@@ -4,7 +4,7 @@
         <key>CFBundlePackageType</key>
             <string>APPL</string>
         <key>CFBundleName</key>
-            <string>SubmodHub</string>
+            <string>RezeHub</string>
         <key>CFBundleExecutable</key>
             <string>submodhub.exe</string>
         <key>CFBundleIdentifier</key>

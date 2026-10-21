@@ -172,7 +172,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                   </h3>
                   <p className="text-xs text-amber-200/90 mt-0.5">
                     契约规范要求：目标文件已被外部程序（如玩家手工修改、外部编辑器或非托管脚本）变更。
-                    <strong>SubmodHub 客户端严禁自动覆盖用户文件</strong>，当前写入操作已自动暂停挂起。
+                    <strong>RezeHub 客户端严禁自动覆盖用户文件</strong>，当前写入操作已自动暂停挂起。
                   </p>
                 </div>
               </div>
@@ -193,7 +193,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                 {/* Expected Hash */}
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-neutral-400">
-                    <span>SubmodHub Ledger 记录的预期 SHA-256:</span>
+                    <span>RezeHub Ledger 记录的预期 SHA-256:</span>
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(externalDrift.expected_hash);

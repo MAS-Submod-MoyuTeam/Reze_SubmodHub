@@ -469,7 +469,7 @@ export const INITIAL_INSTALLED: InstalledItem[] = [
   {
     mod_id: 'unmanaged_hairband_yellow',
     title: 'spritepack: 黄色小雏菊发卡 (手工解压)',
-    summary: '检测到存在非 SubmodHub 导入的外观文件，散落在 mod_assets 树中。',
+    summary: '检测到存在非 RezeHub 导入的外观文件，散落在 mod_assets 树中。',
     author_name: '未知作者 (本地检测)',
     category: 'spritepack',
     installed_version: '手工注入',

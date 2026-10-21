@@ -56,7 +56,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
           <div className="flex items-center gap-2.5">
             <Sparkles className="w-5 h-5 text-emerald-400" />
             <div>
-              <h2 className="text-sm font-semibold text-white">SubmodHub 软件自更新</h2>
+              <h2 className="text-sm font-semibold text-white">RezeHub 软件自更新</h2>
               <p className="text-xs text-neutral-400">
                 当前版本: v{updateState.current_version}
               </p>

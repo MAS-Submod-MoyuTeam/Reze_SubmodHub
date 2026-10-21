@@ -377,7 +377,7 @@ export default function App() {
         const catMod = catalogMap.get(receipt.mod_id);
         const authorName = receipt.author || catMod?.author?.display_name || '未知作者';
         return {
-          mod_id: receipt.mod_id, installation_id: receipt.operation_id || receipt.mod_id, title: receipt.title, summary: '已通过 SubmodHub 安装',
+          mod_id: receipt.mod_id, installation_id: receipt.operation_id || receipt.mod_id, title: receipt.title, summary: '已通过 RezeHub 安装',
           author_name: authorName, category: (receipt.category as any) || catMod?.category || 'submod', installed_version: receipt.version,
           installed_version_id: receipt.version_id, latest_version: catMod?.latest_version || receipt.version,
           latest_version_id: catMod?.latest_version_id || receipt.version_id, has_update: false, priority: receipt.priority ?? 0,
@@ -393,7 +393,7 @@ export default function App() {
       const unmanaged: InstalledItem[] = local.map((item) => ({
         mod_id: `local:${item.directory || item.id || 'scattered'}`,
         title: item.name || item.directory || '散落脚本项',
-        summary: '检测到 MAS 本地子模组，尚未与 SubmodHub 安装记录关联。',
+        summary: '检测到 MAS 本地子模组，尚未与 RezeHub 安装记录关联。',
         author_name: item.author || '未知作者 (本地检测)', category: 'submod',
         installed_version: item.version || '未声明', installed_version_id: '',
         latest_version: '未托管', latest_version_id: '', has_update: false,
@@ -1068,7 +1068,7 @@ export default function App() {
             selected_sprite_set_count: plan.selected_sprite_set_count,
           } : item);
           return [...prev, {
-            mod_id: plan.mod_id, title: plan.mod_title, summary: '已通过 SubmodHub 验证安装',
+            mod_id: plan.mod_id, title: plan.mod_title, summary: '已通过 RezeHub 验证安装',
             author_name: authorName, category: plan.category || 'submod', installed_version: plan.version_str,
             installed_version_id: plan.version_id, latest_version: plan.version_str,
             latest_version_id: plan.version_id, has_update: false, priority: nextPriority, is_managed: true,
@@ -1207,7 +1207,7 @@ export default function App() {
           next_owner: a.target_source || preview.target_id || adopted.mod_id,
           previous_hash: a.current_hash,
           next_hash: a.current_hash,
-          reason: '将现有本地文件收养并纳入 SubmodHub Ledger 持久化管理',
+          reason: '将现有本地文件收养并纳入 RezeHub Ledger 持久化管理',
           backup_required: false,
         })),
         backups_required: 0,

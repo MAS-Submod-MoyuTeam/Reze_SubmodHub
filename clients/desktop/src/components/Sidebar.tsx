@@ -169,7 +169,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Build identity & App update trigger */}
         <div className="flex items-center justify-between px-1 text-[10px] font-mono text-neutral-500">
-          <span>SubmodHub</span>
+          <span>RezeHub</span>
           {onOpenAppUpdate ? (
             <button
               onClick={onOpenAppUpdate}
@@ -182,7 +182,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {hasAppUpdate && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
             </button>
           ) : (
-            <span title={`SubmodHub v${__APP_VERSION__}`}>v{__APP_VERSION__}</span>
+            <span title={`RezeHub v${__APP_VERSION__}`}>v{__APP_VERSION__}</span>
           )}
         </div>
       </div>

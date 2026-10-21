@@ -228,7 +228,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
         {/* Content */}
         <div className="p-3 sm:p-4 space-y-4 text-xs overflow-y-auto grow">
           <div className="p-3 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-300 leading-relaxed">
-            将当前散落于 MAS 目录内的未托管脚本/素材纳入 SubmodHub 的持久化 Ledger。收养后该模组将受版本控制、支持冲突计算与模组优先级调节。卸载收养模组时将安全保留原始文件。
+            将当前散落于 MAS 目录内的未托管脚本/素材纳入 RezeHub 的持久化 Ledger。收养后该模组将受版本控制、支持冲突计算与模组优先级调节。卸载收养模组时将安全保留原始文件。
           </div>
 
           {/* Warning banner for multi-registrations, unknowns, or incomplete scan */}

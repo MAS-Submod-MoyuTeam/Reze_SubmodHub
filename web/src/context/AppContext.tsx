@@ -1274,7 +1274,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setInstalledMods((prev) =>
         prev.map((m) => (m.mod_id === modId ? { ...m, is_managed: true, version: '1.0.0 (已收养托管)' } : m))
       );
-      showToast('success', '未托管脚本已完成显式收养，纳入 SubmodHub 版本管理与恢复树！');
+      showToast('success', '未托管脚本已完成显式收养，纳入 RezeHub 版本管理与恢复树！');
     },
     [showToast]
   );

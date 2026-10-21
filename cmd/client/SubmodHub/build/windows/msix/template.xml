@@ -14,7 +14,7 @@
     </Installer>
     <PackageInformation
         PackageName="SubmodHub"
-        PackageDisplayName="SubmodHub"
+        PackageDisplayName="RezeHub"
         PublisherName="CN=My Company"
         PublisherDisplayName="My Company"
         Version="0.1.0.0"
@@ -27,7 +27,7 @@
             <Application
                 Id="com.example.submodhub"
                 Description="MAS submod manager"
-                DisplayName="SubmodHub"
+                DisplayName="RezeHub"
                 ExecutableName="submodhub.exe"
                 EntryPoint="Windows.FullTrustApplication">
                 
@@ -41,7 +41,7 @@
         </Dependencies>
         <Properties>
             <Framework>false</Framework>
-            <DisplayName>SubmodHub</DisplayName>
+            <DisplayName>RezeHub</DisplayName>
             <PublisherDisplayName>My Company</PublisherDisplayName>
             <Description>MAS submod manager</Description>
             <Logo>Assets\AppIcon.png</Logo>

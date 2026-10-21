@@ -1,5 +1,5 @@
 /**
- * SubmodHub 真实仿真数据源
+ * RezeHub 真实仿真数据源
  * 涵盖 Monika After Story (MAS) 各类型 Submod / Spritepack
  */
 
@@ -983,7 +983,7 @@ export const CONTRACT_ERROR_CONFIGS: ErrorDisplayConfig[] = [
   {
     code: 'offline',
     title: '离线模式 (Offline Mode)',
-    description: '无法连接至 SubmodHub API 服务器，启用客户端本地离线缓存。',
+    description: '无法连接至 RezeHub API 服务器，启用客户端本地离线缓存。',
     category: 'recovery',
     frontend_action: '显示离线缓存指示条，允许浏览已缓存目录，安装仅限已验证的本地 ZIP。',
     sample_details: { cached_mods_count: 6, last_sync: '2026-09-26T12:00:00Z' },

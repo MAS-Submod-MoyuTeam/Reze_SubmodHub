@@ -48,7 +48,7 @@ export const StateMachineShowcase: React.FC = () => {
       <div className="bg-white border border-neutral-200 rounded-lg p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs text-neutral-500">
-            <span className="font-semibold text-neutral-900">SubmodHub 契约规范</span>
+            <span className="font-semibold text-neutral-900">RezeHub 契约规范</span>
             <span>·</span>
             <span>Section 5 状态机与错误展示规范</span>
           </div>

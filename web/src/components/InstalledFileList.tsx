@@ -173,7 +173,7 @@ export const InstalledFileList: React.FC<InstalledFileListProps> = ({
                 </span>
                 {mod.is_managed ? (
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
-                    SubmodHub 托管
+                    RezeHub 托管
                   </span>
                 ) : (
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-semibold">
@@ -309,7 +309,7 @@ export const InstalledFileList: React.FC<InstalledFileListProps> = ({
                       安全提示：检测到 {data.summary.drifted_files} 个文件存在外部哈希漂移
                     </p>
                     <p className="text-amber-800 leading-relaxed">
-                      这些文件在 MAS 目录中已被外部修改，当前只读清单反映了磁盘差异。SubmodHub 已激活安全保护，不会在未确认的情况下覆盖此修改。若需恢复原始版本，请使用重新安装计划恢复流程。
+                      这些文件在 MAS 目录中已被外部修改，当前只读清单反映了磁盘差异。RezeHub 已激活安全保护，不会在未确认的情况下覆盖此修改。若需恢复原始版本，请使用重新安装计划恢复流程。
                     </p>
                   </div>
                 </div>

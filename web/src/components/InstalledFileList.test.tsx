@@ -47,7 +47,7 @@ test('renders installed files with summary counts and file paths', () => {
 
   // Mod title and tag
   assert.match(markup, /Extra Everything/);
-  assert.match(markup, /SubmodHub 托管/);
+  assert.match(markup, /RezeHub 托管/);
 
   // Summary statistics
   assert.match(markup, /登记文件总数/);

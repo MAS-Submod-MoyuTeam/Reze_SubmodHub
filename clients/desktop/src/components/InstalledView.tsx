@@ -811,12 +811,12 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800 text-xs space-y-2">
                   <div className="flex items-center gap-2 text-amber-400 font-semibold">
                     <Info className="w-4 h-4 shrink-0" />
-                    <span>SubmodHub 契约保护机制：未托管内容保护原则</span>
+                    <span>RezeHub 契约保护机制：未托管内容保护原则</span>
                   </div>
                   <p className="text-neutral-300 leading-relaxed">
                     依据 <code>2026-09-25-submodhub-design.md</code> 规范要求：
                     未托管内容仅提供<strong>文件查看与显式收养（Adopt）</strong>流程，<strong>不提供直接删除/卸载操作</strong>。
-                    此举可绝对避免 SubmodHub 客户端误删玩家手写未发布的原创代码、个人修改备份或未经登记的测试资产。
+                    此举可绝对避免 RezeHub 客户端误删玩家手写未发布的原创代码、个人修改备份或未经登记的测试资产。
                   </p>
                 </div>
 

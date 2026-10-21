@@ -127,7 +127,7 @@ func main() {
 	}
 	setGlobalAssetHandler(handler)
 	app := application.New(application.Options{
-		Name: "SubmodHub", Description: "MAS submod manager",
+		Name: "RezeHub", Description: "MAS submod manager",
 		Services: []application.Service{application.NewService(service)},
 		Assets:   application.AssetOptions{Handler: handler},
 	})
@@ -136,7 +136,7 @@ func main() {
 	// frameless so Windows does not draw a second, non-functional caption bar
 	// above it. Android already has no window frame and ignores this option.
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:            "SubmodHub " + version.Version,
+		Title:            "RezeHub " + version.Version,
 		Width:            1280,
 		Height:           800,
 		BackgroundColour: application.NewRGB(10, 12, 16),
