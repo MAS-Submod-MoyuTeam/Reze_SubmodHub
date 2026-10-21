@@ -39,22 +39,13 @@ type SyncSummary struct {
 	LastError string           `json:"last_error,omitempty"`
 }
 
-func (s *Store) getGitHubClient() *github.Client {
-	if s.GitHubClient != nil {
-		return s.GitHubClient
-	}
-	return github.NewClient()
-}
-
-// githubClient builds a client from the catalog's proxy setting. The read lock
-// is released before the client is constructed because getGitHubClientWithProxy
-// takes the same lock: nesting read locks on one goroutine can deadlock behind a
-// waiting writer.
+// githubClient builds a client from the catalog's proxy and token settings. The
+// read lock is released before the client is constructed because
+// getGitHubClientWithProxy takes the same lock: nesting read locks on one
+// goroutine can deadlock behind a waiting writer.
 func (s *Store) githubClient() *github.Client {
-	s.mu.RLock()
-	proxyTemplate := s.Catalog.Settings.GitHubProxyTemplate
-	s.mu.RUnlock()
-	return s.getGitHubClientWithProxy(proxyTemplate)
+	proxyTemplate, token := s.githubSettings()
+	return s.getGitHubClientWithProxy(proxyTemplate, token)
 }
 
 func (s *Store) SyncMod(ctx context.Context, modID string) (*SyncSummary, error) {
@@ -628,6 +619,10 @@ type GitHubSyncDiagnostics struct {
 	LastSyncError    string     `json:"last_sync_error,omitempty"`
 	TotalManagedMods int        `json:"total_managed_mods"`
 	ManifestMods     int        `json:"manifest_mods"`
+	// TokenConfigured reports whether an API token is stored; the token itself is
+	// never part of any response.
+	TokenConfigured bool `json:"token_configured"`
+	TokenEncrypted  bool `json:"token_encrypted"`
 }
 
 func (s *Store) GetGitHubSyncDiagnostics() *GitHubSyncDiagnostics {
@@ -671,5 +666,7 @@ func (s *Store) GetGitHubSyncDiagnostics() *GitHubSyncDiagnostics {
 		LastSyncError:    latestErr,
 		TotalManagedMods: managedCount,
 		ManifestMods:     manifestCount,
+		TokenConfigured:  s.Catalog.Settings.GitHubToken != nil && s.Catalog.Settings.GitHubToken.Value != "",
+		TokenEncrypted:   s.Catalog.Settings.GitHubToken != nil && s.Catalog.Settings.GitHubToken.Encrypted,
 	}
 }

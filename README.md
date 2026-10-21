@@ -174,11 +174,12 @@ cd cmd/client/SubmodHub && wails3 dev
 | `SUBMODHUB_UPLOAD_TOKEN` | 空 | 直接上传令牌 |
 | `GITHUB_SYNC_INTERVAL` | `0`（关闭） | 旧的后台轮询间隔；默认关闭，版本按需抓取。设为 `15m` 可恢复轮询 |
 | `GITHUB_SYNC_TTL` | `30m` | 按需抓取的新鲜度窗口：有人查看模组时，距上次同步超过该值才回源。`0` 表示只有显式「立即同步」才回源 |
-| `GITHUB_TOKEN` | 空 | GitHub API 令牌。留空时所有请求共用匿名配额（60 次/小时/IP），配置后为 5000 次/小时 |
 | `SUBMODHUB_DELIVERY_MASTER_KEY` | 空 | 交付凭据主密钥（32 字节 base64），为空则无法保存新凭据 |
 | `SUBMODHUB_TEST_MODE` | `false` | 测试账号模式，仅限本地/测试环境 |
 
 **Web 前端**：`SUBMODHUB_API_TARGET`（dev 代理目标）、`VITE_ALLOW_INSECURE_AUTH`（仅 HTTP 测试源站）。
+
+**GitHub API 令牌**：不在环境变量里配置，改由管理端「系统设置 → GitHub API 令牌」维护（保存即生效，无需重启）。未配置时所有请求共用匿名配额 60 次/小时/IP，配置后为 5000 次/小时。令牌只发给 GitHub API 主机，不会随资产下载外泄；配置了 `SUBMODHUB_DELIVERY_MASTER_KEY` 时加密落盘，否则明文存储并在设置页明确标注。
 
 **下载交付节点**：`DOWNLOAD_NODE_ADDR`、`DOWNLOAD_NODE_ID`、`DOWNLOAD_NODE_KEY`、`DOWNLOAD_NODE_GITHUB_PROXY`、`DOWNLOAD_NODE_CONCURRENCY`。
 

@@ -10,7 +10,6 @@ import (
 
 	"github.com/reze/submodhub/internal/auth"
 	"github.com/reze/submodhub/internal/delivery"
-	"github.com/reze/submodhub/internal/github"
 	"github.com/reze/submodhub/internal/httpapi"
 	"github.com/reze/submodhub/internal/version"
 )
@@ -72,13 +71,17 @@ func main() {
 
 	// GitHub access is demand-driven: the background poller is off unless an
 	// operator asks for it, and stale mods are refreshed when someone actually
-	// looks at them. A token mainly removes the 60 requests/hour anonymous
-	// bucket that a catalog of GitHub-backed mods blows through in minutes.
-	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
-		store.GitHubClient = github.NewClient(github.WithToken(token))
-		log.Printf("GitHub API token configured: authenticated quota (5000 requests/hour)")
+	// looks at them. The API token lives in the admin settings page so it can be
+	// rotated without redeploying; it lifts the anonymous 60 requests/hour quota
+	// to 5000 requests/hour.
+	if configured, encrypted := store.GitHubTokenConfigured(); configured {
+		if encrypted {
+			log.Printf("GitHub API token loaded from settings (encrypted, 5000 requests/hour)")
+		} else {
+			log.Printf("GitHub API token loaded from settings (plaintext, 5000 requests/hour); configure SUBMODHUB_DELIVERY_MASTER_KEY to encrypt it")
+		}
 	} else {
-		log.Printf("GITHUB_TOKEN is not set: GitHub API requests share the anonymous 60 requests/hour quota")
+		log.Printf("No GitHub API token in settings: requests share the anonymous 60 requests/hour quota (set one in the admin settings page)")
 	}
 
 	syncInterval := time.Duration(0)

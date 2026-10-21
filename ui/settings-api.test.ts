@@ -25,6 +25,10 @@ test('normalizes blank lines in storage origins only when saving', async()=>{
 test('fetchSettings returns settings from endpoint', async () => {
   const mockResponse: SiteSettings = {
     github_proxy_template: 'https://proxy.example/{url}',
+    github_token_configured: true,
+    github_token_encrypted: true,
+    github_token_hint: '1234',
+    master_key_configured: true,
     revision: 2,
   };
 
@@ -67,6 +71,9 @@ test('updateSettings sends PATCH with CSRF and revision', async () => {
 
     const updated: SiteSettings = {
       github_proxy_template: 'https://new-proxy.com/{url}',
+      github_token_configured: false,
+      github_token_encrypted: false,
+      master_key_configured: false,
       revision: 3,
     };
     return new Response(JSON.stringify(updated), {
@@ -76,7 +83,7 @@ test('updateSettings sends PATCH with CSRF and revision', async () => {
   };
 
   const res = await updateSettings(
-    'https://new-proxy.com/{url}',
+    { github_proxy_template: 'https://new-proxy.com/{url}' },
     2,
     'my-csrf-token',
     '/api/v1',
@@ -103,9 +110,28 @@ test('updateSettings throws on conflict 409', async () => {
   };
 
   await assert.rejects(
-    async () => updateSettings('https://proxy.example/{url}', 1, 'csrf', '/api/v1', customFetch),
+    async () => updateSettings({ github_proxy_template: 'https://proxy.example/{url}' }, 1, 'csrf', '/api/v1', customFetch),
     /settings_conflict/
   );
+});
+
+test('updateSettings omits untouched fields and clears the token explicitly', async () => {
+  const bodies: string[] = [];
+  const customFetch: typeof fetch = async (_input, init) => {
+    bodies.push(String(init?.body));
+    return Response.json({
+      github_proxy_template: '', github_token_configured: false,
+      github_token_encrypted: false, master_key_configured: true, revision: 1,
+    });
+  };
+
+  // A token-only patch must not send (and thus must not overwrite) the proxy.
+  await updateSettings({ github_token: 'ghp_new' }, 0, 'csrf', '/api/v1', customFetch);
+  assert.deepEqual(JSON.parse(bodies[0]), { github_token: 'ghp_new', revision: 0 });
+
+  // An empty string is the documented "remove the stored token" signal.
+  await updateSettings({ github_token: '' }, 1, 'csrf', '/api/v1', customFetch);
+  assert.deepEqual(JSON.parse(bodies[1]), { github_token: '', revision: 1 });
 });
 
 test('testGitHubProxy sends POST and returns test results', async () => {

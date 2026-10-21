@@ -190,9 +190,19 @@ func cleanPublicMod(m Mod) Mod {
 	return cp
 }
 
+// githubTokenSecret is the persisted form of the GitHub API token. Value holds
+// ciphertext when Encrypted is true and plaintext otherwise, so an operator who
+// has not configured SUBMODHUB_DELIVERY_MASTER_KEY can still use the feature —
+// the settings API reports which state is in effect.
+type githubTokenSecret struct {
+	Value     string `json:"value"`
+	Encrypted bool   `json:"encrypted"`
+}
+
 type SiteSettings struct {
-	GitHubProxyTemplate string `json:"github_proxy_template"`
-	Revision            uint64 `json:"revision"`
+	GitHubProxyTemplate string             `json:"github_proxy_template"`
+	GitHubToken         *githubTokenSecret `json:"github_token,omitempty"`
+	Revision            uint64             `json:"revision"`
 }
 
 type SettingsAuditEvent struct {
@@ -200,6 +210,7 @@ type SettingsAuditEvent struct {
 	At               time.Time `json:"at"`
 	PreviousTemplate string    `json:"previous_template"`
 	NewTemplate      string    `json:"new_template"`
+	TokenChanged     bool      `json:"token_changed,omitempty"`
 	Revision         uint64    `json:"revision"`
 }
 

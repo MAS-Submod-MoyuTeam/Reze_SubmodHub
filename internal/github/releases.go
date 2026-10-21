@@ -237,12 +237,6 @@ func (c *Client) AllowInsecureTestHosts() bool {
 	return c.allowInsecureTestHosts
 }
 
-// Token reports the configured API token so clients rebuilt with a different
-// proxy template keep authentication.
-func (c *Client) Token() string {
-	return c.token
-}
-
 func NewClient(opts ...Option) *Client {
 	c := &Client{
 		baseURL:   "https://api.github.com",

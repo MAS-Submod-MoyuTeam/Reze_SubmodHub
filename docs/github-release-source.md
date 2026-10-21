@@ -129,9 +129,9 @@ SubmodHub 仅允许下载 `.zip` 格式的 Release 资产文件，非 `.zip` 文
 - **304 不再额外请求 `releases/latest`**：列表返回 304 时直接认定无变更。此前每次同步都会再发一次无条件的 `releases/latest`，这是匿名配额（60 次/小时/IP）被打满的主因。手动同步仍会重新对齐 `latest` 标记。
 
 ### API 速率限制与自动退避（Rate Limit Backoff）
-- **先配 `GITHUB_TOKEN`**：未配置令牌时所有请求共用匿名配额（60 次/小时/IP），托管模组一多就会撞限；配置后为 5000 次/小时。令牌只发给 API 主机，不会随资产下载外泄。
+- **先在设置页配置令牌**：管理端「系统设置 → GitHub API 令牌」。未配置时所有请求共用匿名配额（60 次/小时/IP），托管模组一多就会撞限；配置后为 5000 次/小时。令牌保存即生效、无需重启，且只发给 API 主机，不会随资产下载外泄。配置了 `SUBMODHUB_DELIVERY_MASTER_KEY` 时令牌加密落盘，否则明文存储（设置页会明确标注当前是哪种）。
 - **自动解析重置时间**：当触发 GitHub API 速率限制（HTTP 403 / 429）时，系统自动解析响应头中的 `X-Ratelimit-Reset`（Unix 时间戳）或 `Retry-After`（秒数/标准时间格式）。若未提供具体头部，系统采用默认 15 分钟退避间隔。
-- **保护性退避锁定**：退避期内，模组与后台全局同步器记录 `github_backoff_until` 截止时间。在截止时间到来前，系统定时轮询与手动同步将自动跳过外部网络请求，并在模组状态记录 `github_last_sync_error: github api rate limit backoff active until <UTC时间> (remaining: <剩余时间>)`，彻底防止短时间内连续空耗 IP 配额。清单模式不受该退避影响（不使用 REST API）。
+- **保护性退避锁定**：退避期内，模组与后台全局同步器记录 `github_backoff_until` 截止时间。在截止时间到来前，系统定时轮询与手动同步将自动跳过外部网络请求，并在模组状态记录 `github_last_sync_error: github api rate limit backoff active until <UTC时间> (remaining: <剩余时间>)`，彻底防止短时间内连续空耗 IP 配额。清单模式不受该退避影响（不使用 REST API）。更新代理或令牌会立即清空所有退避状态，因为配额桶已经换了。
 - **自动恢复**：退避时间过后，下一次同步请求恢复正常执行，成功后自动清除退避状态。
 
 ### 切换回 Local 源与回滚演练

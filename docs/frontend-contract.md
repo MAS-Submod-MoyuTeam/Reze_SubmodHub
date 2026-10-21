@@ -209,6 +209,15 @@
 - **站内按需抓取（默认）**：无需任何额外文件；但更新最多延迟约 `GITHUB_SYNC_TTL`，且需要有人打开该模组才会触发，长时间无人访问则不会更新。
 - **仓库清单 `rezehub.yml`（可选）**：作者需在仓库根目录维护该文件、每次发版补一条记录；换取零 REST 配额与打开页面即最新。
 
+### 管理端 GitHub API 令牌
+`GET /api/v1/admin/settings` 返回 `github_proxy_template`、`github_token_configured`、`github_token_encrypted`、`github_token_hint`（末四位）、`master_key_configured`、`revision`，**永不回显令牌本身**。
+
+`PATCH /api/v1/admin/settings` 接受 `{ github_proxy_template?, github_token?, revision }`：
+- 两个字段都可省略，但至少要给一个，否则 400；省略的字段保持原值。
+- `github_token: ""`（或纯空白）表示清除已存令牌；非空则必须是可打印 ASCII、无空格换行、≤255 字符，否则 400 `invalid_github_token`。
+- 保存成功后 `revision` 递增，并清空全局与各模组的限流退避（配额桶已换）。
+- 前端必须区分展示「已加密存储」与「明文存储」，后者要提示配置 `SUBMODHUB_DELIVERY_MASTER_KEY`。
+
 两种模式的扫描、审核、自动发布流程完全一致，前端其余交互不变。
 
 ### 权限与防护规则

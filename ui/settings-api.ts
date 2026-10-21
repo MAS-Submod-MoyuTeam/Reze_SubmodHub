@@ -35,6 +35,13 @@ export async function testDownloadNode(id: string, revision: number, csrf: strin
 
 export interface SiteSettings {
   github_proxy_template: string;
+  /** 是否已保存 GitHub API 令牌；响应永远不回显令牌本身。 */
+  github_token_configured: boolean;
+  /** 令牌是否加密落盘（取决于部署是否配置了 master key）。 */
+  github_token_encrypted: boolean;
+  /** 已保存令牌的末四位，便于确认当前装的是哪一把。 */
+  github_token_hint?: string;
+  master_key_configured: boolean;
   revision: number;
 }
 
@@ -79,8 +86,14 @@ export async function fetchSettings(
   return handleResponse<SiteSettings>(res);
 }
 
+/** PATCH 载荷：省略的字段保持原值，`github_token: ""` 表示清除令牌。 */
+export interface SiteSettingsPatch {
+  github_proxy_template?: string;
+  github_token?: string;
+}
+
 export async function updateSettings(
-  template: string,
+  patch: SiteSettingsPatch,
   revision: number,
   csrfToken: string,
   base = '/api/v1',
@@ -93,10 +106,7 @@ export async function updateSettings(
       'Content-Type': 'application/json',
       'X-CSRF-Token': csrfToken,
     },
-    body: JSON.stringify({
-      github_proxy_template: template,
-      revision,
-    }),
+    body: JSON.stringify({ ...patch, revision }),
   });
   return handleResponse<SiteSettings>(res);
 }

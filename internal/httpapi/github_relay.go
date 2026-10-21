@@ -19,17 +19,28 @@ var (
 	relayReadIdleTimeout     = 30 * time.Second
 )
 
-func (s *Store) getGitHubClientWithProxy(proxyTemplate string) *github.Client {
+// githubSettings returns the persisted proxy template and API token. The caller
+// must not hold s.mu.
+func (s *Store) githubSettings() (proxyTemplate, token string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.githubSettingsLocked()
+}
+
+// getGitHubClientWithProxy builds a client for the given proxy and the token
+// stored in settings. Injected test clients keep their base URL and transport;
+// only the token is layered on top.
+func (s *Store) getGitHubClientWithProxy(proxyTemplate, token string) *github.Client {
 	s.mu.RLock()
 	injected := s.GitHubClient
 	s.mu.RUnlock()
 
 	if injected != nil {
-		if proxyTemplate != "" {
+		if proxyTemplate != "" || token != "" {
 			return github.NewClient(
 				github.WithBaseURL(injected.BaseURL()),
 				github.WithProxyTemplate(proxyTemplate),
-				github.WithToken(injected.Token()),
+				github.WithToken(token),
 				github.WithAllowInsecureTestHosts(injected.AllowInsecureTestHosts()),
 			)
 		}
@@ -38,6 +49,7 @@ func (s *Store) getGitHubClientWithProxy(proxyTemplate string) *github.Client {
 
 	return github.NewClient(
 		github.WithProxyTemplate(proxyTemplate),
+		github.WithToken(token),
 	)
 }
 
@@ -53,10 +65,10 @@ func (s *Store) relayDownloadArchive(w http.ResponseWriter, r *http.Request, v V
 	}
 
 	s.mu.RLock()
-	proxyTemplate := s.Catalog.Settings.GitHubProxyTemplate
+	proxyTemplate, token := s.githubSettingsLocked()
 	s.mu.RUnlock()
 
-	client := s.getGitHubClientWithProxy(proxyTemplate)
+	client := s.getGitHubClientWithProxy(proxyTemplate, token)
 
 	// Acquire semaphore slot with timeout
 	select {
