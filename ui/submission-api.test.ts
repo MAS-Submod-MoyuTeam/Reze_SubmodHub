@@ -111,6 +111,38 @@ test('creates a mod with github source configuration', async () => {
   assert.equal(result.github_repo, 'hello-world');
 });
 
+test('passes manifest discovery mode through to the server', async () => {
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), '/api/v1/author/mods');
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.github_manifest, true);
+    // Manifest mode needs no asset regex.
+    assert.equal(body.github_asset_regex, '');
+    return new Response(JSON.stringify({
+      id: 'mod_manifest',
+      title: 'Manifest Mod',
+      summary: 'Summary',
+      category: 'submod',
+      author: { id: 'u1', display_name: 'Author' },
+      source_type: 'github_releases',
+      github_owner: 'octocat',
+      github_repo: 'hello-world',
+      github_manifest: true,
+    }), { status: 201 });
+  }) as typeof fetch;
+  const result = await createAuthorMod('/api/v1', {
+    title: 'Manifest Mod',
+    summary: 'Summary',
+    category: 'submod',
+    source_type: 'github_releases',
+    github_owner: 'octocat',
+    github_repo: 'hello-world',
+    github_asset_regex: '',
+    github_manifest: true,
+  }, fetcher);
+  assert.equal(result.github_manifest, true);
+});
+
 test('updates mod source configuration through dedicated endpoint', async () => {
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
     assert.equal(String(input), '/api/v1/author/mods/mod_test/source');

@@ -5,10 +5,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/reze/submodhub/internal/auth"
 	"github.com/reze/submodhub/internal/delivery"
+	"github.com/reze/submodhub/internal/github"
 	"github.com/reze/submodhub/internal/httpapi"
 	"github.com/reze/submodhub/internal/version"
 )
@@ -68,15 +70,22 @@ func main() {
 		store.AdminGroupIDs = auth.ParseGroupIDs(os.Getenv("ADMIN_FLARUM_GROUP_IDS"))
 	}
 
-	syncIntervalStr := os.Getenv("GITHUB_SYNC_INTERVAL")
-	var syncInterval time.Duration = 15 * time.Minute
-	if syncIntervalStr == "0" {
-		syncInterval = 0
-		log.Printf("GitHub Releases background sync disabled (GITHUB_SYNC_INTERVAL=0)")
-	} else if syncIntervalStr != "" {
-		parsed, parseErr := time.ParseDuration(syncIntervalStr)
+	// GitHub access is demand-driven: the background poller is off unless an
+	// operator asks for it, and stale mods are refreshed when someone actually
+	// looks at them. A token mainly removes the 60 requests/hour anonymous
+	// bucket that a catalog of GitHub-backed mods blows through in minutes.
+	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
+		store.GitHubClient = github.NewClient(github.WithToken(token))
+		log.Printf("GitHub API token configured: authenticated quota (5000 requests/hour)")
+	} else {
+		log.Printf("GITHUB_TOKEN is not set: GitHub API requests share the anonymous 60 requests/hour quota")
+	}
+
+	syncInterval := time.Duration(0)
+	if raw := strings.TrimSpace(os.Getenv("GITHUB_SYNC_INTERVAL")); raw != "" {
+		parsed, parseErr := time.ParseDuration(raw)
 		if parseErr != nil {
-			log.Printf("Invalid GITHUB_SYNC_INTERVAL=%q, falling back to 15m default: %v", syncIntervalStr, parseErr)
+			log.Printf("Invalid GITHUB_SYNC_INTERVAL=%q, leaving the background poller disabled: %v", raw, parseErr)
 		} else {
 			syncInterval = parsed
 		}
@@ -84,7 +93,25 @@ func main() {
 	store.GitHubSyncInterval = syncInterval
 	if store.GitHubSyncInterval > 0 {
 		store.StartGitHubSync()
-		log.Printf("GitHub Releases background sync started (interval: %s)", store.GitHubSyncInterval)
+		log.Printf("GitHub Releases background sync started (interval: %s); on-demand refresh stays active", store.GitHubSyncInterval)
+	} else {
+		log.Printf("GitHub Releases background sync disabled: mods refresh on demand")
+	}
+
+	// GITHUB_SYNC_TTL is the passive freshness window. Zero disables passive
+	// refresh entirely, leaving only the explicit "sync now" action.
+	syncTTL := 30 * time.Minute
+	if raw := strings.TrimSpace(os.Getenv("GITHUB_SYNC_TTL")); raw != "" {
+		parsed, parseErr := time.ParseDuration(raw)
+		if parseErr != nil {
+			log.Printf("Invalid GITHUB_SYNC_TTL=%q, falling back to 30m: %v", raw, parseErr)
+		} else {
+			syncTTL = parsed
+		}
+	}
+	store.GitHubSyncTTL = syncTTL
+	if store.GitHubSyncTTL > 0 {
+		log.Printf("GitHub Releases on-demand refresh window: %s", store.GitHubSyncTTL)
 	}
 
 	store.StartDeliveryMetricsWorker(context.Background())

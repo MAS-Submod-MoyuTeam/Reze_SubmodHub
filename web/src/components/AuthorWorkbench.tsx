@@ -4,7 +4,16 @@ import { Pagination } from './Pagination';
 import { SpritepackPanel } from './SpritepackPanel';
 import { WindowPager } from './WindowPager';
 import { ModCategory, Platform, ModSummary, ModDependency, ModVersion, ScannedFile, ModSourceType } from '../types/submodhub';
-import { validateGitHubSourceInput, formatLastSyncTime, getGitHubRepoUrl } from './sourceConfig';
+import {
+  validateGitHubSourceInput,
+  formatLastSyncTime,
+  getGitHubRepoUrl,
+  DEFAULT_REFRESH_WINDOW_MINUTES,
+  MANIFEST_FILE_NAME,
+  MANIFEST_SNIPPET,
+  manifestModeTradeoff,
+  onDemandModeTradeoff,
+} from './sourceConfig';
 import { formatVersionCreatedAt } from './versionDate';
 import { formatVersionLabel } from './versionHistory';
 import { DeprecationNotice } from './DeprecationNotice';
@@ -97,6 +106,10 @@ export const AuthorWorkbench: React.FC = () => {
   const [newGitHubRepo, setNewGitHubRepo] = useState('');
   const [newGitHubAssetRegex, setNewGitHubAssetRegex] = useState('');
   const [newGitHubSourceCode, setNewGitHubSourceCode] = useState(false);
+  const [newGitHubManifest, setNewGitHubManifest] = useState(false);
+  // 两种版本发现方式的取舍必须如实展示给作者：清单模式用“多维护一个文件”换“零延迟”。
+  const manifestTradeoff = manifestModeTradeoff();
+  const onDemandTradeoff = onDemandModeTradeoff();
   const [isSyncingReleases, setIsSyncingReleases] = useState(false);
 
   // Version Draft Creation Dialog
@@ -144,6 +157,7 @@ export const AuthorWorkbench: React.FC = () => {
         repo: newGitHubRepo,
         assetRegex: newGitHubAssetRegex,
         sourceCode: newGitHubSourceCode,
+        manifest: newGitHubManifest,
       });
       if (!sourceValidation.valid) {
         showToast('error', sourceValidation.error || 'GitHub 源配置不合法');
@@ -172,6 +186,7 @@ export const AuthorWorkbench: React.FC = () => {
         github_repo: newGitHubRepo.trim(),
         github_asset_regex: newGitHubAssetRegex.trim(),
         github_source_code: newGitHubSourceCode,
+        github_manifest: newGitHubManifest,
       });
       if (saved) {
         const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
@@ -226,6 +241,7 @@ export const AuthorWorkbench: React.FC = () => {
       github_repo: newGitHubRepo.trim(),
       github_asset_regex: newGitHubAssetRegex.trim(),
       github_source_code: newGitHubSourceCode,
+      github_manifest: newGitHubManifest,
     });
 
     if (createdId) {
@@ -261,6 +277,7 @@ export const AuthorWorkbench: React.FC = () => {
     setNewGitHubRepo(mod.github_repo || '');
     setNewGitHubAssetRegex(mod.github_asset_regex || '');
     setNewGitHubSourceCode(Boolean(mod.github_source_code));
+    setNewGitHubManifest(Boolean(mod.github_manifest));
     setPendingDetailImages([]);
     setPendingDetailImageKeys([]);
     setClearExistingDetailImages(false);
@@ -287,6 +304,7 @@ export const AuthorWorkbench: React.FC = () => {
     setNewGitHubRepo('');
     setNewGitHubAssetRegex('');
     setNewGitHubSourceCode(false);
+    setNewGitHubManifest(false);
     setPendingDetailImages([]);
     setPendingDetailImageKeys([]);
     setExistingDetailImages([]);
@@ -679,9 +697,31 @@ export const AuthorWorkbench: React.FC = () => {
                           </a>
                         </div>
                         <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-600">
-                          <span>正则: <code className="text-neutral-800">{activeMod.github_asset_regex || '无（仅源码包）'}</code></span>
+                          <span>
+                            版本发现:{' '}
+                            {activeMod.github_manifest ? (
+                              <code className="text-neutral-800">{MANIFEST_FILE_NAME} 清单</code>
+                            ) : (
+                              <span>站内按需抓取</span>
+                            )}
+                          </span>
                           <span>最近同步: {formatLastSyncTime(activeMod.github_last_sync_at)}</span>
                         </div>
+                        {!activeMod.github_manifest && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-600">
+                            <span>正则: <code className="text-neutral-800">{activeMod.github_asset_regex || '无（仅源码包）'}</code></span>
+                          </div>
+                        )}
+                        {!activeMod.github_manifest && (
+                          <div className="text-[11px] text-amber-800 bg-amber-50 p-1.5 rounded border border-amber-200">
+                            未使用清单：版本只会在有人打开该模组时按需抓取，最多延迟约 {DEFAULT_REFRESH_WINDOW_MINUTES} 分钟；长时间无人访问则不会更新。
+                          </div>
+                        )}
+                        {activeMod.github_manifest && (
+                          <div className="text-[11px] text-neutral-600">
+                            站内读取仓库根目录的 <code className="text-neutral-800">{MANIFEST_FILE_NAME}</code>，发版后记得补一条记录。
+                          </div>
+                        )}
                         {activeMod.github_last_sync_error && (
                           <div className="text-[11px] text-rose-600 bg-rose-50 p-1.5 rounded border border-rose-200 mt-1">
                             同步状态: {activeMod.github_last_sync_error}
@@ -1299,6 +1339,61 @@ export const AuthorWorkbench: React.FC = () => {
                   </div>
 
                   <div>
+                    <label className="block font-medium text-neutral-700 mb-1">版本发现方式</label>
+                    <div className="grid grid-cols-2 gap-2 p-1 bg-white rounded border border-neutral-200">
+                      <button
+                        type="button"
+                        aria-pressed={!newGitHubManifest}
+                        onClick={() => setNewGitHubManifest(false)}
+                        className={`py-1.5 text-xs font-medium rounded transition-colors ${
+                          !newGitHubManifest
+                            ? 'bg-neutral-900 text-white'
+                            : 'text-neutral-500 hover:text-neutral-800'
+                        }`}
+                      >
+                        站内按需抓取（默认）
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={newGitHubManifest}
+                        onClick={() => setNewGitHubManifest(true)}
+                        className={`py-1.5 text-xs font-medium rounded transition-colors ${
+                          newGitHubManifest
+                            ? 'bg-emerald-700 text-white'
+                            : 'text-neutral-500 hover:text-neutral-800'
+                        }`}
+                      >
+                        仓库清单 {MANIFEST_FILE_NAME}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`rounded border p-2.5 text-[11px] space-y-1 ${
+                      newGitHubManifest ? 'border-emerald-300 bg-white' : 'border-amber-200 bg-amber-50'
+                    }`}
+                  >
+                    {newGitHubManifest ? (
+                      <>
+                        <p className="text-emerald-800">好处：{manifestTradeoff.benefit}</p>
+                        <p className="text-amber-800">额外维护成本：{manifestTradeoff.cost}</p>
+                        <p className="text-neutral-600 pt-1">
+                          请在仓库根目录新建 <code className="bg-neutral-100 px-1 py-0.5 rounded">{MANIFEST_FILE_NAME}</code>，每次发版追加一条：
+                        </p>
+                        <pre className="bg-neutral-900 text-neutral-100 rounded p-2 overflow-x-auto text-[10px] leading-relaxed">
+{MANIFEST_SNIPPET}</pre>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-neutral-800">好处：{onDemandTradeoff.benefit}</p>
+                        <p className="text-amber-800">代价：{onDemandTradeoff.cost}</p>
+                      </>
+                    )}
+                  </div>
+
+                  {!newGitHubManifest && (
+                    <>
+                  <div>
                     <label className="block font-medium text-neutral-700 mb-1">Release 资产文件名正则 (RE2)</label>
                     <input
                       type="text"
@@ -1327,6 +1422,8 @@ export const AuthorWorkbench: React.FC = () => {
                       </span>
                     </label>
                   </div>
+                    </>
+                  )}
                 </div>
               )}
 

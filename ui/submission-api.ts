@@ -1,6 +1,6 @@
 import type { ServerScanReport } from '../web/src/context/scanReport';
 
-export interface ApiMod { id: string; title: string; summary: string; description?: string; category: 'submod' | 'spritepack'; author: { id: string; display_name: string }; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; latest_version_id?: string; created_at?: string; unpublished?: boolean; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean; github_last_sync_at?: string; github_last_sync_error?: string; github_last_release_id?: number; github_backoff_until?: string }
+export interface ApiMod { id: string; title: string; summary: string; description?: string; category: 'submod' | 'spritepack'; author: { id: string; display_name: string }; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; latest_version_id?: string; created_at?: string; unpublished?: boolean; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean; github_manifest?: boolean; github_manifest_digest?: string; github_last_sync_at?: string; github_last_sync_error?: string; github_last_release_id?: number; github_backoff_until?: string }
 export interface ApiVersion { id: string; mod_id: string; version: string; state: string; release_notes: string; size_bytes: number; sha256: string; dependencies: unknown[]; created_at?: string; scan_report_id?: string; deprecated?: boolean; deprecation_reason?: string; image_paths?: string[] }
 export interface ApiSubmission { id: string; mod_id: string; version_id: string; author_id: string; state: string; mark_latest?: boolean; reason?: string; reviewer_id?: string; created_at?: string; decided_at?: string; published_at?: string; version_snapshot?: ApiVersion; scan_report_snapshot?: ServerScanReport }
 export interface ApiPage<T> { items: T[]; total: number; page: number; page_size: number }
@@ -16,7 +16,7 @@ export interface ApiReviewAudit { id: string; timestamp: string; actor_id: strin
 
 async function json<T>(response: Response): Promise<T> { if (!response.ok) { const body = await response.json().catch(() => null) as { code?: string } | null; throw new Error(body?.code || `http_${response.status}`); } return response.json() as Promise<T>; }
 function endpoint(base: string, path: string) { return `${base.replace(/\/$/, '')}${path}`; }
-export interface AuthorModInput { title: string; summary: string; description?: string; author_display_name?: string; category: 'submod' | 'spritepack'; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean }
+export interface AuthorModInput { title: string; summary: string; description?: string; author_display_name?: string; category: 'submod' | 'spritepack'; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean; github_manifest?: boolean }
 export async function createAuthorMod(base: string, input: AuthorModInput, fetcher: typeof fetch = fetch): Promise<ApiMod> { return json(await fetcher(endpoint(base, '/author/mods'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })); }
 export async function updateAuthorMod(base: string, id: string, input: AuthorModInput, fetcher: typeof fetch = fetch): Promise<ApiMod> { return json(await fetcher(endpoint(base, `/author/mods/${encodeURIComponent(id)}`), { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })); }
 export interface ApiAuthorModItem { mod: ApiMod; is_published: boolean; has_published_version: boolean; has_archived_version: boolean; has_pending_review: boolean; candidate_version_id?: string }
@@ -70,6 +70,7 @@ export interface AuthorModSourceInput {
   github_repo?: string;
   github_asset_regex?: string;
   github_source_code?: boolean;
+  github_manifest?: boolean;
 }
 
 export interface SyncItemResult {

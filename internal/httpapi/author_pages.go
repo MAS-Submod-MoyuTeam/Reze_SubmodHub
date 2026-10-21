@@ -232,6 +232,21 @@ func (s *Store) authorModPage(w http.ResponseWriter, r *http.Request, authorID s
 		cursor := encodeAuthorModCursor(owned[end-1])
 		nextCursor = &cursor
 	}
+	// Opening the workbench is the author's demand signal. A bounded number of
+	// stale GitHub-backed mods in this window are refreshed in the background;
+	// the cap keeps one page load from starting every download at once.
+	now := time.Now().UTC()
+	passiveBudget := maxPassiveRefreshPerPage
+	for _, mod := range owned[start:end] {
+		if passiveBudget == 0 {
+			break
+		}
+		if !s.passiveSyncDueLocked(mod, now) {
+			continue
+		}
+		passiveBudget--
+		s.maybeSyncGitHubModAsync(mod.ID)
+	}
 	writeJSON(w, 200, map[string]any{
 		"items": items, "total": len(owned), "page_size": pageSize, "start": start,
 		"cursor": windowCursor, "next_cursor": nextCursor, "prev_cursor": prevCursor,

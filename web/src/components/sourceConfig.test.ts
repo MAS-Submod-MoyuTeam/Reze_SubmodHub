@@ -5,6 +5,11 @@ import {
   isCandidateVersionAllowed,
   formatLastSyncTime,
   getGitHubRepoUrl,
+  manifestModeTradeoff,
+  onDemandModeTradeoff,
+  DEFAULT_REFRESH_WINDOW_MINUTES,
+  MANIFEST_FILE_NAME,
+  MANIFEST_SNIPPET,
 } from './sourceConfig';
 
 test('validates required github owner and repo', () => {
@@ -28,8 +33,7 @@ test('validates regex syntax and source fallback combinations', () => {
   assert.equal(validateGitHubSourceInput({ owner: 'octocat', repo: 'hello', assetRegex: '', sourceCode: true }).valid, true);
 });
 
-test('checks whether candidate version creation is allowed based on source_type', () => {
-  assert.equal(isCandidateVersionAllowed(undefined), true);
+test('checks whether candidate version creation is allowed based on source_type', () => {  assert.equal(isCandidateVersionAllowed(undefined), true);
   assert.equal(isCandidateVersionAllowed({ source_type: 'local' }), true);
   assert.equal(isCandidateVersionAllowed({ source_type: undefined }), true);
   assert.equal(isCandidateVersionAllowed({ source_type: 'github_releases' }), false);
@@ -46,4 +50,37 @@ test('builds github repository URL', () => {
   assert.equal(getGitHubRepoUrl('', 'repo'), '');
   assert.equal(getGitHubRepoUrl('owner', ''), '');
   assert.equal(getGitHubRepoUrl('octocat', 'hello-world'), 'https://github.com/octocat/hello-world');
+});
+
+test('manifest mode does not require an asset regex', () => {
+  assert.equal(
+    validateGitHubSourceInput({ owner: 'octocat', repo: 'hello', assetRegex: '', sourceCode: false, manifest: true }).valid,
+    true,
+  );
+  // Owner and repo stay mandatory in both modes.
+  assert.equal(validateGitHubSourceInput({ owner: '', repo: 'hello', manifest: true }).valid, false);
+  // A broken regex is still rejected when one is supplied.
+  assert.equal(validateGitHubSourceInput({ owner: 'octocat', repo: 'hello', assetRegex: '[bad', manifest: true }).valid, false);
+  // Without the manifest flag the regex/fallback requirement still applies.
+  assert.equal(validateGitHubSourceInput({ owner: 'octocat', repo: 'hello', assetRegex: '' }).valid, false);
+});
+
+test('tradeoff copy tells the author what each mode costs', () => {
+  const manifest = manifestModeTradeoff();
+  assert.ok(manifest.benefit.includes(MANIFEST_FILE_NAME));
+  assert.ok(manifest.cost.includes(MANIFEST_FILE_NAME));
+  assert.ok(manifest.cost.includes('维护'));
+
+  const onDemand = onDemandModeTradeoff();
+  assert.ok(onDemand.cost.includes(`${DEFAULT_REFRESH_WINDOW_MINUTES} 分钟`));
+  assert.ok(onDemand.cost.includes('延迟'));
+  // A different server-side window must reach the copy.
+  assert.ok(onDemandModeTradeoff(5).cost.includes('5 分钟'));
+});
+
+test('manifest snippet matches the document the server parses', () => {
+  assert.ok(MANIFEST_SNIPPET.includes('schema: 1'));
+  assert.ok(MANIFEST_SNIPPET.includes('releases:'));
+  assert.ok(MANIFEST_SNIPPET.includes('version:'));
+  assert.ok(MANIFEST_SNIPPET.includes('.zip'));
 });

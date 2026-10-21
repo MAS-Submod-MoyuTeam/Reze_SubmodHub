@@ -5,13 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
+	"net/url"
+	"path"
 	"strings"
 	"time"
 
 	"github.com/reze/submodhub/internal/github"
 	packagezip "github.com/reze/submodhub/internal/package"
 )
+
+// maxPassiveRefreshPerPage bounds how many stale mods one workbench page load
+// may refresh, so a cold catalog does not start every download at once.
+const maxPassiveRefreshPerPage = 3
 
 type SyncItemResult struct {
 	ReleaseID int64  `json:"release_id"`
@@ -41,6 +46,17 @@ func (s *Store) getGitHubClient() *github.Client {
 	return github.NewClient()
 }
 
+// githubClient builds a client from the catalog's proxy setting. The read lock
+// is released before the client is constructed because getGitHubClientWithProxy
+// takes the same lock: nesting read locks on one goroutine can deadlock behind a
+// waiting writer.
+func (s *Store) githubClient() *github.Client {
+	s.mu.RLock()
+	proxyTemplate := s.Catalog.Settings.GitHubProxyTemplate
+	s.mu.RUnlock()
+	return s.getGitHubClientWithProxy(proxyTemplate)
+}
+
 func (s *Store) SyncMod(ctx context.Context, modID string) (*SyncSummary, error) {
 	return s.syncMod(ctx, modID, false)
 }
@@ -63,6 +79,14 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 	}
 	if targetMod.GetSourceType() != "github_releases" {
 		return nil, errors.New("mod is not configured for github_releases source")
+	}
+
+	client := s.githubClient()
+
+	// Manifest mode never touches the REST API, so the API rate-limit backoff
+	// must not suppress it.
+	if targetMod.GitHubManifest {
+		return s.syncModFromManifest(ctx, client, *targetMod, force, now)
 	}
 
 	// Rate limit backoff check
@@ -90,10 +114,6 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 		}, nil
 	}
 
-	s.mu.RLock()
-	proxyTemplate := s.Catalog.Settings.GitHubProxyTemplate
-	s.mu.RUnlock()
-	client := s.getGitHubClientWithProxy(proxyTemplate)
 	etag := targetMod.GitHubETag
 	// A failed import must not be mistaken for an unchanged, fully imported
 	// release list.
@@ -104,14 +124,7 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 	if err != nil {
 		var backoffDeadline *time.Time
 		if github.IsRateLimited(err) {
-			deadline := now.Add(15 * time.Minute)
-			if rlErr, ok := github.AsRateLimitError(err); ok {
-				if rlErr.ResetAt.After(now) {
-					deadline = rlErr.ResetAt
-				} else if rlErr.RetryAfter > 0 {
-					deadline = now.Add(rlErr.RetryAfter)
-				}
-			}
+			deadline := rateLimitDeadline(err, now)
 			backoffDeadline = &deadline
 		}
 
@@ -139,53 +152,28 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 		}, nil
 	}
 
-	latestRelease, latestErr := client.LatestRelease(ctx, targetMod.GitHubOwner, targetMod.GitHubRepo)
-	if latestErr == nil {
-		// Reconcile after imports, including the 304 and already-imported paths.
-		defer s.followGitHubLatest(modID, latestRelease.ID)
-	} else if !github.IsNotFound(latestErr) {
-		log.Printf("[github-sync] latest release lookup for %s failed: %v", modID, latestErr)
+	// A 304 proves the release list is byte-identical, so only an explicit sync
+	// re-reads GitHub's "latest" marker. Skipping the second unconditional
+	// request is what keeps an unchanged repository at zero quota per refresh.
+	if !notModified || force {
+		latestRelease, latestErr := client.LatestRelease(ctx, targetMod.GitHubOwner, targetMod.GitHubRepo)
+		if latestErr == nil {
+			// Reconcile after imports, including the not-modified and
+			// already-imported paths.
+			defer s.followGitHubLatest(modID, latestRelease.ID)
+		} else if !github.IsNotFound(latestErr) {
+			log.Printf("[github-sync] latest release lookup for %s failed: %v", modID, latestErr)
+		}
 	}
 
-	if notModified {
-		s.mu.Lock()
-		for i := range s.Catalog.Mods {
-			if s.Catalog.Mods[i].ID == modID {
-				s.Catalog.Mods[i].GitHubLastSyncAt = &now
-				s.Catalog.Mods[i].GitHubLastSyncError = ""
-				s.Catalog.Mods[i].GitHubBackoffUntil = nil
-				_ = s.saveLocked()
-				break
-			}
-		}
-		s.mu.Unlock()
-		return &SyncSummary{
+	if notModified || len(releases) == 0 {
+		summary := &SyncSummary{
 			ModID:    modID,
 			SyncedAt: now,
 			Items:    []SyncItemResult{},
-		}, nil
-	}
-
-	if len(releases) == 0 {
-		s.mu.Lock()
-		for i := range s.Catalog.Mods {
-			if s.Catalog.Mods[i].ID == modID {
-				s.Catalog.Mods[i].GitHubLastSyncAt = &now
-				s.Catalog.Mods[i].GitHubLastSyncError = ""
-				s.Catalog.Mods[i].GitHubBackoffUntil = nil
-				if newETag != "" {
-					s.Catalog.Mods[i].GitHubETag = newETag
-				}
-				_ = s.saveLocked()
-				break
-			}
 		}
-		s.mu.Unlock()
-		return &SyncSummary{
-			ModID:    modID,
-			SyncedAt: now,
-			Items:    []SyncItemResult{},
-		}, nil
+		s.finishSync(modID, now, summary, newETag, "")
+		return summary, nil
 	}
 
 	summary := &SyncSummary{
@@ -273,275 +261,221 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 			continue
 		}
 
-		// Download to temp file
-		var tmpPath string
-		var dlErr error
-		select {
-		case s.downloadSem <- struct{}{}:
-			tmpPath, _, _, dlErr = client.DownloadToTemp(ctx, selected.DownloadURL, maxArchiveSize)
-			<-s.downloadSem
-		case <-ctx.Done():
-			dlErr = ctx.Err()
-		}
-		if dlErr != nil {
-			if github.IsRateLimited(dlErr) {
-				deadline := now.Add(15 * time.Minute)
-				if rlErr, ok := github.AsRateLimitError(dlErr); ok {
-					if rlErr.ResetAt.After(now) {
-						deadline = rlErr.ResetAt
-					} else if rlErr.RetryAfter > 0 {
-						deadline = now.Add(rlErr.RetryAfter)
-					}
-				}
-				s.mu.Lock()
-				s.gitHubBackoffUntil = deadline
-				for idx := range s.Catalog.Mods {
-					if s.Catalog.Mods[idx].ID == modID {
-						s.Catalog.Mods[idx].GitHubBackoffUntil = &deadline
-						_ = s.saveLocked()
-						break
-					}
-				}
-				s.mu.Unlock()
-			}
-			summary.Failed++
-			summary.Items = append(summary.Items, SyncItemResult{
-				ReleaseID: rel.ID,
-				Tag:       tag,
-				AssetName: selected.AssetName,
-				Action:    "failed",
-				Reason:    dlErr.Error(),
-			})
-			continue
-		}
-
-		// Open temp file and persist/scan archive
-		f, openErr := os.Open(tmpPath)
-		if openErr != nil {
-			_ = os.Remove(tmpPath)
-			summary.Failed++
-			summary.Items = append(summary.Items, SyncItemResult{
-				ReleaseID: rel.ID,
-				Tag:       tag,
-				Action:    "failed",
-				Reason:    openErr.Error(),
-			})
-			continue
-		}
-
-		token, tokErr := randomToken()
-		if tokErr != nil {
-			_ = f.Close()
-			_ = os.Remove(tmpPath)
-			summary.Failed++
-			summary.Items = append(summary.Items, SyncItemResult{
-				ReleaseID: rel.ID,
-				Tag:       tag,
-				Action:    "failed",
-				Reason:    "could not generate token",
-			})
-			continue
-		}
-		versionID := "ver_" + token[:12]
-		finalPath, archiveSize, hash, report, scanErr := s.persistArchive(versionID, f, targetMod.Category == "spritepack")
-		_ = f.Close()
-		_ = os.Remove(tmpPath)
-
-		if scanErr != nil {
-			summary.Failed++
-			summary.Items = append(summary.Items, SyncItemResult{
-				ReleaseID: rel.ID,
-				Tag:       tag,
-				AssetName: selected.AssetName,
-				Action:    "failed",
-				Reason:    scanErr.Error(),
-			})
-			continue
-		}
-		if selected.Kind == github.SourceKindSourceCode {
-			allowSourceRootReadme(&report)
-		}
-
-		// Determine version state
-		state := "ready_for_review"
-		hasBlockers := len(report.Unsupported) > 0
-		if s.AutoPublish {
-			// Auto-publish explicitly disables the review gate. Keep the complete
-			// scan report and sync error metadata so administrators can still audit
-			// unsupported files or conflicts after publication.
-			state = "published"
-		} else if hasBlockers || len(report.Conflicts) > 0 {
-			state = "scanning"
-		}
-
 		releaseNotes := rel.Body
 		if strings.TrimSpace(releaseNotes) == "" {
 			releaseNotes = rel.Name
 		}
 
-		version := Version{
-			ID:              versionID,
-			ModID:           modID,
-			Version:         tag,
-			CreatedAt:       &now,
-			State:           state,
-			SizeBytes:       archiveSize,
-			SHA256:          hash,
-			ReleaseNotes:    releaseNotes,
-			ScanReportID:    "scan_" + versionID,
-			ArchivePath:     finalPath,
-			SourceType:      "github_releases",
-			GitHubReleaseID: rel.ID,
-			GitHubAssetID:   selected.AssetID,
-			GitHubSource: &VersionSourceLocation{
-				Owner:       targetMod.GitHubOwner,
-				Repo:        targetMod.GitHubRepo,
-				ReleaseID:   rel.ID,
-				AssetID:     selected.AssetID,
-				FileName:    selected.AssetName,
-				DownloadURL: selected.DownloadURL,
-			},
+		result, created := s.importCandidate(ctx, client, *targetMod, releaseCandidate{
+			Version:     tag,
+			Notes:       releaseNotes,
+			DownloadURL: selected.DownloadURL,
+			FileName:    selected.AssetName,
+			AssetID:     selected.AssetID,
+			ReleaseID:   rel.ID,
+			SourceKind:  selected.Kind,
+			Owner:       targetMod.GitHubOwner,
+			Repo:        targetMod.GitHubRepo,
+		}, now)
+		switch {
+		case created:
+			summary.Created++
+		case result.Action == "failed":
+			summary.Failed++
+		default:
+			summary.Skipped++
 		}
+		summary.Items = append(summary.Items, result)
+	}
 
-		// Extract dependencies
-		seenDeps := map[string]bool{}
-		for _, reg := range report.Submods {
-			for _, dep := range reg.Dependencies {
-				if dep.Name == "" || seenDeps[dep.Name] {
-					continue
-				}
-				seenDeps[dep.Name] = true
-				version.Dependencies = append(version.Dependencies, Dependency{
-					ModID:        dep.Name,
-					ModTitle:     dep.Name,
-					VersionRange: dependencyRange(dep.Minimum, dep.Maximum),
-					Required:     true,
-				})
-			}
-		}
-		version = resolveVersionDependencies(s.Catalog, version)
+	s.finishSync(modID, now, summary, newETag, "")
+	return summary, nil
+}
 
-		// Save under lock
-		s.mu.Lock()
-		// Double check idempotency under write lock
-		concurrentDup := false
-		for _, v := range s.Catalog.Versions {
-			if v.ModID == modID && (v.GitHubReleaseID == rel.ID || v.Version == tag) {
-				concurrentDup = true
-				break
-			}
+// syncModFromManifest imports versions declared by the repository's rezehub.yml.
+// It reads raw.githubusercontent.com (no REST quota) and downloads the declared
+// asset URLs, so a repository that maintains the file needs no API access at all.
+func (s *Store) syncModFromManifest(ctx context.Context, client *github.Client, mod Mod, force bool, now time.Time) (*SyncSummary, error) {
+	manifest, digest, err := client.FetchManifest(ctx, mod.GitHubOwner, mod.GitHubRepo)
+	if err != nil {
+		summary := &SyncSummary{
+			ModID:     mod.ID,
+			SyncedAt:  now,
+			Failed:    1,
+			LastError: err.Error(),
+			Items:     []SyncItemResult{},
 		}
-		if concurrentDup {
-			s.mu.Unlock()
-			_ = os.Remove(finalPath)
+		s.finishSync(mod.ID, now, summary, "", "")
+		return summary, nil
+	}
+
+	// The digest identifies the exact document. An unchanged manifest declares
+	// an unchanged version list, so nothing has to be downloaded.
+	if !force && mod.GitHubLastSyncError == "" && digest != "" && digest == mod.GitHubManifestDigest {
+		summary := &SyncSummary{ModID: mod.ID, SyncedAt: now, Items: []SyncItemResult{}}
+		s.finishSync(mod.ID, now, summary, "", digest)
+		return summary, nil
+	}
+
+	summary := &SyncSummary{
+		ModID:    mod.ID,
+		SyncedAt: now,
+		Items:    make([]SyncItemResult, 0, len(manifest.Releases)),
+	}
+	for _, rel := range manifest.Releases {
+		if s.modHasVersion(mod.ID, rel.Version) {
 			summary.Skipped++
 			summary.Items = append(summary.Items, SyncItemResult{
-				ReleaseID: rel.ID,
-				Tag:       tag,
-				Action:    "skipped",
-				Reason:    "concurrent sync duplicate",
+				Tag:    rel.Version,
+				Action: "skipped",
+				Reason: "version tag already exists",
 			})
 			continue
 		}
-
-		if s.Catalog.ScanReports == nil {
-			s.Catalog.ScanReports = map[string]packagezip.Report{}
+		result, created := s.importCandidate(ctx, client, mod, releaseCandidate{
+			Version:      rel.Version,
+			Notes:        rel.Notes,
+			DownloadURL:  rel.URL,
+			FileName:     manifestAssetName(rel.URL),
+			SourceKind:   github.SourceKindAsset,
+			Owner:        mod.GitHubOwner,
+			Repo:         mod.GitHubRepo,
+			ExpectSHA256: rel.SHA256,
+		}, now)
+		switch {
+		case created:
+			summary.Created++
+		case result.Action == "failed":
+			summary.Failed++
+		default:
+			summary.Skipped++
 		}
-		s.Catalog.ScanReports[version.ScanReportID] = report
-		s.Catalog.Versions[versionID] = version
-
-		// Create submission if ready_for_review or published
-		if state == "ready_for_review" || state == "published" {
-			subToken, _ := randomToken()
-			sub := Submission{
-				ID:        "sub_" + subToken[:12],
-				ModID:     modID,
-				VersionID: versionID,
-				AuthorID:  targetMod.Author.ID,
-				State:     state,
-				CreatedAt: now,
-			}
-			if state == "published" {
-				sub.PublishedAt = &now
-			}
-			s.Catalog.Submissions = append(s.Catalog.Submissions, sub)
-		}
-
-		// Update mod sync metadata
-		for idx := range s.Catalog.Mods {
-			if s.Catalog.Mods[idx].ID == modID {
-				s.Catalog.Mods[idx].GitHubLastReleaseID = rel.ID
-				s.Catalog.Mods[idx].GitHubLastSyncAt = &now
-				s.Catalog.Mods[idx].GitHubBackoffUntil = nil
-				if hasBlockers && !s.AutoPublish {
-					s.Catalog.Mods[idx].GitHubLastSyncError = fmt.Sprintf("scan blocked on %s: %s", tag, strings.Join(report.Unsupported, "; "))
-				} else {
-					s.Catalog.Mods[idx].GitHubLastSyncError = ""
-				}
-				if newETag != "" {
-					s.Catalog.Mods[idx].GitHubETag = newETag
-				}
-			}
-		}
-		_ = s.saveLocked()
-		s.mu.Unlock()
-
-		summary.Created++
-		summary.Items = append(summary.Items, SyncItemResult{
-			ReleaseID: rel.ID,
-			Tag:       tag,
-			Action:    "created",
-			VersionID: versionID,
-			AssetName: selected.AssetName,
-			SHA256:    hash,
-			SizeBytes: archiveSize,
-		})
+		summary.Items = append(summary.Items, result)
 	}
 
-	// Update mod error if all failed or any failed
-	if summary.Failed > 0 {
-		var lastErrMsg string
-		for _, it := range summary.Items {
-			if it.Action == "failed" {
-				lastErrMsg = it.Reason
-			}
-		}
-		s.mu.Lock()
-		for i := range s.Catalog.Mods {
-			if s.Catalog.Mods[i].ID == modID {
-				s.Catalog.Mods[i].GitHubLastSyncAt = &now
-				s.Catalog.Mods[i].GitHubLastSyncError = lastErrMsg
-				// The release list was fetched successfully even when one or
-				// more individual releases failed to import. Persist its ETag so
-				// the next poll can use a conditional request.
-				if newETag != "" {
-					s.Catalog.Mods[i].GitHubETag = newETag
-				}
-				_ = s.saveLocked()
-				break
-			}
-		}
-		s.mu.Unlock()
-		summary.LastError = lastErrMsg
-	} else {
-		// All releases succeeded or skipped: unconditionally save newETag and clear errors & backoff
-		s.mu.Lock()
-		for i := range s.Catalog.Mods {
-			if s.Catalog.Mods[i].ID == modID {
-				s.Catalog.Mods[i].GitHubLastSyncAt = &now
-				s.Catalog.Mods[i].GitHubLastSyncError = ""
-				s.Catalog.Mods[i].GitHubBackoffUntil = nil
-				if newETag != "" {
-					s.Catalog.Mods[i].GitHubETag = newETag
-				}
-				_ = s.saveLocked()
-				break
-			}
-		}
-		s.mu.Unlock()
+	if s.AutoPublish {
+		s.followManifestLatest(mod.ID, manifest.Releases)
 	}
-
+	s.finishSync(mod.ID, now, summary, "", digest)
 	return summary, nil
+}
+
+// manifestAssetName recovers a display filename from a declared asset URL.
+func manifestAssetName(assetURL string) string {
+	parsed, err := url.Parse(assetURL)
+	if err != nil {
+		return ""
+	}
+	return path.Base(parsed.Path)
+}
+
+func (s *Store) modHasVersion(modID, version string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, v := range s.Catalog.Versions {
+		if v.ModID == modID && v.Version == version {
+			return true
+		}
+	}
+	return false
+}
+
+// followManifestLatest chooses the last published entry in manifest order,
+// including versions imported by an earlier attempt.
+func (s *Store) followManifestLatest(modID string, releases []github.ManifestRelease) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := len(releases) - 1; i >= 0; i-- {
+		for _, version := range s.Catalog.Versions {
+			if version.ModID != modID || version.Version != releases[i].Version || version.State != "published" {
+				continue
+			}
+			for j := range s.Catalog.Mods {
+				if s.Catalog.Mods[j].ID == modID && s.Catalog.Mods[j].LatestVersionID != version.ID {
+					s.Catalog.Mods[j].LatestVersionID = version.ID
+					_ = s.saveLocked()
+				}
+			}
+			return
+		}
+	}
+}
+
+// MaybeSyncGitHubMod refreshes one mod if it is due. This is the passive
+// replacement for background polling: the request that made the mod relevant
+// triggers the refresh, everything else keeps reading the cached state.
+// Returns true when a refresh was actually started.
+func (s *Store) MaybeSyncGitHubMod(modID string) bool {
+	now := time.Now().UTC()
+	s.mu.Lock()
+	var mod *Mod
+	for i := range s.Catalog.Mods {
+		if s.Catalog.Mods[i].ID == modID {
+			mod = &s.Catalog.Mods[i]
+			break
+		}
+	}
+	if mod == nil || mod.GetSourceType() != "github_releases" {
+		s.mu.Unlock()
+		return false
+	}
+	if !s.passiveSyncDueLocked(*mod, now) {
+		s.mu.Unlock()
+		return false
+	}
+	if s.simultaneousSyncs == nil {
+		s.simultaneousSyncs = map[string]bool{}
+	}
+	if s.simultaneousSyncs[modID] {
+		s.mu.Unlock()
+		return false
+	}
+	s.simultaneousSyncs[modID] = true
+	s.mu.Unlock()
+
+	go func() {
+		defer func() {
+			s.mu.Lock()
+			delete(s.simultaneousSyncs, modID)
+			s.mu.Unlock()
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		if _, err := s.SyncMod(ctx, modID); err != nil {
+			log.Printf("[github-sync] passive refresh of %s failed: %v", modID, err)
+		}
+	}()
+	return true
+}
+
+// passiveSyncDueLocked reports whether a mod is outside its freshness window.
+// Callers must hold the store lock.
+func (s *Store) passiveSyncDueLocked(mod Mod, now time.Time) bool {
+	if mod.GetSourceType() != "github_releases" {
+		return false
+	}
+	if s.GitHubSyncTTL <= 0 {
+		return false
+	}
+	if !mod.GitHubManifest {
+		if !s.gitHubBackoffUntil.IsZero() && now.Before(s.gitHubBackoffUntil) {
+			return false
+		}
+		if mod.GitHubBackoffUntil != nil && now.Before(*mod.GitHubBackoffUntil) {
+			return false
+		}
+	}
+	return mod.GitHubLastSyncAt == nil || now.Sub(*mod.GitHubLastSyncAt) >= s.GitHubSyncTTL
+}
+
+// maybeSyncGitHubModAsync spawns the passive refresh without blocking the caller.
+// Handlers call it while serving a response, so it must never wait on the store
+// lock the handler already holds.
+func (s *Store) maybeSyncGitHubModAsync(modID string) {
+	if modID == "" {
+		return
+	}
+	go s.MaybeSyncGitHubMod(modID)
 }
 
 // promoteGitHubVersion reconciles versions imported before auto-publish was
@@ -624,8 +558,6 @@ func allowSourceRootReadme(report *packagezip.Report) {
 
 func (s *Store) SyncAllGitHubMods(ctx context.Context) map[string]*SyncSummary {
 	s.mu.RLock()
-	globalBackoff := !s.gitHubBackoffUntil.IsZero() && time.Now().Before(s.gitHubBackoffUntil)
-	backoffDeadline := s.gitHubBackoffUntil
 	modIDs := make([]string, 0)
 	for _, m := range s.Catalog.Mods {
 		if m.GetSourceType() == "github_releases" {
@@ -635,18 +567,6 @@ func (s *Store) SyncAllGitHubMods(ctx context.Context) map[string]*SyncSummary {
 	s.mu.RUnlock()
 
 	results := make(map[string]*SyncSummary, len(modIDs))
-	if globalBackoff {
-		log.Printf("[github-sync] rate limit backoff active until %s, skipping periodic poll", backoffDeadline.UTC().Format(time.RFC3339))
-		for _, id := range modIDs {
-			results[id] = &SyncSummary{
-				ModID:     id,
-				SyncedAt:  time.Now(),
-				Failed:    1,
-				LastError: fmt.Sprintf("github api rate limit backoff active until %s", backoffDeadline.UTC().Format(time.RFC3339)),
-			}
-		}
-		return results
-	}
 
 	for _, id := range modIDs {
 		summary, err := s.SyncMod(ctx, id)
@@ -658,6 +578,9 @@ func (s *Store) SyncAllGitHubMods(ctx context.Context) map[string]*SyncSummary {
 	return results
 }
 
+// StartGitHubSync starts the legacy background poller. It is off by default: the
+// catalog is refreshed on demand instead (see MaybeSyncGitHubMod), because every
+// poll consumes the same GitHub API quota that real requests need.
 func (s *Store) StartGitHubSync() {
 	if s.GitHubSyncInterval <= 0 {
 		return
@@ -699,10 +622,12 @@ func (s *Store) Close() error {
 
 type GitHubSyncDiagnostics struct {
 	Interval         string     `json:"interval"`
+	TTL              string     `json:"ttl"`
 	ActiveJobs       int        `json:"active_jobs"`
 	LastSyncAt       *time.Time `json:"last_sync_at,omitempty"`
 	LastSyncError    string     `json:"last_sync_error,omitempty"`
 	TotalManagedMods int        `json:"total_managed_mods"`
+	ManifestMods     int        `json:"manifest_mods"`
 }
 
 func (s *Store) GetGitHubSyncDiagnostics() *GitHubSyncDiagnostics {
@@ -710,12 +635,16 @@ func (s *Store) GetGitHubSyncDiagnostics() *GitHubSyncDiagnostics {
 	defer s.mu.RUnlock()
 
 	managedCount := 0
+	manifestCount := 0
 	var latestSync *time.Time
 	var latestErr string
 
 	for _, m := range s.Catalog.Mods {
 		if m.GetSourceType() == "github_releases" {
 			managedCount++
+			if m.GitHubManifest {
+				manifestCount++
+			}
 			if m.GitHubLastSyncAt != nil && (latestSync == nil || m.GitHubLastSyncAt.After(*latestSync)) {
 				latestSync = m.GitHubLastSyncAt
 			}
@@ -729,12 +658,18 @@ func (s *Store) GetGitHubSyncDiagnostics() *GitHubSyncDiagnostics {
 	if s.GitHubSyncInterval > 0 {
 		intervalStr = s.GitHubSyncInterval.String()
 	}
+	ttlStr := "disabled"
+	if s.GitHubSyncTTL > 0 {
+		ttlStr = s.GitHubSyncTTL.String()
+	}
 
 	return &GitHubSyncDiagnostics{
 		Interval:         intervalStr,
-		ActiveJobs:       0,
+		TTL:              ttlStr,
+		ActiveJobs:       len(s.simultaneousSyncs),
 		LastSyncAt:       latestSync,
 		LastSyncError:    latestErr,
 		TotalManagedMods: managedCount,
+		ManifestMods:     manifestCount,
 	}
 }

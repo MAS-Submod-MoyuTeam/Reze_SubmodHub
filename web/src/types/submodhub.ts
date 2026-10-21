@@ -53,6 +53,8 @@ export interface ModSummary {
   github_repo?: string;
   github_asset_regex?: string;
   github_source_code?: boolean;
+  github_manifest?: boolean;
+  github_manifest_digest?: string;
   github_last_sync_at?: string;
   github_last_sync_error?: string;
   github_last_release_id?: number;

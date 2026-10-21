@@ -12,6 +12,7 @@ export function mapAuthorMod({ mod, is_published, has_published_version, has_arc
     mas_version_range: mod.mas_version_range || '', recommended_priority: mod.recommended_priority || 0,
     latest_version_id: mod.latest_version_id || '', downloads_count: 0, created_at: mod.created_at || '', updated_at: '',
     is_published, source_type: mod.source_type || 'local', github_source_code: Boolean(mod.github_source_code),
+    github_manifest: Boolean(mod.github_manifest),
     has_published_version, has_archived_version, has_pending_review, candidate_version_id: candidate_version_id || undefined,
   };
 }

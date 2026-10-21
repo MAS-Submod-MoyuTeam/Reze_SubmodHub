@@ -26,6 +26,7 @@ var AllowedGitHubHosts = map[string]bool{
 	"api.github.com":                       true,
 	"github.com":                           true,
 	"codeload.github.com":                  true,
+	"raw.githubusercontent.com":            true,
 	"release-assets.githubusercontent.com": true,
 	"objects.githubusercontent.com":        true,
 }

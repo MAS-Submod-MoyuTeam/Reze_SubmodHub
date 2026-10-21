@@ -383,6 +383,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         github_repo: data.github_repo || '',
         github_asset_regex: data.github_asset_regex || '',
         github_source_code: Boolean(data.github_source_code),
+        github_manifest: Boolean(data.github_manifest),
       };
 
       const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
@@ -402,6 +403,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           github_repo: newMod.github_repo,
           github_asset_regex: newMod.github_asset_regex,
           github_source_code: newMod.github_source_code,
+          github_manifest: newMod.github_manifest,
         });
         const persisted = {
           ...newMod,
@@ -415,6 +417,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           github_repo: remote.github_repo,
           github_asset_regex: remote.github_asset_regex,
           github_source_code: remote.github_source_code,
+          github_manifest: remote.github_manifest,
         };
         setMods((prev) => [persisted, ...prev]);
         showToast('success', `成功创建模组草稿 [${newMod.title}]`);
@@ -448,6 +451,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           github_repo: data.github_repo ?? existing.github_repo,
           github_asset_regex: data.github_asset_regex ?? existing.github_asset_regex,
           github_source_code: data.github_source_code ?? existing.github_source_code,
+          github_manifest: data.github_manifest ?? existing.github_manifest,
         });
         setMods((prev) => prev.map((mod) => mod.id === modId ? {
           ...mod,

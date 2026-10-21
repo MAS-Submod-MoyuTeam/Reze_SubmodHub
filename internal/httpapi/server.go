@@ -107,6 +107,8 @@ type Mod struct {
 	GitHubRepo              string     `json:"github_repo,omitempty"`
 	GitHubAssetRegex        string     `json:"github_asset_regex,omitempty"`
 	GitHubSourceCode        bool       `json:"github_source_code,omitempty"`
+	GitHubManifest          bool       `json:"github_manifest,omitempty"`
+	GitHubManifestDigest    string     `json:"github_manifest_digest,omitempty"`
 	GitHubLastSyncAt        *time.Time `json:"github_last_sync_at,omitempty"`
 	GitHubLastSyncError     string     `json:"github_last_sync_error,omitempty"`
 	GitHubLastReleaseID     int64      `json:"github_last_release_id,omitempty"`
@@ -124,13 +126,24 @@ func (m Mod) GetSourceType() string {
 var githubOwnerRegex = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$`)
 var githubRepoRegex = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
-func validateSourceConfig(sourceType, owner, repo, assetRegex string, sourceCode bool) error {
-	switch sourceType {
+// sourceConfigInput is the author-supplied description of where a mod's
+// versions come from.
+type sourceConfigInput struct {
+	SourceType string
+	Owner      string
+	Repo       string
+	AssetRegex string
+	SourceCode bool
+	Manifest   bool
+}
+
+func validateSourceConfig(in sourceConfigInput) error {
+	switch in.SourceType {
 	case "", "local":
 		return nil
 	case "github_releases":
-		owner = strings.TrimSpace(owner)
-		repo = strings.TrimSpace(repo)
+		owner := strings.TrimSpace(in.Owner)
+		repo := strings.TrimSpace(in.Repo)
 		if owner == "" || repo == "" {
 			return errors.New("github_owner and github_repo are required for github_releases source")
 		}
@@ -140,8 +153,19 @@ func validateSourceConfig(sourceType, owner, repo, assetRegex string, sourceCode
 		if !githubRepoRegex.MatchString(repo) {
 			return errors.New("invalid github_repo format")
 		}
-		assetRegex = strings.TrimSpace(assetRegex)
-		if assetRegex == "" && !sourceCode {
+		// Manifest mode resolves every version through the repository's
+		// rezehub.yml, so release asset matching never runs and must not be
+		// demanded from the author.
+		if in.Manifest {
+			if strings.TrimSpace(in.AssetRegex) != "" {
+				if _, err := regexp.Compile(in.AssetRegex); err != nil {
+					return fmt.Errorf("invalid github_asset_regex: %w", err)
+				}
+			}
+			return nil
+		}
+		assetRegex := strings.TrimSpace(in.AssetRegex)
+		if assetRegex == "" && !in.SourceCode {
 			return errors.New("github_releases source requires either github_asset_regex or github_source_code to be enabled")
 		}
 		if assetRegex != "" {
@@ -151,7 +175,7 @@ func validateSourceConfig(sourceType, owner, repo, assetRegex string, sourceCode
 		}
 		return nil
 	default:
-		return fmt.Errorf("unsupported source_type: %s", sourceType)
+		return fmt.Errorf("unsupported source_type: %s", in.SourceType)
 	}
 }
 
@@ -162,6 +186,7 @@ func cleanPublicMod(m Mod) Mod {
 	cp.GitHubLastReleaseID = 0
 	cp.GitHubBackoffUntil = nil
 	cp.GitHubETag = ""
+	cp.GitHubManifestDigest = ""
 	return cp
 }
 
@@ -247,7 +272,12 @@ type Store struct {
 	sessions           map[string]authSession
 	GitHubClient       *github.Client
 	GitHubSyncInterval time.Duration
+	// GitHubSyncTTL is the passive freshness window: a GitHub-backed mod is
+	// refreshed when something asks for it and its last sync is older than this.
+	// Polling competes for the same API quota, so zero disables passive refresh.
+	GitHubSyncTTL      time.Duration
 	gitHubBackoffUntil time.Time
+	simultaneousSyncs  map[string]bool
 	syncStopChan       chan struct{}
 	syncDoneChan       chan struct{}
 	syncCloseOnce      sync.Once
@@ -269,7 +299,7 @@ func newStore(dataDir string, initial Catalog, loadLocalCatalog bool) (*Store, e
 	if err := os.MkdirAll(filepath.Join(dataDir, "archives"), 0o750); err != nil {
 		return nil, err
 	}
-	s := &Store{Catalog: initial, DataDir: dataDir, sessions: map[string]authSession{}, downloadSem: make(chan struct{}, 2)}
+	s := &Store{Catalog: initial, DataDir: dataDir, sessions: map[string]authSession{}, simultaneousSyncs: map[string]bool{}, downloadSem: make(chan struct{}, 2)}
 	if loadLocalCatalog {
 		if b, err := os.ReadFile(filepath.Join(dataDir, "catalog.json")); err == nil {
 			if json.Unmarshal(b, &s.Catalog) != nil {
@@ -398,6 +428,7 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		GitHubRepo          string   `json:"github_repo"`
 		GitHubAssetRegex    string   `json:"github_asset_regex"`
 		GitHubSourceCode    bool     `json:"github_source_code"`
+		GitHubManifest      bool     `json:"github_manifest"`
 	}
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
@@ -405,7 +436,14 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "validation_failed", "title and category are required")
 		return
 	}
-	if err := validateSourceConfig(req.SourceType, req.GitHubOwner, req.GitHubRepo, req.GitHubAssetRegex, req.GitHubSourceCode); err != nil {
+	if err := validateSourceConfig(sourceConfigInput{
+		SourceType: req.SourceType,
+		Owner:      req.GitHubOwner,
+		Repo:       req.GitHubRepo,
+		AssetRegex: req.GitHubAssetRegex,
+		SourceCode: req.GitHubSourceCode,
+		Manifest:   req.GitHubManifest,
+	}); err != nil {
 		writeError(w, 400, "validation_failed", err.Error())
 		return
 	}
@@ -443,6 +481,7 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		GitHubRepo:          strings.TrimSpace(req.GitHubRepo),
 		GitHubAssetRegex:    strings.TrimSpace(req.GitHubAssetRegex),
 		GitHubSourceCode:    req.GitHubSourceCode,
+		GitHubManifest:      req.GitHubManifest,
 	}
 	s.mu.Lock()
 	s.Catalog.Mods = append(s.Catalog.Mods, mod)
@@ -728,6 +767,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			GitHubRepo       string `json:"github_repo"`
 			GitHubAssetRegex string `json:"github_asset_regex"`
 			GitHubSourceCode bool   `json:"github_source_code"`
+			GitHubManifest   bool   `json:"github_manifest"`
 		}
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
@@ -735,7 +775,14 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "validation_failed", "invalid source configuration body")
 			return
 		}
-		if err := validateSourceConfig(req.SourceType, req.GitHubOwner, req.GitHubRepo, req.GitHubAssetRegex, req.GitHubSourceCode); err != nil {
+		if err := validateSourceConfig(sourceConfigInput{
+			SourceType: req.SourceType,
+			Owner:      req.GitHubOwner,
+			Repo:       req.GitHubRepo,
+			AssetRegex: req.GitHubAssetRegex,
+			SourceCode: req.GitHubSourceCode,
+			Manifest:   req.GitHubManifest,
+		}); err != nil {
 			writeError(w, 400, "validation_failed", err.Error())
 			return
 		}
@@ -757,8 +804,9 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		if srcType == "" {
 			srcType = "local"
 		}
-		if mod.GitHubOwner != strings.TrimSpace(req.GitHubOwner) || mod.GitHubRepo != strings.TrimSpace(req.GitHubRepo) {
+		if mod.GitHubOwner != strings.TrimSpace(req.GitHubOwner) || mod.GitHubRepo != strings.TrimSpace(req.GitHubRepo) || mod.GitHubManifest != req.GitHubManifest {
 			mod.GitHubETag = ""
+			mod.GitHubManifestDigest = ""
 			mod.GitHubBackoffUntil = nil
 		}
 		mod.SourceType = srcType
@@ -766,6 +814,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		mod.GitHubRepo = strings.TrimSpace(req.GitHubRepo)
 		mod.GitHubAssetRegex = strings.TrimSpace(req.GitHubAssetRegex)
 		mod.GitHubSourceCode = req.GitHubSourceCode
+		mod.GitHubManifest = req.GitHubManifest
 		mod.GitHubLastSyncError = ""
 		mod.GitHubBackoffUntil = nil
 		if err := s.saveLocked(); err != nil {
@@ -896,6 +945,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			GitHubRepo          *string  `json:"github_repo"`
 			GitHubAssetRegex    *string  `json:"github_asset_regex"`
 			GitHubSourceCode    *bool    `json:"github_source_code"`
+			GitHubManifest      *bool    `json:"github_manifest"`
 		}
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
@@ -934,7 +984,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		mod.SupportedPlatforms = req.SupportedPlatforms
 		mod.MASVersionRange = req.MASVersionRange
 		mod.RecommendedPriority = req.RecommendedPriority
-		if req.SourceType != nil || req.GitHubOwner != nil || req.GitHubRepo != nil || req.GitHubAssetRegex != nil || req.GitHubSourceCode != nil {
+		if req.SourceType != nil || req.GitHubOwner != nil || req.GitHubRepo != nil || req.GitHubAssetRegex != nil || req.GitHubSourceCode != nil || req.GitHubManifest != nil {
 			newSourceType := mod.GetSourceType()
 			if req.SourceType != nil {
 				newSourceType = *req.SourceType
@@ -955,16 +1005,35 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			if req.GitHubSourceCode != nil {
 				newSourceCode = *req.GitHubSourceCode
 			}
-			if err := validateSourceConfig(newSourceType, newOwner, newRepo, newRegex, newSourceCode); err != nil {
+			newManifest := mod.GitHubManifest
+			if req.GitHubManifest != nil {
+				newManifest = *req.GitHubManifest
+			}
+			if err := validateSourceConfig(sourceConfigInput{
+				SourceType: newSourceType,
+				Owner:      newOwner,
+				Repo:       newRepo,
+				AssetRegex: newRegex,
+				SourceCode: newSourceCode,
+				Manifest:   newManifest,
+			}); err != nil {
 				s.mu.Unlock()
 				writeError(w, 400, "validation_failed", err.Error())
 				return
+			}
+			// A different repository or a different version-discovery mode
+			// invalidates both cached cursors: the ETag belongs to the releases
+			// API listing and the digest belongs to rezehub.yml.
+			if mod.GitHubOwner != strings.TrimSpace(newOwner) || mod.GitHubRepo != strings.TrimSpace(newRepo) || mod.GitHubManifest != newManifest {
+				mod.GitHubETag = ""
+				mod.GitHubManifestDigest = ""
 			}
 			mod.SourceType = newSourceType
 			mod.GitHubOwner = strings.TrimSpace(newOwner)
 			mod.GitHubRepo = strings.TrimSpace(newRepo)
 			mod.GitHubAssetRegex = strings.TrimSpace(newRegex)
 			mod.GitHubSourceCode = newSourceCode
+			mod.GitHubManifest = newManifest
 		}
 		if err := s.saveLocked(); err != nil {
 			s.mu.Unlock()
@@ -1382,6 +1451,9 @@ func (s *Store) modResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 1 {
+		// Viewing a mod is the demand signal that replaces background polling:
+		// the refresh runs asynchronously and only when the mod is stale.
+		s.maybeSyncGitHubModAsync(mod.ID)
 		writeJSON(w, 200, cleanPublicMod(*mod))
 		return
 	}

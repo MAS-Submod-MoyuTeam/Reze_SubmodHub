@@ -29,6 +29,7 @@ func (s *Store) getGitHubClientWithProxy(proxyTemplate string) *github.Client {
 			return github.NewClient(
 				github.WithBaseURL(injected.BaseURL()),
 				github.WithProxyTemplate(proxyTemplate),
+				github.WithToken(injected.Token()),
 				github.WithAllowInsecureTestHosts(injected.AllowInsecureTestHosts()),
 			)
 		}

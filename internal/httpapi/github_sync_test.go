@@ -29,7 +29,9 @@ func createTestZip(t *testing.T, submodCode string) []byte {
 	return buf.Bytes()
 }
 
-func TestGitHubLatestFollowsMarkedReleaseEvenWhenListUnchanged(t *testing.T) {
+// A forced sync re-reads GitHub's "latest" marker even when the release list is
+// unchanged (304), which is how an administrator reconciles a re-marked release.
+func TestGitHubLatestFollowsMarkedReleaseOnForcedSync(t *testing.T) {
 	latestID := int64(101)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/octocat/hello/releases/latest" {
@@ -60,12 +62,59 @@ func TestGitHubLatestFollowsMarkedReleaseEvenWhenListUnchanged(t *testing.T) {
 		want    string
 	}{{101, "older"}, {102, "newer"}, {103, "newer"}, {999, "newer"}} {
 		latestID = tc.release
-		if _, err := store.SyncMod(context.Background(), "latest"); err != nil {
+		if _, err := store.syncMod(context.Background(), "latest", true); err != nil {
 			t.Fatal(err)
 		}
 		if got := store.Catalog.Mods[0].LatestVersionID; got != tc.want {
 			t.Fatalf("latest release %d: got %q, want %q", tc.release, got, tc.want)
 		}
+	}
+}
+
+// An unchanged release list must cost exactly one conditional request: the
+// second, unconditional /releases/latest lookup is what drained the anonymous
+// quota on every poll.
+func TestGitHubSyncUnchangedListSkipsLatestReleaseLookup(t *testing.T) {
+	var listRequests, latestRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/octocat/hello/releases":
+			listRequests++
+			w.Header().Set("ETag", `W/"abc"`)
+			w.WriteHeader(http.StatusNotModified)
+		case "/repos/octocat/hello/releases/latest":
+			latestRequests++
+			fmt.Fprint(w, `{"id":101}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	store, err := NewStore(t.TempDir(), Catalog{
+		Mods: []Mod{{
+			ID: "unchanged", SourceType: "github_releases", GitHubOwner: "octocat", GitHubRepo: "hello",
+			GitHubETag: `W/"abc"`,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.GitHubClient = github.NewClient(github.WithBaseURL(server.URL), github.WithHTTPClient(server.Client()))
+	if _, err := store.SyncMod(context.Background(), "unchanged"); err != nil {
+		t.Fatal(err)
+	}
+	if listRequests != 1 {
+		t.Fatalf("release list requests = %d, want 1", listRequests)
+	}
+	if latestRequests != 0 {
+		t.Fatalf("latest release requests = %d, want 0 on an unchanged list", latestRequests)
+	}
+	// An explicit sync still reconciles the marker.
+	if _, err := store.syncMod(context.Background(), "unchanged", true); err != nil {
+		t.Fatal(err)
+	}
+	if latestRequests != 1 {
+		t.Fatalf("latest release requests after force = %d, want 1", latestRequests)
 	}
 }
 

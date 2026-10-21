@@ -176,6 +176,7 @@ type Client struct {
 	httpClient             *http.Client
 	userAgent              string
 	proxyTemplate          string
+	token                  string
 	allowInsecureTestHosts bool
 }
 
@@ -214,6 +215,16 @@ func WithAllowInsecureTestHosts(allow bool) Option {
 	}
 }
 
+// WithToken authenticates REST API requests. Anonymous requests share one
+// 60/hour bucket per IP, which cannot survive a catalog with more than a handful
+// of GitHub-backed mods; an authenticated token raises it to 5000/hour.
+// The token is only sent to the configured API base, never to asset hosts.
+func WithToken(token string) Option {
+	return func(c *Client) {
+		c.token = strings.TrimSpace(token)
+	}
+}
+
 func (c *Client) ProxyTemplate() string {
 	return c.proxyTemplate
 }
@@ -224,6 +235,12 @@ func (c *Client) BaseURL() string {
 
 func (c *Client) AllowInsecureTestHosts() bool {
 	return c.allowInsecureTestHosts
+}
+
+// Token reports the configured API token so clients rebuilt with a different
+// proxy template keep authentication.
+func (c *Client) Token() string {
+	return c.token
 }
 
 func NewClient(opts ...Option) *Client {
@@ -283,6 +300,11 @@ func (c *Client) executeStreamRequest(ctx context.Context, targetURL string, hea
 		}
 		for k, v := range headers {
 			req.Header.Set(k, v)
+		}
+		// Authenticate API traffic only. Asset and manifest hosts are content
+		// delivery origins and must never see the token.
+		if c.token != "" && strings.HasPrefix(currURL, c.baseURL) {
+			req.Header.Set("Authorization", "Bearer "+c.token)
 		}
 
 		res, err := clientCopy.Do(req)
@@ -364,6 +386,11 @@ func (c *Client) executeRequest(ctx context.Context, targetURL string, headers m
 		}
 		for k, v := range headers {
 			req.Header.Set(k, v)
+		}
+		// Authenticate API traffic only. Asset and manifest hosts are content
+		// delivery origins and must never see the token.
+		if c.token != "" && strings.HasPrefix(currURL, c.baseURL) {
+			req.Header.Set("Authorization", "Bearer "+c.token)
 		}
 
 		res, err := clientCopy.Do(req)

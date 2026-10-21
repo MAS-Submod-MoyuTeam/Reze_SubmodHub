@@ -190,15 +190,26 @@
 - `source_type`: `local`（默认，站内创建候选版本）或 `github_releases`（由外部 Release 自动同步）。
 - `github_owner`: GitHub 组织或用户坐标。
 - `github_repo`: GitHub 仓库名称。
-- `github_asset_regex`: RE2 正则表达式，匹配 Release 资产中的 `.zip` 文件名。
-- `github_source_code`: 布尔值，当 Release 未提供匹配的资产文件时，是否允许自动使用 Release 源码包 (`zipball_url`)。
+- `github_asset_regex`: RE2 正则表达式，匹配 Release 资产中的 `.zip` 文件名。清单模式下不参与匹配。
+- `github_source_code`: 布尔值，当 Release 未提供匹配的资产文件时，是否允许自动使用 Release 源码包 (`zipball_url`)。清单模式下不生效。
+- `github_manifest`: 布尔值，`true` 表示版本发现走仓库根目录的 `rezehub.yml`（不调用 REST API、零配额消耗，但作者需自行维护该文件）；`false`/省略表示站内按需抓取 Releases。
+- `github_manifest_digest`: 最近一次成功读取的清单摘要，用于判断清单是否变化（仅服务端使用，公开目录自动脱敏）。
 - `github_last_sync_at`: 最近一次同步时间（仅作者工作台与管理端可见，公开目录自动脱敏）。
 - `github_last_sync_error`: 最近一次同步非致命错误描述（仅作者工作台与管理端可见）。
 - `github_last_release_id`: 最近处理的 GitHub Release ID（仅作者工作台与管理端可见）。
 
 ### 接口定义
-- `PATCH /api/v1/author/mods/{id}/source`：更新模组的源配置。鉴权要求作者或管理员。校验 owner/repo 格式及 asset regex 语法，保存后清空上次同步错误。
-- `POST /api/v1/author/mods/{id}/github-sync`：手动触发立即同步。返回 `{ mod_id, synced_at, created, skipped, failed, items: [...] }` 汇总。
+- `PATCH /api/v1/author/mods/{id}/source`：更新模组的源配置。鉴权要求作者或管理员。校验 owner/repo 格式及 asset regex 语法，保存后清空上次同步错误。接受 `github_manifest`（清单模式，此时 `github_asset_regex` 可留空）；切换 owner/repo/清单模式会清空 ETag 与清单摘要。
+- `POST /api/v1/author/mods/{id}/github-sync`：手动触发立即同步（强制回源，忽略 ETag 与清单摘要缓存）。返回 `{ mod_id, synced_at, created, skipped, failed, items: [...] }` 汇总。
+
+### 版本发现方式（前端必读）
+站内默认**不再后台轮询**。`GET /api/v1/mods/{id}` 与作者工作台列表加载会在胶水层按 `GITHUB_SYNC_TTL`（默认 30 分钟）异步触发一次回源（每页最多 3 个模组、同一模组单飞），页面响应不被阻塞。
+
+作者在“编辑模组”的 GitHub 分段中必须能选择两种发现方式，并**如实展示代价**：
+- **站内按需抓取（默认）**：无需任何额外文件；但更新最多延迟约 `GITHUB_SYNC_TTL`，且需要有人打开该模组才会触发，长时间无人访问则不会更新。
+- **仓库清单 `rezehub.yml`（可选）**：作者需在仓库根目录维护该文件、每次发版补一条记录；换取零 REST 配额与打开页面即最新。
+
+两种模式的扫描、审核、自动发布流程完全一致，前端其余交互不变。
 
 ### 权限与防护规则
 - 当模组配置为 `github_releases` 时：
