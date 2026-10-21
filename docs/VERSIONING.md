@@ -64,6 +64,11 @@ go run ./cmd/version -set 0.9.1
 - 发布任务会检查 `vX.Y.Z` Release：
   - 不存在 → 以当前提交创建 Release，并附加 `submodhub-windows-amd64.exe` 和 `submodhub-android-arm64-X.Y.Z.apk`；
   - 已存在 → 不改动 Release，只保留 workflow artifact。
+- Release 正文的「更新内容」自动取自两次版本之间的提交标题：
+  - 上一版本由 `git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude <当前 tag> HEAD^` 解析，区间为 `<上一 tag>..HEAD`；
+  - 每个非 merge 提交取标题（`%s`）作为一条列表项，`chore(version)` 提交被过滤（与 Release 标题重复）；
+  - 尚无更早版本标签时，回退为最近 20 条提交；
+  - 因此提交标题按 Conventional Commits 写清楚即可直接成为发布说明，无需手写 changelog。
 - 同一分支的构建串行执行，避免两个运行同时创建同一个 Release。
 
 产物命名：
