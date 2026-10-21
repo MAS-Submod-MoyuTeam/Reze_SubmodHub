@@ -12,8 +12,9 @@ import (
 
 // backfill-mod-created-at is a one-off data migration: it stamps created_at on
 // mods stored before the field existed, so the author workspace can page by
-// strict creation order. Run it once against the target backend before
-// deploying the service that reads the field.
+// strict creation order. Run it once against the target backend after the new
+// binary is serving writes (or with the old process stopped): an older build has
+// no such field, so its next snapshot write drops whatever this script stamps.
 func main() {
 	flag.Parse()
 	var (

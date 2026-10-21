@@ -102,7 +102,10 @@ func decodeAuthorModCursor(raw string) (authorModCursor, error) {
 
 // authorModStats aggregates every version of one mod, so author lookups stay a
 // single catalog pass and the client never has to infer mod-wide facts from the
-// versions visible on the current page.
+// versions visible on the current page. Published and archived stay separate
+// facts: one mod can hold a live version and a retired version at once, and only
+// a mod with neither has released anything, which is what allows deleting it as
+// a draft.
 type authorModStats struct {
 	published     bool
 	archived      bool
@@ -114,7 +117,6 @@ func (stats *authorModStats) add(version Version) {
 	switch version.State {
 	case "published":
 		stats.published = true
-		stats.archived = true
 	case "unpublished":
 		stats.archived = true
 	case "ready_for_review":
@@ -176,7 +178,9 @@ func (s *Store) authorModPage(w http.ResponseWriter, r *http.Request, authorID s
 		start = sort.Search(len(owned), func(i int) bool { return modCreatedOrder(owned[i], anchor) > 0 })
 	}
 	// A focused mod snaps the window to the one that contains it, which keeps
-	// the create/jump flows working without reintroducing an offset cursor.
+	// the create/jump flows working without reintroducing an offset cursor. The
+	// focus outranks `cursor`: a caller that sends both gets the focused window,
+	// and the response hands back that window's own cursor to continue from.
 	if focus := query.Get("focus_mod_id"); focus != "" {
 		if position := slices.IndexFunc(owned, func(mod Mod) bool { return mod.ID == focus }); position >= 0 {
 			start = position / pageSize * pageSize
@@ -209,16 +213,24 @@ func (s *Store) authorModPage(w http.ResponseWriter, r *http.Request, authorID s
 	}
 	var windowCursor, nextCursor, prevCursor *string
 	if start > 0 {
+		// The window cursor reproduces this window: it is the keyset position of
+		// the row just before the first one returned.
 		cursor := encodeAuthorModCursor(owned[start-1])
 		windowCursor = &cursor
+		// Every window starts after the first row, so every window but the first
+		// has a previous one. When that neighbour is the first window its cursor
+		// is the empty string a client already sends to ask for it, and the
+		// pointer stays non-nil: a null prev_cursor must only ever mean "this is
+		// the first window".
+		previous := ""
+		if start > pageSize {
+			previous = encodeAuthorModCursor(owned[start-pageSize-1])
+		}
+		prevCursor = &previous
 	}
 	if end < len(owned) {
 		cursor := encodeAuthorModCursor(owned[end-1])
 		nextCursor = &cursor
-	}
-	if start > pageSize {
-		cursor := encodeAuthorModCursor(owned[start-pageSize-1])
-		prevCursor = &cursor
 	}
 	writeJSON(w, 200, map[string]any{
 		"items": items, "total": len(owned), "page_size": pageSize, "start": start,

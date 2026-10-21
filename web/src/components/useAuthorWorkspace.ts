@@ -92,7 +92,10 @@ export function useAuthorWorkspace() {
   // so step back instead of showing a blank list.
   useEffect(() => {
     if (!modRequest.data) return;
-    setModCursor(!modRequest.data.items.length && modRequest.data.prev_cursor ? modRequest.data.prev_cursor : modRequest.data.cursor || '');
+    const { items, cursor, prev_cursor } = modRequest.data;
+    // `prev_cursor` is null only on the first window and the empty string is a
+    // real cursor, so compare against null instead of testing truthiness.
+    setModCursor(!items.length && prev_cursor !== null ? prev_cursor : cursor ?? '');
     setFocusModId('');
   }, [modRequest.data]);
   useEffect(() => { if (versionRequest.data) setVersionPage(versionRequest.data.page); }, [versionRequest.data]);
@@ -117,13 +120,19 @@ export function useAuthorWorkspace() {
   };
   // Windows move one cursor step at a time: the server supplies the keyset
   // position of the neighbouring window, so no client-side page arithmetic runs.
-  const showModWindow = (cursor: string) => { setFocusModId(''); setModCursor(cursor); setSelectedId(''); setVersionPage(1); };
+  // A missing cursor means there is no neighbour in that direction; the empty
+  // string is a real cursor — it asks for the first window, which is exactly the
+  // previous neighbour of the second window.
+  const showModWindow = (cursor: string | null | undefined) => {
+    if (cursor === null || cursor === undefined) return;
+    setFocusModId(''); setModCursor(cursor); setSelectedId(''); setVersionPage(1);
+  };
   return { app: { ...app, ...actions }, workbenchView, setWorkbenchView, selectedModId, setSelectedModId,
     userMods, activeMod, activeModVersions, authorSubmissions: historyRequest.data?.items || [],
     modRequest, versionRequest, historyRequest,
     modPageSize, versionPageSize, historyPageSize, historyState,
-    previousModWindow: () => showModWindow(modRequest.data?.prev_cursor || ''),
-    nextModWindow: () => showModWindow(modRequest.data?.next_cursor || ''),
+    previousModWindow: () => showModWindow(modRequest.data?.prev_cursor),
+    nextModWindow: () => showModWindow(modRequest.data?.next_cursor),
     changeModPageSize: (size: number) => { setFocusModId(''); setModCursor(''); setModPageSize(size); setSelectedId(''); setVersionPage(1); },
     changeVersionPage: setVersionPage,
     changeVersionPageSize: (size: number) => { setVersionPageSize(size); setVersionPage(1); },

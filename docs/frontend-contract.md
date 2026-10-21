@@ -104,10 +104,10 @@
 
 “候选与发布版本”“提交历史”使用 `page,page_size`，默认 1/20、最多 100 条，响应含 `items,total,page,page_size`；空列表和越界回退规则与审核列表一致。工作区界面默认每页 10 条，可切换 20/50 条。“我的模组”改为键集游标窗口，见下条。
 
-- `GET /author/mods` 仅返回当前作者的 `{mod,is_published,has_published_version,has_archived_version,has_pending_review,candidate_version_id}`，不内嵌版本和扫描报告。四个版本派生字段覆盖该模组的全部版本，因此“上传替换包/下架/删除草稿/提交中禁用”等判断不依赖当前窗口；`candidate_version_id` 是可复用的最新可编辑版本（draft/uploaded/rejected/scanning），避免上传时新建重复候选。
+- `GET /author/mods` 仅返回当前作者的 `{mod,is_published,has_published_version,has_archived_version,has_pending_review,candidate_version_id}`，不内嵌版本和扫描报告。四个版本派生字段覆盖该模组的全部版本，因此“上传替换包/下架/删除草稿/提交中禁用”等判断不依赖当前窗口；`candidate_version_id` 是可复用的最新可编辑版本（draft/uploaded/rejected/scanning），避免上传时新建重复候选。`has_published_version`（存在已发布版本）与 `has_archived_version`（存在已下架版本）互相独立：一个模组可以同时有一版在线、一版已下架，任何一方为真都不允许“删除草稿模组”，只有两者都为假且未公开才是纯草稿。
 - 排序使用模组自身的 `created_at` 严格创建序：新创建的在前，缺失 `created_at` 的历史记录置后，ID 倒序兜底；不再拿“最近版本时间”代理创建时间。创建模组时即写入 `created_at`；更早的数据由一次性脚本 `cmd/backfill-mod-created-at` 回填（取该模组最早的版本/提交时间，无子记录时取回填时刻），重复执行不改变结果。
-- 分页为键集游标：请求 `page_size`（默认 20，范围 1–100）与可选 `cursor`，响应 `{items,total,page_size,start,cursor,next_cursor,prev_cursor}`。`cursor` 复现当前窗口（首个窗口为 null），`next_cursor`/`prev_cursor` 指向相邻窗口，`start` 只是首行下标、仅供显示，不参与定位。窗口按 `(created_at,ID)` 锚定，多人并发写入时后续窗口既不重复也不跳过数据；代价是前端只能逐窗前进/后退，不能按页码跳转。
-- `focus_mod_id` 定位本人目标模组所在窗口（非本人 ID 忽略），支持创建或从历史修订跳转；响应回传该窗口自身的 `cursor`，前端采用后立即清除焦点，之后的刷新与翻页都停在同一个窗口。
+- 分页为键集游标：请求 `page_size`（默认 20，范围 1–100）与可选 `cursor`，响应 `{items,total,page_size,start,cursor,next_cursor,prev_cursor}`。`cursor` 复现当前窗口（首个窗口为 null），`next_cursor` 末窗为 null，`prev_cursor` 只在首窗为 null——它为空字符串时表示上一窗就是首窗，因此“不在首窗就一定有上一窗”。`start` 只是首行下标、仅供显示，不参与定位。窗口按 `(created_at,ID)` 锚定，多人并发写入时后续窗口既不重复也不跳过数据；代价是前端只能逐窗前进/后退，不能按页码跳转（界面用 `WindowPager` 表达这种翻页，`Pagination` 只用于真页码列表）。
+- `focus_mod_id` 定位本人目标模组所在窗口（非本人 ID 忽略），支持创建或从历史修订跳转；它优先于 `cursor`，同时给出时以焦点为准。响应回传该窗口自身的 `cursor`，前端采用后立即清除焦点，之后的刷新与翻页都停在同一个窗口。
 - `GET /author/mods/{id}/versions` 仅返回本人模组的当前页版本，附 `scan_reports`（只包含当前页版本的报告）；版本按创建时间、ID 倒序，缺失时间置后；隐藏归档路径和内部 GitHub 下载源。
 - `GET /author/submissions` 支持 `state` 筛选；返回本人当前页提交、显示名称、版本号、理由、脱敏快照和 `current_version`，用于历史扫描报告与驳回修订。审核队列与作者历史共用同一套标题/作者/版本号投影，避免两处漂移。
 
@@ -119,7 +119,7 @@
 
 两种列表按创建/事件时间倒序、ID 倒序打破同时间并列。提交摘要包含 `id,mod_id,version_id,author_id,state,created_at,mod_title,author_name,version_str,category`；不携带版本快照、扫描报告或文件树，选中后请求详情。不存在对应模组/版本时，摘要使用 ID 作为显示值；有提交版本快照时使用快照版本号。
 
-越界页码回到当前末页，空列表返回 `items:[],total:0,page:1`。审核结果可能改变筛选数量，前端以服务端返回的有效页为准。分页请求相互独立，不提供跨请求的历史快照；并发新增可能改变页边界。切换页码/筛选时取消并忽略旧请求，加载失败保留重试入口，审核成功后重新查询当前页与计数，失败保留理由。审核数据只在打开工作台时加载，审计只在打开对应标签时加载。
+越界页码回到当前末页，空列表返回 `items:[],total:0,page:1`。审核结果可能改变筛选数量，前端以服务端返回的有效页为准。分页请求相互独立，不提供跨请求的历史快照；并发新增可能改变页边界。切换页码/筛选时取消并忽略旧请求，加载失败保留重试入口，审核成功后重新查询当前页与计数（同一查询的重新加载保留当前内容、只标记为 `refreshing`），失败保留理由。审核数据只在打开工作台时加载，审计只在打开对应标签时加载。
 
 当前存储以进程内目录为查询源；本次限制响应大小、摘要构造与前端渲染，不改变目录整体载入方式。筛选、总数和排序仍在内存执行，后续存储规模增长时应在存储层承接查询。
 

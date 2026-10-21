@@ -167,6 +167,35 @@ func TestAuthorModCursorSkipsConcurrentInsert(t *testing.T) {
 	}
 }
 
+// A window that starts exactly one page in has the first window as its previous
+// neighbour, so it must still offer a way back. That neighbour's cursor is the
+// empty string a client already sends to ask for the first window, so prev_cursor
+// stays set: a client must not read a null prev_cursor as "nothing before this".
+func TestAuthorModSecondWindowOffersWayBack(t *testing.T) {
+	s, err := NewStore(t.TempDir(), Catalog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("g", 64)
+	for i := 0; i < 13; i++ {
+		created := time.Unix(int64(i)*60, 0).UTC()
+		s.Catalog.Mods = append(s.Catalog.Mods, Mod{ID: fmt.Sprintf("m%02d", i), Author: Author{ID: "author"}, CreatedAt: &created})
+	}
+	handler := authorSession(t, s, token, "author")
+	first := authorModWindowOf(t, handler, token, "/api/v1/author/mods?page_size=10")
+	second := authorModWindowOf(t, handler, token, "/api/v1/author/mods?page_size=10&cursor="+*first.NextCursor)
+	if second.Start != 10 || strings.Join(second.ids(), ",") != "m02,m01,m00" {
+		t.Fatalf("second window %+v", second)
+	}
+	if second.PrevCursor == nil || *second.PrevCursor != "" {
+		t.Fatalf("second window must point back at the first window: %+v", second)
+	}
+	back := authorModWindowOf(t, handler, token, "/api/v1/author/mods?page_size=10&cursor="+*second.PrevCursor)
+	if back.Start != 0 || back.Cursor != nil || len(back.Items) != 10 || back.PrevCursor != nil {
+		t.Fatalf("first window again %+v", back)
+	}
+}
+
 func TestAuthorModFocusSnapsToOwningWindow(t *testing.T) {
 	s, err := NewStore(t.TempDir(), Catalog{})
 	if err != nil {
@@ -268,6 +297,7 @@ func TestAuthorModPageReportsVersionAggregates(t *testing.T) {
 	earlier := now.Add(-time.Hour)
 	oldest := now.Add(-3 * time.Hour)
 	uploaded := now.Add(-2 * time.Hour)
+	retired := now.Add(-4 * time.Hour)
 	s, err := NewStore(t.TempDir(), Catalog{
 		Mods: []Mod{
 			{ID: "uploading", Author: Author{ID: "author"}, CreatedAt: &now},
@@ -280,6 +310,7 @@ func TestAuthorModPageReportsVersionAggregates(t *testing.T) {
 			"live_v1":      {ID: "live_v1", ModID: "live", State: "published", CreatedAt: &earlier},
 			"live_v2":      {ID: "live_v2", ModID: "live", State: "draft", CreatedAt: &now},
 			"hidden_v1":    {ID: "hidden_v1", ModID: "hidden", State: "published", CreatedAt: &earlier},
+			"hidden_v0":    {ID: "hidden_v0", ModID: "hidden", State: "unpublished", CreatedAt: &retired},
 			"uploading_v1": {ID: "uploading_v1", ModID: "uploading", State: "ready_for_review", CreatedAt: &now},
 			"foreign_v1":   {ID: "foreign_v1", ModID: "foreign", State: "published", CreatedAt: &now},
 		},
@@ -303,11 +334,15 @@ func TestAuthorModPageReportsVersionAggregates(t *testing.T) {
 	if uploading := window.Items[0]; !uploading.HasPendingReview || uploading.Published || uploading.HasArchived || uploading.CandidateVersionID != "" {
 		t.Fatalf("pending review aggregate: %+v", uploading)
 	}
-	if live := window.Items[1]; !live.Published || !live.HasPublished || !live.HasArchived || live.HasPendingReview || live.CandidateVersionID != "live_v2" {
+	// A live version and a draft are not an archived version: `live` released
+	// nothing that was retired, so its draft is still deletable.
+	if live := window.Items[1]; !live.Published || !live.HasPublished || live.HasArchived || live.HasPendingReview || live.CandidateVersionID != "live_v2" {
 		t.Fatalf("published aggregate: %+v", live)
 	}
+	// `hidden` was taken down: it still has a published version and, separately,
+	// a retired one, so neither flag may be collapsed into the other.
 	if hidden := window.Items[2]; hidden.Published || !hidden.HasPublished || !hidden.HasArchived {
-		t.Fatalf("unpublished mod keeps archived aggregate: %+v", hidden)
+		t.Fatalf("unpublished mod keeps both published and archived facts: %+v", hidden)
 	}
 	if empty := window.Items[3]; empty.Published || empty.HasPublished || empty.HasArchived || empty.HasPendingReview || empty.CandidateVersionID != "" {
 		t.Fatalf("empty mod aggregate: %+v", empty)

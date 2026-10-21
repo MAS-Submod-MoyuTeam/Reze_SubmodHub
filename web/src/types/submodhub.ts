@@ -59,6 +59,8 @@ export interface ModSummary {
   github_backoff_until?: string;
   // Author workspace state derived from every version of the mod, so upload and
   // delete affordances never depend on the versions visible on the current page.
+  // `has_published_version` and `has_archived_version` are independent facts: a
+  // mod can serve one version while an older one is retired.
   has_published_version?: boolean;
   has_archived_version?: boolean;
   has_pending_review?: boolean;

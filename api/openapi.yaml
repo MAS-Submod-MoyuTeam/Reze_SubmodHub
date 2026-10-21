@@ -15,12 +15,12 @@ paths:
         - {name: platform, in: query, schema: {type: string, enum: [windows, android]}}
         - {name: cursor, in: query, schema: {type: string}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
-      responses: {'200': {$ref: '#/components/responses/ModPage'}, 'default': {$ref: '#/components/responses/Error}}
+      responses: {'200': {$ref: '#/components/responses/ModPage'}, 'default': {$ref: '#/components/responses/Error'}}
   /mods/{mod_id}:
     get:
       operationId: getMod
       parameters: [{name: mod_id, in: path, required: true, schema: {type: string}}]
-      responses: {'200': {$ref: '#/components/responses/Mod'}, 'default': {$ref: '#/components/responses/Error}}
+      responses: {'200': {$ref: '#/components/responses/Mod'}, 'default': {$ref: '#/components/responses/Error'}}
   /mods/{mod_id}/registrations:
     get:
       operationId: getModRegistrations
@@ -45,12 +45,12 @@ paths:
       parameters:
         - {name: mod_id, in: path, required: true, schema: {type: string}}
         - {name: version_id, in: path, required: true, schema: {type: string}}
-      responses: {'200': {$ref: '#/components/responses/Version'}, 'default': {$ref: '#/components/responses/Error}}
+      responses: {'200': {$ref: '#/components/responses/Version'}, 'default': {$ref: '#/components/responses/Error'}}
   /versions/{version_id}/download:
     get:
       operationId: getDownloadDescriptor
       parameters: [{name: version_id, in: path, required: true, schema: {type: string}}]
-      responses: {'200': {$ref: '#/components/responses/Download'}, 'default': {$ref: '#/components/responses/Error}}
+      responses: {'200': {$ref: '#/components/responses/Download'}, 'default': {$ref: '#/components/responses/Error'}}
   /session:
     get:
       operationId: getSession
@@ -101,12 +101,14 @@ paths:
   /author/mods:
     get:
       operationId: listAuthorWorkspace
-      description: Own mods only; returns one keyset window {items:[{mod,is_published,has_published_version,has_archived_version,has_pending_review,candidate_version_id}],total,page_size,start,cursor,next_cursor,prev_cursor}. No nested versions or scan reports. The version-derived flags cover every version of the mod, not just the current window, and `candidate_version_id` names the newest still-editable version that uploads should reuse. Sorted by the mod's own created_at, newest first, missing created_at last, mod ID descending as tie-break. Windows are anchored on that (created_at, ID) key, so concurrent writes never shift a later window: `cursor` reproduces the returned window (null on the first one), `next_cursor`/`prev_cursor` point at the neighbour windows, and `start` is the 0-based index of the first row, for display only. `focus_mod_id` resolves an owned mod to the window that contains it and returns that window's own cursor; an id the caller does not own is ignored.
+      description: 'Own mods only; returns one keyset window {items:[{mod,is_published,has_published_version,has_archived_version,has_pending_review,candidate_version_id}],total,page_size,start,cursor,next_cursor,prev_cursor}. No nested versions or scan reports. The version-derived flags cover every version of the mod, not just the current window, and `candidate_version_id` names the newest still-editable version that uploads should reuse. Sorted by the mod''s own created_at, newest first, missing created_at last, mod ID descending as tie-break. Windows are anchored on that (created_at, ID) key, so concurrent writes never shift a later window: `cursor` reproduces the returned window (null on the first one), `next_cursor` is null on the last window, and `prev_cursor` is null only on the first window — its empty string names the first window, so a client can always step back while it is not on the first window. `start` is the 0-based index of the first row, for display only. `focus_mod_id` resolves an owned mod to the window that contains it and returns that window''s own cursor; it outranks `cursor`, and an id the caller does not own is ignored.'
       parameters:
         - {$ref: '#/components/parameters/ReviewPageSize'}
-        - {name: cursor, in: query, description: Keyset cursor of the window to return; omit for the first window, schema: {type: string}}
-        - {name: focus_mod_id, in: query, description: Return the window containing this owned mod, schema: {type: string}}
-      responses: {'200': {description: One keyset window of own mods}, 'default': {$ref: '#/components/responses/Error'}}
+        - {name: cursor, in: query, description: 'Keyset cursor of the window to return; omit for the first window. An empty string also means the first window, which is what the returned prev_cursor sends back.', schema: {type: string}}
+        - {name: focus_mod_id, in: query, description: Return the window containing this owned mod instead of the cursor window; when both are sent the focus wins. An id the caller does not own is ignored., schema: {type: string}}
+      responses:
+        '200': {description: One keyset window of own mods, content: {'application/json': {schema: {$ref: '#/components/schemas/AuthorModWindow'}}}}
+        default: {$ref: '#/components/responses/Error'}
     post:
       operationId: createAuthorMod
       responses: {'201': {description: Draft mod}, 'default': {$ref: '#/components/responses/Error'}}
@@ -185,15 +187,34 @@ components:
         page_size: {type: integer, minimum: 1, maximum: 100}
     CursorPageMetadata:
       type: object
-      description: Keyset window metadata. `start` is a display index; navigation uses the cursors only.
+      description: Keyset window metadata. `start` is a display index; navigation uses the cursors only. Every value is derived from the row order, never from a page number.
       required: [total, page_size, start, cursor, next_cursor, prev_cursor]
       properties:
         total: {type: integer, minimum: 0}
         page_size: {type: integer, minimum: 1, maximum: 100}
-        start: {type: integer, minimum: 0}
-        cursor: {type: [string, 'null']}
-        next_cursor: {type: [string, 'null']}
-        prev_cursor: {type: [string, 'null']}
+        start: {type: integer, minimum: 0, description: 0-based index of the first returned row; display only.}
+        cursor: {type: [string, 'null'], description: Reproduces the returned window; null on the first window.}
+        next_cursor: {type: [string, 'null'], description: Neighbour window forward; null on the last window.}
+        prev_cursor: {type: [string, 'null'], description: Neighbour window back; null only on the first window. An empty string means that neighbour is the first window.}
+    AuthorModSummary:
+      type: object
+      description: One mod of the caller's own workspace. The version-derived fields cover every version of the mod, not only the versions visible in this window, so client affordances never depend on the current window.
+      required: [mod, is_published, has_published_version, has_archived_version, has_pending_review]
+      properties:
+        mod: {$ref: '#/components/schemas/Mod'}
+        is_published: {type: boolean, description: 'The mod is live right now: not taken down and its latest version is published.'}
+        has_published_version: {type: boolean, description: 'At least one version is published, whether or not it is the latest one.'}
+        has_archived_version: {type: boolean, description: 'At least one version was taken down (state unpublished). Independent of has_published_version.'}
+        has_pending_review: {type: boolean, description: A version is waiting in the review queue.}
+        candidate_version_id: {type: string, description: 'Newest still-editable version (draft, uploaded, rejected or scanning); an upload reuses it instead of creating a duplicate candidate.'}
+    AuthorModWindow:
+      description: One keyset window of own mods.
+      allOf:
+        - {$ref: '#/components/schemas/CursorPageMetadata'}
+        - type: object
+          required: [items]
+          properties:
+            items: {type: array, items: {$ref: '#/components/schemas/AuthorModSummary'}}
     ReviewSubmissionSummary:
       type: object
       required: [id, mod_id, version_id, author_id, state, created_at, mod_title, author_name, version_str, category]
@@ -252,6 +273,7 @@ components:
         mas_version_range: {type: string}
         recommended_priority: {type: integer}
         latest_version_id: {type: string}
+        created_at: {type: string, format: date-time, description: When the mod itself was created; the sort key of the author workspace. Mods stored before the field existed are filled by the one-off `cmd/backfill-mod-created-at` migration and sort after the dated ones until then.}
     Version:
       type: object
       required: [id, mod_id, version, state, size_bytes, sha256]

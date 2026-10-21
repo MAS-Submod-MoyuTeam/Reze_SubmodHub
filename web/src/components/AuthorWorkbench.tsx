@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuthorWorkspace } from './useAuthorWorkspace';
 import { Pagination } from './Pagination';
 import { SpritepackPanel } from './SpritepackPanel';
+import { WindowPager } from './WindowPager';
 import { ModCategory, Platform, ModSummary, ModDependency, ModVersion, ScannedFile, ModSourceType } from '../types/submodhub';
 import { validateGitHubSourceInput, formatLastSyncTime, getGitHubRepoUrl } from './sourceConfig';
 import { formatVersionCreatedAt } from './versionDate';
@@ -64,6 +65,13 @@ export const AuthorWorkbench: React.FC = () => {
 
   // Author role check
   const isAuthor = Boolean(currentUser);
+
+  // Deleting a mod is only safe while it is still a pure draft: nothing live,
+  // nothing live before, and no retired version. The flags are aggregated over
+  // every version on the server, so this never depends on the loaded window; an
+  // unknown flag (a mod the list did not describe) must not unlock the delete.
+  const canDeleteActiveModDraft = !activeMod?.is_published
+    && activeMod?.has_published_version !== true && activeMod?.has_archived_version !== true;
 
   // Mod Draft Creation Dialog
   const [isNewModModalOpen, setIsNewModModalOpen] = useState(false);
@@ -625,21 +633,16 @@ export const AuthorWorkbench: React.FC = () => {
               })}
             </div>
             {modRequest.data && (
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 pt-3 text-xs text-neutral-500">
-                <span aria-live="polite">
-                  共 {modRequest.data.total} 条{userMods.length ? ` · ${modRequest.data.start + 1}–${modRequest.data.start + userMods.length}` : ''}
-                </span>
-                <div className="flex flex-wrap items-center gap-1">
-                  <label className="flex items-center gap-1">
-                    每页
-                    <select aria-label="我的模组每页条数" value={workspace.modPageSize} onChange={(event) => workspace.changeModPageSize(Number(event.target.value))} className="min-h-8 rounded border border-neutral-200 bg-white px-1 text-neutral-700">
-                      {[10, 20, 50].map((size) => <option key={size} value={size}>{size} 条</option>)}
-                    </select>
-                  </label>
-                  <button type="button" disabled={!modRequest.data.prev_cursor} onClick={workspace.previousModWindow} className="min-w-8 min-h-8 px-2 rounded border border-neutral-200 text-neutral-600 hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed">上一页</button>
-                  <button type="button" disabled={!modRequest.data.next_cursor} onClick={workspace.nextModWindow} className="min-w-8 min-h-8 px-2 rounded border border-neutral-200 text-neutral-600 hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed">下一页</button>
-                </div>
-              </div>
+              <WindowPager
+                label="我的模组"
+                total={modRequest.data.total}
+                start={modRequest.data.start}
+                shown={userMods.length}
+                pageSize={workspace.modPageSize}
+                onPrevious={workspace.previousModWindow}
+                onNext={workspace.nextModWindow}
+                onPageSizeChange={workspace.changeModPageSize}
+              />
             )}
           </div>
 
@@ -696,7 +699,7 @@ export const AuthorWorkbench: React.FC = () => {
                       <Pencil className="w-3.5 h-3.5" />
                       编辑模组
                     </button>
-                    {activeMod.is_published ? <button type="button" onClick={() => { if (window.confirm('确认下架这个模组？版本、归档和详情图会保留。')) void unpublishMod(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors"><EyeOff className="w-3.5 h-3.5" />下架模组</button> : activeMod.has_archived_version === false && <button type="button" onClick={() => { if (window.confirm('确认删除草稿模组？候选版本、扫描记录和详情图会一并删除。')) void deleteModDraft(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-700 border border-rose-200 hover:bg-rose-50 rounded transition-colors">删除草稿模组</button>}
+                    {activeMod.is_published ? <button type="button" onClick={() => { if (window.confirm('确认下架这个模组？版本、归档和详情图会保留。')) void unpublishMod(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors"><EyeOff className="w-3.5 h-3.5" />下架模组</button> : canDeleteActiveModDraft && <button type="button" onClick={() => { if (window.confirm('确认删除草稿模组？候选版本、扫描记录和详情图会一并删除。')) void deleteModDraft(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-700 border border-rose-200 hover:bg-rose-50 rounded transition-colors">删除草稿模组</button>}
                     {activeMod.source_type === 'github_releases' ? (
                       <button
                         type="button"

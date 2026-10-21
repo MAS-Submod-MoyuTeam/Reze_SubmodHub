@@ -47,8 +47,12 @@ export const ReviewerWorkbench: React.FC = () => {
   const userId = currentUser?.id;
   const loadQueue = React.useCallback((signal: AbortSignal) => listReviewSubmissions(base, { page: queuePage, pageSize: queuePageSize, state: statusFilter }, signal), [base, queuePage, queuePageSize, statusFilter, userId]);
   const loadAudit = React.useCallback((signal: AbortSignal) => listReviewAudit(base, { page: auditPage, pageSize: auditPageSize }, signal), [base, auditPage, auditPageSize, userId]);
-  const queueRequest = useReviewPage(loadQueue, isReviewer && activeReviewTab === 'queue');
-  const auditRequest = useReviewPage(loadAudit, isReviewer && activeReviewTab === 'audit');
+  // The query key names what a page actually answers. Reloading the same key (a
+  // mutation, the periodic refresh) keeps the rows on screen while it refetches;
+  // only a real query change blanks them, so the queue does not flash between a
+  // decision and its renewal.
+  const queueRequest = useReviewPage(loadQueue, isReviewer && activeReviewTab === 'queue', `queue|${userId}|${queuePage}|${queuePageSize}|${statusFilter}`);
+  const auditRequest = useReviewPage(loadAudit, isReviewer && activeReviewTab === 'audit', `audit|${userId}|${auditPage}|${auditPageSize}`);
   const queue = queueRequest.data;
   const audit = auditRequest.data;
   React.useEffect(() => { if (queue && queue.page !== queuePage) setQueuePage(queue.page); }, [queue, queuePage]);
@@ -59,7 +63,7 @@ export const ReviewerWorkbench: React.FC = () => {
   const activeSubmissionId = activeSubmission?.id;
   const activeSubmissionState = activeSubmission?.state;
   const loadDetail = React.useCallback((signal: AbortSignal) => getReviewSubmission(base, activeSubmissionId!, (input, init) => fetch(input, { ...init, signal })), [base, activeSubmissionId, activeSubmissionState, userId]);
-  const detailRequest = useReviewPage(loadDetail, isReviewer && !!activeSubmissionId && activeReviewTab === 'queue');
+  const detailRequest = useReviewPage(loadDetail, isReviewer && !!activeSubmissionId && activeReviewTab === 'queue', `detail|${userId}|${activeSubmissionId}|${activeSubmissionState}`);
   const reviewDetail = detailRequest.data;
   const activeReport = React.useMemo(() => reviewDetail?.scan_report ? mapServerScanReport(reviewDetail.version.id, reviewDetail.scan_report) : null, [reviewDetail]);
   const [decisionModalMode, setDecisionModalMode] = useState<'approve' | 'reject' | null>(null);
