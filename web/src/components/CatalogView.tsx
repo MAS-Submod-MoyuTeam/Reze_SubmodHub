@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { ModSummary, Platform } from '../types/submodhub';
 import { DeprecationNotice } from './DeprecationNotice';
 import { formatVersionLabel } from './versionHistory';
+import { useLoadMoreOnScroll } from './useLoadMoreOnScroll';
 import {
   Search,
   Download,
@@ -91,6 +92,24 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   }, [filteredMods, cursorPage]);
 
   const hasNextCursor = paginatedMods.length < filteredMods.length;
+
+  // 自动续页与手动按钮共用同一个动作，避免两条各自演进的续页路径。
+  const loadMore = useCallback(() => setCursorPage((prev) => prev + 1), []);
+
+  // 滚动进入哨兵预取区即续页；手动按钮只作为无障碍 / 无 IntersectionObserver 的兜底。
+  // 代价是首屏会把「视口 + 240px 预取区」填满后才停（observer 首次 observe 就会回调一次），
+  // 实际可见条数因此多于 pageSize——这是填满视口而非留白的有意取舍。
+  const loadMoreSentinelRef = useLoadMoreOnScroll({
+    hasMore: hasNextCursor,
+    onLoadMore: loadMore,
+    loadedCount: paginatedMods.length,
+  });
+
+  // 刷新会整体替换目录，旧游标会留下一屏与刷新结果无关的历史堆积。
+  const handleReloadCatalog = async () => {
+    await reloadCatalog();
+    setCursorPage(1);
+  };
 
   const handleResetFilters = () => {
     setSearchQuery('');
@@ -251,7 +270,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           </p>
           <div className="pt-2">
             <button
-              onClick={() => void reloadCatalog()}
+              onClick={() => void handleReloadCatalog()}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 rounded border border-amber-200 transition-colors"
             >
               <RefreshCw className="w-3 h-3" />
@@ -280,12 +299,12 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
         /* Populated Grid */
         <div className="space-y-4">
           <div className="flex items-center justify-between text-xs text-neutral-500 px-1">
-            <span>
+            <span aria-live="polite">
               显示 <strong className="font-semibold text-neutral-800 tabular-nums">{paginatedMods.length}</strong> /{' '}
               <span className="tabular-nums">{filteredMods.length}</span> 个已验证模组
             </span>
             <button
-              onClick={() => void reloadCatalog()}
+              onClick={() => void handleReloadCatalog()}
               disabled={catalogLoading}
               className="flex items-center gap-1 text-neutral-400 hover:text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -377,16 +396,19 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           </div>
 
           {/* Cursor Pagination (Section 1 requirement) */}
-          {hasNextCursor && (
-            <div className="pt-6 text-center">
-              <button
-                onClick={() => setCursorPage((prev) => prev + 1)}
-                className="px-5 py-2 text-xs font-medium text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 rounded-md transition-colors"
-              >
-                加载更多模组 (游标分页)
-              </button>
-            </div>
-          )}
+          <div ref={loadMoreSentinelRef} className="pt-6 text-center">
+            {hasNextCursor && (
+              <>
+                <button
+                  onClick={loadMore}
+                  className="px-5 py-2 text-xs font-medium text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 rounded-md transition-colors"
+                >
+                  加载更多模组 (游标分页)
+                </button>
+                <p className="mt-2 text-[11px] text-neutral-400">继续向下滚动会自动加载下一页</p>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
