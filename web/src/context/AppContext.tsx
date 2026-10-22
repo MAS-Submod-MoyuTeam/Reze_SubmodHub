@@ -413,7 +413,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           display_name: currentUser.display_name,
         },
         category: data.category || 'submod',
-        tags: data.tags || ['dialogue'],
+        // 标签只能来自站点目录，调用方必须显式给出；缺省就交给服务端报 tags_required，
+        // 不能用某个硬编码标签兜底（那会绕过目录校验）。
+        tags: data.tags ?? [],
         supported_platforms: data.supported_platforms || ['windows', 'android'],
         mas_version_range: data.mas_version_range || '>=0.12.14',
         recommended_priority: data.recommended_priority || 20,

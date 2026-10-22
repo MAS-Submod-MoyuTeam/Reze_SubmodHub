@@ -44,7 +44,7 @@
   "mod": {
     "id": "mod_123", "title": "Example", "summary": "...",
     "author": { "id": "user_1", "display_name": "Author" },
-    "category": "submod", "tags": ["dialogue"],
+    "category": "submod", "tags": ["工具", "绘图"],
     "supported_platforms": ["windows", "android"],
     "mas_version_range": ">=0.12", "recommended_priority": 0,
     "latest_version_id": "ver_456"
@@ -67,6 +67,7 @@
 | 方法与路径 | 权限 | 请求/结果 |
 | --- | --- | --- |
 | `GET /mods` | 公开 | `q,category,platform,tag,cursor,limit`；分页 `ModSummary` |
+| `GET /tags` | 公开 | `{groups:[{name,children}],revision}`；站点标签目录（读取失败时前端回退到模组聚合），不缓存 |
 | `GET /mods/{mod_id}` | 公开 | `ModDetail`，含已发布版本摘要 |
 | `GET /mods/{mod_id}/versions/{version_id}` | 公开 | `ModVersion` 与扫描摘要 |
 | `GET /versions/{version_id}/download` | 公开 | `{url,expires_at,sha256,size_bytes,delivery_type,node_id,allowed_download_origins,completion_token,fallback_reason?}`；普通包可为外部HTTPS直链，精灵包本地；不缓存描述 |
@@ -219,15 +220,27 @@
 
 无需鉴权（窗口本身可从外部观测，且不含任何凭据）。`configured=false` 表示自动刷新已关闭，前端必须渲染为「已关闭自动刷新」而不是「0 分钟」。
 
-### 管理端 GitHub API 令牌
-`GET /api/v1/admin/settings` 返回 `github_proxy_template`、`github_token_configured`、`github_token_encrypted`、`github_token_hint`（末四位）、`github_sync_max_age`（当前生效的检查更新窗口）、`master_key_configured`、`revision`，**永不回显令牌本身**。`PATCH` 可带 `github_sync_max_age`（Go duration；空串恢复默认 60 分钟，`0` 关闭自动刷新）。
+### 标签目录（公开 + 作者端）
+标签只能从站点目录里多选，作者不能创建新标签，且**每个模组至少一个标签**。
 
-`PATCH /api/v1/admin/settings` 接受 `{ github_proxy_template?, github_token?, github_sync_max_age?, revision }`：
+- `GET /api/v1/tags` 返回 `{ "groups": [{ "name": "工具", "children": ["绘图"] }, { "name": "音乐" }], "revision": 3 }`；无需鉴权。
+- 目录最多两层：主标签 + 子标签；名称在整份目录内**全局唯一**，因为模组只存扁平名称。
+- 主标签可单独选中；选子标签时服务端自动补上其主标签。因此 `GET /mods?tag=<主标签>` 会命中所有带该主标签子标签的模组，`tag=<子标签>` 精确匹配。
+- 顺序即展示顺序：作者选择器与目录筛选都按目录顺序渲染，主标签在其子标签之前。
+- 约束：每个模组最多 8 个名称（含自动补入的主标签）；目录 1..20 个主标签、每个主标签 0..6 个子标签、单个名称 1..24 字符且不含 `,` `#` 与控制字符。
+- 错误码：`400 tags_required`（一个都没选）、`400 invalid_tags`（目录外名称）、`400 too_many_tags`（超过 8 个）、`400 invalid_tag_catalog`（管理员目录不合法）。
+- 管理员删掉某个标签并保存目录时，服务端在同一事务里把该标签从模组上移除（审计事件带 `tags_changed` 与 `pruned_mod_tags`）。因此存量模组可能暂时没有标签，作者/管理员下次保存该模组时必须补选。
+
+### 管理端 GitHub API 令牌
+`GET /api/v1/admin/settings` 返回 `github_proxy_template`、`github_token_configured`、`github_token_encrypted`、`github_token_hint`（末四位）、`github_sync_max_age`（当前生效的检查更新窗口）、`tag_catalog`（当前生效的标签目录）、`master_key_configured`、`revision`，**永不回显令牌本身**。`PATCH` 可带 `github_sync_max_age`（Go duration；空串恢复默认 60 分钟，`0` 关闭自动刷新）。
+
+`PATCH /api/v1/admin/settings` 接受 `{ github_proxy_template?, github_token?, github_sync_max_age?, tag_catalog?, revision }`：
+- `tag_catalog` 整份替换标签目录，格式同 `GET /api/v1/tags` 的 `groups`；服务端 trim、去重并按规则校验（空目录、超长、跨层级重名、`,#`、控制字符均返回 400 `invalid_tag_catalog`），保存后同步清理模组上已不存在的标签。
 - `github_sync_max_age` 为 Go duration；空串恢复默认 60 分钟，`0` 关闭自动刷新。
 - 若部署设置了非空 `GITHUB_SYNC_MAX_AGE`，响应额外包含 `github_sync_max_age_locked: true`；管理页应禁用窗口编辑。直接 PATCH 该字段返回 409 `github_sync_max_age_env_override`，其他设置仍可修改。
 - 字段可省略，但至少要提供一个，否则 400；省略的字段保持原值。
 - `github_token: ""`（或纯空白）表示清除已存令牌；非空则必须是可打印 ASCII、无空格换行、≤255 字符，否则 400 `invalid_github_token`。
-- 保存成功后 `revision` 递增，并清空全局与各模组的限流退避（配额桶已换）。
+- 保存成功后 `revision` 递增；只有修改代理或令牌时才清空全局与各模组的限流退避（配额桶已换）。
 - 前端必须区分展示「已加密存储」与「明文存储」，后者要提示配置 `SUBMODHUB_DELIVERY_MASTER_KEY`。
 
 两种模式的扫描、审核、自动发布流程完全一致，前端其余交互不变。

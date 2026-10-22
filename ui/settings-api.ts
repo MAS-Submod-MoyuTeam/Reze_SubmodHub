@@ -1,3 +1,5 @@
+import type { TagGroup } from './tags-api.js';
+
 export type DownloadNodeType = 'github_relay' | 'cloudreve';
 export interface DownloadNodeInput {
  id: string; name: string; type: DownloadNodeType; enabled: boolean; weight: number;
@@ -45,6 +47,8 @@ export interface SiteSettings {
   github_sync_max_age: string;
   /** True when the deployment environment pins the refresh window. */
   github_sync_max_age_locked: boolean;
+  /** 实际生效的标签目录（未配置时为服务端默认值）。 */
+  tag_catalog: TagGroup[];
   master_key_configured: boolean;
   revision: number;
 }
@@ -96,6 +100,8 @@ export interface SiteSettingsPatch {
   github_token?: string;
   /** 传空字符串恢复默认 60 分钟；传 "0" 关闭自动刷新。 */
   github_sync_max_age?: string;
+  /** 整份替换标签目录；至少一个主标签，名称全局唯一。 */
+  tag_catalog?: TagGroup[];
 }
 
 export async function updateSettings(

@@ -214,7 +214,12 @@ type SiteSettings struct {
 	// a Go duration string. Empty means "use defaultGitHubSyncMaxAge"; "0"
 	// disables automatic refresh entirely.
 	GitHubSyncMaxAge string `json:"github_sync_max_age,omitempty"`
-	Revision         uint64 `json:"revision"`
+	// TagCatalog is the authoritative tag list: main tags with optional children.
+	// The field has no omitempty on purpose — nil means "not configured yet" and
+	// falls back to defaultTagCatalog, while an empty slice is a deliberate (and,
+	// on write, rejected) empty catalog.
+	TagCatalog []TagGroup `json:"tag_catalog"`
+	Revision   uint64     `json:"revision"`
 }
 
 type SettingsAuditEvent struct {
@@ -223,7 +228,11 @@ type SettingsAuditEvent struct {
 	PreviousTemplate string    `json:"previous_template"`
 	NewTemplate      string    `json:"new_template"`
 	TokenChanged     bool      `json:"token_changed,omitempty"`
-	Revision         uint64    `json:"revision"`
+	// TagsChanged records a tag-catalog edit; PrunedModTags is how many mods lost
+	// a tag that no longer exists in the new catalog.
+	TagsChanged   bool   `json:"tags_changed,omitempty"`
+	PrunedModTags int    `json:"pruned_mod_tags,omitempty"`
+	Revision      uint64 `json:"revision"`
 }
 
 type Catalog struct {
@@ -380,6 +389,7 @@ func NewStoreHandler(s *Store) http.Handler {
 	})
 	mux.HandleFunc("/api/v1/version", s.versionInfo)
 	mux.HandleFunc("/api/v1/source-policy", s.publicSourcePolicy)
+	mux.HandleFunc("/api/v1/tags", s.publicTagCatalog)
 	mux.HandleFunc("/api/v1/mods", s.listMods)
 	mux.HandleFunc("/api/v1/registrations/match", s.handleMatchRegistrations)
 	mux.HandleFunc("/api/v1/session", s.session)
@@ -475,6 +485,13 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "validation_failed", err.Error())
 		return
 	}
+	// Tags are picked from the site catalog only: unknown names and empty
+	// selections are rejected here so no write path can store a free-form tag.
+	tags, err := normalizeModTags(req.Tags, s.tagCatalog())
+	if err != nil {
+		writeTagError(w, err)
+		return
+	}
 	id, err := randomToken()
 	if err != nil {
 		writeError(w, 500, "storage_error", "could not create draft")
@@ -499,7 +516,7 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		Description:         req.Description,
 		Author:              Author{ID: session.User.ID, DisplayName: authorDisplayName},
 		Category:            req.Category,
-		Tags:                req.Tags,
+		Tags:                tags,
 		SupportedPlatforms:  req.SupportedPlatforms,
 		MASVersionRange:     req.MASVersionRange,
 		RecommendedPriority: req.RecommendedPriority,
@@ -1000,6 +1017,14 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 403, "forbidden", "administrator or author permission required")
 			return
 		}
+		// Tags are re-validated on every edit, against the catalog that is in
+		// effect right now: an author cannot widen the catalog by editing a mod.
+		tags, tagErr := normalizeModTags(req.Tags, s.effectiveTagCatalogLocked())
+		if tagErr != nil {
+			s.mu.Unlock()
+			writeTagError(w, tagErr)
+			return
+		}
 		mod := &s.Catalog.Mods[index]
 		mod.Title = strings.TrimSpace(req.Title)
 		mod.Summary = req.Summary
@@ -1008,7 +1033,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			mod.Author.DisplayName = strings.TrimSpace(req.AuthorDisplayName)
 		}
 		mod.Category = req.Category
-		mod.Tags = req.Tags
+		mod.Tags = tags
 		mod.SupportedPlatforms = req.SupportedPlatforms
 		mod.MASVersionRange = req.MASVersionRange
 		mod.RecommendedPriority = req.RecommendedPriority

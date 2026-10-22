@@ -6,6 +6,7 @@
 - [Android All files access feasibility gate](../android-smoke.md)
 - [Android client adaptation plan](plans/2026-10-16-android-client.md)
 - [下载交付分离、Cloudreve 镜像与节点统一管理计划](plans/2026-10-20-download-delivery-nodes.md)
+- [标签目录（Tag Catalog）计划](plans/2026-10-22-tag-catalog.md)
 
 Local reference projects used during design:
 
@@ -21,3 +22,4 @@ Local reference projects used during design:
 | 2026-10-20 | work | docs/aegis/work/2026-10-20-download-delivery-nodes/99-reflection.md | 下载交付节点实施 reflection |
 | 2026-10-20 | adr | docs/aegis/adr/ADR-0001-download-delivery-authority.md | ADR-0001 - 主API发布权威与外部下载交付分离 |
 | 2026-10-20 | work | docs/aegis/work/2026-10-20-download-delivery-nodes/91-review-fixes.md | 审查修复与回归验证 |
+| 2026-10-22 | plan | docs/aegis/plans/2026-10-22-tag-catalog.md | 标签改为目录内多选（主/子标签、至少一个），管理员在设置页维护；代码与文档已实施，存量标签清空脚本待对测试服执行 |

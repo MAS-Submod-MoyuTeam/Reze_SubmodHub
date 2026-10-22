@@ -61,12 +61,13 @@ func (s *Store) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		r.Body = http.MaxBytesReader(w, r.Body, 16384)
 		var payload struct {
-			GitHubProxyTemplate *string `json:"github_proxy_template"`
-			GitHubToken         *string `json:"github_token"`
-			GitHubSyncMaxAge    *string `json:"github_sync_max_age"`
-			Revision            *uint64 `json:"revision"`
+			GitHubProxyTemplate *string     `json:"github_proxy_template"`
+			GitHubToken         *string     `json:"github_token"`
+			GitHubSyncMaxAge    *string     `json:"github_sync_max_age"`
+			TagCatalog          *[]TagGroup `json:"tag_catalog"`
+			Revision            *uint64     `json:"revision"`
 		}
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
@@ -74,8 +75,8 @@ func (s *Store) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "validation_failed", "revision required")
 			return
 		}
-		if payload.GitHubProxyTemplate == nil && payload.GitHubToken == nil && payload.GitHubSyncMaxAge == nil {
-			writeError(w, 400, "validation_failed", "at least one of github_proxy_template, github_token or github_sync_max_age is required")
+		if payload.GitHubProxyTemplate == nil && payload.GitHubToken == nil && payload.GitHubSyncMaxAge == nil && payload.TagCatalog == nil {
+			writeError(w, 400, "validation_failed", "at least one of github_proxy_template, github_token, github_sync_max_age or tag_catalog is required")
 			return
 		}
 
@@ -111,6 +112,18 @@ func (s *Store) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			token = &trimmed
+		}
+
+		// The catalog is validated before any state changes, so a bad edit never
+		// reaches the stored settings or the mods that reference them.
+		var tagCatalog []TagGroup
+		if payload.TagCatalog != nil {
+			normalized, err := normalizeTagCatalog(*payload.TagCatalog)
+			if err != nil {
+				writeTagError(w, err)
+				return
+			}
+			tagCatalog = normalized
 		}
 
 		s.mu.Lock()
@@ -153,6 +166,37 @@ func (s *Store) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			s.Catalog.Settings.GitHubToken = secret
 			tokenChanged = true
 		}
+		// Saving the catalog keeps the "a mod only carries catalog tags" invariant:
+		// tags that no longer exist are removed in the same transaction, and the
+		// previous values are kept so a failed save can restore them.
+		tagsChanged := false
+		prunedMods := 0
+		prunedTags := make(map[int][]string)
+		if payload.TagCatalog != nil {
+			tagsChanged = !tagCatalogEqual(prev.TagCatalog, tagCatalog)
+			allowed := tagCatalogNames(tagCatalog)
+			s.Catalog.Settings.TagCatalog = tagCatalog
+			for i := range s.Catalog.Mods {
+				tags := s.Catalog.Mods[i].Tags
+				kept := make([]string, 0, len(tags))
+				for _, tag := range tags {
+					if allowed[tag] {
+						kept = append(kept, tag)
+					}
+				}
+				if len(kept) == len(tags) {
+					continue
+				}
+				prunedTags[i] = tags
+				s.Catalog.Mods[i].Tags = kept
+				prunedMods++
+			}
+		}
+		restorePruned := func() {
+			for index, tags := range prunedTags {
+				s.Catalog.Mods[index].Tags = tags
+			}
+		}
 		s.Catalog.Settings.Revision = newRev
 		s.Catalog.SettingsAudit = append(s.Catalog.SettingsAudit, SettingsAuditEvent{
 			ActorID:          session.User.ID,
@@ -160,20 +204,25 @@ func (s *Store) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			PreviousTemplate: prev.GitHubProxyTemplate,
 			NewTemplate:      s.Catalog.Settings.GitHubProxyTemplate,
 			TokenChanged:     tokenChanged,
+			TagsChanged:      tagsChanged,
+			PrunedModTags:    prunedMods,
 			Revision:         newRev,
 		})
 
 		// A new proxy or token invalidates any backoff learned under the old
 		// credentials: the quota bucket is no longer the one that was exhausted.
-		s.gitHubBackoffUntil = time.Time{}
-		for i := range s.Catalog.Mods {
-			s.Catalog.Mods[i].GitHubBackoffUntil = nil
+		if payload.GitHubProxyTemplate != nil || tokenChanged {
+			s.gitHubBackoffUntil = time.Time{}
+			for i := range s.Catalog.Mods {
+				s.Catalog.Mods[i].GitHubBackoffUntil = nil
+			}
 		}
 
 		if err := s.saveLocked(); err != nil {
 			s.Catalog.Settings = prev
 			s.GitHubSyncMaxAge = prevMaxAge
 			s.Catalog.SettingsAudit = s.Catalog.SettingsAudit[:prevAuditLen]
+			restorePruned()
 			s.mu.Unlock()
 			writeError(w, 500, "storage_error", "failed to save settings")
 			return
@@ -201,6 +250,7 @@ func (s *Store) siteSettingsLocked() siteSettingsResponse {
 		GitHubProxyTemplate:    s.Catalog.Settings.GitHubProxyTemplate,
 		GitHubSyncMaxAge:       s.GitHubSyncMaxAge.String(),
 		GitHubSyncMaxAgeLocked: s.GitHubSyncMaxAgeOverride != nil,
+		TagCatalog:             s.effectiveTagCatalogLocked(),
 		Revision:               s.Catalog.Settings.Revision,
 		MasterKeyConfigured:    s.DeliverySecrets != nil,
 	}
@@ -361,8 +411,10 @@ type siteSettingsResponse struct {
 	// never has to guess what an empty stored value means.
 	GitHubSyncMaxAge       string `json:"github_sync_max_age"`
 	GitHubSyncMaxAgeLocked bool   `json:"github_sync_max_age_locked"`
-	MasterKeyConfigured    bool   `json:"master_key_configured"`
-	Revision               uint64 `json:"revision"`
+	// TagCatalog is the effective catalog (defaults when nothing was saved yet).
+	TagCatalog             []TagGroup `json:"tag_catalog"`
+	MasterKeyConfigured    bool       `json:"master_key_configured"`
+	Revision               uint64     `json:"revision"`
 }
 
 type ProxyTestResponse struct {

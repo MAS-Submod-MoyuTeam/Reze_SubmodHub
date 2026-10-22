@@ -18,7 +18,7 @@ func TestAuthorReviewPublishLifecycle(t *testing.T) {
 	s.sessions[sessionKey(token)] = authSession{User: authUser{ID: "flarum:7", DisplayName: "Author"}, Roles: []string{"admin"}, CSRF: "csrf", Expires: time.Now().Add(time.Hour)}
 	ts := httptest.NewServer(NewStoreHandler(s))
 	defer ts.Close()
-	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/author/mods", bytes.NewBufferString(`{"title":"Demo","summary":"summary","description":"## Details\n\n**Markdown** body","category":"submod","tags":["dialogue"],"supported_platforms":["windows"],"mas_version_range":">=0.12.14","recommended_priority":10}`))
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/author/mods", bytes.NewBufferString(`{"title":"Demo","summary":"summary","description":"## Details\n\n**Markdown** body","category":"submod","tags":["工具"],"supported_platforms":["windows"],"mas_version_range":">=0.12.14","recommended_priority":10}`))
 	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
 	res, _ := ts.Client().Do(req)
 	if res.StatusCode != 201 {
@@ -42,7 +42,7 @@ func TestAuthorReviewPublishLifecycle(t *testing.T) {
 	if v.ReleaseNotes != "first release" {
 		t.Fatalf("release notes were not decoded: %+v", v)
 	}
-	req, _ = http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/author/mods/"+mod.ID, bytes.NewBufferString(`{"title":"Updated Demo","summary":"updated summary","description":"## Updated\n\n**Details**","category":"submod","tags":["updated"],"supported_platforms":["windows","linux"],"mas_version_range":">=0.13.0","recommended_priority":42}`))
+	req, _ = http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/author/mods/"+mod.ID, bytes.NewBufferString(`{"title":"Updated Demo","summary":"updated summary","description":"## Updated\n\n**Details**","category":"submod","tags":["功能"],"supported_platforms":["windows","linux"],"mas_version_range":">=0.13.0","recommended_priority":42}`))
 	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
 	res, _ = ts.Client().Do(req)
 	if res.StatusCode != http.StatusOK {

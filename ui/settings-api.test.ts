@@ -28,6 +28,9 @@ test('fetchSettings returns settings from endpoint', async () => {
     github_token_configured: true,
     github_token_encrypted: true,
     github_token_hint: '1234',
+    github_sync_max_age: '1h0m0s',
+    github_sync_max_age_locked: false,
+    tag_catalog: [{ name: '工具', children: ['绘图'] }],
     master_key_configured: true,
     revision: 2,
   };
@@ -73,6 +76,9 @@ test('updateSettings sends PATCH with CSRF and revision', async () => {
       github_proxy_template: 'https://new-proxy.com/{url}',
       github_token_configured: false,
       github_token_encrypted: false,
+      github_sync_max_age: '1h0m0s',
+      github_sync_max_age_locked: false,
+      tag_catalog: [],
       master_key_configured: false,
       revision: 3,
     };
@@ -162,4 +168,17 @@ test('testGitHubProxy sends POST and returns test results', async () => {
   assert.deepEqual(JSON.parse(capturedBody || '{}'), {
     github_proxy_template: 'https://proxy.example/{url}',
   });
+});
+
+test('updateSettings sends the whole tag catalog with its hierarchy', async () => {
+  let captured: string | undefined;
+  const customFetch: typeof fetch = async (_input, init) => {
+    captured = String(init?.body);
+    return Response.json({ tag_catalog: [{ name: '工具', children: ['绘图'] }], revision: 4 });
+  };
+
+  const groups = [{ name: '工具', children: ['绘图'] }, { name: '音乐' }];
+  await updateSettings({ tag_catalog: groups }, 3, 'csrf', '/api/v1', customFetch);
+
+  assert.deepEqual(JSON.parse(captured || '{}'), { tag_catalog: groups, revision: 3 });
 });

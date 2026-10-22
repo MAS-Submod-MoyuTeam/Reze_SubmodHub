@@ -21,6 +21,9 @@ import { mapDependencyInput, mapDependencyRangeInput, mapDependencySelection } f
 import { DependencyNamePicker } from './DependencyNamePicker';
 import { canEditVersion, versionFormState } from './versionFormState';
 import { clearModImages, fetchModImages, reorderModImages, uploadModImages } from '../../../ui/submission-api';
+import { fetchTagCatalog, type TagGroup } from '../../../ui/tags-api';
+import { TagPicker } from './TagPicker';
+import { isValidTagSelection, orderByCatalog } from './tagSelection';
 import {
   Plus,
   Upload,
@@ -92,7 +95,11 @@ export const AuthorWorkbench: React.FC = () => {
   const [newCategory, setNewCategory] = useState<ModCategory>('submod');
   const [newMasRange, setNewMasRange] = useState('>=0.12.14');
   const [newPriority, setNewPriority] = useState(20);
-  const [newTagsStr, setNewTagsStr] = useState('');
+  const [newTags, setNewTags] = useState<string[]>([]);
+  // 标签只能从站点目录里选：目录由管理员在设置页维护，作者端不做任何硬编码。
+  const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
+  const [tagCatalogLoading, setTagCatalogLoading] = useState(false);
+  const [tagCatalogError, setTagCatalogError] = useState<string | null>(null);
   const [newPlatforms, setNewPlatforms] = useState<Platform[]>(['windows', 'android']);
   const [pendingDetailImages, setPendingDetailImages] = useState<File[]>([]);
   const [pendingDetailImageKeys, setPendingDetailImageKeys] = useState<string[]>([]);
@@ -133,6 +140,30 @@ export const AuthorWorkbench: React.FC = () => {
   const [isGithubImportOpen, setIsGithubImportOpen] = useState(false);
   const [githubReleaseUrl, setGithubReleaseUrl] = useState('');
 
+  // 每次打开新建/编辑弹窗都重新读取目录：管理员刚改过的标签必须立刻可选，
+  // 所以这里不做长缓存；读取失败时禁用选择器而不是退回旧的硬编码标签。
+  const tagCatalogBase = `${((import.meta as any).env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+  useEffect(() => {
+    if (!isNewModModalOpen) return;
+    let cancelled = false;
+    setTagCatalogLoading(true);
+    setTagCatalogError(null);
+    fetchTagCatalog(tagCatalogBase)
+      .then((catalog) => {
+        if (cancelled) return;
+        setTagGroups(catalog.groups);
+      })
+      .catch(() => {
+        if (!cancelled) setTagCatalogError('标签目录读取失败，请稍后重试');
+      })
+      .finally(() => {
+        if (!cancelled) setTagCatalogLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isNewModModalOpen, tagCatalogBase]);
+
   // Currently inspected Scan Report modal
   const [inspectingReportId, setInspectingReportId] = useState<string | null>(null);
 
@@ -166,10 +197,15 @@ export const AuthorWorkbench: React.FC = () => {
       }
     }
 
-    const tags = newTagsStr
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean);
+    if (tagGroups.length === 0) {
+      showToast('error', '标签目录未就绪，请关闭弹窗后重试。');
+      return;
+    }
+    const tags = orderByCatalog(tagGroups, newTags);
+    if (!isValidTagSelection(tags)) {
+      showToast('error', '至少选择一个标签。');
+      return;
+    }
 
     if (editingModId) {
       const saved = await updateModDraft(editingModId, {
@@ -271,7 +307,7 @@ export const AuthorWorkbench: React.FC = () => {
     setNewCategory(mod.category);
     setNewMasRange(mod.mas_version_range);
     setNewPriority(mod.recommended_priority);
-    setNewTagsStr(mod.tags.join(', '));
+    setNewTags(mod.tags);
     setNewPlatforms(mod.supported_platforms);
     setNewSourceType(mod.source_type || 'local');
     setNewGitHubOwner(mod.github_owner || '');
@@ -298,7 +334,7 @@ export const AuthorWorkbench: React.FC = () => {
     setNewCategory('submod');
     setNewMasRange('>=0.12.14');
     setNewPriority(20);
-    setNewTagsStr('');
+    setNewTags([]);
     setNewPlatforms(['windows', 'android']);
     setNewSourceType('local');
     setNewGitHubOwner('');
@@ -392,11 +428,21 @@ export const AuthorWorkbench: React.FC = () => {
     showToast('info', '正在解析 GitHub Release Asset 并拉取归档 (POST /author/github-imports)...');
 
     setTimeout(async () => {
+      // 导入草稿同样只能带目录内的标签：这里用目录首个主标签兜底，
+      // 目录不可用时不创建草稿，而不是写一个自造的标签。
+      const groups = tagGroups.length > 0
+        ? tagGroups
+        : await fetchTagCatalog(tagCatalogBase).then((catalog) => catalog.groups).catch(() => [] as TagGroup[]);
+      const seedTag = groups[0]?.name;
+      if (!seedTag) {
+        showToast('error', '标签目录未就绪，无法创建导入草稿。');
+        return;
+      }
       const newModId = await createModDraft({
         title: 'GitHub Imported Submod',
         summary: `导入自 ${githubReleaseUrl}，自动转换至候选版本并触发扫描。`,
         category: 'submod',
-        tags: ['github-imported', 'dialogue'],
+        tags: [seedTag],
       });
       setSelectedModId(newModId);
       if (!newModId) return;
@@ -1551,17 +1597,17 @@ export const AuthorWorkbench: React.FC = () => {
                     className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600 font-mono"
                   />
                 </div>
+              </div>
 
-                <div>
-                  <label className="block font-medium text-neutral-700 mb-1">标签 (逗号分隔)</label>
-                  <input
-                    type="text"
-                    value={newTagsStr}
-                    onChange={(e) => setNewTagsStr(e.target.value)}
-                    placeholder="例如：dialogue, cozy, dates"
-                    className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600"
-                  />
-                </div>
+              <div>
+                <TagPicker
+                  groups={tagGroups}
+                  value={newTags}
+                  onChange={setNewTags}
+                  loading={tagCatalogLoading}
+                  error={tagCatalogError}
+                  disabled={tagCatalogLoading || tagCatalogError !== null}
+                />
               </div>
 
                   </div>
@@ -1578,7 +1624,9 @@ export const AuthorWorkbench: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 text-white bg-emerald-700 hover:bg-emerald-800 rounded font-medium transition-colors"
+                  disabled={!isValidTagSelection(newTags)}
+                  title={isValidTagSelection(newTags) ? undefined : '至少选择一个标签'}
+                  className="px-4 py-1.5 text-white bg-emerald-700 hover:bg-emerald-800 rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {editingModId ? '保存修改' : '保存草稿'}
                 </button>

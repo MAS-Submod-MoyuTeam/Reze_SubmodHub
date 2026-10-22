@@ -17,9 +17,11 @@ import {
   Timer,
 } from 'lucide-react';
 import { getFlarumUserRoles, readSession, setFlarumUserRoles } from '../../../ui/auth-api';
-import { fetchSettings, testGitHubProxy, updateSettings, type ProxyTestResponse } from '../../../ui/settings-api';
+import { fetchSettings, testGitHubProxy, updateSettings, type ProxyTestResponse, type SiteSettings } from '../../../ui/settings-api';
+import type { TagGroup } from '../../../ui/tags-api';
 import { useApp } from '../context/AppContext';
 import { DownloadNodeSettings } from './DownloadNodeSettings';
+import { TagCatalogSettings } from './TagCatalogSettings';
 
 export const AdminPanel: React.FC = () => {
   const { hasRole, showToast } = useApp();
@@ -61,6 +63,11 @@ export const AdminPanel: React.FC = () => {
   const [syncMaxAgeConflictError, setSyncMaxAgeConflictError] = useState(false);
   const [syncMaxAgeLocked, setSyncMaxAgeLocked] = useState(false);
 
+  // Tag catalog: the authoritative list authors pick from. Editing it also prunes
+  // tags that no longer exist from the mods that referenced them.
+  const [tagCatalog, setTagCatalog] = useState<TagGroup[]>([]);
+  const [tagCatalogConflict, setTagCatalogConflict] = useState(false);
+
   const apiBase = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
 
   const loadSettings = async () => {
@@ -79,6 +86,8 @@ export const AdminPanel: React.FC = () => {
       setSyncMaxAge(data.github_sync_max_age || '');
       setSavedSyncMaxAge(data.github_sync_max_age || '');
       setSyncMaxAgeLocked(Boolean(data.github_sync_max_age_locked));
+      setTagCatalog(data.tag_catalog || []);
+      setTagCatalogConflict(false);
       setRevision(data.revision || 0);
     } catch (err) {
       setLoadSettingsError(err instanceof Error ? err.message : 'failed_to_load_settings');
@@ -150,6 +159,14 @@ export const AdminPanel: React.FC = () => {
     } finally {
       setSavingSettings(false);
     }
+  };
+
+  // Keep the cached revision in step with a catalog save so the next card save
+  // does not fail with a stale revision conflict.
+  const handleTagCatalogSaved = (updated: SiteSettings) => {
+    setTagCatalog(updated.tag_catalog || []);
+    setRevision(updated.revision);
+    setTagCatalogConflict(false);
   };
 
   // Handle Saving / Clearing the GitHub API token
@@ -287,6 +304,22 @@ export const AdminPanel: React.FC = () => {
 
       {/* Main Download Delivery Nodes Section */}
       <DownloadNodeSettings apiBase={apiBase} />
+
+      {/* Tag Catalog: the only place tags can be created, renamed or removed */}
+      {tagCatalogConflict ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 flex flex-wrap items-center justify-between gap-2">
+          <span>标签目录已被其他管理员更新，请重新加载后再保存。</span>
+          <button type="button" onClick={() => void loadSettings()} className="underline font-medium">重新加载</button>
+        </div>
+      ) : null}
+      <TagCatalogSettings
+        apiBase={apiBase}
+        groups={tagCatalog}
+        revision={revision}
+        onSaved={handleTagCatalogSaved}
+        onConflict={() => setTagCatalogConflict(true)}
+        onToast={showToast}
+      />
 
       {/* Grid of Secondary Settings: GitHub Proxy & API Token */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">

@@ -81,7 +81,8 @@ func TestSourceConfigCreateAndValidateGitHubSource(t *testing.T) {
 		"github_owner": "octocat",
 		"github_repo": "hello-world",
 		"github_asset_regex": "^MyMod.*\\.zip$",
-		"github_source_code": true
+		"github_source_code": true,
+		"tags": ["工具"]
 	}`
 	req, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/author/mods", bytes.NewBufferString(validPayload))
 	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
@@ -109,7 +110,7 @@ func TestSourceConfigCreateAndValidateGitHubSource(t *testing.T) {
 	}
 
 	// 3. Update mod with invalid regex via PATCH should fail
-	patchInvalid := `{"title":"GitHub Mod","summary":"S","category":"submod","github_asset_regex":"[broken-regex"}`
+	patchInvalid := `{"title":"GitHub Mod","summary":"S","category":"submod","tags":["工具"],"github_asset_regex":"[broken-regex"}`
 	reqPatchInvalid, _ := http.NewRequest(http.MethodPatch, server.URL+"/api/v1/author/mods/"+created.ID, bytes.NewBufferString(patchInvalid))
 	reqPatchInvalid.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
 	resPatchInvalid, err := server.Client().Do(reqPatchInvalid)
@@ -122,7 +123,7 @@ func TestSourceConfigCreateAndValidateGitHubSource(t *testing.T) {
 	resPatchInvalid.Body.Close()
 
 	// 4. Update mod to local via PATCH
-	patchLocal := `{"title":"GitHub Mod","summary":"S","category":"submod","source_type":"local"}`
+	patchLocal := `{"title":"GitHub Mod","summary":"S","category":"submod","tags":["工具"],"source_type":"local"}`
 	reqPatchLocal, _ := http.NewRequest(http.MethodPatch, server.URL+"/api/v1/author/mods/"+created.ID, bytes.NewBufferString(patchLocal))
 	reqPatchLocal.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
 	resPatchLocal, err := server.Client().Do(reqPatchLocal)

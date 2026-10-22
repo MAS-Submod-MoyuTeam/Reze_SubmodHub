@@ -143,7 +143,8 @@ func TestGitHubReleaseSourceE2EWorkflow(t *testing.T) {
 		"github_owner": "myorg",
 		"github_repo": "mymod",
 		"github_asset_regex": "^mymod.*\\.zip$",
-		"github_source_code": true
+		"github_source_code": true,
+		"tags": ["工具"]
 	}`
 	req, _ := http.NewRequest(http.MethodPost, apiServer.URL+"/api/v1/author/mods", bytes.NewBufferString(createPayload))
 	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: authorToken})

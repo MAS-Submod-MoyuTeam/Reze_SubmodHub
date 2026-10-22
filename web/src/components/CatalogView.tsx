@@ -1,9 +1,11 @@
-import React, { useCallback, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { ModSummary, Platform } from '../types/submodhub';
 import { DeprecationNotice } from './DeprecationNotice';
 import { formatVersionLabel } from './versionHistory';
 import { useLoadMoreOnScroll } from './useLoadMoreOnScroll';
+import { fetchTagCatalog, type TagGroup } from '../../../ui/tags-api';
+import { buildTagFilterModel, childTagsFor } from './tagFilters';
 import {
   Search,
   Download,
@@ -53,6 +55,24 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     publishedMods.forEach((m) => m.tags.forEach((t) => set.add(t)));
     return Array.from(set);
   }, [publishedMods]);
+
+  // 标签目录是筛选区的第一来源：顺序与主/子层级都由管理员维护。
+  // 读取失败时回退到上面的聚合结果，筛选功能不因此不可用。
+  const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const base = `${((import.meta as any).env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    fetchTagCatalog(base)
+      .then((catalog) => {
+        if (!cancelled) setTagGroups(catalog.groups);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const tagFilterModel = useMemo(() => buildTagFilterModel(tagGroups, allTags), [tagGroups, allTags]);
+  const childTagOptions = useMemo(() => childTagsFor(tagFilterModel, tagFilter), [tagFilterModel, tagFilter]);
 
   // Filtered mods
   const filteredMods = useMemo(() => {
@@ -211,38 +231,78 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             ))}
           </div>
 
-          {/* Tag Filter */}
-          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
-            <span className="text-neutral-400 font-medium mr-1">标签:</span>
-            <button
-              onClick={() => {
-                setTagFilter('all');
-                setCursorPage(1);
-              }}
-              className={`px-2 py-0.5 rounded text-xs whitespace-nowrap ${
-                tagFilter === 'all'
-                  ? 'bg-neutral-200 text-neutral-900 font-medium'
-                  : 'text-neutral-500 hover:text-neutral-800'
-              }`}
-            >
-              全部
-            </button>
-            {allTags.map((tag) => (
+          {/* Tag Filter: 主标签一行；选中带子标签的主标签后再展开子标签行 */}
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+              <span className="text-neutral-400 font-medium mr-1">标签:</span>
               <button
-                key={tag}
                 onClick={() => {
-                  setTagFilter(tag);
+                  setTagFilter('all');
                   setCursorPage(1);
                 }}
                 className={`px-2 py-0.5 rounded text-xs whitespace-nowrap ${
-                  tagFilter === tag
+                  tagFilter === 'all'
                     ? 'bg-neutral-200 text-neutral-900 font-medium'
                     : 'text-neutral-500 hover:text-neutral-800'
                 }`}
               >
-                #{tag}
+                全部
               </button>
-            ))}
+              {tagFilterModel.mains.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => {
+                    setTagFilter(tag);
+                    setCursorPage(1);
+                  }}
+                  className={`px-2 py-0.5 rounded text-xs whitespace-nowrap ${
+                    tagFilter === tag
+                      ? 'bg-neutral-200 text-neutral-900 font-medium'
+                      : 'text-neutral-500 hover:text-neutral-800'
+                  }`}
+                >
+                  #{tag}
+                </button>
+              ))}
+              {tagFilterModel.stale.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => {
+                    setTagFilter(tag);
+                    setCursorPage(1);
+                  }}
+                  title="该标签已不在标签目录中"
+                  className={`px-2 py-0.5 rounded text-xs whitespace-nowrap ${
+                    tagFilter === tag
+                      ? 'bg-neutral-200 text-neutral-900 font-medium'
+                      : 'text-neutral-400 hover:text-neutral-700'
+                  }`}
+                >
+                  #{tag}
+                </button>
+              ))}
+            </div>
+            {childTagOptions.length > 0 ? (
+              <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 pl-9">
+                <span className="text-neutral-400 text-xs">子标签:</span>
+                {childTagOptions.map((tag) => (
+                  <button
+                    key={tag}
+                    onClick={() => {
+                      setTagFilter(tag);
+                      setCursorPage(1);
+                    }}
+                    className={`px-2 py-0.5 rounded text-xs whitespace-nowrap ${
+                      tagFilter === tag
+                        ? 'bg-emerald-700 text-white font-medium'
+                        : 'text-neutral-500 hover:text-emerald-700'
+                    }`}
+                  >
+                    #{tag}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
