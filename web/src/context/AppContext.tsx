@@ -66,10 +66,6 @@ export interface AppContextType {
   linkAccount: (provider: 'flarum' | 'github', accountName: string) => void;
   hasRole: (role: UserRole) => boolean;
 
-  // Offline Simulation
-  isOffline: boolean;
-  setIsOffline: (val: boolean) => void;
-
   // Site Policy (public, no credentials)
   /** 服务端当前生效的 GitHub 源刷新窗口；null 表示尚未取到。 */
   refreshWindowText: string;
@@ -87,6 +83,14 @@ export interface AppContextType {
   setPlatformFilter: (p: string) => void;
   tagFilter: string;
   setTagFilter: (t: string) => void;
+
+  // Catalog Load State
+  /** 目录是否正在拉取；页面据此显示骨架屏。 */
+  catalogLoading: boolean;
+  /** 最近一次目录拉取的失败原因；null 表示上次拉取成功。项目没有离线快照，失败必须可见。 */
+  catalogError: string | null;
+  /** 重新拉取已发布目录。失败时写入 catalogError 并提示，不向上抛错。 */
+  reloadCatalog: () => Promise<void>;
 
   // Mod Detail Helper
   getModWithVersions: (modId: string) => {
@@ -155,9 +159,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [csrfToken, setCsrfToken] = useState('');
-
-  // Offline cache simulation
-  const [isOffline, setIsOffline] = useState(false);
 
   // Site policy: the server owns the refresh window, so the copy quotes it.
   const [sourcePolicy, setSourcePolicy] = useState<SourcePolicy | null>(null);
@@ -252,13 +253,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const histories = await Promise.all(entries.map(({ mod }) => fetchPublishedVersions(mod.id, base)));
   const publishedVersions: ModVersion[] = histories.flat().map((version) => ({ ...version, release_notes: version.release_notes || '', dependencies: version.dependencies || [], created_at: version.created_at || '', is_immutable: true }));
     setVersions((prev) => [...publishedVersions, ...prev.filter((version) => version.state !== 'published' && !publishedVersions.some((published) => published.id === version.id))]);
-    setIsOffline(false);
   }, []);
 
-  useEffect(() => {
-    refreshPublishedCatalog()
-      .catch(() => setIsOffline(true));
-  }, [refreshPublishedCatalog]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const applySession = useCallback((session: Session) => {
     setCsrfToken(session.csrf_token);
@@ -313,6 +311,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  // 项目不提供离线缓存快照：拉取失败时保留上一次成功的数据，但失败必须可见
+  // （页面级失败态 + 提示），否则会把「加载失败」退化成「目录为空」。
+  const reloadCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    setCatalogError(null);
+    try {
+      await refreshPublishedCatalog();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'unknown_error';
+      setCatalogError(detail);
+      showToast('error', `目录加载失败：${detail}`);
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, [refreshPublishedCatalog, showToast]);
+
+  useEffect(() => {
+    void reloadCatalog();
+  }, [reloadCatalog]);
 
   const switchRolePersona = useCallback((_role: 'visitor' | 'author' | 'reviewer' | 'admin') => {
     showToast('warning', '角色切换仅属于设计稿，服务端身份认证尚未接入。');
@@ -691,14 +709,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...item, state: remote.state as ModVersion['state'], published_at: remote.published_at,
         is_immutable: remote.state === 'published' || remote.state === 'approved',
       } : item));
-      if (remote.state === 'published') await refreshPublishedCatalog().catch(() => setIsOffline(true));
+      if (remote.state === 'published') await reloadCatalog();
       showToast('success', action === 'reject' ? '已驳回申请，审核理由已保存。' : '审核通过，版本已发布。');
       return true;
     } catch (error) {
       showToast('error', `审核操作失败：${error instanceof Error ? error.message : 'unknown_error'}`);
       return false;
     }
-  }, [currentUser, showToast, refreshPublishedCatalog]);
+  }, [currentUser, showToast, reloadCatalog]);
   const approveSubmission = useCallback((id: string, reason: string) => performReview(id, 'approve', reason), [performReview]);
   const rejectSubmission = useCallback((id: string, reason: string) => performReview(id, 'reject', reason), [performReview]);
   const publishApprovedVersion = useCallback((id: string) => performReview(id, 'publish'), [performReview]);
@@ -1077,8 +1095,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       logout,
       linkAccount,
       hasRole,
-      isOffline,
-      setIsOffline,
       refreshWindowText,
       mods,
       versions,
@@ -1092,6 +1108,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setPlatformFilter,
       tagFilter,
       setTagFilter,
+      catalogLoading,
+      catalogError,
+      reloadCatalog,
       getModWithVersions,
       getDownloadDescriptor,
       cacheAuthorPage,
@@ -1142,7 +1161,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       logout,
       linkAccount,
       hasRole,
-      isOffline,
       refreshWindowText,
       mods,
       versions,
@@ -1152,6 +1170,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       categoryFilter,
       platformFilter,
       tagFilter,
+      catalogLoading,
+      catalogError,
+      reloadCatalog,
       getModWithVersions,
       getDownloadDescriptor,
       createModDraft,

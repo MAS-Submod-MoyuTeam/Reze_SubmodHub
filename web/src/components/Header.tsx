@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp, NavTab } from '../context/AppContext';
-import { Wifi, WifiOff, User as UserIcon, Shield } from 'lucide-react';
+import { User as UserIcon, Shield } from 'lucide-react';
 
 interface HeaderProps {
   onOpenLoginModal: () => void;
@@ -12,8 +12,6 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal }) => {
     setActiveTab,
     currentUser,
     logout,
-    isOffline,
-    setIsOffline,
   } = useApp();
 
   // 发布入口对所有已登录用户开放；审核和管理入口仅对管理员开放。
@@ -83,20 +81,6 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal }) => {
 
         {/* Zone 3: 1-2 primary actions */}
         <div className="flex items-center gap-2.5">
-          {/* Offline Cache Simulator Toggle */}
-          <button
-            onClick={() => setIsOffline(!isOffline)}
-            title={isOffline ? '当前为模拟离线缓存模式，点击切回在线' : '点击模拟客户端网络中断与离线缓存'}
-            className={`p-1.5 rounded text-xs transition-colors flex items-center gap-1.5 ${
-              isOffline
-                ? 'bg-amber-100 text-amber-800'
-                : 'text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100'
-            }`}
-          >
-            {isOffline ? <WifiOff className="w-4 h-4" /> : <Wifi className="w-4 h-4" />}
-            <span className="hidden lg:inline text-xs font-mono">{isOffline ? '离线缓存' : '在线'}</span>
-          </button>
-
           <span className="hidden sm:flex items-center gap-1.5 text-xs text-neutral-600">
             <Shield className="w-3.5 h-3.5" />{currentPersonaLabel}
           </span>

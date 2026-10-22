@@ -200,7 +200,9 @@ test('CatalogView: responsive secondary filter groups platform, compatibility, a
       mods={[mockMod]}
       installedMods={[]}
       activeInstallation={mockActiveInstallation}
-      isOffline={false}
+      catalogError={null}
+      isCatalogRefreshing={false}
+      onReloadCatalog={() => {}}
       onOpenDetail={() => {}}
       onStartInstallPlan={() => {}}
       onStartUpdatePlan={() => {}}

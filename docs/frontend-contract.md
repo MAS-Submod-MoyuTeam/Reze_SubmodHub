@@ -19,7 +19,7 @@
 
 ### 页面功能
 
-- **目录**：关键词、分类（`submod`/`spritepack`）、平台、标签筛选；按游标分页；显示已发布的最新版本与兼容范围。无结果、加载失败和离线缓存须有独立状态。
+- **目录**：关键词、分类（`submod`/`spritepack`）、平台、标签筛选；按游标分页；显示已发布的最新版本与兼容范围。无结果与加载失败须有独立状态。
 - **详情/版本**：作者、简介、兼容 MAS 范围、依赖、发行说明、扫描摘要、ZIP 大小和 SHA-256。下载按钮先取得下载描述符；客户端再进入计划预览。
 - **作者工作台**：新建草稿，编辑元数据与依赖，上传 ZIP，等待扫描，查看逐文件报告与阻断原因，提交审核；被驳回后复制/修订为新候选版本。显示所有版本各自的审核状态。
 - **审核工作台**：查看包文件树、静态检测结果、脚本/二进制警告、重复注册名与 sprite `giftname` 冲突；写入批准/驳回理由。批准时自动发布并按作者选择更新目录最新版本。公开版本只能下架，不能修改归档字节。
@@ -135,7 +135,7 @@
 | `GetAndroidStorageAccess` | 无 | `{state:"granted|denied|unsupported",root:"/storage/emulated/0/MAS/",game_path:"/storage/emulated/0/MAS/game"}`；每次调用查询系统授权，不使用缓存判断 |
 | `RequestAndroidStorageAccess` | 无 | 打开本应用“所有文件访问权限”系统设置页；返回 `{opened:true}` 只表示设置页已打开，不表示已授权 |
 | `DiscoverInstallations` / `SelectInstallation` | 平台选择结果 | Windows 为验证后的选择结果；Android 只验证固定 MAS 根目录，未授权返回 `permission_lost`，无效目录返回 `invalid_mas_root` |
-| `RefreshCatalog` / `GetMod` | 筛选/ID | 与 Web 公共 DTO 一致，附缓存时间/离线状态 |
+| `RefreshCatalog` / `GetMod` | 筛选/ID | 与 Web 公共 DTO 一致 |
 | `DownloadVersion` | `version_id` | `operation_id`；校验下载大小与哈希 |
 | `PreviewInstall` / `PreviewUpdate` / `PreviewUninstall` | 安装实例、版本 | `Plan`；无文件写入 |
 | GetPriorityOverview | 安装实例 | PriorityOverview：只读权威模组列表、优先级、生效/覆盖/总文件数统计及全部多模组共享冲突路径与当前赢家 |
@@ -170,9 +170,10 @@
 | `game_running`, `insufficient_space` | 停止写入，说明可恢复条件 |
 | `external_change` | 展示路径及预期/当前哈希，禁止自动覆盖 |
 | `operation_recoverable`, `backup_missing` | 进入恢复流程或报告无法自动恢复的原因 |
-| `offline`, `download_hash_mismatch`, `download_size_mismatch`, `download_expired`, `download_too_large`, `crypto_unavailable` | 下载失败时不保存归档；可重试获取新描述符，安装仅限已验证的本地 ZIP |
+| `offline` | 请求无法到达服务器：目录显示独立的“加载失败”状态并提供重新加载入口，不读取本地目录快照；下载同样不保存归档，安装仅限已验证的本地 ZIP |
+| `download_hash_mismatch`, `download_size_mismatch`, `download_expired`, `download_too_large`, `crypto_unavailable` | 下载失败时不保存归档；可重试获取新描述符，安装仅限已验证的本地 ZIP |
 
-页面/客户端至少提供这些可设计状态：加载中、空目录、无搜索结果、离线缓存、未登录、权限不足、上传中、扫描中、扫描警告、扫描阻断、审核中、驳回、下架、未授权目录、权限撤销、游戏运行中、外部文件冲突、依赖缺失、操作可恢复、回滚完成。错误状态的操作入口应对应上表，不使用模糊的“重试”覆盖所有情况。
+页面/客户端至少提供这些可设计状态：加载中、加载失败、空目录、无搜索结果、未登录、权限不足、上传中、扫描中、扫描警告、扫描阻断、审核中、驳回、下架、未授权目录、权限撤销、游戏运行中、外部文件冲突、依赖缺失、操作可恢复、回滚完成。错误状态的操作入口应对应上表，不使用模糊的“重试”覆盖所有情况。
 
 ## 6. 验收旅程与交付边界
 

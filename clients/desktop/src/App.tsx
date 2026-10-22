@@ -55,6 +55,13 @@ const UNVERIFIED_INSTALLATION: Installation = {
   last_validated_at: '',
 };
 
+/**
+ * 真实 MAS 进程检测尚未接入。安装/应用计划依赖这个值做写操作锁，
+ * 具名保留而不是内联 `false`，这样守卫在源码里始终是「活」的，
+ * 检测落地时只需换成原生层推送的状态，调用点无需改动。
+ */
+const MAS_GAME_PROCESS_DETECTED = false;
+
 export default function App() {
   // Installations
   const [installations, setInstallations] = useState<Installation[]>([UNVERIFIED_INSTALLATION]);
@@ -310,10 +317,11 @@ export default function App() {
     }
   }, [isAndroidDevice]);
 
-  const [isGameRunning, setIsGameRunning] = useState<boolean>(false);
-  const [isOffline, setIsOffline] = useState<boolean>(false);
-  const [hasDependencyBlocker, setHasDependencyBlocker] = useState<boolean>(false);
+  // MAS 进程检测尚未接入，这里恒为 false；显式标注 boolean，避免守卫被当成字面量死代码。
+  const isGameRunning: boolean = MAS_GAME_PROCESS_DETECTED;
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  // 目录失败必须可见：没有离线快照，失败要显示页面级失败态，不能退化成「空目录」。
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
   const [isDownloadingArchive, setIsDownloadingArchive] = useState(false);
   const [archiveProgress, setArchiveProgress] = useState<DownloadProgress | null>(null);
@@ -339,6 +347,7 @@ export default function App() {
 
   const loadCatalog = async () => {
     setIsRefreshing(true);
+    setCatalogError(null);
     try {
       const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
       const entries = await fetchPublishedCatalog(base);
@@ -351,9 +360,11 @@ export default function App() {
         latest_version: version.version, size_bytes: version.size_bytes, sha256: version.sha256,
         updated_at: '', downloads_count: mod.downloads_count || 0,
       })));
-      setIsOffline(false);
     } catch (error) {
-      showToast(`目录读取失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+      // 保留上一次成功的数据，同时把失败暴露出来（页面级失败态 + 提示）。
+      const detail = error instanceof Error ? error.message : 'unknown_error';
+      setCatalogError(detail);
+      showToast(`目录加载失败：${detail}`);
     } finally {
       setIsRefreshing(false);
     }
@@ -715,7 +726,6 @@ export default function App() {
     if (!activeInstallation.is_valid || targetInstId === 'unverified') { showToast('请先验证 MAS 目录。'); return; }
     if (installingRef.current || isDownloadingArchive) return;
     if (isGameRunning) { showToast('请先退出 MAS 游戏再安装。'); return; }
-    if (hasDependencyBlocker && mod.id === 'mod_memories_rain') { showToast('缺少前置依赖 ExtraPlus，无法安装。'); return; }
     installingRef.current = true;
     setInstallingModId(mod.id);
     setTransferTitle(mod.title);
@@ -957,8 +967,12 @@ export default function App() {
     if (installingRef.current) return;
     const coordinator = executionCoordinatorRef.current!;
     const targetInstId = plan.installation_id;
-    if (isGameRunning || targetInstId !== activeInstallationIdRef.current) {
-      showToast('游戏正在运行或实例已变更，请重新预览。');
+    if (targetInstId !== activeInstallationIdRef.current) {
+      showToast('实例已切换，请在当前实例上重新预览。');
+      return;
+    }
+    if (isGameRunning) {
+      showToast('MAS 游戏正在运行，写操作已锁定，请退出游戏后重试。');
       return;
     }
     setCurrentPlan(null);
@@ -1272,9 +1286,6 @@ export default function App() {
         activeInstallationId={activeInstallationId}
         onSelectInstallation={(id) => { void handleSelectInstance(id); }}
         isGameRunning={isGameRunning}
-        isOffline={isOffline}
-        onToggleGameRunning={() => showToast('MAS 进程检测尚未接入。')}
-        onToggleOffline={() => showToast('离线缓存尚未接入。')}
         onOpenInstancesView={() => setActiveTab('instances')}
         onLaunchGame={() => handleLaunchInstance(activeInstallationId)}
         isLaunchingGame={isLaunchingGame}
@@ -1343,7 +1354,9 @@ export default function App() {
               mods={catalogMods}
               installedMods={installedMods}
               activeInstallation={activeInstallation}
-              isOffline={isOffline}
+              catalogError={catalogError}
+              isCatalogRefreshing={isRefreshing}
+              onReloadCatalog={handleRefreshCatalog}
               onOpenDetail={(mod) => setSelectedModDetail(mod)}
               onStartInstallPlan={handleStartInstallPlan}
               onStartUpdatePlan={handleStartInstallPlan}

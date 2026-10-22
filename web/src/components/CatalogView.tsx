@@ -10,7 +10,6 @@ import {
   Layers,
   Sparkles,
   AlertCircle,
-  WifiOff,
   RefreshCw,
 } from 'lucide-react';
 
@@ -34,10 +33,11 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     setPlatformFilter,
     tagFilter,
     setTagFilter,
-    isOffline,
+    catalogLoading,
+    catalogError,
+    reloadCatalog,
   } = useApp();
 
-  const [isLoading, setIsLoading] = useState(false);
   const [cursorPage, setCursorPage] = useState(1);
   const pageSize = 6;
 
@@ -100,30 +100,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     setCursorPage(1);
   };
 
-  const handleSimulateReload = () => {
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-    }, 400);
-  };
-
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-      {/* Offline Cached State Banner (Section 1 & 5 requirement) */}
-      {isOffline && (
-        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between text-xs text-amber-900">
-          <div className="flex items-center gap-2">
-            <WifiOff className="w-4 h-4 text-amber-700 shrink-0" />
-            <div>
-              <span className="font-semibold">离线缓存模式 (Offline Mode)</span>
-              <span className="mx-1.5 text-amber-400">|</span>
-              <span>当前正在读取本地索引快照 (6 个模组缓存)。安装仅限已验证的本地 ZIP。</span>
-            </div>
-          </div>
-          <span className="text-[11px] font-mono text-amber-700">缓存同步: 2026-09-26 UTC</span>
-        </div>
-      )}
-
       {/* Hero / Filter Bar Header */}
       <div className="bg-white border border-neutral-200 rounded-lg p-5 space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -251,7 +229,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
       </div>
 
       {/* Catalog List / Grid */}
-      {isLoading ? (
+      {catalogLoading ? (
         /* Loading Skeleton State */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -262,6 +240,24 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               <div className="h-3 bg-neutral-100 rounded w-1/3" />
             </div>
           ))}
+        </div>
+      ) : catalogError ? (
+        /* Load Failure State: 没有离线快照，失败必须与「无结果」区分开 */
+        <div className="bg-white border border-amber-200 rounded-lg p-12 text-center space-y-3">
+          <AlertCircle className="w-8 h-8 text-amber-500 mx-auto" />
+          <h3 className="text-sm font-semibold text-neutral-800">目录加载失败</h3>
+          <p className="text-xs text-neutral-500 max-w-md mx-auto">
+            无法从服务器读取已发布目录：{catalogError}。项目不提供离线缓存快照，请检查网络后重新加载。
+          </p>
+          <div className="pt-2">
+            <button
+              onClick={() => void reloadCatalog()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 rounded border border-amber-200 transition-colors"
+            >
+              <RefreshCw className="w-3 h-3" />
+              重新加载目录
+            </button>
+          </div>
         </div>
       ) : paginatedMods.length === 0 ? (
         /* Empty Results State (Section 1 requirement) */
@@ -289,8 +285,9 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               <span className="tabular-nums">{filteredMods.length}</span> 个已验证模组
             </span>
             <button
-              onClick={handleSimulateReload}
-              className="flex items-center gap-1 text-neutral-400 hover:text-neutral-700"
+              onClick={() => void reloadCatalog()}
+              disabled={catalogLoading}
+              className="flex items-center gap-1 text-neutral-400 hover:text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <RefreshCw className="w-3 h-3" />
               刷新

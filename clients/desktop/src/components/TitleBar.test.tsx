@@ -30,9 +30,6 @@ function titleBarProps(isAndroid = false) {
     activeInstallationId: installation.id,
     onSelectInstallation: () => {},
     isGameRunning: false,
-    isOffline: false,
-    onToggleGameRunning: () => {},
-    onToggleOffline: () => {},
     onOpenInstancesView: () => {},
     onLaunchGame: async () => {},
     isLaunchingGame: false,
@@ -59,6 +56,18 @@ test('TitleBar: Android keeps the header non-draggable and hides native window c
   assert.doesNotMatch(html, /wails-drag/);
   assert.doesNotMatch(html, /aria-label="最小化"/);
   assert.doesNotMatch(html, /aria-label="关闭"/);
+});
+
+test('TitleBar: an idle, valid instance renders no ambient status indicators', () => {
+  const html = renderToStaticMarkup(<TitleBar {...titleBarProps()} />);
+
+  assert.doesNotMatch(html, /游戏未运行/);
+  assert.doesNotMatch(html, /API v1 在线/);
+  assert.doesNotMatch(html, /离线缓存/);
+  assert.doesNotMatch(html, /MAS 状态未验证/);
+  // The middle indicator zone is not rendered at all when there is nothing to
+  // warn about, so an idle instance costs no layout slot.
+  assert.doesNotMatch(html, /xl:flex items-center gap-3/);
 });
 
 let dom: JSDOM;
@@ -166,39 +175,14 @@ async function renderTitleBar(
   return { container, doubleClick };
 }
 
-test('TitleBar DOM: double-clicking the game/offline status areas does not toggle maximise', async () => {
-  const { container, doubleClick } = await renderTitleBar();
+test('TitleBar: the running-game lock badge is a passive warning, not a simulator', () => {
+  const html = renderToStaticMarkup(<TitleBar {...titleBarProps()} isGameRunning />);
 
-  // Both status indicators are clickable divs marked `wails-no-drag`; the DOM
-  // double-click listener must treat them as interactive, otherwise a double
-  // click both fires their onClick handlers and maximises the window.
-  const gameStatus = container.querySelector(
-    '[title="点击可模拟启动 MAS 游戏测试进程锁"]',
-  );
-  assert.ok(gameStatus, 'expected the game status indicator');
-  await doubleClick(gameStatus);
-  // The event target is often a nested icon/text node; closest() must resolve it.
-  const nested = gameStatus.querySelector('span');
-  assert.ok(nested, 'expected nested content inside the game status indicator');
-  await doubleClick(nested);
-
-  const offlineStatus = container.querySelector('[title="点击可模拟切换离线/在线状态"]');
-  assert.ok(offlineStatus, 'expected the offline status indicator');
-  await doubleClick(offlineStatus);
-
-  assert.deepEqual(windowCalls, []);
-});
-
-test('TitleBar DOM: double-clicking the running game lock badge does not toggle maximise', async () => {
-  const { container, doubleClick } = await renderTitleBar({ isGameRunning: true });
-
-  const lockBadge = container.querySelector(
-    '[title="点击可模拟退出游戏。当 MAS 运行时，为防止 Ren\'Py 运行时损坏，写操作被物理锁定。"]',
-  );
-  assert.ok(lockBadge, 'expected the running-game lock badge');
-  await doubleClick(lockBadge);
-
-  assert.deepEqual(windowCalls, []);
+  assert.match(html, /MAS 进程运行中 \(写操作锁定\)/);
+  // The scenario simulator is gone: the badge must not advertise a
+  // click-to-simulate affordance, nor look clickable.
+  assert.doesNotMatch(html, /点击可模拟/);
+  assert.doesNotMatch(html, /cursor-pointer/);
 });
 
 test('TitleBar DOM: every wails-no-drag region defers to the native hit test', async () => {

@@ -4,8 +4,6 @@ import {
   FolderGit2,
   HardDrive,
   AlertTriangle,
-  Wifi,
-  WifiOff,
   Minus,
   Square,
   Copy,
@@ -21,10 +19,7 @@ interface TitleBarProps {
   installations: Installation[];
   activeInstallationId: string;
   onSelectInstallation: (id: string) => void;
-  isGameRunning: boolean;
-  isOffline: boolean;
-  onToggleGameRunning: () => void;
-  onToggleOffline: () => void;
+  isGameRunning: boolean; // 原生层 MAS 进程状态；检测未接入时调用方恒传 false
   onOpenInstancesView: () => void;
   onLaunchGame: () => Promise<void>;
   isLaunchingGame: boolean;
@@ -48,9 +43,6 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   activeInstallationId,
   onSelectInstallation,
   isGameRunning,
-  isOffline,
-  onToggleGameRunning,
-  onToggleOffline,
   onOpenInstancesView,
   onLaunchGame,
   isLaunchingGame,
@@ -243,53 +235,26 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         )}
       </div>
 
-      {/* Middle zone: Real-time Guards & Indicators */}
-      <div className="hidden xl:flex items-center gap-3">
-        {/* Game Process Guard */}
-        {!activeInst.is_valid ? (
-          <div className="flex items-center gap-1.5 text-amber-400 text-[11px]">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span>MAS 状态未验证</span>
-          </div>
-        ) : isGameRunning ? (
-          <div
-            onClick={onToggleGameRunning}
-            className="wails-no-drag flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/70 border border-amber-800/80 text-amber-300 cursor-pointer hover:bg-amber-900/60 transition-colors"
-            title="点击可模拟退出游戏。当 MAS 运行时，为防止 Ren'Py 运行时损坏，写操作被物理锁定。"
-          >
-            <Lock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-            <span className="font-medium text-[11px]">MAS 进程运行中 (写操作锁定)</span>
-          </div>
-        ) : (
-          <div
-            onClick={onToggleGameRunning}
-            className="wails-no-drag flex items-center gap-1.5 text-neutral-400 text-[11px] cursor-pointer hover:text-neutral-200"
-            title="点击可模拟启动 MAS 游戏测试进程锁"
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-            <span>游戏未运行 · 就绪</span>
-          </div>
-        )}
-
-        {/* Offline / Online Network Indicator */}
-        <div
-          onClick={onToggleOffline}
-          className="wails-no-drag flex items-center gap-1.5 text-neutral-400 text-[11px] cursor-pointer hover:text-neutral-200"
-          title="点击可模拟切换离线/在线状态"
-        >
-          {isOffline ? (
-            <span className="flex items-center gap-1 text-amber-400 font-medium">
-              <WifiOff className="w-3.5 h-3.5" />
-              <span>离线缓存</span>
-            </span>
+      {/* Middle zone: Real-time Guards & Indicators — 空闲且实例有效时整块不渲染 */}
+      {(!activeInst.is_valid || isGameRunning) && (
+        <div className="hidden xl:flex items-center gap-3">
+          {/* Game Process Guard */}
+          {!activeInst.is_valid ? (
+            <div className="flex items-center gap-1.5 text-amber-400 text-[11px]">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>MAS 状态未验证</span>
+            </div>
           ) : (
-            <span className="flex items-center gap-1 text-neutral-400">
-              <Wifi className="w-3.5 h-3.5 text-emerald-400" />
-              <span>API v1 在线</span>
-            </span>
+            <div
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/70 border border-amber-800/80 text-amber-300"
+              title="MAS 正在运行：为防止 Ren'Py 运行时损坏，写操作被物理锁定。"
+            >
+              <Lock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+              <span className="font-medium text-[11px]">MAS 进程运行中 (写操作锁定)</span>
+            </div>
           )}
         </div>
-      </div>
+      )}
 
       {/* Right zone: Window Controls */}
       <div className="flex items-center">

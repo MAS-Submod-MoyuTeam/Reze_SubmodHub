@@ -62,8 +62,6 @@ function createMockContext(overrides: Partial<AppContextType> = {}): AppContextT
     logout: () => {},
     linkAccount: () => {},
     hasRole: () => false,
-    isOffline: false,
-    setIsOffline: () => {},
     mods: [sampleMod],
     versions: [sampleVersion],
     scanReports: {},
@@ -76,6 +74,9 @@ function createMockContext(overrides: Partial<AppContextType> = {}): AppContextT
     setPlatformFilter: () => {},
     tagFilter: 'all',
     setTagFilter: () => {},
+    catalogLoading: false,
+    catalogError: null,
+    reloadCatalog: async () => {},
     getModWithVersions: () => ({ mod: sampleMod, versions: [sampleVersion] }),
     getDownloadDescriptor: async () => ({
       download_id: 'd1',
@@ -964,6 +965,98 @@ test('integration: real AppProvider unpublishMod preserves is_published, keeps m
       root.unmount();
     });
     fetchMock.restore();
+  }
+});
+
+// ---------------- Catalog load failure is a state of its own ----------------
+
+test('CatalogView: a failed catalog load shows a retry state, never the empty-result state', async () => {
+  const { doc } = setupMockDom();
+
+  let reloadCount = 0;
+  const ctx = createMockContext({
+    mods: [],
+    versions: [],
+    catalogError: 'fetch failed',
+    reloadCatalog: async () => {
+      reloadCount += 1;
+    },
+  });
+
+  const container = doc.createElement('div');
+  doc.documentElement.appendChild(container);
+  const root = createRoot(container as any);
+
+  await act(async () => {
+    root.render(
+      <AppContext.Provider value={ctx}>
+        <CatalogView onSelectMod={() => {}} onOpenDownloadModal={() => {}} />
+      </AppContext.Provider>,
+    );
+  });
+
+  try {
+    assert.ok(findNodeByText(container, /目录加载失败/), 'load failure state must be rendered');
+    assert.ok(
+      findNodeByText(container, /fetch failed/),
+      'the failure state must carry the real error detail, not a generic network guess',
+    );
+    assert.equal(
+      findNodeByText(container, /未找到匹配的模组/),
+      null,
+      'a failed load must not degrade into the "no results" state',
+    );
+
+    const retryBtn = findButtonByText(container, /重新加载目录/);
+    assert.ok(retryBtn, 'the failure state must offer a retry entry');
+    await act(async () => {
+      retryBtn.click();
+    });
+    assert.equal(reloadCount, 1, 'retry must call reloadCatalog');
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test('CatalogView: the refresh button reloads the catalog instead of faking a spinner', async () => {
+  const { doc } = setupMockDom();
+
+  let reloadCount = 0;
+  const ctx = createMockContext({
+    mods: [sampleMod],
+    versions: [sampleVersion],
+    catalogError: null,
+    reloadCatalog: async () => {
+      reloadCount += 1;
+    },
+  });
+
+  const container = doc.createElement('div');
+  doc.documentElement.appendChild(container);
+  const root = createRoot(container as any);
+
+  await act(async () => {
+    root.render(
+      <AppContext.Provider value={ctx}>
+        <CatalogView onSelectMod={() => {}} onOpenDownloadModal={() => {}} />
+      </AppContext.Provider>,
+    );
+  });
+
+  try {
+    assert.equal(findNodeByText(container, /目录加载失败/), null, 'idle catalog must not show the failure state');
+    const refreshBtn = findButtonByText(container, /刷新/);
+    assert.ok(refreshBtn, 'populated catalog must expose a refresh entry');
+    await act(async () => {
+      refreshBtn.click();
+    });
+    assert.equal(reloadCount, 1, 'refresh must actually reload the catalog');
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
   }
 });
 

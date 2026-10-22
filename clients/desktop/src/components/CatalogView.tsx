@@ -4,7 +4,6 @@ import {
   Filter,
   Download,
   CheckCircle2,
-  AlertCircle,
   ExternalLink,
   Tag,
   Monitor,
@@ -13,6 +12,7 @@ import {
   ShieldCheck,
   RefreshCw,
   Sparkles,
+  AlertCircle,
 } from 'lucide-react';
 import { ModSummary, InstalledItem, Installation } from '../types/client';
 import type { DownloadProgress } from '../../../../ui/catalog-api';
@@ -21,7 +21,11 @@ interface CatalogViewProps {
   mods: ModSummary[];
   installedMods: InstalledItem[];
   activeInstallation: Installation;
-  isOffline: boolean;
+  /** 最近一次目录拉取的失败原因；null 表示上次拉取成功。没有离线快照，失败必须以独立状态呈现。 */
+  catalogError: string | null;
+  /** 目录是否正在重新拉取，用于禁用重试入口。 */
+  isCatalogRefreshing: boolean;
+  onReloadCatalog: () => void;
   onOpenDetail: (mod: ModSummary) => void;
   onStartInstallPlan: (mod: ModSummary) => void;
   onStartUpdatePlan: (mod: ModSummary) => void;
@@ -33,7 +37,9 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   mods,
   installedMods,
   activeInstallation,
-  isOffline,
+  catalogError,
+  isCatalogRefreshing,
+  onReloadCatalog,
   onOpenDetail,
   onStartInstallPlan,
   onStartUpdatePlan,
@@ -107,17 +113,6 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-950">
       {/* Top Filter & Search Header */}
       <div className="p-4 border-b border-neutral-800 bg-neutral-900/50 space-y-3">
-        {/* Offline Banner if offline */}
-        {isOffline && (
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-amber-950/60 border border-amber-800/80 text-amber-200 text-xs">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>当前处于客户端离线缓存模式。显示的模组条目来自本地缓存，安装仅限已校验本地包。</span>
-            </div>
-            <span className="font-mono text-[11px] text-amber-400/80">只读缓存</span>
-          </div>
-        )}
-
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
           {/* Search bar */}
           <div className="relative w-full sm:max-w-md sm:flex-1">
@@ -257,7 +252,24 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
       {/* Main Catalog Grid View */}
       <div className="flex-1 overflow-y-auto p-4">
-        {filteredMods.length === 0 ? (
+        {catalogError ? (
+          /* Load Failure State: 没有离线快照，失败必须与「无匹配结果」区分开 */
+          <div className="h-full flex flex-col items-center justify-center text-center p-8">
+            <AlertCircle className="w-10 h-10 text-amber-500 mb-3" />
+            <h3 className="text-base font-semibold text-neutral-100">目录加载失败</h3>
+            <p className="text-xs text-neutral-400 mt-1 max-w-sm">
+              无法从服务器读取已发布目录：{catalogError}。项目不提供离线缓存快照，请检查网络后重新加载。
+            </p>
+            <button
+              onClick={onReloadCatalog}
+              disabled={isCatalogRefreshing}
+              className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-200 bg-amber-950/70 border border-amber-800/80 hover:bg-amber-900/60 rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>{isCatalogRefreshing ? '重新加载中…' : '重新加载目录'}</span>
+            </button>
+          </div>
+        ) : filteredMods.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-400">
             <Filter className="w-10 h-10 text-neutral-600 mb-3" />
             <h3 className="text-base font-semibold text-neutral-200">未找到符合条件的模组</h3>

@@ -921,10 +921,10 @@ export const CONTRACT_ERROR_CONFIGS: ErrorDisplayConfig[] = [
   {
     code: 'offline',
     title: '离线模式 (Offline Mode)',
-    description: '无法连接至 RezeHub API 服务器，启用客户端本地离线缓存。',
+    description: '无法连接至 RezeHub API 服务器；项目不提供离线缓存，目录与安装始终需要在线数据。',
     category: 'recovery',
-    frontend_action: '显示离线缓存指示条，允许浏览已缓存目录，安装仅限已验证的本地 ZIP。',
-    sample_details: { cached_mods_count: 6, last_sync: '2026-09-26T12:00:00Z' },
+    frontend_action: '提示网络不可用并提供重新连接入口；安装仅限已验证的本地 ZIP，不读取本地目录快照。',
+    sample_details: { last_failed_at: '2026-09-26T12:00:00Z' },
   },
 ];
 
