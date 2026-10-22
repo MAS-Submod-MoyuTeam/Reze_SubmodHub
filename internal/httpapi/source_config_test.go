@@ -214,7 +214,7 @@ func TestHealthzGitHubSyncDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.GitHubSyncInterval = 10 * time.Minute
+	store.GitHubSyncMaxAge = 10 * time.Minute
 	server := httptest.NewServer(NewStoreHandler(store))
 	defer server.Close()
 
@@ -231,7 +231,8 @@ func TestHealthzGitHubSyncDiagnostics(t *testing.T) {
 	var payload struct {
 		Status     string `json:"status"`
 		GitHubSync struct {
-			Interval         string `json:"interval"`
+			MaxAge           string `json:"max_age"`
+			StaleMods        int    `json:"stale_mods"`
 			TotalManagedMods int    `json:"total_managed_mods"`
 			LastSyncError    string `json:"last_sync_error"`
 		} `json:"github_sync"`
@@ -247,8 +248,13 @@ func TestHealthzGitHubSyncDiagnostics(t *testing.T) {
 	if payload.GitHubSync.TotalManagedMods != 1 {
 		t.Fatalf("expected 1 managed mod, got %d", payload.GitHubSync.TotalManagedMods)
 	}
-	if payload.GitHubSync.Interval != "10m0s" {
-		t.Fatalf("expected interval 10m0s, got %q", payload.GitHubSync.Interval)
+	if payload.GitHubSync.MaxAge != "10m0s" {
+		t.Fatalf("expected max age 10m0s, got %q", payload.GitHubSync.MaxAge)
+	}
+	// The managed mod has a last-sync stamp but no window was applied to the
+	// store, so it is stale only because its error left no successful sync.
+	if payload.GitHubSync.StaleMods != 0 {
+		t.Fatalf("expected 0 stale mods, got %d", payload.GitHubSync.StaleMods)
 	}
 	if payload.GitHubSync.LastSyncError != "temporary rate limit" {
 		t.Fatalf("expected last sync error, got %q", payload.GitHubSync.LastSyncError)

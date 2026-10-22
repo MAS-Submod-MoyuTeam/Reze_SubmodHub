@@ -8,7 +8,6 @@ import {
   validateGitHubSourceInput,
   formatLastSyncTime,
   getGitHubRepoUrl,
-  DEFAULT_REFRESH_WINDOW_MINUTES,
   MANIFEST_FILE_NAME,
   MANIFEST_SNIPPET,
   manifestModeTradeoff,
@@ -70,6 +69,7 @@ export const AuthorWorkbench: React.FC = () => {
     editVersion,
     syncModReleases,
     showToast,
+    refreshWindowText,
   } = workspace.app;
 
   // Author role check
@@ -108,8 +108,9 @@ export const AuthorWorkbench: React.FC = () => {
   const [newGitHubSourceCode, setNewGitHubSourceCode] = useState(false);
   const [newGitHubManifest, setNewGitHubManifest] = useState(false);
   // 两种版本发现方式的取舍必须如实展示给作者：清单模式用“多维护一个文件”换“零延迟”。
+  // 窗口引用服务端实际生效的值，避免文案与设置页不一致。
   const manifestTradeoff = manifestModeTradeoff();
-  const onDemandTradeoff = onDemandModeTradeoff();
+  const onDemandTradeoff = onDemandModeTradeoff(refreshWindowText);
   const [isSyncingReleases, setIsSyncingReleases] = useState(false);
 
   // Version Draft Creation Dialog
@@ -714,7 +715,7 @@ export const AuthorWorkbench: React.FC = () => {
                         )}
                         {!activeMod.github_manifest && (
                           <div className="text-[11px] text-amber-800 bg-amber-50 p-1.5 rounded border border-amber-200">
-                            未使用清单：版本只会在有人打开该模组时按需抓取，最多延迟约 {DEFAULT_REFRESH_WINDOW_MINUTES} 分钟；长时间无人访问则不会更新。
+                            未使用清单：距上次检查超过 {refreshWindowText} 才会回源；有人打开该模组时立即补抓，无人访问时由后台巡检兜底。
                           </div>
                         )}
                         {activeMod.github_manifest && (

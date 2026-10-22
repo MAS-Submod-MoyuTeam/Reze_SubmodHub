@@ -616,7 +616,7 @@ func TestGitHubSyncTickerLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.GitHubSyncInterval = 10 * time.Millisecond
+	store.GitHubSyncMaxAge = 10 * time.Millisecond
 	store.StartGitHubSync()
 
 	// Wait briefly to let ticker tick

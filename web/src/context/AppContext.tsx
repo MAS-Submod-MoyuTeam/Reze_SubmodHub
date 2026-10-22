@@ -29,6 +29,7 @@ import { fetchDownloadDescriptor, fetchPublishedCatalog, fetchPublishedVersions 
 import { loginFlarum as loginFlarumRequest, logout as logoutRequest, readSession, Session } from '../../../ui/auth-api';
 import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, markPublishedVersionLatest, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages, syncAuthorModGitHub, type SyncSummary } from '../../../ui/submission-api';
 import { mapServerScanReport } from './scanReport';
+import { refreshWindowText as formatRefreshWindow, type SourcePolicy } from '../components/sourceConfig';
 
 export type NavTab =
   | 'catalog'
@@ -68,6 +69,10 @@ export interface AppContextType {
   // Offline Simulation
   isOffline: boolean;
   setIsOffline: (val: boolean) => void;
+
+  // Site Policy (public, no credentials)
+  /** 服务端当前生效的 GitHub 源刷新窗口；null 表示尚未取到。 */
+  refreshWindowText: string;
 
   // Catalog Data
   mods: ModSummary[];
@@ -153,6 +158,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Offline cache simulation
   const [isOffline, setIsOffline] = useState(false);
+
+  // Site policy: the server owns the refresh window, so the copy quotes it.
+  const [sourcePolicy, setSourcePolicy] = useState<SourcePolicy | null>(null);
 
   // Data Store
   const [mods, setMods] = useState<ModSummary[]>([]);
@@ -269,6 +277,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
     readSession(base).then(applySession).catch(() => applySession({ user: null, roles: [], csrf_token: '' }));
   }, [applySession]);
+
+  // The window is public policy, so it is read once at boot. A failed read keeps
+  // the fallback text rather than hiding the author's cost disclosure.
+  useEffect(() => {
+    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    let cancelled = false;
+    fetch(`${base}/source-policy`, { credentials: 'same-origin' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((policy: SourcePolicy | null) => {
+        if (!cancelled && policy) setSourcePolicy(policy);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const refreshWindowText = useMemo(() => formatRefreshWindow(sourcePolicy), [sourcePolicy]);
 
   const cacheAuthorPage = useCallback((page: AuthorPageData) => {
     if (page.mods) setMods((prev) => [...page.mods!, ...prev.filter((item) => !page.mods!.some((entry) => entry.id === item.id))]);
@@ -1053,6 +1079,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       hasRole,
       isOffline,
       setIsOffline,
+      refreshWindowText,
       mods,
       versions,
       scanReports,
@@ -1116,6 +1143,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       linkAccount,
       hasRole,
       isOffline,
+      refreshWindowText,
       mods,
       versions,
       scanReports,

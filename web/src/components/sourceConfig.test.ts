@@ -8,6 +8,8 @@ import {
   manifestModeTradeoff,
   onDemandModeTradeoff,
   DEFAULT_REFRESH_WINDOW_MINUTES,
+  describeRefreshWindow,
+  refreshWindowText,
   MANIFEST_FILE_NAME,
   MANIFEST_SNIPPET,
 } from './sourceConfig';
@@ -71,11 +73,23 @@ test('tradeoff copy tells the author what each mode costs', () => {
   assert.ok(manifest.cost.includes(MANIFEST_FILE_NAME));
   assert.ok(manifest.cost.includes('维护'));
 
-  const onDemand = onDemandModeTradeoff();
-  assert.ok(onDemand.cost.includes(`${DEFAULT_REFRESH_WINDOW_MINUTES} 分钟`));
-  assert.ok(onDemand.cost.includes('延迟'));
-  // A different server-side window must reach the copy.
-  assert.ok(onDemandModeTradeoff(5).cost.includes('5 分钟'));
+  // The copy quotes the server's window, so the default text is the default value.
+  const defaultText = describeRefreshWindow(DEFAULT_REFRESH_WINDOW_MINUTES * 60);
+  const onDemand = onDemandModeTradeoff(defaultText);
+  assert.ok(onDemand.cost.includes(defaultText));
+  // The sweep means an idle mod is no longer permanently stale.
+  assert.ok(onDemand.cost.includes('后台巡检'));
+  // A different server-side window must reach the copy verbatim.
+  assert.ok(onDemandModeTradeoff('15 分钟').cost.includes('15 分钟'));
+  assert.ok(onDemandModeTradeoff('已关闭自动刷新').cost.includes('已关闭自动刷新'));
+
+  // Second-level durations render as readable Chinese, never as raw seconds.
+  assert.equal(describeRefreshWindow(60 * 60), '1 小时');
+  assert.equal(describeRefreshWindow(90 * 60), '1 小时 30 分钟');
+  assert.equal(describeRefreshWindow(15 * 60), '15 分钟');
+  assert.equal(describeRefreshWindow(0), '已关闭自动刷新');
+  assert.equal(refreshWindowText(null), '1 小时');
+  assert.equal(refreshWindowText({ github_sync_max_age: '5400s', github_sync_max_age_seconds: 5400, github_sync_max_age_configured: true }), '1 小时 30 分钟');
 });
 
 test('manifest snippet matches the document the server parses', () => {

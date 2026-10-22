@@ -172,8 +172,7 @@ cd cmd/client/SubmodHub && wails3 dev
 | `ADMIN_FLARUM_GROUP_IDS` | 空 | 自动映射为 `admin` 的 Flarum 组 ID，如 `16,22` |
 | `SUBMODHUB_AUTO_PUBLISH` | `false` | `true` 时跳过人工审核直接发布 |
 | `SUBMODHUB_UPLOAD_TOKEN` | 空 | 直接上传令牌 |
-| `GITHUB_SYNC_INTERVAL` | `0`（关闭） | 旧的后台轮询间隔；默认关闭，版本按需抓取。设为 `15m` 可恢复轮询 |
-| `GITHUB_SYNC_TTL` | `30m` | 按需抓取的新鲜度窗口：有人查看模组时，距上次同步超过该值才回源。`0` 表示只有显式「立即同步」才回源 |
+| `GITHUB_SYNC_MAX_AGE` | 设置页（默认 `60m`） | 检查更新窗口：距上次检查超过该值的 GitHub 源会自动回源。有人打开模组时立即补抓，长时间无人访问时由后台巡检兜底。`0` 表示只有显式「立即同步」才回源。环境变量仅用于覆盖设置页的值 |
 | `SUBMODHUB_DELIVERY_MASTER_KEY` | 空 | 交付凭据主密钥（32 字节 base64），为空则无法保存新凭据 |
 | `SUBMODHUB_TEST_MODE` | `false` | 测试账号模式，仅限本地/测试环境 |
 

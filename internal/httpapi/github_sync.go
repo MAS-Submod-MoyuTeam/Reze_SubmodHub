@@ -18,6 +18,10 @@ import (
 // may refresh, so a cold catalog does not start every download at once.
 const maxPassiveRefreshPerPage = 3
 
+// githubSyncSweepInterval is how often the background loop looks for stale
+// mods. It is a variable so tests can shrink it.
+var githubSyncSweepInterval = time.Minute
+
 type SyncItemResult struct {
 	ReleaseID int64  `json:"release_id"`
 	Tag       string `json:"tag"`
@@ -392,13 +396,29 @@ func (s *Store) followManifestLatest(modID string, releases []github.ManifestRel
 	}
 }
 
-// MaybeSyncGitHubMod refreshes one mod if it is due. This is the passive
-// replacement for background polling: the request that made the mod relevant
-// triggers the refresh, everything else keeps reading the cached state.
+// MaybeSyncGitHubMod refreshes one mod if it has not been checked for longer
+// than the configured window. Any request that makes the mod relevant triggers
+// this; everything else keeps reading the cached state.
 // Returns true when a refresh was actually started.
 func (s *Store) MaybeSyncGitHubMod(modID string) bool {
-	now := time.Now().UTC()
+	if !s.claimSync(modID, time.Now().UTC()) {
+		return false
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		s.runClaimedSync(ctx, modID)
+	}()
+	return true
+}
+
+// claimSync marks a mod as being refreshed. It returns false when the mod is
+// not GitHub-backed, is still fresh, or already has a refresh in flight, so the
+// caller must not start one. The sweep claims every stale mod up front instead
+// of calling claimSync again, which keeps its batch bounded by one pass.
+func (s *Store) claimSync(modID string, now time.Time) bool {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	var mod *Mod
 	for i := range s.Catalog.Mods {
 		if s.Catalog.Mods[i].ID == modID {
@@ -406,46 +426,41 @@ func (s *Store) MaybeSyncGitHubMod(modID string) bool {
 			break
 		}
 	}
-	if mod == nil || mod.GetSourceType() != "github_releases" {
-		s.mu.Unlock()
-		return false
-	}
-	if !s.passiveSyncDueLocked(*mod, now) {
-		s.mu.Unlock()
+	if mod == nil || !s.syncDueLocked(*mod, now) {
 		return false
 	}
 	if s.simultaneousSyncs == nil {
 		s.simultaneousSyncs = map[string]bool{}
 	}
 	if s.simultaneousSyncs[modID] {
-		s.mu.Unlock()
 		return false
 	}
 	s.simultaneousSyncs[modID] = true
-	s.mu.Unlock()
-
-	go func() {
-		defer func() {
-			s.mu.Lock()
-			delete(s.simultaneousSyncs, modID)
-			s.mu.Unlock()
-		}()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-		if _, err := s.SyncMod(ctx, modID); err != nil {
-			log.Printf("[github-sync] passive refresh of %s failed: %v", modID, err)
-		}
-	}()
 	return true
 }
 
-// passiveSyncDueLocked reports whether a mod is outside its freshness window.
+// runClaimedSync refreshes a mod whose claim already succeeded and releases it.
+func (s *Store) runClaimedSync(ctx context.Context, modID string) {
+	defer func() {
+		s.mu.Lock()
+		delete(s.simultaneousSyncs, modID)
+		s.mu.Unlock()
+	}()
+	if _, err := s.SyncMod(ctx, modID); err != nil {
+		log.Printf("[github-sync] refresh of %s failed: %v", modID, err)
+	}
+}
+
+// syncDueLocked reports whether a mod has gone longer than the window without
+// being checked. It is the single staleness predicate: the passive path (a page
+// view) and the background sweep both call it, so "looked at" and "swept up"
+// can never disagree about when a mod is stale.
 // Callers must hold the store lock.
-func (s *Store) passiveSyncDueLocked(mod Mod, now time.Time) bool {
+func (s *Store) syncDueLocked(mod Mod, now time.Time) bool {
 	if mod.GetSourceType() != "github_releases" {
 		return false
 	}
-	if s.GitHubSyncTTL <= 0 {
+	if s.GitHubSyncMaxAge <= 0 {
 		return false
 	}
 	if !mod.GitHubManifest {
@@ -456,7 +471,7 @@ func (s *Store) passiveSyncDueLocked(mod Mod, now time.Time) bool {
 			return false
 		}
 	}
-	return mod.GitHubLastSyncAt == nil || now.Sub(*mod.GitHubLastSyncAt) >= s.GitHubSyncTTL
+	return mod.GitHubLastSyncAt == nil || now.Sub(*mod.GitHubLastSyncAt) >= s.GitHubSyncMaxAge
 }
 
 // maybeSyncGitHubModAsync spawns the passive refresh without blocking the caller.
@@ -547,6 +562,9 @@ func allowSourceRootReadme(report *packagezip.Report) {
 	report.Unsupported = kept
 }
 
+// SyncAllGitHubMods refreshes every GitHub-backed mod. It is the explicit
+// "check everything now" entry point, so it ignores the staleness window and
+// only skips mods whose own backoff is still running.
 func (s *Store) SyncAllGitHubMods(ctx context.Context) map[string]*SyncSummary {
 	s.mu.RLock()
 	modIDs := make([]string, 0)
@@ -569,19 +587,57 @@ func (s *Store) SyncAllGitHubMods(ctx context.Context) map[string]*SyncSummary {
 	return results
 }
 
-// StartGitHubSync starts the legacy background poller. It is off by default: the
-// catalog is refreshed on demand instead (see MaybeSyncGitHubMod), because every
-// poll consumes the same GitHub API quota that real requests need.
-func (s *Store) StartGitHubSync() {
-	if s.GitHubSyncInterval <= 0 {
-		return
+// SyncStaleGitHubMods refreshes only the mods whose last check is older than the
+// configured window. This is what the background loop runs: a mod that was just
+// refreshed because somebody opened its page is not checked again.
+func (s *Store) SyncStaleGitHubMods(ctx context.Context) int {
+	now := time.Now().UTC()
+	s.mu.RLock()
+	stale := make([]string, 0)
+	for _, m := range s.Catalog.Mods {
+		if s.syncDueLocked(m, now) {
+			stale = append(stale, m.ID)
+		}
 	}
+	s.mu.RUnlock()
+
+	refreshed := 0
+	for _, id := range stale {
+		if ctx.Err() != nil {
+			return refreshed
+		}
+		// The list is already filtered by syncDueLocked, so claiming only has
+		// to win the in-flight race. Sweeps run one mod at a time on purpose:
+		// a catalog-wide burst is exactly what the API quota cannot absorb.
+		if !s.claimSync(id, now) {
+			continue
+		}
+		s.runClaimedSync(ctx, id)
+		refreshed++
+	}
+	return refreshed
+}
+
+// ApplyGitHubSyncMaxAgeSetting seeds the runtime window from persisted settings.
+// Callers apply environment overrides afterwards.
+func (s *Store) ApplyGitHubSyncMaxAgeSetting() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.GitHubSyncMaxAge = resolveGitHubSyncMaxAge(s.Catalog.Settings.GitHubSyncMaxAge)
+}
+
+// StartGitHubSync starts the background sweep. It wakes up in short slices and
+// only looks for stale mods once per slice, so a window changed in the settings
+// page takes effect without a restart and an idle catalog costs nothing.
+func (s *Store) StartGitHubSync() {
 	s.syncStopChan = make(chan struct{})
 	s.syncDoneChan = make(chan struct{})
 
 	go func() {
 		defer close(s.syncDoneChan)
-		ticker := time.NewTicker(s.GitHubSyncInterval)
+		// The sweep interval only bounds how often we look for stale mods; the
+		// window itself decides which ones are refreshed.
+		ticker := time.NewTicker(githubSyncSweepInterval)
 		defer ticker.Stop()
 
 		for {
@@ -589,8 +645,11 @@ func (s *Store) StartGitHubSync() {
 			case <-s.syncStopChan:
 				return
 			case <-ticker.C:
+				if s.syncMaxAge() <= 0 {
+					continue
+				}
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-				_ = s.SyncAllGitHubMods(ctx)
+				s.SyncStaleGitHubMods(ctx)
 				cancel()
 			}
 		}
@@ -612,8 +671,10 @@ func (s *Store) Close() error {
 }
 
 type GitHubSyncDiagnostics struct {
-	Interval         string     `json:"interval"`
-	TTL              string     `json:"ttl"`
+	// MaxAge is the staleness window; "disabled" means nothing refreshes
+	// automatically. StaleMods is how many mods are past it right now.
+	MaxAge           string     `json:"max_age"`
+	StaleMods        int        `json:"stale_mods"`
 	ActiveJobs       int        `json:"active_jobs"`
 	LastSyncAt       *time.Time `json:"last_sync_at,omitempty"`
 	LastSyncError    string     `json:"last_sync_error,omitempty"`
@@ -649,18 +710,21 @@ func (s *Store) GetGitHubSyncDiagnostics() *GitHubSyncDiagnostics {
 		}
 	}
 
-	intervalStr := "disabled"
-	if s.GitHubSyncInterval > 0 {
-		intervalStr = s.GitHubSyncInterval.String()
+	maxAgeStr := "disabled"
+	if s.GitHubSyncMaxAge > 0 {
+		maxAgeStr = s.GitHubSyncMaxAge.String()
 	}
-	ttlStr := "disabled"
-	if s.GitHubSyncTTL > 0 {
-		ttlStr = s.GitHubSyncTTL.String()
+	now := time.Now().UTC()
+	staleCount := 0
+	for _, m := range s.Catalog.Mods {
+		if s.syncDueLocked(m, now) {
+			staleCount++
+		}
 	}
 
 	return &GitHubSyncDiagnostics{
-		Interval:         intervalStr,
-		TTL:              ttlStr,
+		MaxAge:           maxAgeStr,
+		StaleMods:        staleCount,
 		ActiveJobs:       len(s.simultaneousSyncs),
 		LastSyncAt:       latestSync,
 		LastSyncError:    latestErr,

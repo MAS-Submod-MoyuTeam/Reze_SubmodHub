@@ -199,10 +199,22 @@ type githubTokenSecret struct {
 	Encrypted bool   `json:"encrypted"`
 }
 
+// defaultGitHubSyncMaxAge is how long a GitHub-backed mod may go unchecked. The
+// same number drives both the passive refresh (someone opens the mod) and the
+// background sweep (nobody does), so an idle catalog still catches up.
+const defaultGitHubSyncMaxAge = 60 * time.Minute
+
+// maxGitHubSyncMaxAge keeps a typo from parking the refresh for years.
+const maxGitHubSyncMaxAge = 30 * 24 * time.Hour
+
 type SiteSettings struct {
 	GitHubProxyTemplate string             `json:"github_proxy_template"`
 	GitHubToken         *githubTokenSecret `json:"github_token,omitempty"`
-	Revision            uint64             `json:"revision"`
+	// GitHubSyncMaxAge is how stale a mod may get before it is checked again, as
+	// a Go duration string. Empty means "use defaultGitHubSyncMaxAge"; "0"
+	// disables automatic refresh entirely.
+	GitHubSyncMaxAge string `json:"github_sync_max_age,omitempty"`
+	Revision         uint64 `json:"revision"`
 }
 
 type SettingsAuditEvent struct {
@@ -266,33 +278,36 @@ type RoleAuditEvent struct {
 	At       time.Time `json:"at"`
 }
 type Store struct {
-	receipts           receiptRuntime
-	deliveryRuntime    deliveryRuntime
-	DeliverySecrets    *delivery.Secrets
-	mu                 sync.RWMutex
-	Catalog            Catalog
-	DataDir            string
-	UploadToken        string
-	AutoPublish        bool
-	TestMode           bool
-	TestUsername       string
-	TestPassword       string
-	DB                 *sql.DB
-	Flarum             *auth.FlarumClient
-	AdminGroupIDs      map[string]bool
-	sessions           map[string]authSession
-	GitHubClient       *github.Client
-	GitHubSyncInterval time.Duration
-	// GitHubSyncTTL is the passive freshness window: a GitHub-backed mod is
-	// refreshed when something asks for it and its last sync is older than this.
-	// Polling competes for the same API quota, so zero disables passive refresh.
-	GitHubSyncTTL      time.Duration
-	gitHubBackoffUntil time.Time
-	simultaneousSyncs  map[string]bool
-	syncStopChan       chan struct{}
-	syncDoneChan       chan struct{}
-	syncCloseOnce      sync.Once
-	downloadSem        chan struct{}
+	receipts        receiptRuntime
+	deliveryRuntime deliveryRuntime
+	DeliverySecrets *delivery.Secrets
+	mu              sync.RWMutex
+	Catalog         Catalog
+	DataDir         string
+	UploadToken     string
+	AutoPublish     bool
+	TestMode        bool
+	TestUsername    string
+	TestPassword    string
+	DB              *sql.DB
+	Flarum          *auth.FlarumClient
+	AdminGroupIDs   map[string]bool
+	sessions        map[string]authSession
+	GitHubClient    *github.Client
+	// GitHubSyncMaxAge is the single staleness window for GitHub-backed mods:
+	// a mod older than this is refreshed whether it is looked at (passive
+	// refresh) or swept up by the background loop. Zero disables both.
+	GitHubSyncMaxAge time.Duration
+	// GitHubSyncMaxAgeOverride is set when GITHUB_SYNC_MAX_AGE pins the
+	// deployment. Settings changes must not pretend to change the effective
+	// runtime value while that override is active.
+	GitHubSyncMaxAgeOverride *time.Duration
+	gitHubBackoffUntil       time.Time
+	simultaneousSyncs        map[string]bool
+	syncStopChan             chan struct{}
+	syncDoneChan             chan struct{}
+	syncCloseOnce            sync.Once
+	downloadSem              chan struct{}
 }
 
 func NewStore(dataDir string, initial Catalog) (*Store, error) {
@@ -310,7 +325,7 @@ func newStore(dataDir string, initial Catalog, loadLocalCatalog bool) (*Store, e
 	if err := os.MkdirAll(filepath.Join(dataDir, "archives"), 0o750); err != nil {
 		return nil, err
 	}
-	s := &Store{Catalog: initial, DataDir: dataDir, sessions: map[string]authSession{}, simultaneousSyncs: map[string]bool{}, downloadSem: make(chan struct{}, 2)}
+	s := &Store{Catalog: initial, DataDir: dataDir, GitHubSyncMaxAge: defaultGitHubSyncMaxAge, sessions: map[string]authSession{}, simultaneousSyncs: map[string]bool{}, downloadSem: make(chan struct{}, 2)}
 	if loadLocalCatalog {
 		if b, err := os.ReadFile(filepath.Join(dataDir, "catalog.json")); err == nil {
 			if json.Unmarshal(b, &s.Catalog) != nil {
@@ -329,6 +344,7 @@ func newStore(dataDir string, initial Catalog, loadLocalCatalog bool) (*Store, e
 			s.Catalog.Versions[id] = v
 		}
 	}
+	s.GitHubSyncMaxAge = resolveGitHubSyncMaxAge(s.Catalog.Settings.GitHubSyncMaxAge)
 	return s, nil
 }
 func (s *Store) saveLocked() error {
@@ -363,6 +379,7 @@ func NewStoreHandler(s *Store) http.Handler {
 		writeJSON(w, 200, status)
 	})
 	mux.HandleFunc("/api/v1/version", s.versionInfo)
+	mux.HandleFunc("/api/v1/source-policy", s.publicSourcePolicy)
 	mux.HandleFunc("/api/v1/mods", s.listMods)
 	mux.HandleFunc("/api/v1/registrations/match", s.handleMatchRegistrations)
 	mux.HandleFunc("/api/v1/session", s.session)

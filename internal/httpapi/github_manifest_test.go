@@ -175,7 +175,7 @@ func TestManifestSyncSurfacesMissingManifest(t *testing.T) {
 	}
 }
 
-func TestPassiveSyncHonoursTTLAndMode(t *testing.T) {
+func TestPassiveSyncHonoursMaxAgeAndMode(t *testing.T) {
 	lastSync := time.Now().UTC().Add(-time.Minute)
 	store, err := NewStore(t.TempDir(), Catalog{Mods: []Mod{
 		{ID: "due", SourceType: "github_releases", GitHubOwner: "octocat", GitHubRepo: "hello"},
@@ -186,31 +186,31 @@ func TestPassiveSyncHonoursTTLAndMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	store.GitHubSyncTTL = 10 * time.Minute
+	store.GitHubSyncMaxAge = 10 * time.Minute
 
-	if !store.passiveSyncDueLocked(store.Catalog.Mods[0], now) {
+	if !store.syncDueLocked(store.Catalog.Mods[0], now) {
 		t.Fatal("a never-synced mod is due")
 	}
-	if store.passiveSyncDueLocked(store.Catalog.Mods[1], now) {
-		t.Fatal("a mod synced inside the TTL window is not due")
+	if store.syncDueLocked(store.Catalog.Mods[1], now) {
+		t.Fatal("a mod synced inside the max-age window is not due")
 	}
-	if store.passiveSyncDueLocked(store.Catalog.Mods[2], now) {
+	if store.syncDueLocked(store.Catalog.Mods[2], now) {
 		t.Fatal("local mods are never refreshed")
 	}
 
 	// Outside the window the mod becomes due again.
-	store.GitHubSyncTTL = 30 * time.Second
-	if !store.passiveSyncDueLocked(store.Catalog.Mods[1], now) {
-		t.Fatal("a mod older than the TTL window is due")
+	store.GitHubSyncMaxAge = 30 * time.Second
+	if !store.syncDueLocked(store.Catalog.Mods[1], now) {
+		t.Fatal("a mod older than the max-age window is due")
 	}
 
 	// Zero disables passive refresh entirely: only the explicit action remains.
-	store.GitHubSyncTTL = 0
-	if store.passiveSyncDueLocked(store.Catalog.Mods[0], now) {
-		t.Fatal("TTL=0 must disable passive refresh")
+	store.GitHubSyncMaxAge = 0
+	if store.syncDueLocked(store.Catalog.Mods[0], now) {
+		t.Fatal("max-age=0 must disable passive refresh")
 	}
 	if store.MaybeSyncGitHubMod("due") {
-		t.Fatal("MaybeSyncGitHubMod must stay inert with TTL=0")
+		t.Fatal("MaybeSyncGitHubMod must stay inert with max-age=0")
 	}
 }
 
@@ -221,7 +221,7 @@ func TestPassiveSyncSkipsModsAlreadyInFlight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.GitHubSyncTTL = 10 * time.Minute
+	store.GitHubSyncMaxAge = 10 * time.Minute
 	store.simultaneousSyncs["busy"] = true
 	if store.MaybeSyncGitHubMod("busy") {
 		t.Fatal("a mod that is already syncing must not start a second refresh")
@@ -291,16 +291,16 @@ func TestManifestSyncBypassesAPIBackoff(t *testing.T) {
 		return manifestBody(base, "1.0.0")
 	})
 	store := newManifestStore(t, server)
-	store.GitHubSyncTTL = time.Minute
+	store.GitHubSyncMaxAge = time.Minute
 	deadline := time.Now().UTC().Add(time.Hour)
 	store.gitHubBackoffUntil = deadline
 	store.Catalog.Mods[0].GitHubBackoffUntil = &deadline
 	apiMod := Mod{ID: "api", SourceType: "github_releases", GitHubOwner: "octocat", GitHubRepo: "hello"}
 	store.Catalog.Mods = append(store.Catalog.Mods, apiMod)
-	if !store.passiveSyncDueLocked(store.Catalog.Mods[0], time.Now()) {
+	if !store.syncDueLocked(store.Catalog.Mods[0], time.Now()) {
 		t.Fatal("API backoff suppressed passive manifest refresh")
 	}
-	if store.passiveSyncDueLocked(apiMod, time.Now()) {
+	if store.syncDueLocked(apiMod, time.Now()) {
 		t.Fatal("API mode must honour global backoff")
 	}
 	results := store.SyncAllGitHubMods(context.Background())
@@ -312,11 +312,11 @@ func TestManifestSyncBypassesAPIBackoff(t *testing.T) {
 	}
 	store.gitHubBackoffUntil = time.Time{}
 	apiMod.GitHubBackoffUntil = &deadline
-	if store.passiveSyncDueLocked(apiMod, time.Now()) {
+	if store.syncDueLocked(apiMod, time.Now()) {
 		t.Fatal("API mode must honour per-mod backoff")
 	}
-	if store.passiveSyncDueLocked(store.Catalog.Mods[0], time.Now()) {
-		t.Fatal("manifest mode must still honour TTL")
+	if store.syncDueLocked(store.Catalog.Mods[0], time.Now()) {
+		t.Fatal("manifest mode must still honour max-age")
 	}
 }
 

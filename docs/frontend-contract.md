@@ -203,17 +203,28 @@
 - `POST /api/v1/author/mods/{id}/github-sync`：手动触发立即同步（强制回源，忽略 ETag 与清单摘要缓存）。返回 `{ mod_id, synced_at, created, skipped, failed, items: [...] }` 汇总。
 
 ### 版本发现方式（前端必读）
-站内默认**不再后台轮询**。`GET /api/v1/mods/{id}` 与作者工作台列表加载会在胶水层按 `GITHUB_SYNC_TTL`（默认 30 分钟）异步触发一次回源（每页最多 3 个模组、同一模组单飞），页面响应不被阻塞。
+`GET /api/v1/mods/{id}` 与作者工作台列表加载会在胶水层按 `GITHUB_SYNC_MAX_AGE`（默认 60 分钟）异步触发一次回源（每页最多 3 个模组、同一模组单飞），页面响应不被阻塞；后台巡检每分钟把过期模组补一遍。
 
 作者在“编辑模组”的 GitHub 分段中必须能选择两种发现方式，并**如实展示代价**：
-- **站内按需抓取（默认）**：无需任何额外文件；但更新最多延迟约 `GITHUB_SYNC_TTL`，且需要有人打开该模组才会触发，长时间无人访问则不会更新。
+- **站内按需抓取（默认）**：无需任何额外文件；更新最多延迟约 `GITHUB_SYNC_MAX_AGE`，有人打开该模组时立即补抓，无人访问时由后台巡检兜底。
 - **仓库清单 `rezehub.yml`（可选）**：作者需在仓库根目录维护该文件、每次发版补一条记录；换取零 REST 配额与打开页面即最新。
 
-### 管理端 GitHub API 令牌
-`GET /api/v1/admin/settings` 返回 `github_proxy_template`、`github_token_configured`、`github_token_encrypted`、`github_token_hint`（末四位）、`master_key_configured`、`revision`，**永不回显令牌本身**。
+### 源策略（公开）
+`GET /api/v1/source-policy` 返回当前生效的刷新窗口，供作者端文案引用**实际值**而不是硬编码默认值：
 
-`PATCH /api/v1/admin/settings` 接受 `{ github_proxy_template?, github_token?, revision }`：
-- 两个字段都可省略，但至少要给一个，否则 400；省略的字段保持原值。
+```json
+{ "github_sync_max_age": "1h0m0s", "github_sync_max_age_seconds": 3600, "github_sync_max_age_configured": true }
+```
+
+无需鉴权（窗口本身可从外部观测，且不含任何凭据）。`configured=false` 表示自动刷新已关闭，前端必须渲染为「已关闭自动刷新」而不是「0 分钟」。
+
+### 管理端 GitHub API 令牌
+`GET /api/v1/admin/settings` 返回 `github_proxy_template`、`github_token_configured`、`github_token_encrypted`、`github_token_hint`（末四位）、`github_sync_max_age`（当前生效的检查更新窗口）、`master_key_configured`、`revision`，**永不回显令牌本身**。`PATCH` 可带 `github_sync_max_age`（Go duration；空串恢复默认 60 分钟，`0` 关闭自动刷新）。
+
+`PATCH /api/v1/admin/settings` 接受 `{ github_proxy_template?, github_token?, github_sync_max_age?, revision }`：
+- `github_sync_max_age` 为 Go duration；空串恢复默认 60 分钟，`0` 关闭自动刷新。
+- 若部署设置了非空 `GITHUB_SYNC_MAX_AGE`，响应额外包含 `github_sync_max_age_locked: true`；管理页应禁用窗口编辑。直接 PATCH 该字段返回 409 `github_sync_max_age_env_override`，其他设置仍可修改。
+- 字段可省略，但至少要提供一个，否则 400；省略的字段保持原值。
 - `github_token: ""`（或纯空白）表示清除已存令牌；非空则必须是可打印 ASCII、无空格换行、≤255 字符，否则 400 `invalid_github_token`。
 - 保存成功后 `revision` 递增，并清空全局与各模组的限流退避（配额桶已换）。
 - 前端必须区分展示「已加密存储」与「明文存储」，后者要提示配置 `SUBMODHUB_DELIVERY_MASTER_KEY`。

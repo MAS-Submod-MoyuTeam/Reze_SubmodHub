@@ -65,6 +65,7 @@ func (s *Store) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		var payload struct {
 			GitHubProxyTemplate *string `json:"github_proxy_template"`
 			GitHubToken         *string `json:"github_token"`
+			GitHubSyncMaxAge    *string `json:"github_sync_max_age"`
 			Revision            *uint64 `json:"revision"`
 		}
 		dec := json.NewDecoder(r.Body)
@@ -73,8 +74,8 @@ func (s *Store) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "validation_failed", "revision required")
 			return
 		}
-		if payload.GitHubProxyTemplate == nil && payload.GitHubToken == nil {
-			writeError(w, 400, "validation_failed", "at least one of github_proxy_template or github_token is required")
+		if payload.GitHubProxyTemplate == nil && payload.GitHubToken == nil && payload.GitHubSyncMaxAge == nil {
+			writeError(w, 400, "validation_failed", "at least one of github_proxy_template, github_token or github_sync_max_age is required")
 			return
 		}
 
@@ -85,6 +86,18 @@ func (s *Store) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 				writeError(w, 400, "invalid_github_proxy", err.Error())
 				return
 			}
+		}
+
+		// An empty value restores the built-in default; "0" turns automatic
+		// refresh off without losing the configured value.
+		var maxAge string
+		if payload.GitHubSyncMaxAge != nil {
+			normalized, err := normalizeGitHubSyncMaxAge(*payload.GitHubSyncMaxAge)
+			if err != nil {
+				writeError(w, 400, "invalid_github_sync_max_age", err.Error())
+				return
+			}
+			maxAge = normalized
 		}
 
 		// An empty token clears the stored credential; nil leaves it untouched.
@@ -106,19 +119,33 @@ func (s *Store) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 409, "settings_conflict", "settings revision conflict")
 			return
 		}
+		if payload.GitHubSyncMaxAge != nil && s.GitHubSyncMaxAgeOverride != nil {
+			s.mu.Unlock()
+			writeError(w, 409, "github_sync_max_age_env_override", "github_sync_max_age is locked by the deployment environment")
+			return
+		}
 
 		prev := s.Catalog.Settings
+		prevMaxAge := s.GitHubSyncMaxAge
 		prevAuditLen := len(s.Catalog.SettingsAudit)
 
 		newRev := prev.Revision + 1
 		if payload.GitHubProxyTemplate != nil {
 			s.Catalog.Settings.GitHubProxyTemplate = tpl
 		}
+		if payload.GitHubSyncMaxAge != nil {
+			s.Catalog.Settings.GitHubSyncMaxAge = maxAge
+			// Both refresh paths read this field under the store lock, so a
+			// change takes effect on the next tick and the next page view
+			// without a restart.
+			s.GitHubSyncMaxAge = resolveGitHubSyncMaxAge(maxAge)
+		}
 		tokenChanged := false
 		if token != nil {
 			secret, err := s.sealGitHubTokenLocked(*token)
 			if err != nil {
 				s.Catalog.Settings = prev
+				s.GitHubSyncMaxAge = prevMaxAge
 				s.mu.Unlock()
 				writeError(w, 500, "storage_error", "failed to protect the github token")
 				return
@@ -145,6 +172,7 @@ func (s *Store) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 
 		if err := s.saveLocked(); err != nil {
 			s.Catalog.Settings = prev
+			s.GitHubSyncMaxAge = prevMaxAge
 			s.Catalog.SettingsAudit = s.Catalog.SettingsAudit[:prevAuditLen]
 			s.mu.Unlock()
 			writeError(w, 500, "storage_error", "failed to save settings")
@@ -170,9 +198,11 @@ const githubTokenSecretID = "github-api"
 // installed without being enough to use it.
 func (s *Store) siteSettingsLocked() siteSettingsResponse {
 	resp := siteSettingsResponse{
-		GitHubProxyTemplate: s.Catalog.Settings.GitHubProxyTemplate,
-		Revision:            s.Catalog.Settings.Revision,
-		MasterKeyConfigured: s.DeliverySecrets != nil,
+		GitHubProxyTemplate:    s.Catalog.Settings.GitHubProxyTemplate,
+		GitHubSyncMaxAge:       s.GitHubSyncMaxAge.String(),
+		GitHubSyncMaxAgeLocked: s.GitHubSyncMaxAgeOverride != nil,
+		Revision:               s.Catalog.Settings.Revision,
+		MasterKeyConfigured:    s.DeliverySecrets != nil,
 	}
 	secret := s.Catalog.Settings.GitHubToken
 	if secret == nil || secret.Value == "" {
@@ -240,6 +270,68 @@ func (s *Store) GitHubTokenConfigured() (configured, encrypted bool) {
 	return true, secret.Encrypted
 }
 
+// normalizeGitHubSyncMaxAge validates a staleness window typed into the
+// settings page and stores it in canonical Go duration form. An empty value
+// clears the override so the built-in default applies again.
+func normalizeGitHubSyncMaxAge(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+	parsed, err := time.ParseDuration(trimmed)
+	if err != nil {
+		return "", errors.New("github_sync_max_age must be a Go duration such as 60m or 4h30m")
+	}
+	if parsed < 0 {
+		return "", errors.New("github_sync_max_age must not be negative")
+	}
+	if parsed > maxGitHubSyncMaxAge {
+		return "", errors.New("github_sync_max_age must be at most 720h")
+	}
+	return parsed.String(), nil
+}
+
+// resolveGitHubSyncMaxAge turns the stored override into the effective window:
+// unset means the default, and a non-positive value means "off".
+func resolveGitHubSyncMaxAge(stored string) time.Duration {
+	trimmed := strings.TrimSpace(stored)
+	if trimmed == "" {
+		return defaultGitHubSyncMaxAge
+	}
+	parsed, err := time.ParseDuration(trimmed)
+	if err != nil || parsed < 0 {
+		return defaultGitHubSyncMaxAge
+	}
+	return parsed
+}
+
+// syncMaxAge reads the window under the lock so a settings change is picked up
+// by the next tick and the next page view instead of needing a restart.
+func (s *Store) syncMaxAge() time.Duration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.GitHubSyncMaxAge
+}
+
+// publicSourcePolicy exposes the non-secret part of the GitHub source settings
+// so client copy can quote the value the server actually uses instead of a
+// hard-coded default. It is public because the window is already observable from
+// the outside (how often a mod refreshes) and carries no credential.
+func (s *Store) publicSourcePolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, 405, "method_not_allowed", "method not allowed")
+		return
+	}
+	s.mu.RLock()
+	maxAge := s.GitHubSyncMaxAge
+	s.mu.RUnlock()
+	writeJSON(w, 200, map[string]any{
+		"github_sync_max_age":            maxAge.String(),
+		"github_sync_max_age_seconds":    int64(maxAge.Seconds()),
+		"github_sync_max_age_configured": maxAge > 0,
+	})
+}
+
 func validateGitHubToken(token string) error {
 	if len(token) > 255 {
 		return errors.New("github token must be at most 255 characters")
@@ -265,8 +357,12 @@ type siteSettingsResponse struct {
 	GitHubTokenConfigured bool   `json:"github_token_configured"`
 	GitHubTokenEncrypted  bool   `json:"github_token_encrypted"`
 	GitHubTokenHint       string `json:"github_token_hint,omitempty"`
-	MasterKeyConfigured   bool   `json:"master_key_configured"`
-	Revision              uint64 `json:"revision"`
+	// GitHubSyncMaxAge is the staleness window actually in effect, so the page
+	// never has to guess what an empty stored value means.
+	GitHubSyncMaxAge       string `json:"github_sync_max_age"`
+	GitHubSyncMaxAgeLocked bool   `json:"github_sync_max_age_locked"`
+	MasterKeyConfigured    bool   `json:"master_key_configured"`
+	Revision               uint64 `json:"revision"`
 }
 
 type ProxyTestResponse struct {

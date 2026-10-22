@@ -14,8 +14,35 @@ export interface GitHubSourceInput {
 /** 作者需要自己维护的清单文件名（放在仓库根目录）。 */
 export const MANIFEST_FILE_NAME = 'rezehub.yml';
 
-/** 站内默认的按需抓取新鲜度窗口，与服务端 GITHUB_SYNC_TTL 的默认值一致。 */
-export const DEFAULT_REFRESH_WINDOW_MINUTES = 30;
+/**
+ * 服务端尚未返回策略时的兜底值，与服务端 GITHUB_SYNC_MAX_AGE 的默认值一致。
+ * 真实文案必须用 describeRefreshWindow() 渲染服务端返回的实际值。
+ */
+export const DEFAULT_REFRESH_WINDOW_MINUTES = 60;
+
+/** 服务端公开的源策略（不含任何凭据）。 */
+export interface SourcePolicy {
+  github_sync_max_age: string;
+  github_sync_max_age_seconds: number;
+  github_sync_max_age_configured: boolean;
+}
+
+/** 秒数转成作者可读的中文时长，例如 3600 -> "1 小时"、5400 -> "1 小时 30 分钟"。 */
+export function describeRefreshWindow(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '已关闭自动刷新';
+  const totalMinutes = Math.round(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes} 分钟`;
+  if (minutes === 0) return `${hours} 小时`;
+  return `${hours} 小时 ${minutes} 分钟`;
+}
+
+/** 从策略对象取出可读窗口，缺省时回退到默认值。 */
+export function refreshWindowText(policy?: SourcePolicy | null): string {
+  if (!policy) return describeRefreshWindow(DEFAULT_REFRESH_WINDOW_MINUTES * 60);
+  return describeRefreshWindow(policy.github_sync_max_age_seconds);
+}
 
 /** 可直接粘贴到仓库根目录的清单骨架。 */
 export const MANIFEST_SNIPPET = `schema: 1
@@ -79,11 +106,12 @@ export function manifestModeTradeoff(): DiscoveryModeTradeoff {
 
 /**
  * 非清单模式（站内按需抓取）的取舍。这是默认模式，不需要作者做任何额外工作。
+ * 窗口必须传入服务端实际生效的值，不能让作者看到与设置不符的文案。
  */
-export function onDemandModeTradeoff(refreshWindowMinutes: number = DEFAULT_REFRESH_WINDOW_MINUTES): DiscoveryModeTradeoff {
+export function onDemandModeTradeoff(windowText: string): DiscoveryModeTradeoff {
   return {
     benefit: '不需要任何额外文件，站内会在有人查看该模组时自动去 GitHub 抓取 Releases。',
-    cost: `更新最多延迟约 ${refreshWindowMinutes} 分钟，并且需要有人打开该模组才会触发抓取；长时间无人访问时不会自动更新。`,
+    cost: `距上次检查超过 ${windowText} 才会回源：有人打开该模组时立即补抓，无人访问时也会由后台巡检兜底。`,
   };
 }
 

@@ -241,7 +241,7 @@ func (s *Store) authorModPage(w http.ResponseWriter, r *http.Request, authorID s
 		if passiveBudget == 0 {
 			break
 		}
-		if !s.passiveSyncDueLocked(mod, now) {
+		if !s.syncDueLocked(mod, now) {
 			continue
 		}
 		passiveBudget--

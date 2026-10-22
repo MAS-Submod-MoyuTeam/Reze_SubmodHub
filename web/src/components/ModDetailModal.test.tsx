@@ -47,6 +47,7 @@ const sampleVersion: ModVersion = {
 
 function createMockContext(overrides: Partial<AppContextType> = {}): AppContextType {
   return {
+    refreshWindowText: '1 小时',
     cacheAuthorPage: () => {},
     activeTab: 'catalog',
     setActiveTab: () => {},

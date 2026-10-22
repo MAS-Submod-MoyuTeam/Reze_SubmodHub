@@ -41,6 +41,10 @@ export interface SiteSettings {
   github_token_encrypted: boolean;
   /** 已保存令牌的末四位，便于确认当前装的是哪一把。 */
   github_token_hint?: string;
+  /** 实际生效的刷新窗口（Go duration，如 "4h30m0s"）；"0s" 表示已关闭自动刷新。 */
+  github_sync_max_age: string;
+  /** True when the deployment environment pins the refresh window. */
+  github_sync_max_age_locked: boolean;
   master_key_configured: boolean;
   revision: number;
 }
@@ -90,6 +94,8 @@ export async function fetchSettings(
 export interface SiteSettingsPatch {
   github_proxy_template?: string;
   github_token?: string;
+  /** 传空字符串恢复默认 60 分钟；传 "0" 关闭自动刷新。 */
+  github_sync_max_age?: string;
 }
 
 export async function updateSettings(

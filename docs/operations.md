@@ -42,9 +42,11 @@ curl https://rezehub.0721play.icu/healthz
 
 ## GitHub Releases 源自动同步运维
 
-### 配置与轮询机制
-- 环境变量 `GITHUB_SYNC_INTERVAL`：配置自动轮询间隔，默认 `15m`。设置为 `0` 可禁用后台自动轮询任务，但依然保留作者与管理员的手动同步入口。
-- 解析安全：若配置格式不合法（非有效 Go Duration），服务会自动记录警告日志并回退到 `15m` 安全默认值，不中断服务启动。
+### 检查更新窗口
+- 唯一配置项是**检查更新窗口**：距某模组上次检查超过该时间，就算过期。默认 `60m`（1 小时），可在管理端「系统设置 → GitHub 源检查更新窗口」修改，保存后立即生效，无需重启。
+- 过期模组有两条回源路径，共用同一个窗口和同一个判定函数：有人打开该模组时立即补抓；长时间无人访问时由后台巡检（每分钟扫一次，只挑过期模组）兜底。
+- 环境变量 `GITHUB_SYNC_MAX_AGE` 仅用于覆盖设置页的值（例如固定部署策略）；留空则由设置页决定。设为 `0` 关闭自动刷新，只保留作者与管理员的手动同步入口。
+- 解析安全：若配置格式不合法（非有效 Go Duration），服务会记录警告日志并沿用已配置的窗口，不中断服务启动。
 - API 速率与 ETag：针对公开 GitHub 仓库采用匿名 API 请求，客户端自动携带 `ETag` / `If-None-Match` 请求头。当 Release 未发生变动时返回 HTTP 304 Not Modified，极大节省 GitHub API 速率配额。
 
 ### 幂等与容灾恢复
@@ -54,7 +56,8 @@ curl https://rezehub.0721play.icu/healthz
 
 ### 可观测性与健康诊断
 - `/healthz` 接口提供扩展诊断字段 `github_sync`，包含：
-  - `interval`：当前运行的同步轮询间隔
+  - `max_age`：当前生效的检查更新窗口（`disabled` 表示已关闭自动刷新）
+  - `stale_mods`：此刻已经过期、等待回源的模组数量
   - `total_managed_mods`：受 GitHub Releases 管理的模组数量
   - `last_sync_at`：最近一次执行同步的时间戳
   - `last_sync_error`：最近一次同步发生的非致命错误描述（如 GitHub API 限流）

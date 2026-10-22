@@ -14,6 +14,7 @@ import {
   Info,
   Check,
   ShieldAlert,
+  Timer,
 } from 'lucide-react';
 import { getFlarumUserRoles, readSession, setFlarumUserRoles } from '../../../ui/auth-api';
 import { fetchSettings, testGitHubProxy, updateSettings, type ProxyTestResponse } from '../../../ui/settings-api';
@@ -52,6 +53,14 @@ export const AdminPanel: React.FC = () => {
   const [savingToken, setSavingToken] = useState(false);
   const [tokenConflictError, setTokenConflictError] = useState(false);
 
+  // Refresh window state: the server reports the effective value, so the field
+  // always shows what the poller and the page views actually use.
+  const [syncMaxAge, setSyncMaxAge] = useState('');
+  const [savedSyncMaxAge, setSavedSyncMaxAge] = useState('');
+  const [savingSyncMaxAge, setSavingSyncMaxAge] = useState(false);
+  const [syncMaxAgeConflictError, setSyncMaxAgeConflictError] = useState(false);
+  const [syncMaxAgeLocked, setSyncMaxAgeLocked] = useState(false);
+
   const apiBase = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
 
   const loadSettings = async () => {
@@ -67,6 +76,9 @@ export const AdminPanel: React.FC = () => {
       setTokenEncrypted(Boolean(data.github_token_encrypted));
       setTokenHint(data.github_token_hint || '');
       setMasterKeyConfigured(Boolean(data.master_key_configured));
+      setSyncMaxAge(data.github_sync_max_age || '');
+      setSavedSyncMaxAge(data.github_sync_max_age || '');
+      setSyncMaxAgeLocked(Boolean(data.github_sync_max_age_locked));
       setRevision(data.revision || 0);
     } catch (err) {
       setLoadSettingsError(err instanceof Error ? err.message : 'failed_to_load_settings');
@@ -175,6 +187,36 @@ export const AdminPanel: React.FC = () => {
     }
   };
 
+  // Handle Saving the refresh window
+  const handleSaveSyncMaxAge = async (valueToSave: string) => {
+    if (savingSyncMaxAge || syncMaxAgeLocked) return;
+    setSavingSyncMaxAge(true);
+    setSyncMaxAgeConflictError(false);
+    try {
+      const session = await readSession(apiBase);
+      const updated = await updateSettings({ github_sync_max_age: valueToSave.trim() }, revision, session.csrf_token, apiBase);
+      setSyncMaxAge(updated.github_sync_max_age || '');
+      setSavedSyncMaxAge(updated.github_sync_max_age || '');
+      setRevision(updated.revision);
+      showToast(
+        'success',
+        updated.github_sync_max_age === '0s'
+          ? '已关闭自动刷新，仅保留手动「立即同步」。'
+          : `刷新窗口已生效：超过 ${updated.github_sync_max_age} 未检查的 GitHub 源会自动回源。`
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown_error';
+      if (msg.includes('conflict') || msg.includes('409')) {
+        setSyncMaxAgeConflictError(true);
+        showToast('error', '设置已被其他管理员修改，请重新加载后再试。');
+      } else {
+        showToast('error', `保存刷新窗口失败：${msg}`);
+      }
+    } finally {
+      setSavingSyncMaxAge(false);
+    }
+  };
+
   // Role Submit
   const submitRoles = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -215,6 +257,7 @@ export const AdminPanel: React.FC = () => {
   };
 
   const isProxyDirty = proxyTemplate.trim() !== savedTemplate.trim();
+  const isSyncMaxAgeDirty = syncMaxAge.trim() !== savedSyncMaxAge.trim();
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
@@ -576,6 +619,154 @@ export const AdminPanel: React.FC = () => {
                 {savingToken ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                 {savingToken ? '保存中...' : '保存令牌'}
               </button>
+            </div>
+          )}
+        </section>
+
+        {/* GitHub Refresh Window Card */}
+        <section className="lg:col-span-2 bg-white border border-neutral-200/90 rounded-xl shadow-xs hover:shadow-sm transition-shadow p-6 flex flex-col justify-between space-y-6">
+          <div className="space-y-4">
+            <div className="flex items-start justify-between border-b border-neutral-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-sky-50 text-sky-700 border border-sky-100/80">
+                  <Timer className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-neutral-900">GitHub 源检查更新窗口</h2>
+                  <p className="text-xs text-neutral-500">超过该时间仍未检查过的源会自动回源</p>
+                </div>
+              </div>
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-neutral-100 text-neutral-600">
+                {savedSyncMaxAge === '0s' ? '已关闭' : savedSyncMaxAge || '默认'}
+              </span>
+            </div>
+
+            <p className="text-xs text-neutral-600 leading-relaxed">
+              {syncMaxAgeLocked ? '此窗口由部署环境变量 GITHUB_SYNC_MAX_AGE 固定；修改环境变量并重启服务后生效。当前生效：' : '以模组的「最近同步时间」为基准：距上次检查超过该窗口的 GitHub 源，会在有人打开该模组时立即补抓，长时间无人访问时由后台巡检兜底。当前生效：'}<strong>{savedSyncMaxAge === '0s' ? '已关闭' : savedSyncMaxAge || '1h0m0s'}</strong>。
+            </p>
+
+            {loadSettingsError ? (
+              <div className="p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                <span>读取配置失败：{loadSettingsError}（可在上方代理卡片点「重试」）</span>
+              </div>
+            ) : loadingSettings ? (
+              <div className="py-8 text-center text-xs text-neutral-400 flex flex-col items-center justify-center gap-2">
+                <RefreshCw className="w-5 h-5 animate-spin text-neutral-400" />
+                <span>正在加载配置...</span>
+              </div>
+            ) : (
+              <div className="space-y-4 pt-1">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="sync-max-age-input" className="text-xs font-semibold text-neutral-800">
+                      检查窗口
+                    </label>
+                    {isSyncMaxAgeDirty && (
+                      <span className="text-[11px] font-medium text-amber-600 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                        未保存修改
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      id="sync-max-age-input"
+                      type="text"
+                      value={syncMaxAge}
+                      onChange={(e) => setSyncMaxAge(e.target.value)}
+                      disabled={syncMaxAgeLocked}
+                      placeholder="60m"
+                      className="flex-1 min-w-[12rem] rounded-lg border border-neutral-300 bg-neutral-50/40 px-3.5 py-2.5 text-xs text-neutral-900 focus:outline-hidden focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-500/15 font-mono transition-all"
+                    />
+                    {['30m', '60m', '6h', '24h'].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        disabled={syncMaxAgeLocked}
+                        onClick={() => setSyncMaxAge(preset)}
+                        className={`px-2.5 py-2 rounded-lg border text-xs font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                          syncMaxAge.trim() === preset
+                            ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
+                            : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
+                        }`}
+                      >
+                        {preset === '30m' ? '30 分钟' : preset === '60m' ? '60 分钟' : preset === '6h' ? '6 小时' : '24 小时'}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="block text-[11px] text-neutral-400 leading-normal">
+                    填写 Go 时长格式，例如 <code>60m</code>、<code>4h30m</code>、<code>24h</code>；留空恢复默认 60 分钟，填 <code>0</code> 关闭自动刷新。
+                  </span>
+                </div>
+
+                <div className="rounded-lg p-3 bg-neutral-50 border border-neutral-200/80 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        savedSyncMaxAge === '0s' ? 'bg-neutral-400' : 'bg-emerald-500 ring-2 ring-emerald-200'
+                      }`}
+                    />
+                    <span className="text-neutral-600">
+                      {savedSyncMaxAge === '0s' ? (
+                        '当前状态：自动刷新已关闭，仅手动「立即同步」会回源'
+                      ) : (
+                        <>
+                          已生效：超过 <span className="font-mono font-medium text-emerald-800">{savedSyncMaxAge || '1h0m0s'}</span> 未检查的源会自动回源
+                        </>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {syncMaxAgeConflictError && (
+                  <div className="p-3.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>设置已被其他管理员更新，版本发生冲突。</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void loadSettings()}
+                      className="px-2.5 py-1 rounded bg-amber-200/80 hover:bg-amber-300 text-amber-900 font-medium shrink-0 ml-2 transition-colors"
+                    >
+                      刷新获取最新
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {!loadingSettings && !loadSettingsError && (
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-neutral-100">
+              <button
+                type="button"
+                onClick={() => void handleSaveSyncMaxAge('')}
+                disabled={syncMaxAgeLocked || savingSyncMaxAge || savedSyncMaxAge === '1h0m0s'}
+                className="px-3 py-2 rounded-lg border border-neutral-200 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 disabled:opacity-40 text-xs font-medium transition-colors cursor-pointer"
+              >
+                恢复默认 60 分钟
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleSaveSyncMaxAge('0')}
+                  disabled={syncMaxAgeLocked || savingSyncMaxAge || savedSyncMaxAge === '0s'}
+                  className="px-3 py-2 rounded-lg border border-neutral-200 text-neutral-600 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50/50 disabled:opacity-40 text-xs font-medium transition-colors cursor-pointer"
+                >
+                  关闭自动刷新
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveSyncMaxAge(syncMaxAge)}
+                  disabled={syncMaxAgeLocked || savingSyncMaxAge || !isSyncMaxAgeDirty}
+                  className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  {savingSyncMaxAge ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  {savingSyncMaxAge ? '保存中...' : '保存刷新窗口'}
+                </button>
+              </div>
             </div>
           )}
         </section>

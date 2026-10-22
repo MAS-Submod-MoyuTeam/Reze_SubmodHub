@@ -70,6 +70,7 @@ func NewPostgresStore(ctx context.Context, dsn, dataDir string, initial Catalog)
 		db.Close()
 		return nil, err
 	}
+	s.GitHubSyncMaxAge = resolveGitHubSyncMaxAge(s.Catalog.Settings.GitHubSyncMaxAge)
 	s.DB = db
 	return s, nil
 }

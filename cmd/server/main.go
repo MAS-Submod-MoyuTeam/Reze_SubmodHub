@@ -84,37 +84,25 @@ func main() {
 		log.Printf("No GitHub API token in settings: requests share the anonymous 60 requests/hour quota (set one in the admin settings page)")
 	}
 
-	syncInterval := time.Duration(0)
-	if raw := strings.TrimSpace(os.Getenv("GITHUB_SYNC_INTERVAL")); raw != "" {
+	// The window is owned by the admin settings page and falls back to a
+	// 60-minute default. A non-empty GITHUB_SYNC_MAX_AGE is a deployment-level
+	// lock; the settings API reports that lock and rejects window edits.
+	store.ApplyGitHubSyncMaxAgeSetting()
+	if raw := strings.TrimSpace(os.Getenv("GITHUB_SYNC_MAX_AGE")); raw != "" {
 		parsed, parseErr := time.ParseDuration(raw)
 		if parseErr != nil {
-			log.Printf("Invalid GITHUB_SYNC_INTERVAL=%q, leaving the background poller disabled: %v", raw, parseErr)
+			log.Printf("Invalid GITHUB_SYNC_MAX_AGE=%q, keeping the configured window: %v", raw, parseErr)
 		} else {
-			syncInterval = parsed
+			store.GitHubSyncMaxAgeOverride = &parsed
+			store.GitHubSyncMaxAge = parsed
+			log.Printf("GITHUB_SYNC_MAX_AGE=%q overrides the stored settings window for this process", raw)
 		}
 	}
-	store.GitHubSyncInterval = syncInterval
-	if store.GitHubSyncInterval > 0 {
-		store.StartGitHubSync()
-		log.Printf("GitHub Releases background sync started (interval: %s); on-demand refresh stays active", store.GitHubSyncInterval)
+	store.StartGitHubSync()
+	if maxAge := store.GitHubSyncMaxAge; maxAge > 0 {
+		log.Printf("GitHub Releases refresh window: %s (a mod unchecked for longer is refreshed on view or by the sweep)", maxAge)
 	} else {
-		log.Printf("GitHub Releases background sync disabled: mods refresh on demand")
-	}
-
-	// GITHUB_SYNC_TTL is the passive freshness window. Zero disables passive
-	// refresh entirely, leaving only the explicit "sync now" action.
-	syncTTL := 30 * time.Minute
-	if raw := strings.TrimSpace(os.Getenv("GITHUB_SYNC_TTL")); raw != "" {
-		parsed, parseErr := time.ParseDuration(raw)
-		if parseErr != nil {
-			log.Printf("Invalid GITHUB_SYNC_TTL=%q, falling back to 30m: %v", raw, parseErr)
-		} else {
-			syncTTL = parsed
-		}
-	}
-	store.GitHubSyncTTL = syncTTL
-	if store.GitHubSyncTTL > 0 {
-		log.Printf("GitHub Releases on-demand refresh window: %s", store.GitHubSyncTTL)
+		log.Printf("GitHub Releases automatic refresh disabled: only explicit sync refreshes mods")
 	}
 
 	store.StartDeliveryMetricsWorker(context.Background())
