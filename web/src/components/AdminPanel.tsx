@@ -491,9 +491,16 @@ export const AdminPanel: React.FC = () => {
                     placeholder={tokenConfigured ? '输入新令牌以覆盖现有配置' : 'ghp_... 或 github_pat_...'}
                     className="w-full rounded-lg border border-neutral-300 bg-neutral-50/40 px-3.5 py-2.5 text-xs text-neutral-900 focus:outline-hidden focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-500/15 font-mono transition-all"
                   />
-                  <span className="block text-[11px] text-neutral-400 leading-normal">
-                    只需 <code>public_repo</code>（或只读公开仓库）权限即可；令牌不会回显，保存后仅显示末四位。保存或清除后立即生效，无需重启服务。
-                  </span>
+                  <div className="space-y-1 text-[11px] text-neutral-400 leading-normal">
+                    <div>
+                      <span className="font-medium text-neutral-500">Fine-grained</span>：Repository access 选{' '}
+                      <code>Public repositories (read-only)</code>，Permissions 可全部留空（公开仓库只读能力已内置）。
+                    </div>
+                    <div>
+                      <span className="font-medium text-neutral-500">Classic</span>：<strong>不勾任何 scope</strong>——空 scope 同样享有 5000 次/小时，且能读所有公开仓库。
+                    </div>
+                    <div>仅当仓库是私有的，才需要额外给 <code>Contents: read</code>。令牌不会回显，保存后仅显示末四位，保存或清除后立即生效。</div>
+                  </div>
                 </div>
 
                 <div className="rounded-lg p-3 bg-neutral-50 border border-neutral-200/80 space-y-1.5 text-xs">

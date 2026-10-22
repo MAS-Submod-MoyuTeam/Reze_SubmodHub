@@ -130,6 +130,7 @@ SubmodHub 仅允许下载 `.zip` 格式的 Release 资产文件，非 `.zip` 文
 
 ### API 速率限制与自动退避（Rate Limit Backoff）
 - **先在设置页配置令牌**：管理端「系统设置 → GitHub API 令牌」。未配置时所有请求共用匿名配额（60 次/小时/IP），托管模组一多就会撞限；配置后为 5000 次/小时。令牌保存即生效、无需重启，且只发给 API 主机，不会随资产下载外泄。配置了 `SUBMODHUB_DELIVERY_MASTER_KEY` 时令牌加密落盘，否则明文存储（设置页会明确标注当前是哪种）。
+- **令牌只需要公开仓库的读能力**：站内只用两个只读端点——`GET /repos/{owner}/{repo}/releases` 与 `GET /repos/{owner}/{repo}/releases/latest`，没有任何写操作。Fine-grained token 选 `Public repositories (read-only)` 后 Permissions 可全部留空（GitHub 对公开仓库的只读能力是内置的）；Classic token **不勾任何 scope** 即可，空 scope 同样享有 5000 次/小时。仅当仓库是私有的，才需要 Fine-grained 选 `Only select repositories` 并加 `Contents: read`。不要给 `public_repo`——它包含公开仓库的写权限，对本站纯属多余。
 - **自动解析重置时间**：当触发 GitHub API 速率限制（HTTP 403 / 429）时，系统自动解析响应头中的 `X-Ratelimit-Reset`（Unix 时间戳）或 `Retry-After`（秒数/标准时间格式）。若未提供具体头部，系统采用默认 15 分钟退避间隔。
 - **保护性退避锁定**：退避期内，模组与后台全局同步器记录 `github_backoff_until` 截止时间。在截止时间到来前，系统定时轮询与手动同步将自动跳过外部网络请求，并在模组状态记录 `github_last_sync_error: github api rate limit backoff active until <UTC时间> (remaining: <剩余时间>)`，彻底防止短时间内连续空耗 IP 配额。清单模式不受该退避影响（不使用 REST API）。更新代理或令牌会立即清空所有退避状态，因为配额桶已经换了。
 - **自动恢复**：退避时间过后，下一次同步请求恢复正常执行，成功后自动清除退避状态。
