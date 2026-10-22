@@ -23,7 +23,7 @@ import (
 // source tree:
 //
 //	go build -ldflags "-X github.com/reze/submodhub/internal/version.Version=0.9.1"
-var Version = "0.9.10"
+var Version = "0.9.11"
 
 // Commit and BuildTime are optional build metadata. CI may inject the commit
 // SHA and build timestamp through -ldflags -X; they stay empty for local
