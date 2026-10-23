@@ -512,6 +512,11 @@ func TestDesktopServiceOperationsAndRollback(t *testing.T) {
 	if ops[0].OperationID != "op_task_1" || ops[0].State != "committed" {
 		t.Fatalf("op 1 state mismatch: %+v", ops[0])
 	}
+	// A committed transaction never had a conflict: exposing the journal's
+	// LastPath here used to paint every successful install as a hash conflict.
+	if ops[0].ConflictPath != "" {
+		t.Fatalf("committed operation must not report a conflict path, got %q", ops[0].ConflictPath)
+	}
 
 	opDetail, err := service.GetOperation("op_task_1")
 	if err != nil {
@@ -519,6 +524,9 @@ func TestDesktopServiceOperationsAndRollback(t *testing.T) {
 	}
 	if opDetail.OperationID != "op_task_1" || opDetail.State != "committed" || opDetail.CanRollback {
 		t.Fatalf("opDetail mismatch: %+v", opDetail)
+	}
+	if opDetail.ConflictPath != "" {
+		t.Fatalf("committed operation must not report a conflict path, got %q", opDetail.ConflictPath)
 	}
 
 	// 2. Rolling back a committed operation via RollbackOperation must fail

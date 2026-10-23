@@ -445,6 +445,13 @@ func (s *DesktopService) mapJournalToDetail(j *core.TxJournal) OperationDetail {
 		state = j.Phase
 	}
 
+	// 冲突路径只在事务确实进入人工恢复时才有意义：j.LastPath 在正常写入步骤中
+	// 也会持续更新，直接透出会让每个已提交事务都显示一条并不存在的冲突文件。
+	conflictPath := ""
+	if j.Phase == core.TxPhaseNeedsManualRecovery {
+		conflictPath = j.LastPath
+	}
+
 	totalFiles := j.TotalSteps
 	if totalFiles == 0 {
 		totalFiles = len(j.AfterFiles)
@@ -522,7 +529,7 @@ func (s *DesktopService) mapJournalToDetail(j *core.TxJournal) OperationDetail {
 			Percent:        percent,
 		},
 		Error:                  opErr,
-		ConflictPath:           j.LastPath,
+		ConflictPath:           conflictPath,
 		ExpectedHash:           j.ExpectedHash,
 		ActualHash:             j.ActualHash,
 		BackupID:               backupID,
