@@ -12,7 +12,7 @@ Invoke-WebRequest http://100.72.137.92:18082/healthz
 
 当前 Compose 把 API 绑定到 `100.72.137.92:18082`，仅适用于该 Tailnet 地址。其他主机应先修改 `deploy/compose.yaml` 的绑定地址。服务端使用 PostgreSQL 存目录和版本元数据，归档写入 `deploy/data` 目录。MinIO 适配尚未实现。上传默认关闭，直到身份认证实现并配置。部署前将 `deploy/data` 创建并授予容器 UID 65532 写入权限。
 
-Flarum 配置沿用 MAS_UniSync 的论坛地址，`ADMIN_FLARUM_GROUP_IDS=16,22`；其他 Flarum 组暂不自动授予作者或审核员权限。GitHub 登录暂缓。生产登录必须使用 HTTPS；公开入口已启用 HTTPS，直接访问 Tailnet HTTP 源站时仍依赖前后端的临时不安全认证开关，且不可用于公网。不要将 MAS_UniSync 的会话密钥复制到本项目。
+Flarum 配置沿用 MAS_UniSync 的论坛地址，`ADMIN_FLARUM_GROUP_IDS=16,22`；其他 Flarum 组暂不自动授予作者或审核员权限。Web 端不提供 GitHub OAuth 登录入口，只有 Flarum 一种登录方式。生产登录必须使用 HTTPS；公开入口已启用 HTTPS，直接访问 Tailnet HTTP 源站时仍依赖前后端的临时不安全认证开关，且不可用于公网。不要将 MAS_UniSync 的会话密钥复制到本项目。
 
 ## 远端部署
 

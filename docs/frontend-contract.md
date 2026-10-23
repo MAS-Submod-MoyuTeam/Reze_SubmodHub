@@ -13,9 +13,9 @@
 | Web | 管理员 | 用户角色、审核审计、服务配置状态 |
 | Windows/Android 客户端 | 使用者 | Windows 目录选择 / Android 固定目录验证与授权、目录、详情、安装预览、已安装/未托管、优先级、更新/卸载/修复、操作历史与恢复 |
 
-登录仅用于作者、审核员和管理员。访客可浏览与下载。GitHub 使用 OAuth 跳转；Flarum 使用服务端代验凭据。账号关联只能在已登录时主动发起。角色变化后界面必须重新获取会话并即时隐藏无权限操作；服务端仍独立校验权限。
+登录仅用于作者、审核员和管理员。访客可浏览与下载。登录只走 Flarum，使用服务端代验凭据；不提供 GitHub OAuth 登录入口。角色变化后界面必须重新获取会话并即时隐藏无权限操作；服务端仍独立校验权限。
 
-当前实施决策：先接 Flarum，GitHub OAuth 暂缓。Flarum 登录请求体用 `{identification,password}`；仅 Flarum 组 ID `16`、`22` 自动映射 `admin`，其他组当前为 `user`，不自动授予作者或审核员。登录必须通过 HTTPS；远端 `100.72.137.92:18082` 的 HTTP 测试地址不能提交论坛密码。Android MAS 固定根目录是 `/storage/emulated/0/MAS/`，`game/` 是其子目录；Android 11+ 侧载 APK 使用系统“所有文件访问权限”，固定路径和清单声明都不代表已授权。
+当前实施决策：登录只接 Flarum，Web 端已移除 GitHub OAuth 登录与账号绑定入口；Flarum 是唯一身份来源，界面不再提供任何「绑定第三方账号」操作（`/identity-links` 契约与 `User.linked_accounts` 字段一并删除）。Flarum 登录请求体用 `{identification,password}`；仅 Flarum 组 ID `16`、`22` 自动映射 `admin`，其他组当前为 `user`，不自动授予作者或审核员。登录必须通过 HTTPS；远端 `100.72.137.92:18082` 的 HTTP 测试地址不能提交论坛密码。Android MAS 固定根目录是 `/storage/emulated/0/MAS/`，`game/` 是其子目录；Android 11+ 侧载 APK 使用系统“所有文件访问权限”，固定路径和清单声明都不代表已授权。
 
 ### 页面功能
 
@@ -80,9 +80,7 @@
 | `POST /admin/download-nodes/{id}/retry-mirrors` | 管理员+CSRF+同源 | `{revision}`；仅重置failed镜像，保留ready对象；节点GET以 `mirror_states`（模组归档）与 `app_asset_states`（应用自更新资产）分别返回当前revision状态数量 |
 | `GET /session` | 登录可选 | `{user,roles,csrf_token}`；未登录 `user:null` |
 | `POST /auth/flarum/login` | 公开 | HTTPS；`{identification,password}`；建立会话，密码不回显 |
-| `GET /auth/github/start` / `GET /auth/github/callback` | 公开 | OAuth state + PKCE 登录/关联流程 |
 | `POST /auth/logout` | 登录 | 结束当前会话 |
-| `POST /identity-links/{provider}/start` | 登录 | 发起主动关联，回调后刷新会话 |
 | `GET /author/mods` / `POST /author/mods` | 作者 | 我的模组；创建草稿 |
 | `PATCH /author/mods/{mod_id}` | 作者 | 编辑未发布元数据、依赖 |
 | `POST /author/mods/{mod_id}/versions` | 作者 | 创建候选版本及发行说明 |

@@ -216,6 +216,6 @@ go run ./cmd/version -set 0.9.8
 ## 已知边界
 
 - 对象存储只实现了本地归档目录与 Cloudreve 镜像，S3/MinIO 适配尚未实现。
-- 登录目前只接 Flarum，GitHub OAuth 暂缓；GitHub 用于 Releases 源同步。
+- 登录只接 Flarum，Web 端不提供 GitHub OAuth 登录；GitHub 仅用于 Releases 源同步。
 - Wails v3 的 Android 支持仍属实验特性，存储访问依赖系统「所有文件访问权限」，且只验证固定根目录。
 - 交付范围的客户端是 Windows 与 Android；macOS / iOS / Linux 的打包配置存在但不在交付范围内。
