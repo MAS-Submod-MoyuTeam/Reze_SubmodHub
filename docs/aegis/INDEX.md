@@ -26,3 +26,7 @@ Local reference projects used during design:
 | 2026-10-22 | plan | docs/aegis/plans/2026-10-22-tag-catalog.md | 标签改为目录内多选（主/子标签、至少一个），管理员在设置页维护；代码与文档已实施，存量标签清空脚本待对测试服执行 |
 | 2026-10-23 | plan | docs/aegis/plans/2026-10-23-app-update-cloudreve-delivery.md | 应用自更新资产纳入 Cloudreve 节点交付，主 API 成为更新检查权威；本地测试与静态检查通过，测试服与真机验收待补 |
 | 2026-10-23 | adr | docs/aegis/adr/ADR-0002-app-update-delivery-authority.md | ADR-0002 - 应用自更新交付权威扩展（修订 ADR-0001 的应用自更新边界） |
+| 2026-10-23 | work | docs/aegis/work/2026-10-23-web-client-download-entry/10-intent.md | Web 客户端下载入口 intent |
+| 2026-10-23 | work | docs/aegis/work/2026-10-23-web-client-download-entry/20-checkpoint.md | Web 客户端下载入口 checkpoint（选路、tag 守卫、白名单口径） |
+| 2026-10-23 | work | docs/aegis/work/2026-10-23-web-client-download-entry/90-evidence.md | Web 客户端下载入口 evidence（静态检查、单测与四档视口布局度量） |
+| 2026-10-23 | work | docs/aegis/work/2026-10-23-web-client-download-entry/91-review-fixes.md | Web 客户端下载入口评审发现与修复 |
