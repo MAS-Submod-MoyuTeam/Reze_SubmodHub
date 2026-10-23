@@ -151,6 +151,9 @@ func TestAppUpdateDescriptorPublishesVerifiedCloudreveMirror(t *testing.T) {
 	if out.ChecksumURL != release.assetURL("SHA256SUMS.txt") {
 		t.Fatalf("checksum url: %q", out.ChecksumURL)
 	}
+	if out.ReleaseURL != "https://github.com/owner/repo/releases/tag/v9.9.9" {
+		t.Fatalf("release page url: %q", out.ReleaseURL)
+	}
 	byName := map[string]appUpdateAssetDTO{}
 	for _, a := range out.Assets {
 		byName[a.Name] = a

@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   InstalledFileList,
-  formatBytes,
   getFileExtension,
 } from './InstalledFileList';
 import { InstalledMod, InstalledFileList as InstalledFileListDTO } from '../types/submodhub';
@@ -20,13 +19,6 @@ const sampleMod: InstalledMod = {
   installed_at: '2026-09-21T10:00:00Z',
   priority: 20,
 };
-
-test('formatBytes formats bytes to human readable units', () => {
-  assert.equal(formatBytes(0), '0 B');
-  assert.equal(formatBytes(500), '500 B');
-  assert.equal(formatBytes(1024), '1.0 KB');
-  assert.equal(formatBytes(1048576), '1.0 MB');
-});
 
 test('getFileExtension extracts file extensions correctly', () => {
   assert.equal(getFileExtension('game/submods/core.rpy'), '.rpy');

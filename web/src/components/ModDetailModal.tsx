@@ -11,6 +11,7 @@ import { MarkdownText } from './MarkdownText';
 import { DeprecationNotice } from './DeprecationNotice';
 import { SpritepackSets } from './SpritepackSets';
 import { formatVersionLabel, sortVersionHistory } from './versionHistory';
+import { formatBytes } from './formatBytes';
 import {
   X,
   Download,
@@ -181,11 +182,6 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
     setCopiedHash(true);
     showToast('info', 'SHA-256 校验和已复制到剪贴板');
     setTimeout(() => setCopiedHash(false), 2000);
-  };
-
-  const formatBytes = (bytes: number) => {
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
   };
 
   return (

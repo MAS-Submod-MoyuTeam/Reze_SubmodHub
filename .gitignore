@@ -50,6 +50,7 @@ playwright-report/
 # Local Go build cache and temporary verification artifacts
 /.gocache/
 /tmp/
+/.tmp/
 
 # Local recovery backups and generated task drafts
 /permission-recovery/

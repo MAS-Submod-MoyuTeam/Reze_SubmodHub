@@ -1,12 +1,13 @@
 import React from 'react';
 import { useApp, NavTab } from '../context/AppContext';
-import { User as UserIcon, Shield } from 'lucide-react';
+import { User as UserIcon, Shield, Download } from 'lucide-react';
 
 interface HeaderProps {
   onOpenLoginModal: () => void;
+  onOpenClientDownload: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal }) => {
+export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal, onOpenClientDownload }) => {
   const {
     activeTab,
     setActiveTab,
@@ -84,6 +85,19 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal }) => {
           <span className="hidden sm:flex items-center gap-1.5 text-xs text-neutral-600">
             <Shield className="w-3.5 h-3.5" />{currentPersonaLabel}
           </span>
+
+          {/* Client download: secondary action, always available to visitors */}
+          <button
+            onClick={onOpenClientDownload}
+            aria-label="下载客户端"
+            title="下载 Windows / Android 客户端"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-800 bg-white border border-neutral-200 hover:bg-neutral-50 rounded transition-colors whitespace-nowrap"
+          >
+            <Download className="w-3.5 h-3.5 text-neutral-500" />
+            {/* 窄屏用短标签，避免只剩一个无人认识的图标 */}
+            <span className="sm:hidden">下载</span>
+            <span className="hidden sm:inline">下载客户端</span>
+          </button>
 
           {/* Account Button */}
           {currentUser ? (

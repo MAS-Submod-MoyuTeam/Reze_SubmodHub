@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"slices"
@@ -506,6 +507,16 @@ func (s *Store) maintainAppAssets(ctx context.Context) {
 	}
 }
 
+// appReleasePageURL is the human-facing release page. It is published even when
+// no asset is mirrored, so a download entry point can always offer the GitHub
+// route without parsing asset URLs.
+func appReleasePageURL(owner, repo, tag string) string {
+	if owner == "" || repo == "" || tag == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(tag))
+}
+
 type appUpdateAssetDTO struct {
 	Name                   string     `json:"name"`
 	SizeBytes              int64      `json:"size_bytes"`
@@ -519,14 +530,18 @@ type appUpdateAssetDTO struct {
 }
 
 type appUpdateDTO struct {
-	TagName     string              `json:"tag_name"`
-	Version     string              `json:"version"`
-	Name        string              `json:"name"`
-	Notes       string              `json:"notes"`
-	Prerelease  bool                `json:"prerelease"`
-	PublishedAt *time.Time          `json:"published_at,omitempty"`
-	ChecksumURL string              `json:"checksum_url,omitempty"`
-	Assets      []appUpdateAssetDTO `json:"assets"`
+	TagName     string     `json:"tag_name"`
+	Version     string     `json:"version"`
+	Name        string     `json:"name"`
+	Notes       string     `json:"notes"`
+	Prerelease  bool       `json:"prerelease"`
+	PublishedAt *time.Time `json:"published_at,omitempty"`
+	ChecksumURL string     `json:"checksum_url,omitempty"`
+	// ReleaseURL is the GitHub release page (notes plus every asset). Per-asset
+	// github_url points at a single file, so an entry point that offers "open the
+	// release" cannot derive this from the asset list.
+	ReleaseURL string              `json:"release_url,omitempty"`
+	Assets     []appUpdateAssetDTO `json:"assets"`
 	// SnapshotAgeSeconds is how long ago the API last read GitHub successfully.
 	// A client that sees an old value must stop treating this release list as
 	// authoritative, because the API may simply be unable to reach GitHub.
@@ -559,6 +574,7 @@ func (s *Store) appUpdateDescriptor(w http.ResponseWriter, r *http.Request) {
 	mirrors := slices.Clone(s.Catalog.AppAssetMirrors)
 	s.mu.RUnlock()
 
+	owner, repo := s.appReleaseRepo()
 	out := appUpdateDTO{
 		TagName:            release.TagName,
 		Version:            strings.TrimPrefix(release.TagName, "v"),
@@ -566,6 +582,7 @@ func (s *Store) appUpdateDescriptor(w http.ResponseWriter, r *http.Request) {
 		Notes:              release.Body,
 		Prerelease:         release.Prerelease,
 		PublishedAt:        release.PublishedAt,
+		ReleaseURL:         appReleasePageURL(owner, repo, release.TagName),
 		Assets:             []appUpdateAssetDTO{},
 		SnapshotAgeSeconds: int64(s.appReleaseAge().Seconds()),
 	}

@@ -180,7 +180,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
         {/* Filter Controls Bar */}
         <div className="pt-3 border-t border-neutral-100 flex flex-wrap items-center gap-x-6 gap-y-3 text-xs">
           {/* Category Tabs */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
             <span className="text-neutral-400 font-medium mr-1">分类:</span>
             {[
               { id: 'all', label: '全部' },
@@ -205,7 +205,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           </div>
 
           {/* Platform Filter */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
             <span className="text-neutral-400 font-medium mr-1">平台:</span>
             {[
               { id: 'all', label: '全部' },
@@ -232,7 +232,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           </div>
 
           {/* Tag Filter: 主标签一行；选中带子标签的主标签后再展开子标签行 */}
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
               <span className="text-neutral-400 font-medium mr-1">标签:</span>
               <button

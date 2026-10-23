@@ -8,6 +8,7 @@ import { AuthorWorkbench } from './components/AuthorWorkbench';
 import { ReviewerWorkbench } from './components/ReviewerWorkbench';
 import { AdminPanel } from './components/AdminPanel';
 import { ClientCompanion } from './components/ClientCompanion';
+import { ClientDownloadModal } from './components/ClientDownloadModal';
 import { ToastContainer } from './components/ToastContainer';
 
 const MainLayout: React.FC = () => {
@@ -19,6 +20,7 @@ const MainLayout: React.FC = () => {
   } = useApp();
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isClientDownloadOpen, setIsClientDownloadOpen] = useState(false);
   const [downloadModalVersionId, setDownloadModalVersionId] = useState<string | null>(null);
 
   const handleSelectMod = (modId: string) => {
@@ -38,7 +40,10 @@ const MainLayout: React.FC = () => {
   return (
     <div className="min-h-screen bg-neutral-100/70 text-neutral-900 flex flex-col">
       {/* Strict 3-zone Header Contract */}
-      <Header onOpenLoginModal={() => setIsLoginModalOpen(true)} />
+      <Header
+        onOpenLoginModal={() => setIsLoginModalOpen(true)}
+        onOpenClientDownload={() => setIsClientDownloadOpen(true)}
+      />
 
       {/* Main Viewport */}
       <main className="flex-1 pb-12">
@@ -71,6 +76,12 @@ const MainLayout: React.FC = () => {
       <LoginModal
         isOpen={isLoginModalOpen}
         onClose={() => setIsLoginModalOpen(false)}
+      />
+
+      {/* Client download (site node first, GitHub Releases as fallback) */}
+      <ClientDownloadModal
+        isOpen={isClientDownloadOpen}
+        onClose={() => setIsClientDownloadOpen(false)}
       />
 
       {/* Global Toast Container */}
