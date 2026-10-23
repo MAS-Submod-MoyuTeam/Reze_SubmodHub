@@ -11,10 +11,6 @@ export interface User {
   display_name: string;
   avatar_url?: string;
   roles: UserRole[];
-  linked_accounts: {
-    flarum?: string;
-    github?: string;
-  };
 }
 
 export type ModCategory = 'submod' | 'spritepack';

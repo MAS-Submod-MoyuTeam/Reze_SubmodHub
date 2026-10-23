@@ -58,9 +58,7 @@ export interface AppContextType {
   currentUser: User | null;
   switchRolePersona: (role: 'visitor' | 'author' | 'reviewer' | 'admin') => void;
   loginFlarum: (username: string, password: string) => Promise<boolean>;
-  loginGithub: () => Promise<boolean>;
   logout: () => void;
-  linkAccount: (provider: 'flarum' | 'github', accountName: string) => void;
   hasRole: (role: UserRole) => boolean;
 
   // Site Policy (public, no credentials)
@@ -264,7 +262,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentUser(session.user ? {
       ...session.user,
       roles: session.roles.filter((role): role is UserRole => ['user', 'author', 'reviewer', 'admin'].includes(role)),
-      linked_accounts: {},
     } : null);
   }, []);
 
@@ -354,24 +351,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [applySession, showToast]);
 
-  const loginGithub = useCallback(async (): Promise<boolean> => {
-    showToast('error', 'GitHub OAuth 尚未接入，未建立会话。', 'auth_unavailable');
-    return false;
-  }, [showToast]);
-
   const logout = useCallback(() => {
     const base = apiBase();
     logoutRequest(csrfToken, base)
       .then(() => { applySession({ user: null, roles: [], csrf_token: '' }); showToast('info', '已退出会话。'); })
       .catch((error) => showToast('error', `退出失败：${error instanceof Error ? error.message : 'unknown_error'}`));
   }, [applySession, csrfToken, showToast]);
-
-  const linkAccount = useCallback(
-    (_provider: 'flarum' | 'github', _accountName: string) => {
-      showToast('error', '账号关联服务尚未接入。', 'auth_unavailable');
-    },
-    [showToast]
-  );
 
   const getModWithVersions = useCallback(
     (modId: string) => {
@@ -1090,9 +1075,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       currentUser,
       switchRolePersona,
       loginFlarum,
-      loginGithub,
       logout,
-      linkAccount,
       hasRole,
       refreshWindowText,
       mods,
@@ -1156,9 +1139,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       currentUser,
       switchRolePersona,
       loginFlarum,
-      loginGithub,
       logout,
-      linkAccount,
       hasRole,
       refreshWindowText,
       mods,

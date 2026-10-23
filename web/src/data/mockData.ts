@@ -4,7 +4,6 @@
  */
 
 import {
-  User,
   ModSummary,
   ModVersion,
   ScanReport,
@@ -14,39 +13,6 @@ import {
   InstalledFileList,
   ErrorDisplayConfig,
 } from '../types/submodhub';
-
-export const INITIAL_USERS: User[] = [
-  {
-    id: 'user_monika_fan',
-    username: 'MonikaDreamer',
-    display_name: '莫妮卡守望者 (Author)',
-    roles: ['author'],
-    linked_accounts: {
-      flarum: 'MonikaDreamer_Flarum',
-      github: 'monika-dreamer-dev',
-    },
-  },
-  {
-    id: 'user_aegis_reviewer',
-    username: 'AegisReviewer',
-    display_name: 'Aegis 核心审核员 (Reviewer)',
-    roles: ['author', 'reviewer'],
-    linked_accounts: {
-      flarum: 'Aegis_Inspector',
-      github: 'aegis-security-ops',
-    },
-  },
-  {
-    id: 'user_admin',
-    username: 'RootArchon',
-    display_name: '社区总管理 (Admin)',
-    roles: ['author', 'reviewer', 'admin'],
-    linked_accounts: {
-      flarum: 'RootArchon_Admin',
-      github: 'submodhub-lead',
-    },
-  },
-];
 
 export const INITIAL_MODS: ModSummary[] = [
   {
@@ -783,7 +749,7 @@ export const CONTRACT_ERROR_CONFIGS: ErrorDisplayConfig[] = [
     title: '未登录身份验证错误',
     description: '当前请求需要登录会话，未找到有效安全 Cookie 或 Cookie 已过期。',
     category: 'auth',
-    frontend_action: '引导用户弹出登录模态框，或通过 GitHub OAuth / Flarum 建立会话。',
+    frontend_action: '引导用户弹出登录模态框，通过 Flarum 论坛凭据建立会话。',
     sample_details: { auth_provider: 'flarum_proxy', status: 401 },
   },
   {

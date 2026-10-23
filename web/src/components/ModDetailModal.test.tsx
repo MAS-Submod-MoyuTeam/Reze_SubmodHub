@@ -4,122 +4,11 @@ import assert from 'node:assert/strict';
 
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createRoot } from 'react-dom/client';
-import { AppContext, AppContextType, AppProvider, useApp } from '../context/AppContext';
+import { AppContext, AppProvider, useApp } from '../context/AppContext';
 import { ModDetailModal } from './ModDetailModal';
 import { CatalogView } from './CatalogView';
-import { ModSummary, ModVersion } from '../types/submodhub';
-
-const sampleMod: ModSummary = {
-  id: 'mod_test_1',
-  title: '测试模组标题',
-  summary: '测试模组简介',
-  description: '测试模组详细描述',
-  author: { id: 'author_1', display_name: '原作者' },
-  category: 'submod',
-  tags: ['dialogue'],
-  supported_platforms: ['windows', 'android'],
-  mas_version_range: '>=0.12.14',
-  recommended_priority: 20,
-  latest_version_id: 'v1',
-  downloads_count: 10,
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
-  is_published: true,
-};
-
-const sampleVersion: ModVersion = {
-  id: 'v1',
-  mod_id: 'mod_test_1',
-  version: '1.0.0',
-  state: 'published',
-  size_bytes: 1024,
-  sha256: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
-  release_notes: '初版发布',
-  dependencies: [],
-  created_at: '2026-01-01T00:00:00Z',
-  is_immutable: true,
-};
-
-function createMockContext(overrides: Partial<AppContextType> = {}): AppContextType {
-  return {
-    refreshWindowText: '1 小时',
-    cacheAuthorPage: () => {},
-    activeTab: 'catalog',
-    setActiveTab: () => {},
-    selectedModId: null,
-    setSelectedModId: () => {},
-    detailModalModId: null,
-    setDetailModalModId: () => {},
-    currentUser: null,
-    switchRolePersona: () => {},
-    loginFlarum: async () => false,
-    loginGithub: async () => false,
-    logout: () => {},
-    linkAccount: () => {},
-    hasRole: () => false,
-    mods: [sampleMod],
-    versions: [sampleVersion],
-    scanReports: {},
-    auditLogs: [],
-    searchQuery: '',
-    setSearchQuery: () => {},
-    categoryFilter: 'all',
-    setCategoryFilter: () => {},
-    platformFilter: 'all',
-    setPlatformFilter: () => {},
-    tagFilter: 'all',
-    setTagFilter: () => {},
-    catalogLoading: false,
-    catalogError: null,
-    reloadCatalog: async () => {},
-    getModWithVersions: () => ({ mod: sampleMod, versions: [sampleVersion] }),
-    getDownloadDescriptor: async () => ({
-      download_id: 'd1',
-      version_id: 'v1',
-      url: 'https://example.com/dl',
-      sha256: 'abc',
-      size_bytes: 1024,
-      expires_at: new Date(Date.now() + 60000).toISOString(),
-      filename: 'submod_v1.zip',
-    }),
-    createModDraft: async () => '',
-    updateModDraft: async () => false,
-    syncModReleases: async () => null,
-    createCandidateVersion: async () => '',
-    uploadArchiveAndScan: async () => '',
-    uploadDetailImages: async () => false,
-    submitVersionForReview: async () => false,
-    setLatestPublishedVersion: async () => {},
-    approveSubmission: async () => true,
-    rejectSubmission: async () => true,
-    publishApprovedVersion: async () => true,
-    updateUserRoles: () => {},
-    unpublishVersion: async () => {},
-    markVersionDeprecated: async () => {},
-    clearVersionDeprecation: async () => {},
-    deleteVersion: async () => {},
-    unpublishMod: async () => true,
-    deleteModDraft: async () => {},
-    editVersion: async () => false,
-    installations: [],
-    activeInstallationId: '',
-    setActiveInstallationId: () => {},
-    getInstalledModFiles: async () => ({} as any),
-    clearFileListCache: () => {},
-    installedMods: [],
-    currentPlan: null,
-    operations: [],
-    previewInstallPlan: () => ({} as any),
-    applyPlan: async () => {},
-    simulateExternalChange: () => {},
-    adoptUnmanagedMod: () => {},
-    clearCurrentPlan: () => {},
-    toasts: [],
-    showToast: () => {},
-    removeToast: () => {},
-    ...overrides,
-  };
-}
+import { ModSummary } from '../types/submodhub';
+import { createMockContext, sampleMod, sampleVersion } from '../test/appContextMock';
 
 // ---------------- DOM Helper for interactive tests ----------------
 function setupMockDom() {
@@ -309,7 +198,7 @@ function findButtonByText(root: any, pattern: RegExp | string): any | null {
 
 test('admin sees "下架项目" button on published mod, separate from "下架此版本"', () => {
   const ctx = createMockContext({
-    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'], linked_accounts: {} },
+    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'] },
     mods: [sampleMod],
     versions: [sampleVersion],
   });
@@ -328,7 +217,7 @@ test('admin sees "下架项目" button on published mod, separate from "下架�
 test('non-admin user and anonymous user do not see "下架项目" button', () => {
   // Author user without admin role
   const authorCtx = createMockContext({
-    currentUser: { id: 'author_1', username: 'author', display_name: '原作者', roles: ['author'], linked_accounts: {} },
+    currentUser: { id: 'author_1', username: 'author', display_name: '原作者', roles: ['author'] },
     mods: [sampleMod],
     versions: [sampleVersion],
   });
@@ -361,7 +250,7 @@ test('non-admin user and anonymous user do not see "下架项目" button', () =>
 test('admin does not see "下架项目" button if mod is already unpublished', () => {
   const unpublishedMod = { ...sampleMod, is_published: false };
   const ctx = createMockContext({
-    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'], linked_accounts: {} },
+    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'] },
     mods: [unpublishedMod],
     versions: [sampleVersion],
   });
@@ -377,7 +266,7 @@ test('admin does not see "下架项目" button if mod is already unpublished', (
 test('admin sees "下架项目" button even when mod has no versions or is a spritepack', () => {
   // Mod with no published versions
   const noVersionsCtx = createMockContext({
-    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'], linked_accounts: {} },
+    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'] },
     mods: [sampleMod],
     versions: [],
   });
@@ -392,7 +281,7 @@ test('admin sees "下架项目" button even when mod has no versions or is a spr
   // Spritepack category
   const spritepackMod = { ...sampleMod, category: 'spritepack' as const };
   const spritepackCtx = createMockContext({
-    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'], linked_accounts: {} },
+    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'] },
     mods: [spritepackMod],
     versions: [],
   });
@@ -418,7 +307,7 @@ test('clicking "下架项目" and cancelling confirmation does not send request 
   };
 
   const ctx = createMockContext({
-    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'], linked_accounts: {} },
+    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'] },
     mods: [sampleMod],
     versions: [sampleVersion],
     unpublishMod: async () => {
@@ -474,7 +363,7 @@ test('clicking "下架项目" and confirming: success closes modal; failure pres
   (globalThis as any).window.confirm = () => true;
 
   const ctx = createMockContext({
-    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'], linked_accounts: {} },
+    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'] },
     mods: [sampleMod],
     versions: [sampleVersion],
     unpublishMod: async (modId: string) => {
@@ -559,7 +448,7 @@ test('stale unpublish request of mod A does not close modal when user switches t
   (globalThis as any).window.confirm = () => true;
 
   const ctx = createMockContext({
-    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'], linked_accounts: {} },
+    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'] },
     mods: [modA, modB],
     versions: [
       { ...sampleVersion, mod_id: 'mod_a', id: 'v_a' },
@@ -647,7 +536,7 @@ test('stale unpublish request does not invoke onClose after modal unmounts', asy
   (globalThis as any).window.confirm = () => true;
 
   const ctx = createMockContext({
-    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'], linked_accounts: {} },
+    currentUser: { id: 'admin_1', username: 'admin', display_name: '管理员', roles: ['admin'] },
     mods: [sampleMod],
     versions: [sampleVersion],
     unpublishMod: async () => {
