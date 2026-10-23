@@ -50,7 +50,19 @@
 | `GET :18083` | 引用 `assets/index-CNFM59Nu.js`、`assets/index-Dy7FsJm9.css`，与本机 `dist` 哈希一致 |
 | 公开入口 `https://rezehub.0721play.icu` | 顶部品牌显示 `v0.9.12`；下载弹窗显示 `v0.9.10`、两张卡片「来源：本站节点（Cloudreve）」、4 条外链（含 `releases/tag/v0.9.10`）、按钮「从本站下载」 |
 
-`release_url` 至此在真实部署上首次可见（此前部署的后端早于该字段）。客户端版本仍是 `0.9.10`：`v0.9.12` 的 Windows/Android 产物由 CI 在推送 `main` 后构建并发布 Release，本次未推送远端。
+`release_url` 至此在真实部署上首次可见（此前部署的后端早于该字段）。当时客户端仍是 `0.9.10`，因为 `v0.9.12` 的产物要等 CI 构建。
+
+## 推送与客户端发布（2026-10-23 20:0x）
+
+`git push origin main`（`e8a56d8..f7e09c5`，含此前未推送的 6 个提交）后 CI `Build clients`（run 39950346727）5 分钟内 success，创建 Release `v0.9.12`，产物 4 个：`submodhub-windows-amd64.exe`（13,234,176）、`submodhub-android-arm64-0.9.12.apk`（27,643,054）、`updater.exe`、`SHA256SUMS.txt`；Release 正文由提交标题自动生成（`chore(version)` 被过滤，区间从 `v0.9.10` 起算，因为 `v0.9.11` 没有 tag）。
+
+推送后测试服 `/api/v1/app-update` 立即切到新版本（`snapshot_age_seconds: 41`）：
+
+- `tag_name v0.9.12`，`release_url .../releases/tag/v0.9.12`；
+- `submodhub-windows-amd64.exe`、`submodhub-android-arm64-0.9.12.apk` 的 `delivery_type` 均为 `cloudreve`（镜像已就绪，未回落 GitHub）；
+- `updater.exe` 为 `delivery_type: github`——与「更新器不纳入节点交付」的既有取舍一致。
+
+线上 `https://rezehub.0721play.icu` 弹窗实测：标题 `下载 RezeHub 客户端 v0.9.12`，两张卡片「来源：本站节点（Cloudreve）」，大小 `12.6 MB` / `26.4 MB`，SHA-256 短哈希正常，4 条外链（含 `releases/tag/v0.9.12`），`updater.exe` 未出现在列表里（按预期被过滤）。
 
 ## 边界说明
 - 「快照过期告警」「白名单不命中回落 GitHub」「tag 变化放弃重取」三条路径仍只有单测覆盖：测试服的节点直链未过期、白名单命中，真实触发不了。
