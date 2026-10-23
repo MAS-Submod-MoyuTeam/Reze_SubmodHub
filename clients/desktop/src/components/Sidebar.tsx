@@ -5,7 +5,6 @@ import {
   Layers,
   History,
   FolderCog,
-  RefreshCw,
   HardDrive,
   AlertCircle,
   FileCode2,
@@ -21,8 +20,6 @@ interface SidebarProps {
   installedCount: number;
   unmanagedCount: number;
   recoverableOpsCount: number;
-  onRefreshCatalog: () => void;
-  isRefreshing: boolean;
   onOpenAppUpdate?: () => void;
   hasAppUpdate?: boolean;
 }
@@ -34,8 +31,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   installedCount,
   unmanagedCount,
   recoverableOpsCount,
-  onRefreshCatalog,
-  isRefreshing,
   onOpenAppUpdate,
   hasAppUpdate = false,
 }) => {
@@ -152,20 +147,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span>已校验根目录</span>
           </div>
         </div>
-
-        {/* Refresh Catalog Button */}
-        <button
-          onClick={onRefreshCatalog}
-          disabled={isRefreshing}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-neutral-300 hover:text-white bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 rounded-lg transition-colors disabled:opacity-50"
-        >
-          <RefreshCw
-            className={`w-3.5 h-3.5 text-neutral-400 ${
-              isRefreshing ? 'animate-spin text-emerald-400' : ''
-            }`}
-          />
-          <span>{isRefreshing ? '正在同步云端契约...' : '刷新模组目录缓存'}</span>
-        </button>
 
         {/* Build identity & App update trigger */}
         <div className="flex items-center justify-between px-1 text-[10px] font-mono text-neutral-500">

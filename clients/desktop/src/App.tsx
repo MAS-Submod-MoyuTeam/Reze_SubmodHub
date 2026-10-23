@@ -1301,8 +1301,6 @@ export default function App() {
           installedCount={installedMods.filter((m) => m.is_managed).length}
           unmanagedCount={unmanagedCount}
           recoverableOpsCount={recoverableOpsCount}
-          onRefreshCatalog={handleRefreshCatalog}
-          isRefreshing={isRefreshing}
           onOpenAppUpdate={() => setIsAppUpdateOpen(true)}
           hasAppUpdate={appUpdateState.status === 'available' || appUpdateState.status === 'ready'}
         />

@@ -84,6 +84,27 @@ test('CatalogView: the retry entry reports that a reload is already running', ()
   assert.match(retry, /disabled=""/);
 });
 
+/** Isolate the floating refresh control; it is icon-only, so anchor on its accessible name. */
+function floatingRefreshMarkup(html: string): string {
+  const anchor = html.indexOf('aria-label="刷新模组目录"');
+  assert.ok(anchor > 0, 'expected the floating refresh control in the markup');
+  const start = html.lastIndexOf('<button', anchor);
+  const end = html.indexOf('</button>', anchor);
+  assert.ok(start >= 0 && end > start, 'expected the floating refresh control to be a button');
+  return html.slice(start, end);
+}
+
+test('CatalogView: the floating refresh control sits in the catalog pane and spins while refreshing', () => {
+  const idle = floatingRefreshMarkup(renderCatalog({ mods: [mockMod] }));
+  assert.doesNotMatch(idle, /disabled=""/, 'the floating refresh control must stay clickable while idle');
+  assert.doesNotMatch(idle, /animate-spin/, 'an idle refresh control must not animate');
+  assert.match(idle, /rounded-full/, 'the refresh control must render as a circle');
+
+  const refreshing = floatingRefreshMarkup(renderCatalog({ mods: [mockMod], isCatalogRefreshing: true }));
+  assert.match(refreshing, /disabled=""/, 'a running refresh must lock the control');
+  assert.match(refreshing, /animate-spin/, 'a running refresh must spin until it settles');
+});
+
 test('CatalogView: a healthy catalog renders neither the failure nor the empty-result state', () => {
   const html = renderCatalog({ mods: [mockMod], catalogError: null });
 
