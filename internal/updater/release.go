@@ -100,7 +100,25 @@ func (s *Service) CheckForUpdate(ctx context.Context) (*ReleaseInfo, error) {
 	}()
 
 	if s.APIBaseURL() != "" && !s.config.IncludePrerelease {
-		if info, apiErr := s.checkViaAPI(ctx); apiErr == nil {
+		info, stale, apiErr := s.checkViaAPI(ctx)
+		if apiErr == nil && !stale {
+			return info, nil
+		}
+		if apiErr == nil {
+			// The API answered from a snapshot it has not refreshed for too long.
+			// GitHub may know about a release the API cannot see; ask it. If GitHub
+			// cannot answer either, keep the API's answer instead of failing the
+			// check: a blocked GitHub is exactly why the API path exists.
+			s.stateMu.Lock()
+			apiState := s.state
+			s.stateMu.Unlock()
+			ghInfo, ghErr := s.checkViaGitHub(ctx)
+			if ghErr == nil {
+				return ghInfo, nil
+			}
+			s.stateMu.Lock()
+			s.state = apiState
+			s.stateMu.Unlock()
 			return info, nil
 		}
 	}
@@ -133,6 +151,9 @@ func (s *Service) checkViaGitHub(ctx context.Context) (*ReleaseInfo, error) {
 	if latest == nil {
 		s.setState(func(st *State) {
 			st.Status = StatusIdle
+			st.Error = ""
+			st.DeliverySource = ""
+			st.DeliveryNodeID = ""
 		})
 		return nil, nil
 	}
@@ -154,6 +175,9 @@ func (s *Service) checkViaGitHub(ctx context.Context) (*ReleaseInfo, error) {
 		s.setState(func(st *State) {
 			st.Status = StatusIdle
 			st.LatestVersion = cleanVersion
+			st.Error = ""
+			st.DeliverySource = ""
+			st.DeliveryNodeID = ""
 		})
 		return nil, nil
 	}
@@ -205,6 +229,11 @@ func (s *Service) checkViaGitHub(ctx context.Context) (*ReleaseInfo, error) {
 		st.DownloadProgress = 0
 		st.CanInstall = canInstall
 		st.RequiresUserAction = !canInstall
+		st.Error = ""
+		// Discovery never invents a delivery plan: clear whatever source the
+		// previous API check recorded, and let DownloadUpdate report the real one.
+		st.DeliverySource = ""
+		st.DeliveryNodeID = ""
 	})
 
 	return info, nil
@@ -286,7 +315,7 @@ func (s *Service) DownloadUpdate(ctx context.Context, release *ReleaseInfo) (str
 	}
 
 	// 1. Download Asset
-	if err := s.downloadAsset(ctx, release.Asset, stagedPath, onProgress, true); err != nil {
+	if err := s.downloadAsset(ctx, release.Asset, release.TagName, stagedPath, onProgress, true); err != nil {
 		update(func(st *State) {
 			st.Status = StatusFailed
 			st.Error = fmt.Sprintf("download failed: %v", err)
@@ -298,7 +327,7 @@ func (s *Service) DownloadUpdate(ctx context.Context, release *ReleaseInfo) (str
 	var updaterStagedPath string
 	if release.UpdaterAsset != nil && release.UpdaterAsset.BrowserDownloadURL != "" {
 		updaterStagedPath = s.stageManager.StagingPath(release.Version, release.UpdaterAsset.Name)
-		if err := s.downloadAsset(ctx, release.UpdaterAsset, updaterStagedPath, nil, false); err != nil {
+		if err := s.downloadAsset(ctx, release.UpdaterAsset, release.TagName, updaterStagedPath, nil, false); err != nil {
 			update(func(st *State) {
 				st.Status = StatusFailed
 				st.Error = fmt.Sprintf("failed to download updater helper: %v", err)

@@ -25,7 +25,7 @@ const (
 	// every selected child count too), because cards only render a short row.
 	maxModTags = 8
 	// maxTagGroups and maxTagChildren keep the admin page and the picker usable.
-	maxTagGroups = 20
+	maxTagGroups   = 20
 	maxTagChildren = 6
 	// maxTagNameRunes bounds one tag label; the display prefix "#" is added by
 	// the UI, so it stays out of the stored name.
@@ -257,5 +257,8 @@ func (s *Store) publicTagCatalog(w http.ResponseWriter, r *http.Request) {
 	groups := s.effectiveTagCatalogLocked()
 	revision := s.Catalog.Settings.Revision
 	s.mu.RUnlock()
+	// The catalog changes when an admin saves it; a cached copy would keep the
+	// author picker and the catalog filters on a retired tag list.
+	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, 200, map[string]any{"groups": groups, "revision": revision})
 }

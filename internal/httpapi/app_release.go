@@ -61,9 +61,12 @@ type AppAssetMirror struct {
 }
 
 type appReleaseState struct {
-	mu         sync.Mutex
+	mu sync.Mutex
+	// release/checksums are the last successful snapshot; fetchedAt is when that
+	// snapshot was taken, which is what the descriptor reports as its age.
 	release    *github.Release
 	checksums  map[string]string
+	fetchedAt  time.Time
 	checkedAt  time.Time
 	refreshing bool
 }
@@ -89,6 +92,22 @@ func (s *Store) appReleaseSnapshot() (github.Release, map[string]string, bool) {
 		return github.Release{}, nil, false
 	}
 	return *state.release, state.checksums, true
+}
+
+// appReleaseAge reports how old the served snapshot is. Clients use it to decide
+// that an API which cannot reach GitHub any more is no longer an authority.
+func (s *Store) appReleaseAge() time.Duration {
+	state := &s.appRelease
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.fetchedAt.IsZero() {
+		return 0
+	}
+	age := time.Since(state.fetchedAt)
+	if age < 0 {
+		return 0
+	}
+	return age
 }
 
 func (s *Store) appReleaseStale() bool {
@@ -122,6 +141,7 @@ func (s *Store) finishAppReleaseRefresh(release *github.Release, sums map[string
 	if err == nil {
 		state.release = release
 		state.checksums = sums
+		state.fetchedAt = time.Now()
 		state.checkedAt = time.Now()
 		return
 	}
@@ -271,6 +291,17 @@ func (s *Store) reconcileAppMirrors(release github.Release, sums map[string]stri
 		return !slices.ContainsFunc(s.Catalog.DeliveryNodes, func(n DeliveryNode) bool { return n.ID == m.NodeID && n.Type == "cloudreve" })
 	})
 	changed := len(updated) != len(previous)
+	// A row left in "uploading" cannot still be in flight: reconciliation runs on
+	// the single delivery worker before any claim, so every uploading row was
+	// abandoned by a restart, a node change or a failed completion save. Putting
+	// it back in the queue is what keeps one interrupted upload from stranding an
+	// asset until the next release.
+	for i := range updated {
+		if updated[i].State == "uploading" {
+			updated[i].State = "pending"
+			changed = true
+		}
+	}
 	for _, n := range s.Catalog.DeliveryNodes {
 		if !n.Enabled || n.Type != "cloudreve" {
 			continue
@@ -331,6 +362,9 @@ func (s *Store) finishAppMirror(job AppAssetMirror, fileID string, workErr error
 	if !slices.ContainsFunc(s.Catalog.DeliveryNodes, func(n DeliveryNode) bool {
 		return n.ID == job.NodeID && n.Enabled && n.Revision == job.NodeRevision
 	}) {
+		// The node was disabled or reconfigured mid-upload. Leave the row as it is:
+		// reconciliation turns an uploading row back into pending (or drops it when
+		// the node is gone), so nothing is lost by not writing here.
 		return nil
 	}
 	index := slices.IndexFunc(s.Catalog.AppAssetMirrors, func(m AppAssetMirror) bool {
@@ -493,6 +527,10 @@ type appUpdateDTO struct {
 	PublishedAt *time.Time          `json:"published_at,omitempty"`
 	ChecksumURL string              `json:"checksum_url,omitempty"`
 	Assets      []appUpdateAssetDTO `json:"assets"`
+	// SnapshotAgeSeconds is how long ago the API last read GitHub successfully.
+	// A client that sees an old value must stop treating this release list as
+	// authoritative, because the API may simply be unable to reach GitHub.
+	SnapshotAgeSeconds int64 `json:"snapshot_age_seconds"`
 }
 
 // appUpdateDescriptor is the public update-check and delivery contract. It
@@ -522,13 +560,14 @@ func (s *Store) appUpdateDescriptor(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	out := appUpdateDTO{
-		TagName:     release.TagName,
-		Version:     strings.TrimPrefix(release.TagName, "v"),
-		Name:        release.Name,
-		Notes:       release.Body,
-		Prerelease:  release.Prerelease,
-		PublishedAt: release.PublishedAt,
-		Assets:      []appUpdateAssetDTO{},
+		TagName:            release.TagName,
+		Version:            strings.TrimPrefix(release.TagName, "v"),
+		Name:               release.Name,
+		Notes:              release.Body,
+		Prerelease:         release.Prerelease,
+		PublishedAt:        release.PublishedAt,
+		Assets:             []appUpdateAssetDTO{},
+		SnapshotAgeSeconds: int64(s.appReleaseAge().Seconds()),
 	}
 	if checksumAsset := findReleaseAssetByName(release.Assets, appChecksumAssetName); checksumAsset != nil {
 		out.ChecksumURL = checksumAsset.BrowserDownloadURL

@@ -24,7 +24,7 @@ import { DownloadNodeSettings } from './DownloadNodeSettings';
 import { TagCatalogSettings } from './TagCatalogSettings';
 
 export const AdminPanel: React.FC = () => {
-  const { hasRole, showToast } = useApp();
+  const { hasRole, showToast, reloadCatalog } = useApp();
 
   // Role Management State
   const [userID, setUserID] = useState('');
@@ -162,11 +162,13 @@ export const AdminPanel: React.FC = () => {
   };
 
   // Keep the cached revision in step with a catalog save so the next card save
-  // does not fail with a stale revision conflict.
+  // does not fail with a stale revision conflict. Saving the catalog also prunes
+  // tags off mods server-side, so the catalog cache has to be re-read too.
   const handleTagCatalogSaved = (updated: SiteSettings) => {
     setTagCatalog(updated.tag_catalog || []);
     setRevision(updated.revision);
     setTagCatalogConflict(false);
+    void reloadCatalog();
   };
 
   // Handle Saving / Clearing the GitHub API token

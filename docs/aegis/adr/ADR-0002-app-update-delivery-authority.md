@@ -59,6 +59,17 @@ ADR-0001 把普通包下载从主 API 剥离到 Cloudreve 镜像与独立 relay�
 - docs/app-update.md
 - docs/aegis/adr/ADR-0001-download-delivery-authority.md
 
+## Amendment 2026-10-23 — 权威边界收紧
+
+代码审查后补充四条约束，仍在本 ADR 的决策范围内，不改变方向：
+
+- **权威有时效**：描述新增 `snapshot_age_seconds`。超过 30 分钟后客户端再问一次 GitHub；GitHub 有更高版本才采信，GitHub 不可达时保留主 API 的答案。主 API 仍是默认权威，但不再能靠一份陈旧快照长期压住新版本。
+- **镜像状态可自愈**：对账把残留的 `uploading` 归位 `pending`。对账发生在投递 worker 认领任务之前，因此该状态不可能是并发上传，只可能是重启、节点变更或完成落盘失败留下的。
+- **刷新不换 release**：重取描述时校验 `tag_name`，与本次批准版本不一致就放弃重试并回落 GitHub，避免把新版本的哈希/直链套在旧版本的暂存结果上。
+- **回落即清源**：GitHub 回落成功时清空 `error`、`delivery_source`、`delivery_node_id`，状态不再同时表达「有新版本」和上一次 API 失败。
+
+`github_url` 仍然始终返回：这是为了让「API 可达但节点不可用」的客户端还能下载，属于对「隐藏 GitHub 地址」目标的**有意例外**，后续重构不应把它当泄漏删除。
+
 ## Boundary
 
 This ADR is an advisory Aegis Method Pack record. It does not grant completion authority or replace project-authoritative architecture sources.

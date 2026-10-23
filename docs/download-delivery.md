@@ -54,7 +54,7 @@ go run ./cmd/cloudreve-probe -create-temporary-file -payload-bytes 134086656
 
 完整探针会消耗空间及上下行带宽，只清理自己创建的对象；遇验证码/MFA由管理员处理，不绕过。输出不含密码、Cookie、对象ID或完整签名URL。未知/无期限/临近过期签名不进入直链调度。v3 `sign` 格式依据 Cloudreve 3.8.3 `pkg/auth/{auth,hmac}.go`，解析提供方Unix到期秒数并减安全裕量；它不等于客户端持有提供方私钥。
 
-浏览器直链需要提供方允许CORS。浏览器无法可靠逐跳审查跨域302，因此拒绝外部重定向；Windows/Android依配置origin逐跳验证。外部请求不带API凭据。Range不作为续传承诺，下载从零写入新临时文件。
+浏览器直链需要提供方允许CORS。浏览器无法可靠逐跳审查跨域302，因此拒绝外部重定向；Windows/Android依配置origin逐跳验证。外部请求不带API凭据。同源例外只对API基址的主机名+实际端口成立（无端口的 http 基址按 :80，https 按 :443），其余目标一律做私网地址检查。Range不作为续传承诺，下载从零写入新临时文件。
 
 ## 备份与验收
 

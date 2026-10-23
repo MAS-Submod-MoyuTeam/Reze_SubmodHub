@@ -44,6 +44,11 @@ type updateFixture struct {
 	gh             *httptest.Server
 	deliveryPath   string
 	descriptorHits atomic.Int32
+	// Knobs for the fallback and staleness tests.
+	snapshotAgeSeconds int64
+	omitPlatformAsset  bool
+	githubListCode     int
+	apiStatus          int
 }
 
 func newUpdateFixture(t *testing.T) *updateFixture {
@@ -63,6 +68,10 @@ func newUpdateFixture(t *testing.T) *updateFixture {
 		switch r.URL.Path {
 		case "/api/v1/app-update":
 			f.descriptorHits.Add(1)
+			if f.apiStatus != 0 {
+				http.Error(w, "descriptor unavailable", f.apiStatus)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(f.descriptor())
 		case f.deliveryPath:
@@ -79,6 +88,10 @@ func newUpdateFixture(t *testing.T) *updateFixture {
 	f.gh = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/repos/"+DefaultRepoOwner+"/"+DefaultRepoName+"/releases":
+			if f.githubListCode != 0 {
+				http.Error(w, "github unavailable", f.githubListCode)
+				return
+			}
 			json.NewEncoder(w).Encode([]map[string]any{{
 				"tag_name": "v99.0.0",
 				"name":     "newer than the API",
@@ -123,12 +136,17 @@ func (f *updateFixture) descriptor() map[string]any {
 		"url":           f.gh.URL + "/github-helper",
 		"github_url":    f.gh.URL + "/github-helper",
 	}
+	assets := []any{helper}
+	if !f.omitPlatformAsset {
+		assets = append(assets, asset)
+	}
 	return map[string]any{
-		"tag_name": "v9.9.9",
-		"version":  "9.9.9",
-		"name":     "RezeHub 9.9.9",
-		"notes":    "release notes",
-		"assets":   []any{asset, helper},
+		"tag_name":             "v9.9.9",
+		"version":              "9.9.9",
+		"name":                 "RezeHub 9.9.9",
+		"notes":                "release notes",
+		"assets":               assets,
+		"snapshot_age_seconds": f.snapshotAgeSeconds,
 	}
 }
 
@@ -303,5 +321,154 @@ func TestSetAPIBaseURLRepointsUpdateChecks(t *testing.T) {
 	}
 	if info == nil || info.Version != "9.9.9" {
 		t.Fatalf("repointed API did not answer: %+v", info)
+	}
+}
+
+func TestCheckForUpdateFallsBackWhenAPISnapshotIsStale(t *testing.T) {
+	f := newUpdateFixture(t)
+	f.snapshotAgeSeconds = int64((appUpdateMaxSnapshotAge + time.Minute).Seconds())
+	service := newFixtureService(t, f, f.api.URL)
+
+	info, err := service.CheckForUpdate(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info == nil || info.Version != "99.0.0" {
+		t.Fatalf("a stale API snapshot must not outrank GitHub: %+v", info)
+	}
+	if state := service.GetState(); state.DeliverySource != "" || state.DeliveryNodeID != "" {
+		t.Fatalf("a GitHub fallback must clear the API delivery plan: %+v", state)
+	}
+}
+
+func TestCheckForUpdateKeepsAPISnapshotWhenGitHubCannotAnswer(t *testing.T) {
+	f := newUpdateFixture(t)
+	f.snapshotAgeSeconds = int64((2 * time.Hour).Seconds())
+	f.githubListCode = http.StatusServiceUnavailable
+	service := newFixtureService(t, f, f.api.URL)
+
+	info, err := service.CheckForUpdate(context.Background())
+	if err != nil {
+		t.Fatalf("a blocked GitHub must not fail an API-answered check: %v", err)
+	}
+	if info == nil || info.Version != "9.9.9" {
+		t.Fatalf("API answer lost: %+v", info)
+	}
+	state := service.GetState()
+	if state.Status != StatusAvailable || state.DeliverySource != "cloudreve" || state.Error != "" {
+		t.Fatalf("API state was not restored: %+v", state)
+	}
+}
+
+func TestCheckForUpdateClearsStaleErrorAndSourceAfterFallback(t *testing.T) {
+	f := newUpdateFixture(t)
+	service := newFixtureService(t, f, f.api.URL)
+	if _, err := service.CheckForUpdate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if source := service.GetState().DeliverySource; source != "cloudreve" {
+		t.Fatalf("setup: %q", source)
+	}
+	// The descriptor now has no asset for this platform, so the API path records
+	// an error and the client falls back to GitHub's newer release.
+	f.omitPlatformAsset = true
+	info, err := service.CheckForUpdate(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info == nil || info.Version != "99.0.0" {
+		t.Fatalf("fallback discovery: %+v", info)
+	}
+	if state := service.GetState(); state.Error != "" || state.DeliverySource != "" || state.DeliveryNodeID != "" {
+		t.Fatalf("fallback kept stale API state: %+v", state)
+	}
+}
+
+func TestDownloadUpdateDoesNotAdoptANewerReleaseOnRefresh(t *testing.T) {
+	oldPayload := []byte("old-release-binary")
+	newPayload := []byte("new-release-binary")
+	oldSum := sha256.Sum256(oldPayload)
+	newSum := sha256.Sum256(newPayload)
+	var gh *httptest.Server
+	var api *httptest.Server
+	gh = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/github-asset" {
+			w.Write(oldPayload)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(gh.Close)
+	descriptors := atomic.Int32{}
+	api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/app-update":
+			version, tag, hash, size, link := "9.9.9", "v9.9.9", hex.EncodeToString(oldSum[:]), len(oldPayload), api.URL+"/old-link"
+			if descriptors.Add(1) > 1 {
+				version, tag, hash, size, link = "9.9.10", "v9.9.10", hex.EncodeToString(newSum[:]), len(newPayload), api.URL+"/new-link"
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"tag_name": tag,
+				"version":  version,
+				"name":     tag,
+				"assets": []any{map[string]any{
+					"name":                     platformAssetName(),
+					"size_bytes":               size,
+					"sha256":                   hash,
+					"delivery_type":            "cloudreve",
+					"url":                      link,
+					"expires_at":               time.Now().Add(5 * time.Minute).UTC().Format(time.RFC3339),
+					"github_url":               gh.URL + "/github-asset",
+					"allowed_download_origins": []string{},
+				}},
+			})
+		case "/old-link":
+			http.Error(w, "gone", http.StatusBadGateway)
+		case "/new-link":
+			t.Error("refresh adopted a newer release instead of keeping the approved one")
+			w.Write(newPayload)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(api.Close)
+
+	service, err := NewService(Config{
+		CacheDir:        t.TempDir(),
+		CurrentVersion:  "0.9.11",
+		APIBaseURL:      api.URL,
+		DownloadTimeout: 30 * time.Second,
+	}, stateTestInstaller(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.ghClient = github.NewClient(github.WithBaseURL(gh.URL), github.WithAllowInsecureTestHosts(true))
+
+	info, err := service.CheckForUpdate(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info == nil || info.Version != "9.9.9" {
+		t.Fatalf("setup check: %+v", info)
+	}
+	stagedPath, err := service.DownloadUpdate(context.Background(), info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged, err := os.ReadFile(stagedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(staged) != string(oldPayload) {
+		t.Fatalf("staged bytes came from another release: %q", staged)
+	}
+	if info.Asset.ExpectedSHA256 != hex.EncodeToString(oldSum[:]) {
+		t.Fatalf("expected hash moved to another release: %q", info.Asset.ExpectedSHA256)
+	}
+	if state := service.GetState(); state.Status != StatusReady || state.DeliverySource != "github" {
+		t.Fatalf("state: %+v", state)
+	}
+	if descriptors.Load() != 2 {
+		t.Fatalf("expected one refresh, got %d descriptor reads", descriptors.Load())
 	}
 }

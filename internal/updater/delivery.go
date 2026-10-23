@@ -24,11 +24,17 @@ var (
 	errAPIDeliveryDisabled = errors.New("app_update_api_unavailable")
 	errDeliveryUnavailable = errors.New("delivery_source_unavailable")
 	errDeliveryExpired     = errors.New("delivery_link_expired")
+	errReleaseChanged      = errors.New("app_update_release_changed")
 )
 
 const (
 	appUpdateDescriptorPath = "/api/v1/app-update"
 	appUpdateDescriptorCap  = 1 << 20
+	// appUpdateMaxSnapshotAge is how old the API's GitHub snapshot may be before
+	// it stops being an authority: past this, the API may simply be unable to see
+	// a release, so the client asks GitHub itself (and keeps the API answer only
+	// when GitHub cannot answer either).
+	appUpdateMaxSnapshotAge = 30 * time.Minute
 )
 
 // apiDescriptor mirrors the API's public app-update contract.
@@ -41,6 +47,9 @@ type apiDescriptor struct {
 	PublishedAt *time.Time `json:"published_at"`
 	ChecksumURL string     `json:"checksum_url"`
 	Assets      []apiAsset `json:"assets"`
+	// SnapshotAgeSeconds is the server's own measure of how stale its release
+	// list is; zero means "not reported" (older servers) and is treated as fresh.
+	SnapshotAgeSeconds int64 `json:"snapshot_age_seconds"`
 }
 
 type apiAsset struct {
@@ -152,27 +161,31 @@ func assetNameKey(assets []apiAsset) []github.Asset {
 }
 
 // checkViaAPI asks the API which release is current and how it should be
-// fetched. A response of (nil, nil) means the API answered and no update exists.
-func (s *Service) checkViaAPI(ctx context.Context) (*ReleaseInfo, error) {
+// fetched. A response of (nil, false, nil) means the API answered and no update
+// exists. stale reports that the API itself has not reached GitHub recently, so
+// its silence about a newer release does not mean there is none.
+func (s *Service) checkViaAPI(ctx context.Context) (*ReleaseInfo, bool, error) {
 	descriptor, err := s.fetchAPIDescriptor(ctx)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
+	stale := descriptor.SnapshotAgeSeconds > int64(appUpdateMaxSnapshotAge.Seconds())
 	cleanVersion := strings.TrimPrefix(strings.TrimSpace(descriptor.Version), "v")
 	if cleanVersion == "" {
 		cleanVersion = strings.TrimPrefix(descriptor.TagName, "v")
 	}
 	if cleanVersion == "" {
-		return nil, errors.New("app update descriptor has no version")
+		return nil, stale, errors.New("app update descriptor has no version")
 	}
 	if CompareSemVer(cleanVersion, s.config.CurrentVersion) <= 0 {
 		s.setState(func(st *State) {
 			st.Status = StatusIdle
 			st.LatestVersion = cleanVersion
+			st.Error = ""
 			st.DeliverySource = ""
 			st.DeliveryNodeID = ""
 		})
-		return nil, nil
+		return nil, stale, nil
 	}
 
 	targetOS, targetArch := CurrentPlatform()
@@ -183,11 +196,11 @@ func (s *Service) checkViaAPI(ctx context.Context) (*ReleaseInfo, error) {
 			st.Status = StatusIdle
 			st.Error = fmt.Sprintf("no compatible asset in latest release: %v", err)
 		})
-		return nil, err
+		return nil, stale, err
 	}
 	selected := assetInfo(descriptor, matched.Name)
 	if selected == nil {
-		return nil, errors.New("app update descriptor is missing the selected asset")
+		return nil, stale, errors.New("app update descriptor is missing the selected asset")
 	}
 
 	info := &ReleaseInfo{
@@ -216,18 +229,24 @@ func (s *Service) checkViaAPI(ctx context.Context) (*ReleaseInfo, error) {
 		st.DownloadProgress = 0
 		st.CanInstall = canInstall
 		st.RequiresUserAction = !canInstall
+		st.Error = ""
 		st.DeliverySource = string(selected.Delivery.Type)
 		st.DeliveryNodeID = selected.Delivery.NodeID
 	})
-	return info, nil
+	return info, stale, nil
 }
 
 // refreshDeliveryFromAPI re-reads the descriptor so a stale or revoked Cloudreve
-// link can be replaced without re-running the whole update check.
-func (s *Service) refreshDeliveryFromAPI(ctx context.Context, asset *AssetInfo) error {
+// link can be replaced without re-running the whole update check. It refuses to
+// adopt a newer release: the staged version and the user's choice were made for
+// one tag, so a descriptor that moved on must not swap the expected hash.
+func (s *Service) refreshDeliveryFromAPI(ctx context.Context, asset *AssetInfo, tag string) error {
 	descriptor, err := s.fetchAPIDescriptor(ctx)
 	if err != nil {
 		return err
+	}
+	if tag != "" && descriptor.TagName != tag {
+		return errReleaseChanged
 	}
 	refreshed := assetInfo(descriptor, asset.Name)
 	if refreshed == nil {
@@ -259,8 +278,9 @@ func (s *Service) recordDelivery(source DeliveryType, nodeID string) {
 // downloadAsset fetches one asset from its announced delivery source, refreshing
 // a stale link once, and then uses the GitHub release asset as the fallback.
 // Only the primary asset reports its source: the Windows updater helper is an
-// implementation detail of the same update.
-func (s *Service) downloadAsset(ctx context.Context, asset *AssetInfo, destPath string, onProgress func(int64, int64), primary bool) error {
+// implementation detail of the same update. tag is the release the caller
+// approved, so a refresh can never silently adopt another one.
+func (s *Service) downloadAsset(ctx context.Context, asset *AssetInfo, tag, destPath string, onProgress func(int64, int64), primary bool) error {
 	if asset == nil {
 		return fmt.Errorf("no release asset provided")
 	}
@@ -272,7 +292,7 @@ func (s *Service) downloadAsset(ctx context.Context, asset *AssetInfo, destPath 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if refreshErr := s.refreshDeliveryFromAPI(ctx, asset); refreshErr == nil {
+		if refreshErr := s.refreshDeliveryFromAPI(ctx, asset, tag); refreshErr == nil {
 			if asset.Delivery.Type == DeliveryCloudreve {
 				if retryErr := s.downloadViaDelivery(ctx, asset, destPath, onProgress, primary); retryErr == nil {
 					return nil

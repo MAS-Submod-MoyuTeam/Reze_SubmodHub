@@ -65,6 +65,18 @@ func PrivateIP(ip net.IP) bool {
 	return ip.IsPrivate() || ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || !ip.IsGlobalUnicast() || cgnat
 }
 
+// originEffectivePort is the port a dial uses for this base when the URL does
+// not spell one out.
+func originEffectivePort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	if strings.EqualFold(u.Scheme, "http") {
+		return "80"
+	}
+	return "443"
+}
+
 // NewOriginClient builds the HTTP client used for declared delivery bytes. It
 // ignores environment proxies, carries no API cookies, resolves and rejects
 // private destinations per hop, and validates every redirect against the same
@@ -82,7 +94,12 @@ func NewOriginClient(base *url.URL, origins []string, maxRedirects int) *http.Cl
 		if err != nil {
 			return nil, errors.New("download_destination_invalid")
 		}
-		if base != nil && (strings.EqualFold(address, base.Host) || strings.EqualFold(host, base.Hostname()) && port == "443" && base.Port() == "") {
+		// The API's own host is trusted: a self-hosted deployment may serve both the
+		// descriptor and the bytes from one private address. The comparison is
+		// hostname + effective port, so a plain-http base without an explicit port
+		// resolves to :80 instead of silently falling through to the private-address
+		// rule (which would reject every same-host LAN download).
+		if base != nil && strings.EqualFold(host, base.Hostname()) && port == originEffectivePort(base) {
 			return dialer.DialContext(ctx, network, address)
 		}
 		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)

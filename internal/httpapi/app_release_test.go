@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -144,6 +145,9 @@ func TestAppUpdateDescriptorPublishesVerifiedCloudreveMirror(t *testing.T) {
 	if out.Version != "9.9.9" || out.TagName != "v9.9.9" || out.Notes != "release notes" || out.Prerelease {
 		t.Fatalf("release metadata: %+v", out)
 	}
+	if out.SnapshotAgeSeconds < 0 || out.SnapshotAgeSeconds > 60 {
+		t.Fatalf("snapshot age must describe a fresh read: %d", out.SnapshotAgeSeconds)
+	}
 	if out.ChecksumURL != release.assetURL("SHA256SUMS.txt") {
 		t.Fatalf("checksum url: %q", out.ChecksumURL)
 	}
@@ -230,6 +234,45 @@ func TestAppMirrorCandidatesSkipSourcesAndUnhashedAssets(t *testing.T) {
 	}
 	if strings.Join(mirrored, ",") != "submodhub-windows-amd64.exe,submodhub-android-arm64-9.9.9.apk" {
 		t.Fatalf("assets without a published hash must not be mirrored: %v", mirrored)
+	}
+}
+
+func TestAppMirrorReconcileRecoversInterruptedUploads(t *testing.T) {
+	release := newFakeAppRelease(t)
+	s := newAppUpdateStore(t, release, []DeliveryNode{cloudreveTestNode()})
+	if err := s.refreshAppRelease(context.Background(), true); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	rel, sums, _ := s.appReleaseSnapshot()
+	if err := s.reconcileAppMirrors(rel, sums); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	job, _, ok, err := s.claimAppMirror()
+	if err != nil || !ok {
+		t.Fatalf("claim: %v %v", ok, err)
+	}
+	if job.State != "uploading" {
+		t.Fatalf("claim must reserve the job: %+v", job)
+	}
+
+	// The process dies (or the node is disabled) here: the row is persisted as
+	// uploading with no worker left to finish it. Reconciliation must put it back
+	// in the queue instead of stranding the asset until the next release.
+	if err := s.reconcileAppMirrors(rel, sums); err != nil {
+		t.Fatalf("reconcile after restart: %v", err)
+	}
+	index := slices.IndexFunc(s.Catalog.AppAssetMirrors, func(m AppAssetMirror) bool { return m.AssetName == job.AssetName })
+	if index < 0 || s.Catalog.AppAssetMirrors[index].State != "pending" {
+		t.Fatalf("interrupted upload not recovered: %+v", s.Catalog.AppAssetMirrors)
+	}
+
+	// A disabled node must not be claimed, but the recovered row stays queued.
+	s.Catalog.DeliveryNodes[0].Enabled = false
+	if _, _, ok, _ := s.claimAppMirror(); ok {
+		t.Fatal("a disabled node must not claim the recovered job")
+	}
+	if index := slices.IndexFunc(s.Catalog.AppAssetMirrors, func(m AppAssetMirror) bool { return m.AssetName == job.AssetName }); index < 0 || s.Catalog.AppAssetMirrors[index].State != "pending" {
+		t.Fatalf("recovered row lost while the node was disabled: %+v", s.Catalog.AppAssetMirrors)
 	}
 }
 

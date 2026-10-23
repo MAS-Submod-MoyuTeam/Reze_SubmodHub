@@ -92,6 +92,9 @@ func TestTagCatalogDefaultsAndPublicEndpoint(t *testing.T) {
 	if publicRes.StatusCode != 200 || len(public.Groups) != 12 || public.Revision != 0 {
 		t.Fatalf("public catalog = %d %+v", publicRes.StatusCode, public)
 	}
+	if got := publicRes.Header.Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("public catalog must not be cached, got %q", got)
+	}
 
 	// Saving a hierarchical catalog persists and is visible to the public read.
 	res, decoded := patchAdminSettingsJSON(t, server.URL, adminCookie, adminCSRF,

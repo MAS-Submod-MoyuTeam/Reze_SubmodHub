@@ -61,7 +61,9 @@ func (s *Store) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		r.Body = http.MaxBytesReader(w, r.Body, 16384)
+		// A full tag catalog (20 groups × 6 children, 24-rune names) is ~12 KiB in
+		// UTF-8, so the old 16 KiB limit left almost no headroom for the rest.
+		r.Body = http.MaxBytesReader(w, r.Body, 65536)
 		var payload struct {
 			GitHubProxyTemplate *string     `json:"github_proxy_template"`
 			GitHubToken         *string     `json:"github_token"`
@@ -412,9 +414,9 @@ type siteSettingsResponse struct {
 	GitHubSyncMaxAge       string `json:"github_sync_max_age"`
 	GitHubSyncMaxAgeLocked bool   `json:"github_sync_max_age_locked"`
 	// TagCatalog is the effective catalog (defaults when nothing was saved yet).
-	TagCatalog             []TagGroup `json:"tag_catalog"`
-	MasterKeyConfigured    bool       `json:"master_key_configured"`
-	Revision               uint64     `json:"revision"`
+	TagCatalog          []TagGroup `json:"tag_catalog"`
+	MasterKeyConfigured bool       `json:"master_key_configured"`
+	Revision            uint64     `json:"revision"`
 }
 
 type ProxyTestResponse struct {

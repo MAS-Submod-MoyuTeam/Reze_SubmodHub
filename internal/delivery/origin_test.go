@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 )
@@ -51,5 +52,55 @@ func TestDeliveryOriginClientRejectsPrivateAndUndeclaredRedirects(t *testing.T) 
 	}
 	if err := client.CheckRedirect(req, []*http.Request{{}}); err != nil {
 		t.Fatalf("declared origin must be allowed: %v", err)
+	}
+}
+
+// TestDeliveryOriginClientTrustsOnlyTheConfiguredAPIHost pins the dial policy:
+// the API's own host bypasses the private-address rule (a self-hosted API may
+// legitimately serve downloads from a LAN address), and nothing else does.
+func TestDeliveryOriginClientTrustsOnlyTheConfiguredAPIHost(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	}))
+	defer target.Close()
+
+	base, _ := url.Parse(target.URL)
+	client := NewOriginClient(base, nil, 4)
+	res, err := client.Get(target.URL)
+	if err != nil {
+		t.Fatalf("same-origin dial must be allowed: %v", err)
+	}
+	res.Body.Close()
+
+	// A base on another port does not grant the bypass: the target is a private
+	// address, so the private-address rule applies.
+	otherBase, _ := url.Parse("http://127.0.0.1:1")
+	strict := NewOriginClient(otherBase, nil, 4)
+	if _, err := strict.Get(target.URL); err == nil {
+		t.Fatal("a private destination must be rejected")
+	}
+
+	// Without a base there is no same-origin exception at all.
+	noBase := NewOriginClient(nil, nil, 4)
+	if _, err := noBase.Get(target.URL); err == nil {
+		t.Fatal("a private destination must be rejected without a base")
+	}
+}
+
+func TestDeliveryOriginEffectivePort(t *testing.T) {
+	cases := map[string]string{
+		"https://api.example":      "443",
+		"https://api.example:8443": "8443",
+		"http://100.72.137.92":     "80",
+		"http://10.0.0.5:8080":     "8080",
+	}
+	for raw, want := range cases {
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			t.Fatalf("parse %s: %v", raw, err)
+		}
+		if got := originEffectivePort(parsed); got != want {
+			t.Fatalf("%s -> %q, want %q", raw, got, want)
+		}
 	}
 }

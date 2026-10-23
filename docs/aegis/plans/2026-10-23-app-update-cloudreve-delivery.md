@@ -127,3 +127,14 @@ type AppAssetMirror struct {
 - `IncludePrerelease=true` 时仍走 GitHub（预发布不镜像）。
 - 镜像行不删除云端旧对象；发布换代后旧文件需人工清理。
 - 真实验收需在测试服配好 Cloudreve 节点后观察一次完整发布：`app_asset_states` 出现 `ready` 且 `GET /api/v1/app-update` 返回 `delivery_type=cloudreve`，再用旧客户端实测更新。
+
+## 9. 修订（2026-10-23 审查后）
+
+第 4 节里「`checkViaAPI` 成功即返回」的表述已不完整：快照年龄超过 30 分钟时客户端会额外问一次 GitHub，GitHub 不可达才退回主 API 的答案。本轮同时修掉：
+
+- 残留 `uploading` 镜像行由对账归位 `pending`（重启/节点变更/完成落盘失败后的自愈）。
+- 重取描述校验 `tag_name`，不一致即放弃重试并回落 GitHub，避免混用两份 release 的哈希与直链。
+- GitHub 回落成功时清空 `error`/`delivery_source`/`delivery_node_id`。
+- `GET /api/v1/tags` 补 `Cache-Control: no-store`；管理端保存标签目录后重新拉取目录；设置接口体积上限 16 KiB → 64 KiB。
+
+回归测试：`TestAppMirrorReconcileRecoversInterruptedUploads`、`TestCheckForUpdateFallsBackWhenAPISnapshotIsStale`、`TestCheckForUpdateKeepsAPISnapshotWhenGitHubCannotAnswer`、`TestCheckForUpdateClearsStaleErrorAndSourceAfterFallback`、`TestDownloadUpdateDoesNotAdoptANewerReleaseOnRefresh`，以及 `GET /api/v1/tags` 的缓存头断言。
