@@ -105,6 +105,23 @@ test('CatalogView: the floating refresh control sits in the catalog pane and spi
   assert.match(refreshing, /animate-spin/, 'a running refresh must spin until it settles');
 });
 
+test('CatalogView: the floating refresh control yields to the explicit retry entry on failure', () => {
+  const failed = renderCatalog({ mods: [mockMod], catalogError: 'fetch failed' });
+
+  // A failed load already owns an explicit, labelled retry button; a second
+  // icon-only entry for the same action only adds noise.
+  assert.equal(failed.indexOf('aria-label="刷新模组目录"'), -1, 'the floating control must not compete with the retry entry');
+  assert.match(retryButtonMarkup(failed), /重新加载目录/);
+});
+
+test('CatalogView: the scroll pane reserves room for the floating refresh control', () => {
+  const html = renderCatalog({ mods: [mockMod] });
+
+  // Regression: the control is pinned bottom-right inside the scroll pane, so
+  // without bottom padding the last row's right-most card buttons hide under it.
+  assert.match(html, /overflow-y-auto p-4 pb-20/, 'the grid pane must keep the floating control clear of the last row');
+});
+
 test('CatalogView: a healthy catalog renders neither the failure nor the empty-result state', () => {
   const html = renderCatalog({ mods: [mockMod], catalogError: null });
 

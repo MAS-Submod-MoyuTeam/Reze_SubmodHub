@@ -252,7 +252,10 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
       {/* Main Catalog Grid View */}
       <div className="relative flex-1 min-h-0">
-        <div className="h-full overflow-y-auto p-4">
+        {/* `pb-20` reserves the strip the floating refresh control occupies, so the
+            last row's right-most card buttons stay reachable instead of sitting
+            underneath it. */}
+        <div className="h-full overflow-y-auto p-4 pb-20">
           {catalogError ? (
             /* Load Failure State: 没有离线快照，失败必须与「无匹配结果」区分开 */
             <div className="h-full flex flex-col items-center justify-center text-center p-8">
@@ -417,25 +420,28 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           )}
         </div>
 
-        {/* 悬浮刷新：只在「模组大厅」出现；刷新期间置灰并持续旋转，直到重新拉取结束 */}
-        <button
-          type="button"
-          onClick={onReloadCatalog}
-          disabled={isCatalogRefreshing}
-          aria-busy={isCatalogRefreshing}
-          aria-label="刷新模组目录"
-          title={isCatalogRefreshing ? '正在刷新模组目录…' : '刷新模组目录'}
-          className={`absolute right-4 bottom-4 z-10 w-11 h-11 rounded-full flex items-center justify-center border shadow-lg transition-colors ${
-            isCatalogRefreshing
-              ? 'cursor-not-allowed border-neutral-800 bg-neutral-900/80 text-neutral-600'
-              : 'cursor-pointer border-neutral-700 bg-neutral-800/95 text-neutral-300 hover:border-emerald-700/70 hover:bg-neutral-800 hover:text-emerald-300'
-          }`}
-        >
-          <RefreshCw
-            className={`w-4 h-4 ${isCatalogRefreshing ? 'animate-spin' : ''}`}
-            aria-hidden="true"
-          />
-        </button>
+        {/* 悬浮刷新：只在「模组大厅」出现；刷新期间置灰并持续旋转，直到重新拉取结束。
+            加载失败时隐藏，避免与空态里的「重新加载目录」按钮重复同一个入口。 */}
+        {!catalogError && (
+          <button
+            type="button"
+            onClick={onReloadCatalog}
+            disabled={isCatalogRefreshing}
+            aria-busy={isCatalogRefreshing}
+            aria-label="刷新模组目录"
+            title={isCatalogRefreshing ? '正在刷新模组目录…' : '刷新模组目录'}
+            className={`absolute right-4 bottom-4 z-10 w-11 h-11 rounded-full flex items-center justify-center border shadow-lg transition-colors ${
+              isCatalogRefreshing
+                ? 'cursor-not-allowed border-neutral-800 bg-neutral-900/80 text-neutral-600'
+                : 'cursor-pointer border-neutral-700 bg-neutral-800/95 text-neutral-300 hover:border-emerald-700/70 hover:bg-neutral-800 hover:text-emerald-300'
+            }`}
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${isCatalogRefreshing ? 'animate-spin' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+        )}
       </div>
 
       {/* Pagination Footer */}
