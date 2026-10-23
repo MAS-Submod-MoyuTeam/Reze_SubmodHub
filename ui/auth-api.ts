@@ -27,7 +27,7 @@ export async function readSession(base = '/api/v1', fetcher: typeof fetch = fetc
 
 export async function loginFlarum(identification: string, password: string, base = '/api/v1', fetcher: typeof fetch = fetch): Promise<Session> {
   const endpoint = `${base.replace(/\/$/, '')}/auth/flarum/login`;
-  if (typeof window !== 'undefined') ensureSecureLoginOrigin(window.location.href, endpoint, import.meta.env.VITE_ALLOW_INSECURE_AUTH === 'true');
+  if (typeof window !== 'undefined') ensureSecureLoginOrigin(window.location.href, endpoint, import.meta.env?.VITE_ALLOW_INSECURE_AUTH === 'true');
   return checkedJSON(await fetcher(endpoint, {
     method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ identification, password }),

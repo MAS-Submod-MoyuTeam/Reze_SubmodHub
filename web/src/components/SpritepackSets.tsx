@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { apiBase } from '../apiBase';
 import { Download, ImageOff, LoaderCircle } from 'lucide-react';
 import { fetchSpriteSets, fetchVerifiedSpriteSelection, type SpriteSet } from '../../../ui/catalog-api';
 
@@ -13,7 +14,7 @@ export function SpritepackSets({ modID, showToast }: SpritepackSetsProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
-  const base = `${(import.meta.env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+  const base = apiBase();
 
   useEffect(() => {
     let active = true;

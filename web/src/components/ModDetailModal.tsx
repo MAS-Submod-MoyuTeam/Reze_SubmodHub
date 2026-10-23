@@ -1,9 +1,6 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
+import { apiBase } from '../apiBase';
 
-// Polyfill import.meta.env in non-Vite environments (e.g. Node.js unit tests)
-if (!(import.meta as any).env) {
-  (import.meta as any).env = {};
-}
 import { useApp } from '../context/AppContext';
 import { ModVersion, DownloadDescriptor } from '../types/submodhub';
 import { fetchModImages, fetchVerifiedArchive } from '../../../ui/catalog-api';
@@ -122,7 +119,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
   useEffect(() => {
     if (!currentMod || currentMod.category === 'spritepack') { setDetailImages([]); return; }
     let active = true;
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     fetchModImages(currentMod.id, base).then((images) => { if (active) setDetailImages(images.map((url) => new URL(url, window.location.origin).href)); }).catch(() => { if (active) setDetailImages([]); });
     return () => { active = false; };
   }, [currentMod?.id, currentMod?.category]);
@@ -159,7 +156,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
     if (!currentVersion || isDownloading) return;
     setIsDownloading(true);
     try {
-      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+      const base = apiBase();
       const archive = await fetchVerifiedArchive(currentVersion.id, base);
       const url = URL.createObjectURL(archive.blob);
       const link = document.createElement('a');

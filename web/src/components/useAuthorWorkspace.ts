@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { apiBase } from '../apiBase';
 import { useApp, type AppContextType } from '../context/AppContext';
 import { mapServerScanReport } from '../context/scanReport';
 import type { ModSummary, ModVersion, Submission } from '../types/submodhub';
@@ -54,7 +55,7 @@ export function useAuthorWorkspace() {
     const timer = window.setInterval(refresh, 60_000);
     return () => window.clearInterval(timer);
   }, [userId, refresh]);
-  const base = `${(import.meta.env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+  const base = apiBase();
   const loadMods = useCallback(async (signal: AbortSignal) => {
     const result = await listAuthorWorkspace(base, { pageSize: modPageSize, cursor: modCursor, focusModId }, signal);
     const items = result.items.map(mapAuthorMod);

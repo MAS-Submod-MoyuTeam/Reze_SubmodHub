@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { apiBase } from '../apiBase';
 import { useAuthorWorkspace } from './useAuthorWorkspace';
 import { Pagination } from './Pagination';
 import { SpritepackPanel } from './SpritepackPanel';
@@ -142,7 +143,7 @@ export const AuthorWorkbench: React.FC = () => {
 
   // 每次打开新建/编辑弹窗都重新读取目录：管理员刚改过的标签必须立刻可选，
   // 所以这里不做长缓存；读取失败时禁用选择器而不是退回旧的硬编码标签。
-  const tagCatalogBase = `${((import.meta as any).env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+  const tagCatalogBase = apiBase();
   useEffect(() => {
     if (!isNewModModalOpen) return;
     let cancelled = false;
@@ -226,7 +227,7 @@ export const AuthorWorkbench: React.FC = () => {
         github_manifest: newGitHubManifest,
       });
       if (saved) {
-        const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+        const base = apiBase();
         if (pendingDetailImages.length > 0) {
           const pendingByKey = new Map(pendingDetailImageKeys.map((key, index) => [key, pendingDetailImages[index]]));
           const orderedFiles = detailImageOrder.filter((key) => key.startsWith('new:')).map((key) => pendingByKey.get(key)).filter((file): file is File => Boolean(file));
@@ -379,7 +380,7 @@ export const AuthorWorkbench: React.FC = () => {
 
   useEffect(() => {
     if (!editingModId) return;
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     fetchModImages(base, editingModId).then((items) => { const urls = items.map((item) => item.url); setExistingDetailImages(urls); setDetailImageOrder(urls); }).catch(() => { setExistingDetailImages([]); setDetailImageOrder([]); });
   }, [editingModId]);
 

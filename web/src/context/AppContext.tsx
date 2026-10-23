@@ -1,9 +1,6 @@
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { apiBase } from '../apiBase';
 
-// Polyfill import.meta.env in non-Vite environments (e.g. Node.js unit tests)
-if (!(import.meta as any).env) {
-  (import.meta as any).env = {};
-}
 import {
   User,
   UserRole,
@@ -239,7 +236,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const refreshPublishedCatalog = useCallback(async () => {
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     const entries = await fetchPublishedCatalog(base);
     const publishedMods: ModSummary[] = entries.map(({ mod, version }) => ({
       id: mod.id, title: mod.title, summary: mod.summary || '', description: mod.description || mod.summary || '',
@@ -272,14 +269,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   useEffect(() => {
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     readSession(base).then(applySession).catch(() => applySession({ user: null, roles: [], csrf_token: '' }));
   }, [applySession]);
 
   // The window is public policy, so it is read once at boot. A failed read keeps
   // the fallback text rather than hiding the author's cost disclosure.
   useEffect(() => {
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     let cancelled = false;
     fetch(`${base}/source-policy`, { credentials: 'same-origin' })
       .then((res) => (res.ok ? res.json() : null))
@@ -345,7 +342,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const loginFlarum = useCallback(async (username: string, password: string): Promise<boolean> => {
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     try {
       const session = await loginFlarumRequest(username, password, base);
       applySession(session);
@@ -363,7 +360,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [showToast]);
 
   const logout = useCallback(() => {
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     logoutRequest(csrfToken, base)
       .then(() => { applySession({ user: null, roles: [], csrf_token: '' }); showToast('info', '已退出会话。'); })
       .catch((error) => showToast('error', `退出失败：${error instanceof Error ? error.message : 'unknown_error'}`));
@@ -388,7 +385,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const getDownloadDescriptor = useCallback(
     async (versionId: string): Promise<DownloadDescriptor> => {
-      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+      const base = apiBase();
       const result = await fetchDownloadDescriptor(versionId, base);
       return { ...result, filename: `submod_${versionId}.zip` };
     },
@@ -432,7 +429,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         github_manifest: Boolean(data.github_manifest),
       };
 
-      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+      const base = apiBase();
       try {
         const remote = await createAuthorMod(base, {
           title: newMod.title,
@@ -478,7 +475,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateModDraft = useCallback(
     async (modId: string, data: Partial<ModSummary>): Promise<boolean> => {
-      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+      const base = apiBase();
       const existing = mods.find((mod) => mod.id === modId);
       if (!existing) return false;
       try {
@@ -526,7 +523,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const createCandidateVersion = useCallback(
     async (modId: string, version: string, releaseNotes: string, dependencies: ModVersion['dependencies'] = []): Promise<string> => {
-      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+      const base = apiBase();
       try {
         const remote = await createAuthorVersion(base, modId, version, releaseNotes, dependencies);
         setVersions((prev) => [{ id: remote.id, mod_id: remote.mod_id, version: remote.version, state: remote.state as ModVersion['state'], size_bytes: remote.size_bytes, sha256: remote.sha256, release_notes: remote.release_notes, dependencies: remote.dependencies as ModVersion['dependencies'], created_at: remote.created_at || '', is_immutable: false }, ...prev]);
@@ -545,7 +542,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const reportId = 'scan_' + versionId;
 
       if (file instanceof File) {
-        const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+        const base = apiBase();
         try {
           const result = await uploadAuthorArchive(base, versionId, file, file.name);
           if (result.scan_report) {
@@ -656,7 +653,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const uploadDetailImages = useCallback(async (modId: string, files: File[]): Promise<boolean> => {
     try {
-      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+      const base = apiBase();
       await uploadModImages(base, modId, files);
       showToast('success', `已上传 ${files.length} 张详情图。`);
       return true;
@@ -682,7 +679,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return false;
       }
 
-      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+      const base = apiBase();
       try {
         const remote = await submitAuthorVersion(base, versionId, markLatest);
         setVersions((prev) => prev.map((item) => item.id === versionId ? { ...item, state: remote.state as ModVersion['state'] } : item));
@@ -702,7 +699,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast('error', '缺少管理员权限。', 'forbidden');
       return false;
     }
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     try {
       const remote = action === 'publish'
         ? await publishReview(base, submissionId)
@@ -758,7 +755,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return;
       }
 
-      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+      const base = apiBase();
       try { await unpublishVersionRequest(base, versionId, reason); } catch (error) { showToast('error', `下架失败：${error instanceof Error ? error.message : 'unknown_error'}`); return; }
       setVersions((prev) => prev.map((v) => v.id === versionId ? { ...v, state: 'unpublished', unpublish_reason: reason } : v));
 
@@ -783,7 +780,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const setLatestPublishedVersion = useCallback(async (versionId: string): Promise<void> => {
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     try {
       const remote = await markPublishedVersionLatest(base, versionId);
       setMods((prev) => prev.map((mod) => mod.id === remote.id ? { ...mod, latest_version_id: versionId } : mod));
@@ -794,13 +791,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [showToast]);
 
   const deleteVersion = useCallback(async (versionId: string): Promise<void> => {
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     try { await deleteAuthorVersion(base, versionId); setVersions((prev) => prev.filter((v) => v.id !== versionId)); showToast('success', '版本已删除。'); }
     catch (error) { showToast('error', `删除版本失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
   }, [showToast]);
 
   const unpublishMod = useCallback(async (modId: string): Promise<boolean> => {
-    const base = `${((import.meta as any).env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     try {
       await unpublishAuthorModRequest(base, modId);
       setMods((prev) => prev.map((mod) => mod.id === modId ? { ...mod, is_published: false } : mod));
@@ -813,13 +810,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [showToast]);
 
   const deleteModDraft = useCallback(async (modId: string): Promise<void> => {
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     try { await deleteAuthorModRequest(base, modId); setMods((prev) => prev.filter((mod) => mod.id !== modId)); setVersions((prev) => prev.filter((version) => version.mod_id !== modId)); showToast('success', '草稿模组及其候选内容已删除。'); }
     catch (error) { showToast('error', `删除草稿模组失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
   }, [showToast]);
 
   const markVersionDeprecated = useCallback(async (versionId: string, reason: string): Promise<void> => {
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     try {
       const remote = await deprecateVersionRequest(base, versionId, reason);
       setVersions((prev) => prev.map((version) => version.id === versionId ? {
@@ -832,7 +829,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [showToast]);
 
   const clearVersionDeprecation = useCallback(async (versionId: string): Promise<void> => {
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     try {
       await clearVersionDeprecationRequest(base, versionId);
       setVersions((prev) => prev.map((version) => version.id === versionId ? {
@@ -845,7 +842,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [showToast]);
 
   const editVersion = useCallback(async (versionId: string, version: string, releaseNotes: string, dependencies?: ModVersion['dependencies']): Promise<boolean> => {
-    const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     try { const remote = await editAuthorVersion(base, versionId, version, releaseNotes, dependencies ?? versions.find((item) => item.id === versionId)?.dependencies ?? []); setVersions((prev) => prev.map((v) => v.id === versionId ? { ...v, version: remote.version, release_notes: remote.release_notes, dependencies: remote.dependencies as ModVersion['dependencies'] } : v)); showToast('success', '版本资料已更新；被驳回版本需重新上传 ZIP 后才能提交审核。'); return true; }
     catch (error) { showToast('error', `编辑版本失败：${error instanceof Error ? error.message : 'unknown_error'}`); return false; }
   }, [showToast, versions]);
@@ -1063,7 +1060,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const syncModReleases = useCallback(
     async (modId: string): Promise<SyncSummary | null> => {
-      const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+      const base = apiBase();
       try {
         const summary = await syncAuthorModGitHub(base, modId);
         if (summary.failed > 0 && summary.created === 0) {

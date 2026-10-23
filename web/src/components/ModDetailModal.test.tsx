@@ -2,11 +2,6 @@ import React, { act } from 'react';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-// Polyfill import.meta.env in non-Vite environments (e.g. Node.js unit tests)
-if (!(import.meta as any).env) {
-  (import.meta as any).env = {};
-}
-
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createRoot } from 'react-dom/client';
 import { AppContext, AppContextType, AppProvider, useApp } from '../context/AppContext';

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiBase } from '../apiBase';
 import { useApp } from '../context/AppContext';
 import { MarkdownText } from './MarkdownText';
 import { Pagination } from './Pagination';
@@ -43,7 +44,7 @@ export const ReviewerWorkbench: React.FC = () => {
   const [queuePageSize, setQueuePageSize] = useState(10);
   const [auditPage, setAuditPage] = useState(1);
   const [auditPageSize, setAuditPageSize] = useState(20);
-  const base = `${(import.meta.env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+  const base = apiBase();
   const userId = currentUser?.id;
   const loadQueue = React.useCallback((signal: AbortSignal) => listReviewSubmissions(base, { page: queuePage, pageSize: queuePageSize, state: statusFilter }, signal), [base, queuePage, queuePageSize, statusFilter, userId]);
   const loadAudit = React.useCallback((signal: AbortSignal) => listReviewAudit(base, { page: auditPage, pageSize: auditPageSize }, signal), [base, auditPage, auditPageSize, userId]);

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { apiBase } from '../apiBase';
 import { useApp } from '../context/AppContext';
 import { fetchAppRelease, type AppRelease, type AppReleaseAsset } from '../../../ui/app-release-api';
 import { formatBytes } from './formatBytes';
@@ -29,10 +30,6 @@ import {
 
 /** 超过该快照年龄，主 API 可能已经看不到新版本（与客户端自更新的判定一致）。 */
 export const SNAPSHOT_STALE_SECONDS = 30 * 60;
-
-function apiBase(): string {
-  return `${((import.meta as any).env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
-}
 
 /** 错误原文只用于排障提示，不该把整段 HTML 灌进弹窗。 */
 const MAX_ERROR_DETAIL = 160;

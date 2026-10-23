@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import { apiBase } from '../apiBase';
 import { useApp } from '../context/AppContext';
 import { ModSummary, Platform } from '../types/submodhub';
 import { DeprecationNotice } from './DeprecationNotice';
@@ -61,7 +62,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
   useEffect(() => {
     let cancelled = false;
-    const base = `${((import.meta as any).env?.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+    const base = apiBase();
     fetchTagCatalog(base)
       .then((catalog) => {
         if (!cancelled) setTagGroups(catalog.groups);

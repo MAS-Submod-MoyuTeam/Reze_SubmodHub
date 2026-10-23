@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { apiBase as apiBaseURL } from '../apiBase';
 import {
   AlertCircle,
   CheckCircle2,
@@ -68,7 +69,7 @@ export const AdminPanel: React.FC = () => {
   const [tagCatalog, setTagCatalog] = useState<TagGroup[]>([]);
   const [tagCatalogConflict, setTagCatalogConflict] = useState(false);
 
-  const apiBase = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
+  const apiBase = apiBaseURL();
 
   const loadSettings = async () => {
     setLoadingSettings(true);
