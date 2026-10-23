@@ -42,8 +42,8 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
 
   const isSuccess = state === 'committed' || phase === 'committed';
   const isNeedsManual = state === 'needs_manual_recovery' || phase === 'needs_manual_recovery';
-  const isUnknown = state === 'unknown' || phase === 'unknown';
-  const isFailed = isNeedsManual || state === 'rolled_back' || isUnknown || (!!session.error && !isSuccess);
+  const isQueryFailed = state === 'query_failed' || phase === 'query_failed';
+  const isFailed = isNeedsManual || state === 'rolled_back' || isQueryFailed || (!!session.error && !isSuccess);
 
   // Compute title
   let actionTitle = `正在执行${session.kind === 'uninstall' ? '卸载' : '安装'}：${session.mod_title}`;
@@ -53,7 +53,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
     actionTitle = `需人工恢复：${session.mod_title}`;
   } else if (state === 'rolled_back') {
     actionTitle = `操作已安全回滚：${session.mod_title}`;
-  } else if (isUnknown) {
+  } else if (isQueryFailed) {
     actionTitle = `状态未知（查询失败）：${session.mod_title}`;
   } else if (session.error) {
     actionTitle = `执行失败：${session.mod_title}`;
@@ -70,7 +70,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
       stageDescription = `快照就绪 (${op.backup_id || 'snapshot'})，准备原子写入...`;
     } else if (phase === 'committing') {
       stageDescription = '正在提交清单与持久化记录...';
-    } else if (isUnknown) {
+    } else if (isQueryFailed) {
       stageDescription = '后端状态查询失败，无法确认事务是否已提交';
     }
   }
@@ -83,7 +83,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
     if (isNeedsManual) {
       return <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 animate-bounce" />;
     }
-    if (isUnknown) {
+    if (isQueryFailed) {
       return <HelpCircle className="w-4 h-4 text-amber-400 shrink-0" />;
     }
     if (state === 'rolled_back' || (!isSuccess && session.error)) {
@@ -96,7 +96,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
   let barColor = 'bg-emerald-500';
   if (isNeedsManual) {
     barColor = 'bg-amber-500';
-  } else if (isUnknown) {
+  } else if (isQueryFailed) {
     barColor = 'bg-amber-500/80';
   } else if (state === 'rolled_back' || (!isSuccess && session.error)) {
     barColor = 'bg-rose-500';
@@ -144,7 +144,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
             </span>
           ) : (
             <span className="text-neutral-400 font-sans">
-              {isSuccess ? '全部完成' : isUnknown ? '结果未知' : isFinished ? '事务终止' : '准备写入'}
+              {isSuccess ? '全部完成' : isQueryFailed ? '结果未知' : isFinished ? '事务终止' : '准备写入'}
             </span>
           )}
 

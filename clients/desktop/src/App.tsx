@@ -1017,7 +1017,7 @@ export default function App() {
             setInstalledMods((prev) => prev.filter((item) => item.mod_id !== plan.mod_id));
             void scanLocalSubmods(targetInstId, { forced: true });
             showToast(`${plan.mod_title} 后端事务已提交，但通信响应异常：${errObj.message}`);
-          } else if (finalSession?.operation.state === 'unknown') {
+          } else if (finalSession?.operation.state === 'query_failed') {
             showToast(`真实${actionText}状态未知（后端状态查询失败）：${errObj.message}`);
           } else if (finalSession?.operation.state === 'needs_manual_recovery') {
             showToast(`真实${actionText}需要手动恢复：${describeExecutionError(errObj)}`);
@@ -1106,7 +1106,7 @@ export default function App() {
           if (finalSession?.operation.state === 'committed') {
             void scanLocalSubmods(targetInstId, { forced: true });
             showToast(`${plan.mod_title} 后端事务已提交，但通信响应异常：${errObj.message}`);
-          } else if (finalSession?.operation.state === 'unknown') {
+          } else if (finalSession?.operation.state === 'query_failed') {
             showToast(`真实${actionText}状态未知（后端状态查询失败）：${errObj.message}`);
           } else if (finalSession?.operation.state === 'needs_manual_recovery') {
             showToast(`真实${actionText}需要手动恢复：${describeExecutionError(errObj)}`);
@@ -1432,7 +1432,11 @@ export default function App() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         updatesCount={installedMods.filter((m) => m.has_update).length}
-        activeOperationsCount={operations.filter((o) => o.state === 'downloading' || o.state === 'writing' || o.state === 'scanning' || o.state === 'planned').length}
+        activeOperationsCount={
+          // 未完成事务只有这两态：planned（计划已确认）与 recoverable（prepared/
+          // applying/committing）。needs_manual_recovery 已终止，不进入“进行中”角标。
+          operations.filter((o) => o.state === 'planned' || o.state === 'recoverable').length
+        }
       />
 
       {/* 4. Mod Detail Modal */}

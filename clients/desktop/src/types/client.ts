@@ -158,19 +158,17 @@ export interface Plan {
   sprite_selection_context?: SpriteSelectionPlanContext;
 }
 
+/** 后端 `mapJournalToDetail` 只会产出前五个值：planned / recoverable（覆盖
+ *  prepared、applying、committing）/ committed / rolled_back / needs_manual_recovery。
+ *  `query_failed` 是客户端本地哨兵：执行已结束但后端状态查询失败，事务结果未知，
+ *  后端不会返回该值。除此之外不得再引入“看起来像后端状态”的本地值。 */
 export type OperationState =
   | 'planned'
-  | 'downloading'
-  | 'scanning'
-  | 'backed_up'
-  | 'writing'
-  | 'committed'
-  | 'blocked'
   | 'recoverable'
-  | 'rolling_back'
+  | 'committed'
   | 'rolled_back'
   | 'needs_manual_recovery'
-  | 'unknown';
+  | 'query_failed';
 
 export interface Operation {
   operation_id: string;

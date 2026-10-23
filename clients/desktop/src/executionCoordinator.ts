@@ -40,11 +40,11 @@ export function isTerminalOperation(op: Operation): boolean {
     op.state === 'committed' ||
     op.state === 'rolled_back' ||
     op.state === 'needs_manual_recovery' ||
-    op.state === 'unknown' ||
+    op.state === 'query_failed' ||
     op.phase === 'committed' ||
     op.phase === 'rolled_back' ||
     op.phase === 'needs_manual_recovery' ||
-    op.phase === 'unknown'
+    op.phase === 'query_failed'
   );
 }
 
@@ -308,11 +308,11 @@ export class ExecutionCoordinator {
       return;
     }
 
-    // Only when there is no confirmed terminal state / determined result do we fall back to unknown
+    // Only when there is no confirmed terminal state / determined result do we fall back to query_failed
     const fallbackOp: Operation = {
       ...currentOp,
-      state: 'unknown',
-      phase: 'unknown',
+      state: 'query_failed',
+      phase: 'query_failed',
       progress: {
         ...currentOp.progress,
         stage: '后端状态查询失败，结果未知',

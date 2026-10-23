@@ -262,7 +262,7 @@ test('ExecutionCoordinator: polls backend, increments progress, and stops on ter
       version_id: 'v1',
       version_str: '1.0.0',
       kind: 'install',
-      state: 'writing',
+      state: 'recoverable',
       phase: 'applying',
       progress: {
         stage: '正在应用文件变更 (1/2)',
@@ -372,7 +372,7 @@ test('ExecutionCoordinator: rejects and stops polling when active instance switc
         version_id: 'v1',
         version_str: '1.0.0',
         kind: 'install',
-        state: 'writing',
+        state: 'recoverable',
         phase: 'applying',
         progress: {
           stage: '应用中',
@@ -564,7 +564,7 @@ test('ExecutionCoordinator: finishSession with error preserves committed backend
   assert.equal(operationsState[0].state, 'committed');
 });
 
-test('ExecutionCoordinator: finishSession fallback on getOperation rejection marks state as unknown with error', async () => {
+test('ExecutionCoordinator: finishSession fallback on getOperation rejection marks state as query_failed with error', async () => {
   let sessionState: ExecutionSession | null = null;
   let operationsState: Operation[] = [];
 
@@ -606,15 +606,15 @@ test('ExecutionCoordinator: finishSession fallback on getOperation rejection mar
   assert.ok(session);
   assert.equal(session.is_finished, true);
   assert.equal(session.error, 'plan_stale');
-  assert.equal(session.operation.state, 'unknown');
-  assert.equal(session.operation.phase, 'unknown');
+  assert.equal(session.operation.state, 'query_failed');
+  assert.equal(session.operation.phase, 'query_failed');
   assert.equal(session.operation.error?.message, 'plan_stale');
   assert.equal(operationsState.length, 1);
-  assert.equal(operationsState[0].state, 'unknown');
+  assert.equal(operationsState[0].state, 'query_failed');
   assert.equal(operationsState[0].error?.message, 'plan_stale');
 });
 
-test('ExecutionCoordinator: polling already received committed -> query failure in finishSession does not downgrade to unknown', async () => {
+test('ExecutionCoordinator: polling already received committed -> query failure in finishSession does not downgrade to query_failed', async () => {
   let sessionState: ExecutionSession | null = null;
   let operationsState: Operation[] = [];
   let pollCount = 0;
@@ -681,7 +681,7 @@ test('ExecutionCoordinator: polling already received committed -> query failure 
   const session = coordinator.getCurrentSession();
   assert.ok(session);
   assert.equal(session.is_finished, true);
-  // Crucial: Must preserve committed state rather than downgrading to unknown
+  // Crucial: Must preserve committed state rather than downgrading to query_failed
   assert.equal(session.operation.state, 'committed');
   assert.equal(session.operation.phase, 'committed');
   assert.equal(session.error, null);
@@ -736,7 +736,7 @@ test('ExecutionCoordinator: ExecutePlan confirmed committed in finishSession opt
   const session = coordinator.getCurrentSession();
   assert.ok(session);
   assert.equal(session.is_finished, true);
-  // Committed status must be set from confirmedState, NOT downgraded to unknown
+  // Committed status must be set from confirmedState, NOT downgraded to query_failed
   assert.equal(session.operation.state, 'committed');
   assert.equal(session.operation.phase, 'committed');
   assert.equal(session.operation.progress.percent, 100);
@@ -822,13 +822,14 @@ test('isTerminalOperation identifies terminal states accurately', () => {
   assert.equal(isTerminalOperation({ state: 'committed' } as any), true);
   assert.equal(isTerminalOperation({ state: 'rolled_back' } as any), true);
   assert.equal(isTerminalOperation({ state: 'needs_manual_recovery' } as any), true);
-  assert.equal(isTerminalOperation({ state: 'unknown' } as any), true);
-  assert.equal(isTerminalOperation({ state: 'writing', phase: 'unknown' } as any), true);
-  assert.equal(isTerminalOperation({ state: 'writing', phase: 'committed' } as any), true);
-  assert.equal(isTerminalOperation({ state: 'writing', phase: 'applying' } as any), false);
-  assert.equal(isTerminalOperation({ state: 'planned', phase: 'planned' } as any), false);
-  assert.equal(isTerminalOperation({ state: 'backed_up', phase: 'prepared' } as any), false);
+  assert.equal(isTerminalOperation({ state: 'query_failed' } as any), true);
+  // `phase` can carry the raw backend phase string, so a terminal phase must
+  // win even when the mapped state has not caught up yet.
+  assert.equal(isTerminalOperation({ state: 'recoverable', phase: 'query_failed' } as any), true);
+  assert.equal(isTerminalOperation({ state: 'recoverable', phase: 'committed' } as any), true);
   assert.equal(isTerminalOperation({ state: 'recoverable', phase: 'applying' } as any), false);
+  assert.equal(isTerminalOperation({ state: 'planned', phase: 'planned' } as any), false);
+  assert.equal(isTerminalOperation({ state: 'recoverable', phase: 'prepared' } as any), false);
 });
 
 test('ExecutionCoordinator: late poll response on same instance does not overwrite newly started session', async () => {
@@ -939,7 +940,7 @@ test('ExecutionCoordinator: late poll response on same instance does not overwri
     version_id: 'v1',
     version_str: '1.0.0',
     kind: 'install',
-    state: 'writing',
+    state: 'recoverable',
     phase: 'applying',
     progress: {
       stage: '慢速旧任务写入中...',
@@ -1033,7 +1034,7 @@ test('ExecutionCoordinator: late poll response after clearSession does not reviv
     version_id: 'v1',
     version_str: '1.0.0',
     kind: 'install',
-    state: 'writing',
+    state: 'recoverable',
     phase: 'applying',
     progress: {
       stage: '写入中',

@@ -4,6 +4,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   describeRecoveryAvailability,
+  StateBadge,
   TransactionDetailModal,
   buildDiagnostics,
 } from './TransactionDetailModal';
@@ -41,6 +42,27 @@ function renderDetail(op: Operation): string {
     <TransactionDetailModal op={op} onClose={() => {}} onRecoverOperation={() => {}} />
   );
 }
+
+test('describeRecoveryAvailability: a failed status query is "unknown", not "material missing"', () => {
+  assert.deepEqual(describeRecoveryAvailability(makeOperation({ state: 'query_failed', can_rollback: false })), {
+    label: '结果未知：后端状态查询失败',
+    tone: 'unknown',
+  });
+});
+
+test('StateBadge: only the states the backend can send have bespoke badges', () => {
+  for (const state of ['planned', 'recoverable', 'committed', 'rolled_back', 'needs_manual_recovery', 'query_failed'] as const) {
+    const html = renderToStaticMarkup(<StateBadge state={state} />);
+    assert.match(html, new RegExp(`${state} \\(`), `expected a labelled badge for ${state}`);
+  }
+
+  // Retired vocabulary (downloading / scanning / backed_up / writing / blocked /
+  // unknown) must no longer invent a progress or fault label.
+  const retired = renderToStaticMarkup(<StateBadge state={'writing' as Operation['state']} />);
+  assert.match(retired, />writing</);
+  assert.doesNotMatch(retired, /正在写入/);
+  assert.doesNotMatch(retired, /animate-pulse/);
+});
 
 test('describeRecoveryAvailability: only missing material on a live transaction reads as a fault', () => {
   assert.deepEqual(describeRecoveryAvailability(makeOperation({ state: 'recoverable', can_rollback: true })), {

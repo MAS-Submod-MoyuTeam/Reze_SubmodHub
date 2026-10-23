@@ -152,7 +152,7 @@
 
 **精灵包选择最终状态语义**：客户端的套装勾选表示“应用后最终安装的集合”，不是本次增量下载清单。若已安装 A，追加 B 须保持 A 勾选并勾选 B（提交 A+B）；若仅勾选 B，则应用后 A 将被卸载；若取消勾选全部套装，操作路由至“卸载此精灵包”。首次安装默认全选；已有可验证安装默认仅勾选已安装集合；未知旧记录默认零选且须确认替换风险。若存在移除已安装套装、版本缺失集合或未知旧记录替换，预览弹窗要求用户显式勾选“我确认应用后将卸载未保留的已安装套装”方可执行写入。下载 ZIP 行为独立于安装状态，不支持零集合下载。
 
-操作状态为 `planned -> downloading -> scanning -> backed_up -> writing -> committed`；失败时为 `blocked|recoverable|rolling_back|rolled_back`。前端必须能在重启后通过 `operation_id` 重连状态。进度事件可优化体验，但持久化的 `GetOperation` 是权威来源。
+journal 事务阶段为 `planned -> prepared -> applying -> committing -> committed`，客户端将其映射为 `planned | recoverable | committed | rolled_back | needs_manual_recovery`（`recoverable` 覆盖 prepared/applying/committing）。除此之外只保留一个客户端本地哨兵 `query_failed`：执行已结束但后端状态查询失败，结果未知，后端永远不会返回该值；客户端不得再自造其他“看起来像后端状态”的值（原先的 `downloading / scanning / backed_up / writing / blocked / rolling_back / unknown` 已退役）。前端必须能在重启后通过 `operation_id` 重连状态。进度事件可优化体验，但持久化的 `GetOperation` 是权威来源。
 
 ## 5. 状态机与错误展示
 

@@ -5,11 +5,8 @@ import {
   CheckCircle2,
   Clock,
   Copy,
-  FolderArchive,
   HelpCircle,
-  Loader2,
   RotateCcw,
-  ShieldAlert,
   Terminal,
 } from 'lucide-react';
 import { Operation } from '../types/client';
@@ -54,13 +51,17 @@ function formatTimestamp(value: string): string {
 
 /** Recovery availability must not read as a fault on transactions that have
  *  already finished: a committed or rolled-back transaction legitimately has
- *  no rollback material left. */
+ *  no rollback material left. A `query_failed` transaction is not a fault
+ *  either — we simply do not know, so it must not claim material is missing. */
 export function describeRecoveryAvailability(op: Operation): {
   label: string;
-  tone: 'ready' | 'finished' | 'blocked';
+  tone: 'ready' | 'finished' | 'blocked' | 'unknown';
 } {
   if (op.can_rollback) {
     return { label: '恢复材料可用：可安全回滚', tone: 'ready' };
+  }
+  if (op.state === 'query_failed') {
+    return { label: '结果未知：后端状态查询失败', tone: 'unknown' };
   }
   if (op.state === 'committed') {
     return { label: '事务已提交：无回滚材料', tone: 'finished' };
@@ -83,6 +84,10 @@ const DetailField: React.FC<{ label: string; mono?: boolean; children: React.Rea
   </div>
 );
 
+/** 只认识后端真实产出的事务状态，外加客户端本地哨兵 `query_failed`。
+ *  downloading / scanning / backed_up / writing / blocked / unknown 这些曾被
+ *  后端短暂或从未产出的状态已退役；后端若出现未预期状态，default 分支原样显示，
+ *  不伪造“正在写入/已阻断”这类语义。 */
 export const StateBadge: React.FC<{ state: Operation['state'] }> = ({ state }) => {
   switch (state) {
     case 'committed':
@@ -106,31 +111,10 @@ export const StateBadge: React.FC<{ state: Operation['state'] }> = ({ state }) =
           <span>needs_manual_recovery (需人工处理)</span>
         </span>
       );
-    case 'blocked':
-      return (
-        <span className="text-[11px] px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800/60 font-mono flex items-center gap-1">
-          <ShieldAlert className="w-3.5 h-3.5" />
-          <span>blocked (已阻断)</span>
-        </span>
-      );
     case 'rolled_back':
       return (
         <span className="text-[11px] px-2 py-0.5 rounded bg-neutral-800 text-neutral-400 font-mono">
           rolled_back (已回滚)
-        </span>
-      );
-    case 'writing':
-      return (
-        <span className="text-[11px] px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-800/60 font-mono flex items-center gap-1 animate-pulse">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          <span>writing (正在写入)</span>
-        </span>
-      );
-    case 'backed_up':
-      return (
-        <span className="text-[11px] px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-800/60 font-mono flex items-center gap-1">
-          <FolderArchive className="w-3.5 h-3.5 text-sky-400" />
-          <span>backed_up (快照就绪)</span>
         </span>
       );
     case 'planned':
@@ -140,11 +124,11 @@ export const StateBadge: React.FC<{ state: Operation['state'] }> = ({ state }) =
           <span>planned (就绪执行)</span>
         </span>
       );
-    case 'unknown':
+    case 'query_failed':
       return (
         <span className="text-[11px] px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700/60 font-mono flex items-center gap-1">
           <HelpCircle className="w-3.5 h-3.5 text-neutral-400" />
-          <span>unknown (状态未知)</span>
+          <span>query_failed (结果未知)</span>
         </span>
       );
     default:
