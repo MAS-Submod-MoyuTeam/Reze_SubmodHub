@@ -3,6 +3,8 @@ package updater
 import (
 	"context"
 	"time"
+
+	"github.com/reze/submodhub/internal/version"
 )
 
 // UpdateStatus represents the state of the auto-update process.
@@ -36,13 +38,38 @@ type ReleaseInfo struct {
 	ChecksumURL  string     `json:"checksum_url,omitempty"`
 }
 
+// DeliveryType names the source the API announced for one update asset.
+type DeliveryType string
+
+const (
+	// DeliveryNone means the API did not announce a direct source.
+	DeliveryNone DeliveryType = ""
+	// DeliveryCloudreve is a verified Cloudreve node mirror link.
+	DeliveryCloudreve DeliveryType = "cloudreve"
+	// DeliveryGitHub is the GitHub release asset.
+	DeliveryGitHub DeliveryType = "github"
+)
+
+// DeliverySource is the API's delivery plan for one asset. It is advisory only
+// about location: the expected SHA-256 always comes from the published checksum
+// listing, so a wrong or replayed link cannot change what gets installed.
+type DeliverySource struct {
+	Type           DeliveryType `json:"type,omitempty"`
+	URL            string       `json:"url,omitempty"`
+	NodeID         string       `json:"node_id,omitempty"`
+	ExpiresAt      time.Time    `json:"expires_at,omitempty"`
+	AllowedOrigins []string     `json:"allowed_origins,omitempty"`
+	ExpectedSHA256 string       `json:"expected_sha256,omitempty"`
+}
+
 // AssetInfo describes a target binary/package asset to download.
 type AssetInfo struct {
-	ID                 int64  `json:"id"`
-	Name               string `json:"name"`
-	Size               int64  `json:"size"`
-	BrowserDownloadURL string `json:"browser_download_url"`
-	ExpectedSHA256     string `json:"expected_sha256,omitempty"`
+	ID                 int64          `json:"id"`
+	Name               string         `json:"name"`
+	Size               int64          `json:"size"`
+	BrowserDownloadURL string         `json:"browser_download_url"`
+	ExpectedSHA256     string         `json:"expected_sha256,omitempty"`
+	Delivery           DeliverySource `json:"delivery,omitempty"`
 }
 
 // State reports the current auto-update state and progress for clients.
@@ -59,6 +86,8 @@ type State struct {
 	CanInstall                bool         `json:"can_install"`
 	RequiresUserAction        bool         `json:"requires_user_action"`
 	RequiresInstallPermission bool         `json:"requires_install_permission"`
+	DeliverySource            string       `json:"delivery_source,omitempty"`
+	DeliveryNodeID            string       `json:"delivery_node_id,omitempty"`
 }
 
 // Config controls repository coordinates, proxy settings, and channels.
@@ -68,6 +97,9 @@ type Config struct {
 	CurrentVersion    string
 	IncludePrerelease bool
 	ProxyTemplate     string
+	// APIBaseURL is the SubmodHub API origin that owns update-check answers and
+	// app-asset delivery. Empty keeps the GitHub-only path.
+	APIBaseURL string
 	// DownloadTimeout bounds the entire download and verification; defaults to 30 minutes.
 	DownloadTimeout time.Duration
 	CacheDir        string
@@ -75,8 +107,8 @@ type Config struct {
 
 // DefaultOfficialRepoOwner and Name define the authoritative repository.
 const (
-	DefaultRepoOwner = "MAS-Submod-MoyuTeam"
-	DefaultRepoName  = "Reze_SubmodHub"
+	DefaultRepoOwner = version.RepoOwner
+	DefaultRepoName  = version.RepoName
 )
 
 // PlatformInstaller defines the contract for applying downloaded updates on each OS.

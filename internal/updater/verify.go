@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/reze/submodhub/internal/checksum"
 )
 
 var (
@@ -51,22 +53,11 @@ func VerifyFileSHA256(filePath string, expectedSHA256 string) error {
 
 // ParseChecksums parses the content of a SHA256SUMS.txt file.
 // Format: <hash> <filename> or <hash> *<filename>
+//
+// Parsing is owned by internal/checksum so the API server and the updater share
+// one interpretation of the listing.
 func ParseChecksums(content string) map[string]string {
-	result := make(map[string]string)
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) >= 2 {
-			hash := strings.ToLower(fields[0])
-			fileName := strings.TrimPrefix(fields[1], "*")
-			result[fileName] = hash
-		}
-	}
-	return result
+	return checksum.Parse(content)
 }
 
 // VerifySignature verifies Ed25519 signature over file content if publicKey is provided.

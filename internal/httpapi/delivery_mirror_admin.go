@@ -43,9 +43,22 @@ func (s *Store) retryDeliveryMirrors(w http.ResponseWriter, r *http.Request, nod
 			count++
 		}
 	}
+	previousApp := s.Catalog.AppAssetMirrors
+	updatedApp := slices.Clone(previousApp)
+	for i, m := range updatedApp {
+		if m.NodeID == nodeID && m.State == "failed" {
+			updatedApp[i].State = "pending"
+			updatedApp[i].Attempts = 0
+			updatedApp[i].ErrorCode = ""
+			updatedApp[i].RetryAt = time.Time{}
+			count++
+		}
+	}
 	s.Catalog.ArchiveMirrors = updated
+	s.Catalog.AppAssetMirrors = updatedApp
 	if err := s.saveLocked(); err != nil {
 		s.Catalog.ArchiveMirrors = previous
+		s.Catalog.AppAssetMirrors = previousApp
 		writeError(w, 500, "storage_error", "mirror retry not saved")
 		return
 	}

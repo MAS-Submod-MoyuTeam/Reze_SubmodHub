@@ -35,6 +35,7 @@ type DeliveryNode struct {
 }
 type deliveryNodeDTO struct {
 	MirrorStates           map[string]int `json:"mirror_states,omitempty"`
+	AppAssetStates         map[string]int `json:"app_asset_states,omitempty"`
 	ID                     string         `json:"id"`
 	Name                   string         `json:"name"`
 	Type                   string         `json:"type"`
@@ -81,6 +82,12 @@ func (s *Store) deliverySettingsLocked() any {
 			for _, m := range s.Catalog.ArchiveMirrors {
 				if m.NodeID == n.ID && m.NodeRevision == n.Revision {
 					dto.MirrorStates[m.State]++
+				}
+			}
+			dto.AppAssetStates = map[string]int{}
+			for _, m := range s.Catalog.AppAssetMirrors {
+				if m.NodeID == n.ID && m.NodeRevision == n.Revision {
+					dto.AppAssetStates[m.State]++
 				}
 			}
 		}

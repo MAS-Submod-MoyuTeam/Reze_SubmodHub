@@ -25,6 +25,15 @@ import (
 //	go build -ldflags "-X github.com/reze/submodhub/internal/version.Version=0.9.1"
 var Version = "0.9.11"
 
+// RepoOwner and RepoName identify the official repository that publishes
+// SubmodHub releases. The API server (app-update delivery) and the desktop
+// client (self-update) both read these coordinates here instead of keeping
+// private copies.
+const (
+	RepoOwner = "MAS-Submod-MoyuTeam"
+	RepoName  = "Reze_SubmodHub"
+)
+
 // Commit and BuildTime are optional build metadata. CI may inject the commit
 // SHA and build timestamp through -ldflags -X; they stay empty for local
 // builds.

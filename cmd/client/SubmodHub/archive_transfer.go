@@ -367,12 +367,12 @@ func (m *ArchiveStagingManager) stageAttempt(ctx context.Context, req StageArchi
 		}
 		archiveParsed := baseParsed.ResolveReference(relParsed)
 		if archiveParsed.Host != baseParsed.Host {
-			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "cross_origin_archive_url_rejected"})
-			return StagedArchiveInfo{}, fmt.Errorf("cross_origin_archive_url_rejected: %s", archiveParsed.Host)
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "cross_origin_delivery_url_rejected"})
+			return StagedArchiveInfo{}, fmt.Errorf("cross_origin_delivery_url_rejected: %s", archiveParsed.Host)
 		}
 		if archiveParsed.Scheme != baseParsed.Scheme && archiveParsed.Scheme != "https" && !isLocalTestHost(archiveParsed.Hostname()) {
-			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "insecure_archive_url_rejected"})
-			return StagedArchiveInfo{}, fmt.Errorf("insecure_archive_url_rejected: %s", archiveParsed.Scheme)
+			m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "insecure_delivery_url_rejected"})
+			return StagedArchiveInfo{}, fmt.Errorf("insecure_delivery_url_rejected: %s", archiveParsed.Scheme)
 		}
 
 		aReq, err := http.NewRequestWithContext(ctx, http.MethodGet, archiveParsed.String(), nil)

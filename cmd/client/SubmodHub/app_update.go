@@ -22,7 +22,7 @@ type AppUpdateBindings struct {
 	latestRelease *updater.ReleaseInfo
 }
 
-func newAppUpdateBindings(bridge PlatformUpdateBridge, cacheDir string, proxyTemplate string) (*AppUpdateBindings, error) {
+func newAppUpdateBindings(bridge PlatformUpdateBridge, cacheDir string, proxyTemplate string, apiBaseURL string) (*AppUpdateBindings, error) {
 	if bridge == nil {
 		bridge = newPlatformUpdateBridge()
 	}
@@ -32,6 +32,7 @@ func newAppUpdateBindings(bridge PlatformUpdateBridge, cacheDir string, proxyTem
 		CurrentVersion: version.Version,
 		CacheDir:       cacheDir,
 		ProxyTemplate:  proxyTemplate,
+		APIBaseURL:     apiBaseURL,
 	}
 	svc, err := updater.NewService(cfg, bridge)
 	if err != nil {
@@ -53,7 +54,8 @@ func (b *AppUpdateBindings) stateWithPermissions() updater.State {
 	return state
 }
 
-// CheckForAppUpdate triggers a check against GitHub releases.
+// CheckForAppUpdate asks the API which release is current (GitHub is the
+// fallback) and records the returned delivery plan for the later download.
 func (s *DesktopService) CheckForAppUpdate() (updater.State, error) {
 	if s.appUpdater == nil {
 		return updater.State{Status: updater.StatusFailed, Error: "updater_not_initialized"}, fmt.Errorf("updater not initialized")

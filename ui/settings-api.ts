@@ -10,6 +10,7 @@ export interface DownloadNode extends Omit<DownloadNodeInput, 'password' | 'type
  type: DownloadNodeType | 'builtin'; credential_configured: boolean; revision: number;
  status: string; error_code?: string; last_checked_at?: string;
  mirror_states?: Partial<Record<'pending' | 'uploading' | 'ready' | 'failed', number>>;
+ app_asset_states?: Partial<Record<'pending' | 'uploading' | 'ready' | 'failed', number>>;
 }
 export interface DownloadNodeSettings {
  items: DownloadNode[]; revision: number; builtin_fallback: boolean; master_key_configured: boolean;

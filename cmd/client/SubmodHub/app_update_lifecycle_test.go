@@ -68,7 +68,7 @@ func TestUpdateClaimWaitsForEveryNestedMutation(t *testing.T) {
 }
 
 func TestFailedUpdateClaimReleasesFileMutations(t *testing.T) {
-	bindings, err := newAppUpdateBindings(&mockUpdateBridge{}, t.TempDir(), "")
+	bindings, err := newAppUpdateBindings(&mockUpdateBridge{}, t.TempDir(), "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestAppUpdateRejectsRunningFileMutation(t *testing.T) {
 				t.Fatal(err)
 			}
 			bridge := &mockUpdateBridge{}
-			bindings, err := newAppUpdateBindings(bridge, t.TempDir(), "")
+			bindings, err := newAppUpdateBindings(bridge, t.TempDir(), "", "")
 			if err != nil {
 				t.Fatal(err)
 			}

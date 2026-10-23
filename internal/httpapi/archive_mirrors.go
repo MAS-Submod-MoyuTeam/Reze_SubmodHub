@@ -2,11 +2,8 @@ package httpapi
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"slices"
@@ -223,18 +220,8 @@ func (s *Store) copyMirror(ctx context.Context, job ArchiveMirror, n DeliveryNod
 	if err != nil {
 		return "", err
 	}
-	res, err := client.OpenDownload(ctx, link)
-	if err != nil {
+	if err := verifyCloudreveReadback(ctx, client, link, v.SizeBytes, v.SHA256); err != nil {
 		return "", err
-	}
-	defer res.Body.Close()
-	if res.ContentLength >= 0 && res.ContentLength != v.SizeBytes {
-		return "", errMirrorVerification
-	}
-	h := sha256.New()
-	count, err := io.CopyBuffer(h, io.LimitReader(res.Body, v.SizeBytes+1), make([]byte, 64<<10))
-	if err != nil || count != v.SizeBytes || hex.EncodeToString(h.Sum(nil)) != v.SHA256 {
-		return "", errMirrorVerification
 	}
 	return obj.ID, nil
 }
@@ -274,6 +261,9 @@ func (s *Store) runDeliveryWorker(ctx context.Context, interval time.Duration) {
 		} else {
 			log.Print("[delivery-mirror] reconciliation persistence failed; retrying")
 		}
+		// App-update assets share this single worker: they only advance when no
+		// archive job was claimable, so mod delivery keeps priority.
+		s.maintainAppAssets(ctx)
 		select {
 		case <-ctx.Done():
 			return

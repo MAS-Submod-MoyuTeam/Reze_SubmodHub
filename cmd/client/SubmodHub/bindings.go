@@ -251,7 +251,7 @@ func NewDesktopService() *DesktopService {
 	if apiURL == "" {
 		apiURL = "https://rezehub.0721play.icu"
 	}
-	appUpdater, _ := newAppUpdateBindings(nil, filepath.Join(cacheDir, appUpdateCacheDirectory), "")
+	appUpdater, _ := newAppUpdateBindings(nil, filepath.Join(cacheDir, appUpdateCacheDirectory), "", apiURL)
 	return &DesktopService{
 		root:            root,
 		configPath:      filepath.Join(configBase, "instances.json"),
@@ -266,6 +266,9 @@ func NewDesktopService() *DesktopService {
 func (s *DesktopService) SetAPIURL(apiURL string) {
 	if apiURL != "" {
 		s.apiURL = apiURL
+		if s.appUpdater != nil && s.appUpdater.service != nil {
+			s.appUpdater.service.SetAPIBaseURL(apiURL)
+		}
 	}
 }
 

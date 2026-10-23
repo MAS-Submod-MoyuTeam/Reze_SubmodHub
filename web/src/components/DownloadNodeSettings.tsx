@@ -392,6 +392,27 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                         </div>
                       )}
 
+                      {/* App update asset cache, kept separate from mod archives */}
+                      {node.app_asset_states && (
+                        <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
+                          <span className="text-neutral-500 font-medium">软件更新缓存：</span>
+                          <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-mono border border-emerald-200/60">
+                            就绪 {node.app_asset_states.ready || 0}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-mono border border-amber-200/60">
+                            上传中 {node.app_asset_states.uploading || 0}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-mono border border-neutral-200/60">
+                            等待中 {node.app_asset_states.pending || 0}
+                          </span>
+                          {(node.app_asset_states.failed || 0) > 0 && (
+                            <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 font-mono font-bold border border-rose-200/60">
+                              失败 {node.app_asset_states.failed}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
                       {node.error_code && (
                         <p className="text-xs text-rose-700 pt-1 font-mono flex items-center gap-1.5">
                           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />

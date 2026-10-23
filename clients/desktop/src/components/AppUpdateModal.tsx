@@ -48,6 +48,13 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const deliveryLabel =
+    updateState.delivery_source === 'cloudreve'
+      ? `下载源: Cloudreve 节点${updateState.delivery_node_id ? ` ${updateState.delivery_node_id}` : ''}`
+      : updateState.delivery_source === 'github'
+        ? '下载源: GitHub Releases'
+        : undefined;
+
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-neutral-900 border border-neutral-800 rounded-xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col">
@@ -83,6 +90,9 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                 <div className="text-neutral-400 mt-1">
                   文件大小: {formatBytes(updateState.total_bytes)}
                 </div>
+                {deliveryLabel && (
+                  <div className="text-neutral-500 mt-1">{deliveryLabel}</div>
+                )}
               </div>
             </div>
           )}
@@ -103,6 +113,9 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                 <span>{formatBytes(updateState.downloaded_bytes)}</span>
                 <span>{formatBytes(updateState.total_bytes)}</span>
               </div>
+              {deliveryLabel && (
+                <div className="text-[11px] text-neutral-500">{deliveryLabel}</div>
+              )}
             </div>
           )}
 

@@ -5,12 +5,20 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { AppUpdateModal } from './AppUpdateModal';
 import type { AppUpdateState } from '../types/client';
 
-function render(status: AppUpdateState['status'], error?: string, android = false, requiresPermission = false, requiresConfirmation = false) {
+function render(
+  status: AppUpdateState['status'],
+  error?: string,
+  android = false,
+  requiresPermission = false,
+  requiresConfirmation = false,
+  delivery: { source?: string; node?: string } = {},
+) {
   return renderToStaticMarkup(<AppUpdateModal isOpen isAndroid={android} onOpenSettings={() => {}} onClose={() => {}} onCheckUpdate={() => {}}
     onDownloadUpdate={() => {}} onInstallUpdate={() => {}} onCancelUpdate={() => {}}
     updateState={{ status, current_version: '1.0.0', download_progress: 1, downloaded_bytes: 10,
       total_bytes: 10, can_install: true, requires_user_action: requiresConfirmation,
-      requires_install_permission: requiresPermission, error }} />);
+      requires_install_permission: requiresPermission, error,
+      delivery_source: delivery.source, delivery_node_id: delivery.node }} />);
 }
 
 test('installation occupancy disables actions and explains the pending step', () => {
@@ -34,6 +42,14 @@ test('Android cancellation preserves the staged APK and offers installation retr
   assert.match(html, /用户取消了安装，请重试/);
   assert.match(html, /启动系统安装/);
   assert.doesNotMatch(html, /disabled=""|下载更新<\/span>|去授权/);
+});
+
+test('delivery source is disclosed for API-planned downloads', () => {
+  assert.match(render('downloading', undefined, false, false, false, { source: 'cloudreve', node: 'node-a' }), /下载源: Cloudreve 节点 node-a/);
+  assert.match(render('downloading', undefined, false, false, false, { source: 'cloudreve' }), /下载源: Cloudreve 节点/);
+  assert.match(render('available', undefined, false, false, false, { source: 'github' }), /下载源: GitHub Releases/);
+  assert.doesNotMatch(render('downloading'), /下载源/);
+  assert.doesNotMatch(render('ready', undefined, false, false, false, { source: 'cloudreve' }), /下载源/);
 });
 
 test('Android permission hint depends only on actual install permission', () => {

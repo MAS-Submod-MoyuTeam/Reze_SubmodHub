@@ -295,8 +295,8 @@ func TestStageArchiveOriginAndProtocolConstraints(t *testing.T) {
 		VersionID:   "v-cross",
 		OperationID: "op_cross",
 	})
-	if err == nil || !strings.Contains(err.Error(), "cross_origin_archive_url_rejected") {
-		t.Fatalf("expected cross_origin_archive_url_rejected, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "cross_origin_delivery_url_rejected") {
+		t.Fatalf("expected cross_origin_delivery_url_rejected, got %v", err)
 	}
 
 	// 2. Protocol-relative archive URL

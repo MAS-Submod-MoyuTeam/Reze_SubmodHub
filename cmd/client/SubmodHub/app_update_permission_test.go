@@ -18,7 +18,7 @@ func (b *permissionUpdateBridge) CanRequestPackageInstalls() (bool, error) {
 
 func TestAppUpdatePermissionReflectsCurrentPlatformGrant(t *testing.T) {
 	bridge := &permissionUpdateBridge{}
-	bindings, err := newAppUpdateBindings(bridge, t.TempDir(), "")
+	bindings, err := newAppUpdateBindings(bridge, t.TempDir(), "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

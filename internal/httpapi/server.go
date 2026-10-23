@@ -236,8 +236,9 @@ type SettingsAuditEvent struct {
 }
 
 type Catalog struct {
-	ArchiveMirrors []ArchiveMirror              `json:"archive_mirrors,omitempty"`
-	DeliveryNodes  []DeliveryNode               `json:"delivery_nodes,omitempty"`
+	AppAssetMirrors []AppAssetMirror            `json:"app_asset_mirrors,omitempty"`
+	ArchiveMirrors  []ArchiveMirror             `json:"archive_mirrors,omitempty"`
+	DeliveryNodes   []DeliveryNode              `json:"delivery_nodes,omitempty"`
 	Mods           []Mod                        `json:"mods"`
 	Versions       map[string]Version           `json:"versions"`
 	Submissions    []Submission                 `json:"submissions,omitempty"`
@@ -317,6 +318,12 @@ type Store struct {
 	syncDoneChan             chan struct{}
 	syncCloseOnce            sync.Once
 	downloadSem              chan struct{}
+	// AppReleaseRepoOwner/Name override the published app repository. They are
+	// read-only after construction and exist so tests can point at a fake
+	// GitHub; production uses internal/version's release coordinates.
+	AppReleaseRepoOwner string
+	AppReleaseRepoName  string
+	appRelease          appReleaseState
 }
 
 func NewStore(dataDir string, initial Catalog) (*Store, error) {
@@ -388,6 +395,7 @@ func NewStoreHandler(s *Store) http.Handler {
 		writeJSON(w, 200, status)
 	})
 	mux.HandleFunc("/api/v1/version", s.versionInfo)
+	mux.HandleFunc("/api/v1/app-update", s.appUpdateDescriptor)
 	mux.HandleFunc("/api/v1/source-policy", s.publicSourcePolicy)
 	mux.HandleFunc("/api/v1/tags", s.publicTagCatalog)
 	mux.HandleFunc("/api/v1/mods", s.listMods)

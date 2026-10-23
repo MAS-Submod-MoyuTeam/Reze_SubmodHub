@@ -311,4 +311,8 @@ export interface AppUpdateState {
   can_install: boolean;
   requires_user_action: boolean;
   requires_install_permission: boolean;
+  /** Where the API planned to deliver the update: 'cloudreve' or 'github'. */
+  delivery_source?: string;
+  /** Cloudreve delivery node that served the update, when applicable. */
+  delivery_node_id?: string;
 }

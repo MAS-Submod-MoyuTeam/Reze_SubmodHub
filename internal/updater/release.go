@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/reze/submodhub/internal/github"
@@ -16,6 +18,8 @@ import (
 type Service struct {
 	config       Config
 	ghClient     *github.Client
+	apiClient    *http.Client
+	apiBase      atomic.Value // string
 	stageManager *StageManager
 	installer    PlatformInstaller
 
@@ -48,6 +52,7 @@ func NewService(cfg Config, installer PlatformInstaller) (*Service, error) {
 	svc := &Service{
 		config:       cfg,
 		ghClient:     github.NewClient(ghOpts...),
+		apiClient:    &http.Client{Timeout: 20 * time.Second},
 		stageManager: stage,
 		installer:    installer,
 		state: State{
@@ -55,6 +60,7 @@ func NewService(cfg Config, installer PlatformInstaller) (*Service, error) {
 			CurrentVersion: cfg.CurrentVersion,
 		},
 	}
+	svc.apiBase.Store(strings.TrimSpace(cfg.APIBaseURL))
 	return svc, nil
 }
 
@@ -74,7 +80,9 @@ func (s *Service) setState(updater func(*State)) {
 	updater(&s.state)
 }
 
-// CheckForUpdate queries GitHub releases and selects matching asset for current platform.
+// CheckForUpdate asks the API which release is current and how to fetch it.
+// GitHub remains the fallback when the API cannot answer, and the only path for
+// prerelease channels because those releases are never mirrored.
 func (s *Service) CheckForUpdate(ctx context.Context) (*ReleaseInfo, error) {
 	s.stateMu.Lock()
 	if s.operationBusy || installOccupied(s.state.Status) {
@@ -91,6 +99,16 @@ func (s *Service) CheckForUpdate(ctx context.Context) (*ReleaseInfo, error) {
 		s.stateMu.Unlock()
 	}()
 
+	if s.APIBaseURL() != "" && !s.config.IncludePrerelease {
+		if info, apiErr := s.checkViaAPI(ctx); apiErr == nil {
+			return info, nil
+		}
+	}
+	return s.checkViaGitHub(ctx)
+}
+
+// checkViaGitHub is the release-notes and fallback discovery path.
+func (s *Service) checkViaGitHub(ctx context.Context) (*ReleaseInfo, error) {
 	releases, _, _, err := s.ghClient.ListReleases(ctx, s.config.RepoOwner, s.config.RepoName, "")
 	if err != nil {
 		s.setState(func(st *State) {
@@ -216,6 +234,11 @@ func (s *Service) DownloadUpdate(ctx context.Context, release *ReleaseInfo) (str
 	s.state.TotalBytes = release.Asset.Size
 	s.state.DownloadedBytes = 0
 	s.state.DownloadProgress = 0
+	s.state.DeliverySource = string(release.Asset.Delivery.Type)
+	if release.Asset.Delivery.Type == DeliveryNone {
+		s.state.DeliverySource = string(DeliveryGitHub)
+	}
+	s.state.DeliveryNodeID = release.Asset.Delivery.NodeID
 	s.stateMu.Unlock()
 	defer func() {
 		cancel()
@@ -263,7 +286,7 @@ func (s *Service) DownloadUpdate(ctx context.Context, release *ReleaseInfo) (str
 	}
 
 	// 1. Download Asset
-	if err := s.stageManager.DownloadArchive(ctx, s.ghClient, release.Asset.BrowserDownloadURL, stagedPath, release.Asset.Size, onProgress); err != nil {
+	if err := s.downloadAsset(ctx, release.Asset, stagedPath, onProgress, true); err != nil {
 		update(func(st *State) {
 			st.Status = StatusFailed
 			st.Error = fmt.Sprintf("download failed: %v", err)
@@ -275,7 +298,7 @@ func (s *Service) DownloadUpdate(ctx context.Context, release *ReleaseInfo) (str
 	var updaterStagedPath string
 	if release.UpdaterAsset != nil && release.UpdaterAsset.BrowserDownloadURL != "" {
 		updaterStagedPath = s.stageManager.StagingPath(release.Version, release.UpdaterAsset.Name)
-		if err := s.stageManager.DownloadArchive(ctx, s.ghClient, release.UpdaterAsset.BrowserDownloadURL, updaterStagedPath, release.UpdaterAsset.Size, nil); err != nil {
+		if err := s.downloadAsset(ctx, release.UpdaterAsset, updaterStagedPath, nil, false); err != nil {
 			update(func(st *State) {
 				st.Status = StatusFailed
 				st.Error = fmt.Sprintf("failed to download updater helper: %v", err)

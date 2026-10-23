@@ -86,7 +86,7 @@ func TestStartupConfirmationRequiresValidConfiguration(t *testing.T) {
 func TestAppUpdateBindings(t *testing.T) {
 	svc := NewDesktopService()
 	bridge := &mockUpdateBridge{}
-	bindings, err := newAppUpdateBindings(bridge, t.TempDir(), "")
+	bindings, err := newAppUpdateBindings(bridge, t.TempDir(), "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -72,11 +72,12 @@
 | `GET /mods/{mod_id}/versions/{version_id}` | 公开 | `ModVersion` 与扫描摘要 |
 | `GET /versions/{version_id}/download` | 公开 | `{url,expires_at,sha256,size_bytes,delivery_type,node_id,allowed_download_origins,completion_token,fallback_reason?}`；普通包可为外部HTTPS直链，精灵包本地；不缓存描述 |
 | `POST /versions/{version_id}/download-complete` | 持一次尝试token | `{completion_token,sha256,size_bytes}`；一小时内当前进程幂等接受客户端完成报告，指标每15秒批量保存；重启使旧token失效；版本报告去重满时429，仅影响报告；不能冒充独立交付审计 |
+| `GET /app-update` | 公开 | 应用自更新描述：`{tag_name,version,name,notes,prerelease,published_at,checksum_url,assets:[{name,size_bytes,sha256,delivery_type,node_id,url,expires_at,allowed_download_origins,github_url}]}`；`delivery_type` 只会是 `cloudreve` 或 `github`（无 builtin 字节代理）；仅返回已读回校验的镜像直链；元数据未就绪 `503 app_release_unavailable`，客户端据此回落 GitHub；不缓存 |
 | `GET /admin/download-nodes` | 管理员 | 含固定builtin、脱敏节点、共享revision、主密钥配置状态及无外部节点回落提示；无密码/密文/内部对象 |
 | `POST /admin/download-nodes` / `PUT /admin/download-nodes/{id}` | 管理员+CSRF+同源 | `{revision,node}`；类型约束能力；秘密仅写，空密码保留；共享设置revision冲突409 |
 | `DELETE /admin/download-nodes/{id}` | 管理员+CSRF+同源 | `{revision}`；builtin不可删除，不删除网盘对象 |
 | `POST /admin/download-nodes/{id}/test` | 管理员+CSRF+同源 | `{revision}`；认证和目录元数据；不创建临时文件，不证明写权限或大包验收 |
-| `POST /admin/download-nodes/{id}/retry-mirrors` | 管理员+CSRF+同源 | `{revision}`；仅重置failed镜像，保留ready对象；节点GET以 `mirror_states` 返回当前revision状态数量 |
+| `POST /admin/download-nodes/{id}/retry-mirrors` | 管理员+CSRF+同源 | `{revision}`；仅重置failed镜像，保留ready对象；节点GET以 `mirror_states`（模组归档）与 `app_asset_states`（应用自更新资产）分别返回当前revision状态数量 |
 | `GET /session` | 登录可选 | `{user,roles,csrf_token}`；未登录 `user:null` |
 | `POST /auth/flarum/login` | 公开 | HTTPS；`{identification,password}`；建立会话，密码不回显 |
 | `GET /auth/github/start` / `GET /auth/github/callback` | 公开 | OAuth state + PKCE 登录/关联流程 |
