@@ -273,17 +273,6 @@ export interface InstalledItem {
   selected_sprite_set_count?: number;
 }
 
-export interface ExternalChangeDrift {
-  id: string;
-  path: string;
-  expected_hash: string;
-  actual_hash: string;
-  mod_id: string;
-  mod_title: string;
-  detected_at: string;
-  status: 'paused' | 'resolved';
-}
-
 export type AppUpdateStatus =
   | 'idle'
   | 'checking'

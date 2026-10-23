@@ -26,7 +26,7 @@
 - **客户端目录与授权**：Windows 显示自动探测的 MAS 安装，允许手选并管理多个实例；Android 显示固定 MAS 根目录和“所有文件访问权限”的实际状态，提供打开系统授权页的操作。用户从设置页返回、重启应用或撤销权限后刷新状态；未授权或未验证目录不得读取/写入托管文件。Android 不显示 SAF 目录选择器作为自动回退。
 - **客户端安装预览**：列出依赖阻断、语义冲突、覆盖文件、外部文件备份、下载大小、剩余空间及最终生效层。用户确认后才能写入。
 - **客户端已安装**：区分托管版本和未托管检测结果；未托管内容只有查看/显式收养流程，不提供直接卸载。优先级调整须先显示哪些文件会改变。
-- **客户端操作与恢复**：展示下载、扫描、备份、写入、提交进度；重启后按操作 ID 恢复显示。文件哈希漂移时暂停并展示路径、预期/实测哈希，不自动覆盖。提供日志导出和备份恢复。
+- **客户端操作与恢复**：展示事务阶段、逐文件进度与恢复材料；重启后按操作 ID 恢复显示。目标文件哈希与 Ledger 不一致时暂停写入并进入 `needs_manual_recovery`，在事务详情中展示冲突路径、预期/实测哈希与错误详情，不自动覆盖；已提交安装的文件漂移走“已安装 → 修复”。诊断信息只在事务详情弹窗内展示并可整份复制，不提供日志导出或按备份 ID 还原的入口。
  
 ## 2. 公共数据约定
 
@@ -144,8 +144,9 @@
 | `ListInstalled` | 安装实例 | 托管版本、未托管检测结果、更新状态 |
 | `ListInstalledModFiles` | `installation_id, mod_id` [, `cursor, limit`] | `InstalledFileList`：只读文件清单、哈希、生效状态、外部漂移标志与统计摘要；不读取文件内容，不修改状态 |
 | `ListOperations` / `GetOperation` | 实例/操作 ID | 阶段、逐文件进度、阻断信息与恢复选项 |
-| `RecoverOperation` / `RestoreBackup` | 实例、操作/备份 ID | `operation_id,status` |
-| `ExportLogs` | 可选操作 ID | 本地导出文件位置 |
+| `RecoverOperation` | 操作 ID | `operation_id,status` |
+
+事务诊断的展示归属：`ListOperations` / `GetOperation` 返回的全部字段（阶段、进度、恢复材料、冲突路径、期望/实测哈希、错误代号与详情、时间戳）在客户端“事务详情”弹窗内展示并可整份复制；客户端不提供文件导出入口。
 
 `Plan` 至少包含 `plan_id,kind,installation_id,mod_id,version_id,expires_at,dependency_blockers,semantic_blockers,changes,backups_required,bytes_required,warnings`。对于 `spritepack`，包含 `sprite_set_ids,sprite_selection_hash,selected_sprite_set_count` 以及变更上下文 `sprite_selection_context`。每条 `change` 含 `target_path,action,previous_owner,next_owner,previous_hash,next_hash,reason`。只在阻断项为空、权限有效且 MAS 未运行时允许确认。
 

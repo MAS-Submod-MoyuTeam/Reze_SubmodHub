@@ -34,7 +34,6 @@ import {
   ModSummary,
   InstalledItem,
   Operation,
-  ExternalChangeDrift,
   Plan,
   PlanChange,
   ExecutionSession,
@@ -78,7 +77,6 @@ export default function App() {
   const [installedMods, setInstalledMods] = useState<InstalledItem[]>([]);
   const [spritepacks, setSpritepacks] = useState<Spritepack[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
-  const [externalDrift, setExternalDrift] = useState<ExternalChangeDrift | null>(null);
 
   // Execution session coordinator
   const [executionSession, setExecutionSession] = useState<ExecutionSession | null>(null);
@@ -1134,41 +1132,10 @@ export default function App() {
       await refreshOperations(activeInstallationIdRef.current);
       setCurrentPlan(null);
       void scanLocalSubmods(activeInstallationIdRef.current, { forced: true });
-      setExternalDrift(null);
     } catch (err: any) {
       showToast(`回滚失败：${err.message || String(err)}`);
       await refreshOperations(activeInstallationIdRef.current);
     }
-  };
-
-  // Handler: Restore Backup
-  const handleRestoreBackup = async (opId: string, backupId?: string) => {
-    showToast(`正在从备份快照 [${backupId || 'snapshot'}] 执行完全还原...`);
-    try {
-      await RollbackOperation(opId);
-      showToast(`操作 [${opId}] 已从快照安全还原`);
-      await refreshOperations();
-      setExternalDrift(null);
-    } catch (err: any) {
-      showToast(`还原失败：${err.message || String(err)}`);
-      await refreshOperations();
-    }
-  };
-
-  // Handler: Resolve Hash Drift
-  const handleResolveDrift = (driftId: string, action: 'keep_local' | 'overwrite_with_backup') => {
-    if (action === 'keep_local') {
-      setExternalDrift(null);
-      showToast('已保留玩家本地修改，该文件已标记为用户自定义保留项');
-    } else {
-      setExternalDrift(null);
-      showToast('已将本地修改安全归档到备份库，并继续更新');
-    }
-  };
-
-  // Handler: Export Logs
-  const handleExportLogs = (opId?: string) => {
-    showToast(`诊断日志已导出至本地文件: C:\\Users\\User\\AppData\\Roaming\\SubmodHub\\logs\\export_${Date.now()}.log`);
   };
 
   // Handler: Adopt Unmanaged Mod
@@ -1433,11 +1400,7 @@ export default function App() {
           {activeTab === 'operations' && (
             <OperationsView
               operations={operations}
-              externalDrift={externalDrift}
               onRecoverOperation={handleRecoverOperation}
-              onRestoreBackup={handleRestoreBackup}
-              onResolveDrift={handleResolveDrift}
-              onExportLogs={handleExportLogs}
             />
           )}
 

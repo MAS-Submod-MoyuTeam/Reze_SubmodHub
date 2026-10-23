@@ -1,55 +1,100 @@
 import React, { useState } from 'react';
 import {
   History,
-  FileCode2,
   AlertTriangle,
   RotateCcw,
   CheckCircle2,
-  FileCheck,
-  Download,
   FolderArchive,
-  ArrowRight,
   ShieldAlert,
   Copy,
   Check,
-  PauseCircle,
-  PlayCircle,
   Clock,
   Terminal,
   Loader2,
   HelpCircle,
 } from 'lucide-react';
-import { Operation, ExternalChangeDrift } from '../types/client';
+import { Operation } from '../types/client';
 
 interface OperationsViewProps {
   operations: Operation[];
-  externalDrift: ExternalChangeDrift | null;
   onRecoverOperation: (opId: string) => void;
-  onRestoreBackup?: (opId: string, backupId?: string) => void;
-  onResolveDrift: (driftId: string, action: 'keep_local' | 'overwrite_with_backup') => void;
-  onExportLogs: (opId?: string) => void;
 }
+
+/** Copies text to the clipboard, falling back to a hidden textarea when the
+ *  async Clipboard API is unavailable (older WebView2 / non-secure origins). */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through to the legacy path
+  }
+  try {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    const copied = document.execCommand('copy');
+    document.body.removeChild(area);
+    return copied;
+  } catch {
+    return false;
+  }
+}
+
+function formatTimestamp(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+}
+
+/** Recovery availability must not read as a fault on transactions that have
+ *  already finished: a committed or rolled-back transaction legitimately has
+ *  no rollback material left. */
+function describeRecoveryAvailability(op: Operation): { label: string; tone: 'ready' | 'finished' | 'blocked' } {
+  if (op.can_rollback) {
+    return { label: '恢复材料可用：可安全回滚', tone: 'ready' };
+  }
+  if (op.state === 'committed') {
+    return { label: '事务已提交：无回滚材料', tone: 'finished' };
+  }
+  if (op.state === 'rolled_back') {
+    return { label: '事务已回滚：无待处理变更', tone: 'finished' };
+  }
+  return { label: '恢复材料缺失：需人工处理', tone: 'blocked' };
+}
+
+/** One labelled diagnostic field inside the transaction detail panel. */
+const DetailField: React.FC<{ label: string; mono?: boolean; children: React.ReactNode }> = ({
+  label,
+  mono = true,
+  children,
+}) => (
+  <div className="min-w-0 space-y-0.5">
+    <div className="text-[10px] font-sans uppercase tracking-wider text-neutral-500">{label}</div>
+    <div className={`break-all text-neutral-200 ${mono ? 'font-mono' : 'font-sans'}`}>{children}</div>
+  </div>
+);
 
 export const OperationsView: React.FC<OperationsViewProps> = ({
   operations,
-  externalDrift,
   onRecoverOperation,
-  onRestoreBackup,
-  onResolveDrift,
-  onExportLogs,
 }) => {
-  const [copiedExpected, setCopiedExpected] = useState(false);
-  const [copiedActual, setCopiedActual] = useState(false);
+  const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
   const [logModalOp, setLogModalOp] = useState<Operation | null>(null);
+  const recoveryAvailability = logModalOp ? describeRecoveryAvailability(logModalOp) : null;
 
-  const pipelineStages = [
-    { key: 'planned', label: '规划就绪' },
-    { key: 'downloading', label: '下载归档' },
-    { key: 'scanning', label: '静态安全验签' },
-    { key: 'backed_up', label: '暂存原文件快照' },
-    { key: 'writing', label: '原子写入目标' },
-    { key: 'committed', label: '提交持久化' },
-  ];
+  const handleCopyDiagnostics = async (op: Operation) => {
+    const ok = await copyToClipboard(
+      JSON.stringify({ exported_at: new Date().toISOString(), operation: op }, null, 2)
+    );
+    setCopiedDiagnostics(ok);
+    if (ok) setTimeout(() => setCopiedDiagnostics(false), 2000);
+  };
 
   const formatBytes = (bytes: number) => {
     if (bytes >= 1024 * 1024) {
@@ -146,138 +191,10 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
             未完成事务必须先检查诊断，再按恢复材料重新校验并安全回滚。普通已提交安装的文件漂移应使用“已安装 → 修复”；不需要强制回滚安装。恢复后旧计划失效，请重新预览。
           </p>
         </div>
-
-        <div className="flex items-center gap-2 text-xs">
-          <button
-            onClick={() => onExportLogs()}
-            className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-200 transition-colors flex items-center gap-1.5"
-          >
-            <Terminal className="w-3.5 h-3.5 text-neutral-400" />
-            <span>导出诊断日志 (ExportLogs)</span>
-          </button>
-        </div>
       </div>
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* CRITICAL CONTRACT SCENARIO: External Hash Drift Detection (Section 1, 5) */}
-        {externalDrift && externalDrift.status === 'paused' && (
-          <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-700/80 space-y-3 animate-in fade-in duration-200">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-                <div>
-                  <h3 className="text-xs font-bold text-amber-300">
-                    安全暂停：检测到外部文件哈希漂移 [external_change]
-                  </h3>
-                  <p className="text-xs text-amber-200/90 mt-0.5">
-                    契约规范要求：目标文件已被外部程序（如玩家手工修改、外部编辑器或非托管脚本）变更。
-                    <strong>RezeHub 客户端严禁自动覆盖用户文件</strong>，当前写入操作已自动暂停挂起。
-                  </p>
-                </div>
-              </div>
-
-              <span className="text-[11px] px-2 py-0.5 rounded bg-amber-900/60 text-amber-300 font-mono shrink-0">
-                保护性暂停
-              </span>
-            </div>
-
-            {/* Path and Expected vs Actual Hashes */}
-            <div className="p-3 bg-neutral-950/80 rounded-lg border border-neutral-800 font-mono text-xs space-y-2">
-              <div>
-                <span className="text-neutral-400">发生漂移的本地文件相对路径:</span>
-                <div className="text-neutral-200 font-semibold mt-0.5">{externalDrift.path}</div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-neutral-800/80 text-[11px]">
-                {/* Expected Hash */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-neutral-400">
-                    <span>RezeHub Ledger 记录的预期 SHA-256:</span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(externalDrift.expected_hash);
-                        setCopiedExpected(true);
-                        setTimeout(() => setCopiedExpected(false), 2000);
-                      }}
-                      className="text-neutral-400 hover:text-neutral-200 cursor-pointer"
-                    >
-                      {copiedExpected ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    </button>
-                  </div>
-                  <div className="text-emerald-400 bg-neutral-900 p-1.5 rounded break-all selection:bg-neutral-800">
-                    {externalDrift.expected_hash}
-                  </div>
-                </div>
-
-                {/* Actual Measured Hash */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-neutral-400">
-                    <span>当前硬盘实测读出的 SHA-256 (外部篡改):</span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(externalDrift.actual_hash);
-                        setCopiedActual(true);
-                        setTimeout(() => setCopiedActual(false), 2000);
-                      }}
-                      className="text-neutral-400 hover:text-neutral-200 cursor-pointer"
-                    >
-                      {copiedActual ? <Check className="w-3 h-3 text-amber-400" /> : <Copy className="w-3 h-3" />}
-                    </button>
-                  </div>
-                  <div className="text-amber-400 bg-neutral-900 p-1.5 rounded break-all selection:bg-neutral-800">
-                    {externalDrift.actual_hash}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Resolution Options */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1">
-              <span className="text-[11px] text-amber-200/80">
-                请选择处理策略（决定权在用户手中）：
-              </span>
-
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <button
-                  onClick={() => onResolveDrift(externalDrift.id, 'keep_local')}
-                  className="px-3 py-1.5 text-xs font-semibold bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors border border-neutral-700 cursor-pointer text-center"
-                >
-                  保留本地文件（跳过该文件并继续更新）
-                </button>
-                <button
-                  onClick={() => onResolveDrift(externalDrift.id, 'overwrite_with_backup')}
-                  className="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-neutral-950 rounded-lg transition-colors shadow-xs cursor-pointer text-center"
-                >
-                  覆盖并建立保护性备份
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Pipeline Stage Architecture Diagram */}
-        <div className="p-4 rounded-xl bg-neutral-900/60 border border-neutral-800 space-y-2">
-          <div className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">
-            标准 6 阶段原子写入事务生命周期 (Transaction State Machine)
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 pt-1 font-mono text-xs">
-            {pipelineStages.map((st, i) => (
-              <div
-                key={st.key}
-                className="p-2.5 rounded-lg bg-neutral-950/70 border border-neutral-800/80 flex flex-col justify-between"
-              >
-                <div className="text-neutral-400 text-[10px] mb-1">
-                  0{i + 1}. {st.key}
-                </div>
-                <div className="font-semibold text-neutral-200 text-[11px] truncate">
-                  {st.label}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
         {/* Operations History and Recovery List */}
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs text-neutral-400">
@@ -288,7 +205,11 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
           </div>
 
           {/* Desktop Table View */}
-          <div className="hidden md:block border border-neutral-800 rounded-xl overflow-hidden bg-neutral-900/40">
+          {/* Wide content (state badges stay nowrap) must scroll instead of being
+              clipped: the previous `overflow-hidden` silently cut the trailing
+              "恢复与管理" column, which made 详情 / 安全回滚 unreachable as soon
+              as the window was narrower than the window's default 1280px. */}
+          <div className="hidden md:block border border-neutral-800 rounded-xl overflow-x-auto bg-neutral-900">
             <table className="w-full text-left text-xs font-sans">
               <thead className="bg-neutral-950 text-neutral-400 text-[11px] border-b border-neutral-800 uppercase font-medium">
                 <tr>
@@ -298,12 +219,14 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                   <th className="py-2.5 px-3">进度 / 阶段</th>
                   <th className="py-2.5 px-3">备份快照 ID</th>
                   <th className="py-2.5 px-3">记录时间</th>
-                  <th className="py-2.5 px-4 text-right">恢复与管理</th>
+                  <th className="py-2.5 px-4 text-right sticky right-0 z-20 bg-neutral-950 border-l border-neutral-800/80 shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.9)]">
+                    恢复与管理
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800/60 font-mono">
                 {operations.map((op) => (
-                  <tr key={op.operation_id} className="hover:bg-neutral-800/30 transition-colors">
+                  <tr key={op.operation_id} className="group hover:bg-neutral-800/30 transition-colors">
                     {/* ID and Mod */}
                     <td className="py-3 px-4">
                       <div className="font-semibold text-neutral-200 font-sans">{op.mod_title}</div>
@@ -354,8 +277,9 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                       {new Date(op.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
 
-                    {/* Actions */}
-                    <td className="py-3 px-4 text-right font-sans">
+                    {/* Actions — pinned to the right edge so 详情 / 回滚 remain
+                        visible while the wide columns scroll underneath. */}
+                    <td className="py-3 px-4 text-right font-sans sticky right-0 z-10 bg-neutral-900 group-hover:bg-neutral-800/40 border-l border-neutral-800/80 shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.9)]">
                       <div className="flex items-center justify-end gap-1.5">
                         {op.state === 'needs_manual_recovery' ? (
                           <>
@@ -502,71 +426,155 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
         </div>
       </div>
 
-      {/* Log / Detail Modal */}
+      {/* Transaction Detail Modal — carries the diagnostics that the removed
+          "导出诊断日志" button used to promise: every backend field of the
+          operation, plus a copyable raw JSON payload. */}
       {logModalOp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs select-none">
           <div className="bg-neutral-900 border border-neutral-700 rounded-xl w-full max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden shadow-2xl">
-            <div className="p-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950">
-              <div className="flex items-center gap-2 text-xs font-mono">
-                <Terminal className="w-4 h-4 text-emerald-400" />
-                <span className="text-neutral-200 font-semibold">{logModalOp.operation_id} 事务详情与诊断</span>
+            <div className="p-4 border-b border-neutral-800 flex items-center justify-between gap-3 bg-neutral-950">
+              <div className="flex min-w-0 items-center gap-2">
+                <Terminal className="w-4 h-4 shrink-0 text-emerald-400" />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-neutral-100">
+                    {logModalOp.mod_title}
+                  </div>
+                  <div className="truncate font-mono text-[11px] text-neutral-400">
+                    事务详情与诊断 · {logModalOp.operation_id}
+                  </div>
+                </div>
               </div>
-              <button
-                onClick={() => setLogModalOp(null)}
-                className="text-neutral-400 hover:text-white"
-              >
-                ✕
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  onClick={() => void handleCopyDiagnostics(logModalOp)}
+                  className="px-2.5 py-1.5 text-xs rounded-lg bg-neutral-800 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-200 transition-colors flex items-center gap-1.5"
+                  title="复制整份诊断信息（JSON），用于反馈问题"
+                >
+                  {copiedDiagnostics ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5 text-neutral-400" />
+                  )}
+                  <span>{copiedDiagnostics ? '已复制' : '复制诊断信息'}</span>
+                </button>
+                <button
+                  onClick={() => setLogModalOp(null)}
+                  className="text-neutral-400 hover:text-white"
+                  aria-label="关闭事务详情"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
-            <div className="p-4 bg-neutral-950/90 font-mono text-xs text-neutral-300 overflow-y-auto flex-1 space-y-2">
-              <div className="text-neutral-400">
-                [时间] 创建: {logModalOp.created_at} | 更新: {logModalOp.updated_at}
+
+            <div className="p-4 bg-neutral-950/90 text-xs overflow-y-auto flex-1 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {getStateBadge(logModalOp.state)}
+                <span className="px-1.5 py-0.5 rounded bg-neutral-800 uppercase text-[10px] text-neutral-300 font-mono">
+                  {logModalOp.kind}
+                </span>
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${
+                    recoveryAvailability?.tone === 'ready'
+                      ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/60'
+                      : recoveryAvailability?.tone === 'blocked'
+                        ? 'bg-rose-950/60 text-rose-300 border-rose-800/60'
+                        : 'bg-neutral-800/80 text-neutral-400 border-neutral-700/60'
+                  }`}
+                >
+                  {recoveryAvailability?.label}
+                </span>
               </div>
-              <div className="text-neutral-400">
-                [模组] {logModalOp.mod_title} ({logModalOp.mod_id}) | 类型: {logModalOp.kind}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg bg-neutral-900/60 border border-neutral-800">
+                <DetailField label="操作 ID">{logModalOp.operation_id}</DetailField>
+                <DetailField label="安装实例">{logModalOp.installation_id}</DetailField>
+                <DetailField label="模组" mono={false}>
+                  {logModalOp.mod_title}
+                  <span className="text-neutral-500 font-mono"> ({logModalOp.mod_id})</span>
+                </DetailField>
+                <DetailField label="版本">
+                  {logModalOp.version_str}
+                  {logModalOp.version_id ? <span className="text-neutral-500"> ({logModalOp.version_id})</span> : null}
+                </DetailField>
+                <DetailField label="事务阶段 phase">{logModalOp.phase || logModalOp.state}</DetailField>
+                <DetailField label="状态机 state">{logModalOp.state}</DetailField>
+                <DetailField label="创建时间">{formatTimestamp(logModalOp.created_at)}</DetailField>
+                <DetailField label="最近更新">{formatTimestamp(logModalOp.updated_at)}</DetailField>
               </div>
-              <div className="text-neutral-300">
-                [状态] 阶段: <span className="text-sky-300">{logModalOp.phase || logModalOp.state}</span> | 状态机: <span className="text-amber-300">{logModalOp.state}</span>
-              </div>
-              <div className="text-neutral-300">
-                [进度] 阶段说明: {logModalOp.progress.stage}
-              </div>
-              <div className="text-neutral-400">
-                [文件] 处理进度: {logModalOp.progress.processed_files} / {logModalOp.progress.total_files} ({logModalOp.progress.percent}%)
-                {logModalOp.progress.current_file && <span> | 最后路径: {logModalOp.progress.current_file}</span>}
-              </div>
-              {logModalOp.backup_id && (
-                <div className="text-neutral-400">
-                  [快照] 备份快照标识: {logModalOp.backup_id}
+
+              <div className="p-3 rounded-lg bg-neutral-900/60 border border-neutral-800 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-sans font-semibold text-neutral-300">执行进度</span>
+                  <span className="font-mono text-[11px] text-neutral-400">
+                    {logModalOp.progress.processed_files} / {logModalOp.progress.total_files} 文件 · {logModalOp.progress.percent}%
+                  </span>
                 </div>
-              )}
-              {logModalOp.conflict_path && (
-                <div className="text-amber-300">
-                  [冲突] 冲突文件路径: {logModalOp.conflict_path}
+                <div className="h-1.5 w-full rounded-full bg-neutral-800 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 transition-all"
+                    style={{ width: `${Math.min(100, Math.max(0, logModalOp.progress.percent))}%` }}
+                  />
                 </div>
-              )}
-              {logModalOp.expected_hash && (
-                <div className="text-neutral-400 pl-4">
-                  期望哈希: {logModalOp.expected_hash}
+                <div className="font-sans text-neutral-300">{logModalOp.progress.stage}</div>
+                <div className="font-mono text-[11px] text-neutral-400">
+                  字节 {formatBytes(logModalOp.progress.bytes_processed)} / {formatBytes(logModalOp.progress.total_bytes)}
                 </div>
-              )}
-              {logModalOp.actual_hash && (
-                <div className="text-amber-400 pl-4">
-                  实测哈希: {logModalOp.actual_hash}
-                </div>
-              )}
+                {logModalOp.progress.current_file && (
+                  <div className="font-mono text-[11px] text-neutral-500 break-all">
+                    最后处理路径: {logModalOp.progress.current_file}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg bg-neutral-900/60 border border-neutral-800">
+                <DetailField label="备份快照 ID">{logModalOp.backup_id || '无'}</DetailField>
+                <DetailField label="可回滚 can_rollback">{String(Boolean(logModalOp.can_rollback))}</DetailField>
+                {logModalOp.conflict_path && (
+                  <DetailField label="冲突文件路径">
+                    <span className="text-amber-300">{logModalOp.conflict_path}</span>
+                  </DetailField>
+                )}
+                {logModalOp.expected_hash && (
+                  <DetailField label="Ledger 期望 SHA-256">
+                    <span className="text-emerald-400">{logModalOp.expected_hash}</span>
+                  </DetailField>
+                )}
+                {logModalOp.actual_hash && (
+                  <DetailField label="磁盘实测 SHA-256">
+                    <span className="text-amber-400">{logModalOp.actual_hash}</span>
+                  </DetailField>
+                )}
+              </div>
+
               {logModalOp.error && (
-                <div className="p-3 bg-rose-950/40 border border-rose-800/60 rounded-lg text-rose-300 space-y-1">
-                  <div className="font-semibold">[错误代号] {logModalOp.error.code}</div>
-                  <div>[错误详情] {logModalOp.error.message}</div>
+                <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-800/60 text-rose-300 space-y-1">
+                  <div className="font-mono font-semibold">[错误代号] {logModalOp.error.code}</div>
+                  <div className="font-sans">[错误详情] {logModalOp.error.message}</div>
+                  {logModalOp.error.details && Object.keys(logModalOp.error.details).length > 0 && (
+                    <pre className="pt-1 font-mono text-[11px] whitespace-pre-wrap break-all text-rose-200/80">
+                      {JSON.stringify(logModalOp.error.details, null, 2)}
+                    </pre>
+                  )}
                 </div>
               )}
+
               {logModalOp.state === 'needs_manual_recovery' && (
-                <div className="p-3 bg-amber-950/40 border border-amber-800/60 rounded-lg text-amber-200 text-[11px] leading-relaxed">
+                <div className="p-3 bg-amber-950/40 border border-amber-800/60 rounded-lg text-amber-200 text-[11px] leading-relaxed font-sans">
                   提示：系统已进入保护性挂起状态。为防止破坏玩家可能手工编辑的文件，请先备份上述冲突文件。若已人工解决外部冲突或还原文件，可点击下方“重新校验并安全回滚”。
                 </div>
               )}
+
+              <details className="rounded-lg bg-neutral-900/60 border border-neutral-800">
+                <summary className="px-3 py-2 text-[11px] font-sans text-neutral-400 cursor-pointer select-none">
+                  原始诊断数据（JSON，与“复制诊断信息”内容一致）
+                </summary>
+                <pre className="max-h-64 overflow-auto px-3 py-2 border-t border-neutral-800 font-mono text-[11px] leading-relaxed text-neutral-300">
+                  {JSON.stringify(logModalOp, null, 2)}
+                </pre>
+              </details>
             </div>
+
             <div className="p-3 border-t border-neutral-800 bg-neutral-900 flex justify-end gap-2">
               {logModalOp.can_rollback && (
                 <button

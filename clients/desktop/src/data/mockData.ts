@@ -3,7 +3,6 @@ import {
   ModSummary,
   InstalledItem,
   Operation,
-  ExternalChangeDrift,
   ModVersion,
   Plan
 } from '../types/client';
@@ -546,14 +545,3 @@ export const INITIAL_OPERATIONS: Operation[] = [
     updated_at: '2026-10-03T20:10:18Z',
   },
 ];
-
-export const INITIAL_EXTERNAL_DRIFT: ExternalChangeDrift = {
-  id: 'drift_01',
-  path: 'game/submods/ExtraPlus/extraplus.rpy',
-  expected_hash: '38a902bf8910a8b901fc883901af88290192c39281a8902ef8910acb88301893',
-  actual_hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-  mod_id: 'mod_extraplus',
-  mod_title: 'ExtraPlus',
-  detected_at: '2026-10-03T20:10:18Z',
-  status: 'paused',
-};

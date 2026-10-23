@@ -118,10 +118,7 @@ test('OperationsView: mobile card view renders operation details, progress, and 
   const html = renderToStaticMarkup(
     <OperationsView
       operations={[op]}
-      externalDrift={null}
       onRecoverOperation={() => {}}
-      onResolveDrift={() => {}}
-      onExportLogs={() => {}}
     />
   );
 
@@ -131,6 +128,42 @@ test('OperationsView: mobile card view renders operation details, progress, and 
   assert.match(html, /安全回滚/);
   assert.match(html, /详情/);
   assert.match(html, /bak_snapshot_999/);
+});
+
+test('OperationsView: no export-logs button and no placeholder state-machine diagram', () => {
+  // Both were demo scaffolding: the export button only showed a toast with a
+  // hardcoded path (no backend binding), and the six-stage diagram described a
+  // legacy state machine that the installer no longer uses.
+  const html = renderToStaticMarkup(
+    <OperationsView
+      operations={[makeMockOperation()]}
+      onRecoverOperation={() => {}}
+    />
+  );
+
+  assert.doesNotMatch(html, /导出诊断日志/);
+  assert.doesNotMatch(html, /ExportLogs/);
+  assert.doesNotMatch(html, /Transaction State Machine/);
+  assert.doesNotMatch(html, /标准 6 阶段/);
+});
+
+test('OperationsView: desktop table scrolls horizontally and pins the 恢复与管理 column', () => {
+  // Regression: the table wrapper used `overflow-hidden`, so every column past
+  // the container edge was clipped. Once the window was narrower than the
+  // client default (1280px) the trailing 详情 button was unreachable — the
+  // table must scroll instead (`overflow-x-auto`) and the action column must
+  // stay pinned so 详情 / 安全回滚 are always clickable.
+  const html = renderToStaticMarkup(
+    <OperationsView
+      operations={[makeMockOperation()]}
+      onRecoverOperation={() => {}}
+    />
+  );
+
+  assert.match(html, /overflow-x-auto/);
+  assert.doesNotMatch(html, /rounded-xl overflow-hidden bg-neutral-900/);
+  assert.match(html, /<td class="[^"]*sticky right-0[^"]*">/);
+  assert.match(html, /<th class="[^"]*sticky right-0[^"]*">\s*恢复与管理/);
 });
 
 test('PlanPreviewModal: actions include 44px min-height touch targets and accessible layout', () => {

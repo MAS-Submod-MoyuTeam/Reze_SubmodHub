@@ -16,7 +16,6 @@ type Change struct {
 	Path           string `json:"path"`
 	Content        []byte `json:"content,omitempty"`
 	Remove         bool   `json:"remove,omitempty"`
-	RestoreBackup  bool   `json:"restore_backup,omitempty"`
 	ExpectedSHA256 string `json:"expected_sha256,omitempty"`
 }
 
