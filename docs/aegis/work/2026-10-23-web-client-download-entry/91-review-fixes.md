@@ -33,4 +33,5 @@
 | 15 | 术语漂移（桌面端 `Cloudreve 节点 <node>` vs Web `本站节点（Cloudreve）`） | 保留 Web 文案并在 `docs/app-update.md` 说明原因：Web 不暴露内部 node id |
 
 ## 遗留
-- 未连接测试实例 `100.72.137.92` 做部署后验收；`release_url` 在真实新后端上的展示仍待确认（当前部署版本早于该字段）。
+- 已部署 `0.9.12` 到测试服并逐项验收（见 `90-evidence.md`），`release_url` 已在真实环境可见。
+- `v0.9.12` 的 Windows / Android 产物仍待 CI：推送 `main` 后由工作流构建并发布 Release，本次未推送远端，客户端下载区当前仍是 `v0.9.10`。

@@ -36,6 +36,22 @@
 
 375 宽下目录筛选区三行分别折为 54 / 46 / 51px，`min-w-0 flex-wrap` 生效，整页无横向滚动。
 
+## 测试服部署（0.9.12，2026-10-23 19:2x）
+
+按 `docs/operations.md`「从本机更新测试服」执行：本机 `GOOS=linux` 交叉编译 `deploy/build/submodhub-linux-amd64`、`npm run build` 出 `web/dist`，上传到 `100.72.137.92:/home/sirp/submodhub`（旧二进制留 `submodhub-linux-amd64.pre-web-client-download`，旧前端留 `dist.pre-web-client-download-20261023`），再 `up -d --build api` 并重启 `web`。
+
+部署后实测：
+
+| 检查 | 结果 |
+|---|---|
+| `GET /healthz` | `status ok`，`version 0.9.12` |
+| `GET /api/v1/version` | `0.9.12`，`go1.26.10`，`linux/amd64` |
+| `GET /api/v1/app-update` | `release_url = https://github.com/MAS-Submod-MoyuTeam/Reze_SubmodHub/releases/tag/v0.9.10`；三个资产 `delivery_type cloudreve`，`allowed_download_origins` 为 `https://disk.monika.love`、`https://disk.edgemonix.top:29991` |
+| `GET :18083` | 引用 `assets/index-CNFM59Nu.js`、`assets/index-Dy7FsJm9.css`，与本机 `dist` 哈希一致 |
+| 公开入口 `https://rezehub.0721play.icu` | 顶部品牌显示 `v0.9.12`；下载弹窗显示 `v0.9.10`、两张卡片「来源：本站节点（Cloudreve）」、4 条外链（含 `releases/tag/v0.9.10`）、按钮「从本站下载」 |
+
+`release_url` 至此在真实部署上首次可见（此前部署的后端早于该字段）。客户端版本仍是 `0.9.10`：`v0.9.12` 的 Windows/Android 产物由 CI 在推送 `main` 后构建并发布 Release，本次未推送远端。
+
 ## 边界说明
-- 浏览器验收用的是**已部署旧后端**（无 `release_url`、资产走节点直链），所以「快照过期告警」「白名单不命中回落 GitHub」「tag 变化放弃重取」这三条路径由单测覆盖，未在真实后端触发。
+- 「快照过期告警」「白名单不命中回落 GitHub」「tag 变化放弃重取」三条路径仍只有单测覆盖：测试服的节点直链未过期、白名单命中，真实触发不了。
 - 管理员登录态下的导航宽度是用克隆真实导航项模拟的，不是真实登录会话。

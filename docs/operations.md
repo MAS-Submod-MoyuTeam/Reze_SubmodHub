@@ -34,6 +34,39 @@ curl https://rezehub.0721play.icu/healthz
 
 回滚：恢复上一版源码/Compose 文件后重新执行同一 `up -d --build api` 命令；`deploy/data` 保留。
 
+### 从本机更新测试服
+
+测试服 `/home/sirp/submodhub` 不是 git 工作区，产物是直接上传的。`api` 镜像只把 `deploy/build/submodhub-linux-amd64` 复制进 `scratch`，`web` 容器用 nginx 挂载 `web/dist`，所以「更新」= 上传二进制 + 上传前端产物 + 重建 `api`。
+
+```powershell
+# 1. 本机构建。先改版本再构建，前端会把版本号打进包
+go run ./cmd/version -set 0.9.12
+$env:GOOS='linux'; $env:GOARCH='amd64'; $env:CGO_ENABLED='0'
+go build -trimpath -ldflags '-s -w' -o deploy/build/submodhub-linux-amd64 ./cmd/server
+cd web; npm run build; cd ..
+
+# 2. 上传。远端惯例是保留 submodhub-linux-amd64.pre-<改动名>，前端目录整体换名切换
+ssh sirphomesv "cd /home/sirp/submodhub/deploy/build && cp -p submodhub-linux-amd64 submodhub-linux-amd64.pre-<改动名> && mkdir -p /home/sirp/submodhub/web/dist.new"
+scp deploy/build/submodhub-linux-amd64 sirphomesv:/home/sirp/submodhub/deploy/build/
+scp -r web/dist/* sirphomesv:/home/sirp/submodhub/web/dist.new/
+ssh sirphomesv "cd /home/sirp/submodhub/web && find dist.new -type d -exec chmod 755 {} + && find dist.new -type f -exec chmod 644 {} + && mv dist dist.pre-<日期> && mv dist.new dist"
+
+# 3. 重建 api、重启 web（web 只换了挂载内容，重启是为了丢句柄缓存）
+ssh sirphomesv "cd /home/sirp/submodhub && docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build api && docker restart submodhub-web-1"
+```
+
+`scp -r` 从 Windows 传上去的目录权限不规范（`drwx---rwx`），必须先 `chmod` 再切换，否则 nginx worker 读不到资源。
+
+验收（端口绑在 tailnet 地址上，`127.0.0.1` 连不通）：
+
+```bash
+curl -s http://100.72.137.92:18082/healthz                        # version 应为新版本
+curl -s http://100.72.137.92:18082/api/v1/app-update | grep -o '"release_url":"[^"]*"'
+curl -s http://100.72.137.92:18083/ | grep -o 'assets/index-[^"]*' # 与本地 dist 哈希一致
+```
+
+前端 bundle 哈希一致是「前端确实换了」最省事的证据，`release_url` 出现则证明 `api` 二进制被替换。`VERSION` 只影响服务端 `/api/v1/version`、`/healthz` 与前端构建产物；桌面与 Android 客户端由 CI 在推送 `main` 后构建并发布 Release。
+
 ## 2026-10-04 远端阻断
 
 `submodhub-postgres-1` 的 `initdb` 曾卡在不可中断磁盘等待，观测到 `blk_mq_get_tag`。随后初始化自行恢复，PostgreSQL 健康检查通过。此前卡住的后备 API 容器也延迟启动；已将其停止，使用 Compose 启动新版 `submodhub-api-1`。没有删除数据库卷或重启 Docker 守护进程。由于块设备等待持续约十余分钟，主机管理员仍需排查 `/mnt/storage` 的 I/O；在排查前不要执行大范围重建或清理。
