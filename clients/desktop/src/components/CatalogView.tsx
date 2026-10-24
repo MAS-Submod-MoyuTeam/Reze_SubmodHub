@@ -1,21 +1,19 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
   Filter,
   Download,
   CheckCircle2,
-  ExternalLink,
-  Tag,
-  Monitor,
-  Smartphone,
-  ChevronRight,
-  ShieldCheck,
+  ArrowUp,
   RefreshCw,
-  Sparkles,
   AlertCircle,
 } from 'lucide-react';
 import { ModSummary, InstalledItem, Installation } from '../types/client';
 import type { DownloadProgress } from '../../../../ui/catalog-api';
+import { useLoadMoreOnScroll } from './useLoadMoreOnScroll';
+import { usePaneScrolled } from './usePaneScrolled';
+import { scrollPaneToTop } from './scrollToTop';
+import { clampLoadedPage, visibleSubmodCount, hasMoreSubmods, loadFooterLabel, submodUnit } from './catalogPaging';
 
 interface CatalogViewProps {
   mods: ModSummary[];
@@ -50,9 +48,11 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'submod' | 'spritepack'>('all');
   const [selectedPlatform, setSelectedPlatform] = useState<'all' | 'windows' | 'android'>('all');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [onlyCompatible, setOnlyCompatible] = useState(false);
-  const [cursor, setCursor] = useState<number>(0);
+  /** 已加载页数：滚动到列表底部即 +1，目录分页与 Web 一致，不再用页码翻页。 */
+  const [loadedPage, setLoadedPage] = useState(1);
   const pageSize = 6;
+  /** 目录滚动容器：自动续页的观察根必须是真正滚动的元素，不能是窗口视口。 */
+  const [scrollPane, setScrollPane] = useState<HTMLDivElement | null>(null);
 
   // Extract all unique tags
   const allTags = useMemo(() => {
@@ -87,20 +87,54 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           return false;
         }
       }
-      // Compatibility with MAS version
-      if (onlyCompatible) {
-        // e.g., activeInstallation is v0.12.14
-        if (mod.mas_version_range.includes('0.12.10') && activeInstallation.mas_version.includes('0.12.15')) {
-          return true;
-        }
-      }
+      // 兼容性过滤不存在：`mas_version_range` 目前是自由文本，没有可用的版本比较规则，
+      // 界面上的开关一直是禁用的。这里不写任何猜测性判断，也不留永远不会执行的死分支。
       return true;
     });
-  }, [mods, selectedCategory, selectedPlatform, selectedTag, searchQuery, onlyCompatible, activeInstallation]);
+  }, [mods, selectedCategory, selectedPlatform, selectedTag, searchQuery]);
 
-  const paginatedMods = filteredMods.slice(cursor, cursor + pageSize);
-  const hasNextPage = cursor + pageSize < filteredMods.length;
-  const hasPrevPage = cursor > 0;
+  // 页数每次渲染都按命中总数收敛：切回更宽的筛选时，页数会被夹到结果能覆盖的上限，
+  // 不会把用户从没滚动加载过的条目一次塞回首屏。
+  const pageCount = clampLoadedPage(loadedPage, pageSize, filteredMods.length);
+  const visibleCount = visibleSubmodCount(pageCount, pageSize, filteredMods.length);
+  const paginatedMods = filteredMods.slice(0, visibleCount);
+  const hasNextPage = hasMoreSubmods(visibleCount, filteredMods.length);
+  // 列表区有独立状态（失败 / 无匹配）时不存在可滚动的内容，也不该出现计数页脚。
+  const showsList = !catalogError && filteredMods.length > 0;
+  const footerLabel = loadFooterLabel(showsList ? visibleCount : 0, filteredMods.length, submodUnit);
+
+  // 自动续页与手动「加载更多」共用同一个动作，避免两条各自演进的续页路径。
+  // 只许再追加一页：观察器重挂前已经排队的回调，以及在列表里点按钮，都可能在同一批已渲染
+  // 条目上各触发一次，不夹住就会出现「一次滚动叠出好几页」。
+  const loadMore = useCallback(() => {
+    setLoadedPage((prev) => {
+      const clamped = clampLoadedPage(prev, pageSize, filteredMods.length);
+      return hasMoreSubmods(visibleSubmodCount(clamped, pageSize, filteredMods.length), filteredMods.length)
+        ? clamped + 1
+        : clamped;
+    });
+  }, [filteredMods.length]);
+
+  // 滚动进入哨兵预取区即续页；页脚的手动「加载更多」是键盘与无 IntersectionObserver 环境的兜底。
+  // 「一页装不满可视区」的情况交给观察器在行数变化后重新挂载继续追加。
+  const loadMoreSentinelRef = useLoadMoreOnScroll({
+    hasMore: hasNextPage,
+    onLoadMore: loadMore,
+    loadedCount: paginatedMods.length,
+    scrollRoot: scrollPane,
+  });
+
+  // 目录整体刷新后，旧页数会堆出一屏与刷新结果无关的历史条目，回到第一页。
+  // 筛选不走这里：命中数一变就按新总数收敛，用户不必自己把多出来的一屏滚掉。
+  const lastReloadingRef = useRef(isCatalogRefreshing);
+  useEffect(() => {
+    if (lastReloadingRef.current && !isCatalogRefreshing) setLoadedPage(1);
+    lastReloadingRef.current = isCatalogRefreshing;
+  }, [isCatalogRefreshing]);
+
+  const resetPaging = () => setLoadedPage(1);
+
+  const scrolled = usePaneScrolled(scrollPane);
 
   const formatBytes = (bytes: number) => {
     if (bytes >= 1024 * 1024) {
@@ -122,14 +156,17 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
-                setCursor(0);
+                resetPaging();
               }}
               placeholder="搜索模组名称、简介、作者或标签..."
               className="w-full pl-9 pr-4 py-1.5 bg-neutral-900 border border-neutral-700/80 rounded-lg text-xs text-neutral-200 placeholder-neutral-500 focus:outline-hidden focus:border-neutral-500 transition-colors"
             />
             {searchQuery && (
               <button
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setSearchQuery('');
+                  resetPaging();
+                }}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-neutral-400 hover:text-neutral-200"
               >
                 ✕
@@ -142,7 +179,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             <button
               onClick={() => {
                 setSelectedCategory('all');
-                setCursor(0);
+                resetPaging();
               }}
               className={`px-3 py-1 font-medium rounded-md transition-colors shrink-0 cursor-pointer ${
                 selectedCategory === 'all'
@@ -155,7 +192,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             <button
               onClick={() => {
                 setSelectedCategory('submod');
-                setCursor(0);
+                resetPaging();
               }}
               className={`px-3 py-1 font-medium rounded-md transition-colors shrink-0 cursor-pointer ${
                 selectedCategory === 'submod'
@@ -168,7 +205,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             <button
               onClick={() => {
                 setSelectedCategory('spritepack');
-                setCursor(0);
+                resetPaging();
               }}
               className={`px-3 py-1 font-medium rounded-md transition-colors shrink-0 cursor-pointer ${
                 selectedCategory === 'spritepack'
@@ -193,7 +230,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                     key={p}
                     onClick={() => {
                       setSelectedPlatform(p);
-                      setCursor(0);
+                      resetPaging();
                     }}
                     className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
                       selectedPlatform === p
@@ -207,15 +244,21 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               </div>
             </div>
 
-            {/* Compatibility toggle */}
-            <label className="flex items-center gap-1.5 cursor-pointer text-neutral-300 hover:text-white select-none shrink-0">
+            {/* Compatibility toggle。项目未定义 MAS 兼容区间的表达式语义（`>=0.12.14` 只是自由文本），
+                不做猜测性解析：这个开关不参与过滤，如实禁用并标注，避免勾选后毫无效果。
+                没有 state 也没有 onChange：勾不上的控件不假装自己是个开关。 */}
+            <label
+              title="尚未实现：兼容区间目前是自由文本，没有可用的版本比较规则"
+              className="flex items-center gap-1.5 text-neutral-500 cursor-not-allowed select-none shrink-0"
+            >
               <input
                 type="checkbox"
-                checked={onlyCompatible}
-                onChange={(e) => setOnlyCompatible(e.target.checked)}
-                className="rounded bg-neutral-900 border-neutral-700 text-emerald-500 focus:ring-0 focus:outline-hidden"
+                checked={false}
+                disabled
+                readOnly
+                className="rounded bg-neutral-900 border-neutral-700 text-emerald-500 focus:ring-0 focus:outline-hidden disabled:cursor-not-allowed"
               />
-              <span className="text-[11px]">匹配当前 MAS ({activeInstallation.mas_version})</span>
+              <span className="text-[11px]">匹配当前 MAS ({activeInstallation.mas_version})（暂不可用）</span>
             </label>
           </div>
 
@@ -224,7 +267,10 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             <span className="text-neutral-400 shrink-0">标签:</span>
             {selectedTag && (
               <button
-                onClick={() => setSelectedTag(null)}
+                onClick={() => {
+                  setSelectedTag(null);
+                  resetPaging();
+                }}
                 className="text-[11px] text-emerald-400 hover:underline shrink-0 cursor-pointer"
               >
                 清除 ({selectedTag})
@@ -235,7 +281,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 key={tag}
                 onClick={() => {
                   setSelectedTag(selectedTag === tag ? null : tag);
-                  setCursor(0);
+                  resetPaging();
                 }}
                 className={`text-[11px] px-2 py-0.5 rounded transition-colors shrink-0 cursor-pointer ${
                   selectedTag === tag
@@ -255,7 +301,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
         {/* `pb-20` reserves the strip the floating refresh control occupies, so the
             last row's right-most card buttons stay reachable instead of sitting
             underneath it. */}
-        <div className="h-full overflow-y-auto p-4 pb-20">
+        {/* 这个面板是目录真正的滚动容器，续页观察根必须绑定到它，而不是窗口视口。 */}
+        <div ref={setScrollPane} data-testid="catalog-scroll-pane" className="h-full overflow-y-auto p-4 pb-20">
           {catalogError ? (
             /* Load Failure State: 没有离线快照，失败必须与「无匹配结果」区分开 */
             <div className="h-full flex flex-col items-center justify-center text-center p-8">
@@ -286,7 +333,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   setSelectedCategory('all');
                   setSelectedPlatform('all');
                   setSelectedTag(null);
-                  setOnlyCompatible(false);
+                  resetPaging();
                 }}
                 className="mt-4 px-3 py-1.5 text-xs font-medium text-neutral-200 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors"
               >
@@ -294,134 +341,159 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {paginatedMods.map((mod) => {
-                const installed = installedMods.find((i) => i.mod_id === mod.id);
-                const hasUpdate = installed && installed.has_update;
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                {paginatedMods.map((mod) => {
+                  const installed = installedMods.find((i) => i.mod_id === mod.id);
+                  const hasUpdate = installed && installed.has_update;
 
-                return (
-                  <div
-                    key={mod.id}
-                    className="bg-neutral-900/80 border border-neutral-800 hover:border-neutral-700 rounded-xl p-4 flex flex-col justify-between transition-colors group"
-                  >
-                    {/* Card Content Top */}
-                    <div>
-                      {/* Header: Title and Category info */}
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="truncate">
-                          <h4
-                            onClick={() => onOpenDetail(mod)}
-                            className="font-semibold text-neutral-100 hover:text-emerald-400 text-sm truncate cursor-pointer transition-colors"
-                            title={mod.title}
-                          >
-                            {mod.title}
-                          </h4>
-                          {/* Unboxed clean metadata (Zero-Pill rule) */}
-                          <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 mt-0.5">
-                            <span>{mod.author.display_name}</span>
-                            <span aria-hidden="true">·</span>
-                            <span>{mod.category === 'submod' ? '功能模组' : '外观礼包'}</span>
-                            <span aria-hidden="true">·</span>
-                            <span className="font-mono tabular-nums">{mod.latest_version}</span>
+                  return (
+                    <div
+                      key={mod.id}
+                      className="bg-neutral-900/80 border border-neutral-800 hover:border-neutral-700 rounded-xl p-4 flex flex-col justify-between transition-colors group"
+                    >
+                      {/* Card Content Top */}
+                      <div>
+                        {/* Header: Title and Category info */}
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="truncate">
+                            <h4
+                              onClick={() => onOpenDetail(mod)}
+                              className="font-semibold text-neutral-100 hover:text-emerald-400 text-sm truncate cursor-pointer transition-colors"
+                              title={mod.title}
+                            >
+                              {mod.title}
+                            </h4>
+                            {/* Unboxed clean metadata (Zero-Pill rule) */}
+                            <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 mt-0.5">
+                              <span>{mod.author.display_name}</span>
+                              <span aria-hidden="true">·</span>
+                              <span>{mod.category === 'submod' ? '功能模组' : '外观礼包'}</span>
+                              <span aria-hidden="true">·</span>
+                              <span className="font-mono tabular-nums">{mod.latest_version}</span>
+                            </div>
                           </div>
+
+                          {/* Installation Status Indicator */}
+                          {installed ? (
+                            hasUpdate ? (
+                              <span className="text-[11px] text-amber-400 font-medium shrink-0 font-mono">
+                                可更新 ({installed.installed_version})
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-emerald-400 font-medium shrink-0 flex items-center gap-1 font-mono">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>已安装</span>
+                              </span>
+                            )
+                          ) : null}
                         </div>
 
-                        {/* Installation Status Indicator */}
+                        {/* Summary prose */}
+                        <p className="text-xs text-neutral-400 line-clamp-2 leading-relaxed mb-3">
+                          {mod.summary}
+                        </p>
+
+                        {/* Unboxed Metadata row: MAS compatibility, size, downloads */}
+                        <div className="flex items-center gap-2 text-[11px] text-neutral-400 font-mono mb-3">
+                          <span>MAS {mod.mas_version_range}</span>
+                          <span aria-hidden="true">/</span>
+                          <span className="tabular-nums">{formatBytes(mod.size_bytes)}</span>
+                          <span aria-hidden="true">/</span>
+                          <span className="tabular-nums">{mod.downloads_count} 次安装</span>
+                        </div>
+
+                        {/* Tags row (Clean typographic tags with separators) */}
+                        <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 truncate mb-4">
+                          {mod.tags.slice(0, 3).map((t, idx) => (
+                            <React.Fragment key={t}>
+                              <span className="hover:text-neutral-300 transition-colors">#{t}</span>
+                              {idx < Math.min(mod.tags.length, 3) - 1 && (
+                                <span className="text-neutral-400" aria-hidden="true">
+                                  ·
+                                </span>
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Card Bottom Actions */}
+                      <div className="pt-3 border-t border-neutral-800/80 flex items-center justify-between gap-2">
+                        <button
+                          onClick={() => onOpenDetail(mod)}
+                          className="px-2.5 py-1.5 text-xs text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 rounded-md transition-colors"
+                        >
+                          查看详情
+                        </button>
+
                         {installed ? (
                           hasUpdate ? (
-                            <span className="text-[11px] text-amber-400 font-medium shrink-0 font-mono">
-                              可更新 ({installed.installed_version})
-                            </span>
+                            <button
+                              onClick={() => onStartUpdatePlan(mod)}
+                              className="px-3 py-1.5 text-xs font-semibold text-neutral-900 bg-amber-400 hover:bg-amber-300 rounded-md transition-colors flex items-center gap-1.5 shadow-xs"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              <span>更新至 {mod.latest_version}</span>
+                            </button>
                           ) : (
-                            <span className="text-[11px] text-emerald-400 font-medium shrink-0 flex items-center gap-1 font-mono">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>已安装</span>
-                            </span>
+                            <button
+                              onClick={() => onOpenDetail(mod)}
+                              className="px-3 py-1.5 text-xs font-medium text-neutral-300 bg-neutral-800 hover:bg-neutral-700/80 rounded-md transition-colors"
+                            >
+                              已是最新
+                            </button>
                           )
-                        ) : null}
-                      </div>
-
-                      {/* Summary prose */}
-                      <p className="text-xs text-neutral-400 line-clamp-2 leading-relaxed mb-3">
-                        {mod.summary}
-                      </p>
-
-                      {/* Unboxed Metadata row: MAS compatibility, size, downloads */}
-                      <div className="flex items-center gap-2 text-[11px] text-neutral-400 font-mono mb-3">
-                        <span>MAS {mod.mas_version_range}</span>
-                        <span aria-hidden="true">/</span>
-                        <span className="tabular-nums">{formatBytes(mod.size_bytes)}</span>
-                        <span aria-hidden="true">/</span>
-                        <span className="tabular-nums">{mod.downloads_count} 次安装</span>
-                      </div>
-
-                      {/* Tags row (Clean typographic tags with separators) */}
-                      <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 truncate mb-4">
-                        {mod.tags.slice(0, 3).map((t, idx) => (
-                          <React.Fragment key={t}>
-                            <span className="hover:text-neutral-300 transition-colors">#{t}</span>
-                            {idx < Math.min(mod.tags.length, 3) - 1 && (
-                              <span className="text-neutral-400" aria-hidden="true">
-                                ·
-                              </span>
-                            )}
-                          </React.Fragment>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Card Bottom Actions */}
-                    <div className="pt-3 border-t border-neutral-800/80 flex items-center justify-between gap-2">
-                      <button
-                        onClick={() => onOpenDetail(mod)}
-                        className="px-2.5 py-1.5 text-xs text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 rounded-md transition-colors"
-                      >
-                        查看详情
-                      </button>
-
-                      {installed ? (
-                        hasUpdate ? (
-                          <button
-                            onClick={() => onStartUpdatePlan(mod)}
-                            className="px-3 py-1.5 text-xs font-semibold text-neutral-900 bg-amber-400 hover:bg-amber-300 rounded-md transition-colors flex items-center gap-1.5 shadow-xs"
-                          >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                            <span>更新至 {mod.latest_version}</span>
-                          </button>
                         ) : (
-                          <button
-                            onClick={() => onOpenDetail(mod)}
-                            className="px-3 py-1.5 text-xs font-medium text-neutral-300 bg-neutral-800 hover:bg-neutral-700/80 rounded-md transition-colors"
+                            <button
+                              onClick={() => {
+                                if (mod.category === 'spritepack') {
+                                  onOpenDetail(mod);
+                                } else {
+                                  onStartInstallPlan(mod);
+                                }
+                              }}
+                              disabled={installingModId !== null}
+                            className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-md transition-colors flex items-center gap-1.5 shadow-xs"
                           >
-                            已是最新
+                            <Download className="w-3.5 h-3.5" />
+                            <span>{installingModId === mod.id ? installProgress?.stage === 'downloading' ? `下载 ${Math.round(installProgress.received / installProgress.total * 100)}%` : installProgress?.stage === 'verifying' ? '校验中…' : '安装中…' : '安装'}</span>
                           </button>
-                        )
-                      ) : (
-                          <button
-                            onClick={() => {
-                              if (mod.category === 'spritepack') {
-                                onOpenDetail(mod);
-                              } else {
-                                onStartInstallPlan(mod);
-                              }
-                            }}
-                            disabled={installingModId !== null}
-                          className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-md transition-colors flex items-center gap-1.5 shadow-xs"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>{installingModId === mod.id ? installProgress?.stage === 'downloading' ? `下载 ${Math.round(installProgress.received / installProgress.total * 100)}%` : installProgress?.stage === 'verifying' ? '校验中…' : '安装中…' : '安装'}</span>
-                        </button>
-                      )}
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+
+              {/* 续页哨兵：必须留在滚动面板内部、最后一张卡片之后，滚动进入预取区即续页。
+                  手动入口不放在这里——它会被卸载而失去键盘焦点；常驻的那个在页脚。 */}
+              <div
+                ref={loadMoreSentinelRef}
+                data-testid="catalog-load-more"
+                data-has-more={hasNextPage ? 'true' : 'false'}
+                className="pt-4 text-center"
+              />
+            </>
           )}
         </div>
 
         {/* 悬浮刷新：只在「模组大厅」出现；刷新期间置灰并持续旋转，直到重新拉取结束。
             加载失败时隐藏，避免与空态里的「重新加载目录」按钮重复同一个入口。 */}
+        {/* 悬浮控件自下而上排：刷新在下，返回顶部叠在它上方，两者都是 `w-11 h-11`，
+            不会互相遮挡。返回顶部只在离开顶部后出现，滚到顶就自行收回。 */}
+        {scrolled && (
+          <button
+            type="button"
+            onClick={() => scrollPaneToTop(scrollPane)}
+            aria-label="返回顶部"
+            title="返回顶部"
+            data-testid="catalog-back-to-top"
+            className="absolute right-4 bottom-[4.5rem] z-10 w-11 h-11 rounded-full flex items-center justify-center border border-neutral-700 bg-neutral-800/95 text-neutral-300 shadow-lg transition-colors cursor-pointer hover:border-emerald-700/70 hover:bg-neutral-800 hover:text-emerald-300"
+          >
+            <ArrowUp className="w-4 h-4" aria-hidden="true" />
+          </button>
+        )}
         {!catalogError && (
           <button
             type="button"
@@ -444,37 +516,26 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
         )}
       </div>
 
-      {/* Pagination Footer */}
-      <div className="min-h-[3rem] h-auto border-t border-neutral-800 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-400 bg-neutral-900/60 select-none shrink-0">
-        <div>
-          共 <span className="font-mono text-neutral-200 tabular-nums">{filteredMods.length}</span> 个模组
-          {filteredMods.length > 0 && (
-            <span>
-              （显示第 <span className="font-mono text-neutral-200 tabular-nums">{cursor + 1}</span> 至{' '}
-              <span className="font-mono text-neutral-200 tabular-nums">
-                {Math.min(cursor + pageSize, filteredMods.length)}
-              </span> 个）
-            </span>
-          )}
+      {/* 页脚：随下拉自动续页，不再翻页。全部条目早已在内存里，续页只是逐页渲染，
+          所以这里只说「已渲染 / 共」，不谎报「正在加载」；失败与无匹配由列表区各自说明。 */}
+      {mods.length > 0 && (
+        <div
+          data-testid="catalog-load-footer"
+          aria-live="polite"
+          className="min-h-[3rem] h-auto border-t border-neutral-800 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-400 bg-neutral-900/60 select-none shrink-0"
+        >
+          <div>{footerLabel}</div>
+          {showsList && hasNextPage ? (
+            <button
+              type="button"
+              onClick={loadMore}
+              className="px-2.5 py-1 rounded bg-neutral-800 text-neutral-200 hover:bg-neutral-700 transition-colors cursor-pointer"
+            >
+              加载更多
+            </button>
+          ) : null}
         </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setCursor(Math.max(0, cursor - pageSize))}
-            disabled={!hasPrevPage}
-            className="px-3 py-1.5 rounded bg-neutral-800 text-neutral-200 hover:bg-neutral-700 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
-          >
-            上一页
-          </button>
-          <button
-            onClick={() => setCursor(cursor + pageSize)}
-            disabled={!hasNextPage}
-            className="px-3 py-1.5 rounded bg-neutral-800 text-neutral-200 hover:bg-neutral-700 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
-          >
-            下一页
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

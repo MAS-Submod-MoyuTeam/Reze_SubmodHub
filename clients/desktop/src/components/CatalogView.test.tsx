@@ -54,9 +54,11 @@ function renderCatalog(props: Partial<React.ComponentProps<typeof CatalogView>> 
   );
 }
 
-/** Isolate the retry button so page-level `disabled` (pager arrows) cannot leak in. */
+/** Isolate the retry button so any other `disabled` state elsewhere in the view cannot leak in. */
 function retryButtonMarkup(html: string): string {
-  const anchor = html.indexOf('重新加载');
+  // 锚在 `>重新加载` 而不是 `重新加载`：页脚里也有「共 N 个子模组」之外的同名前缀文案，
+  // 只锚文本会让切片落在一个更早的元素上。`>` 让锚点唯一命中按钮自身的文案起点。
+  const anchor = html.indexOf('>重新加载');
   assert.ok(anchor > 0, 'expected a retry entry in the markup');
   const start = html.lastIndexOf('<button', anchor);
   const end = html.indexOf('</button>', anchor);
