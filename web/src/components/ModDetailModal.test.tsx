@@ -205,7 +205,7 @@ test('admin sees "下架项目" button on published mod, separate from "下架�
 
   const markup = renderToStaticMarkup(
     <AppContext.Provider value={ctx}>
-      <ModDetailModal modId={sampleMod.id} downloadVersionId={null} onClose={() => {}} onTriggerClientPlan={() => {}} />
+      <ModDetailModal modId={sampleMod.id} downloadVersionId={null} onClose={() => {}} />
     </AppContext.Provider>
   );
 
@@ -224,7 +224,7 @@ test('non-admin user and anonymous user do not see "下架项目" button', () =>
 
   const authorMarkup = renderToStaticMarkup(
     <AppContext.Provider value={authorCtx}>
-      <ModDetailModal modId={sampleMod.id} downloadVersionId={null} onClose={() => {}} onTriggerClientPlan={() => {}} />
+      <ModDetailModal modId={sampleMod.id} downloadVersionId={null} onClose={() => {}} />
     </AppContext.Provider>
   );
   assert.doesNotMatch(authorMarkup, /下架项目/);
@@ -240,7 +240,7 @@ test('non-admin user and anonymous user do not see "下架项目" button', () =>
 
   const visitorMarkup = renderToStaticMarkup(
     <AppContext.Provider value={visitorCtx}>
-      <ModDetailModal modId={sampleMod.id} downloadVersionId={null} onClose={() => {}} onTriggerClientPlan={() => {}} />
+      <ModDetailModal modId={sampleMod.id} downloadVersionId={null} onClose={() => {}} />
     </AppContext.Provider>
   );
   assert.doesNotMatch(visitorMarkup, /下架项目/);
@@ -257,7 +257,7 @@ test('admin does not see "下架项目" button if mod is already unpublished', (
 
   const markup = renderToStaticMarkup(
     <AppContext.Provider value={ctx}>
-      <ModDetailModal modId={unpublishedMod.id} downloadVersionId={null} onClose={() => {}} onTriggerClientPlan={() => {}} />
+      <ModDetailModal modId={unpublishedMod.id} downloadVersionId={null} onClose={() => {}} />
     </AppContext.Provider>
   );
   assert.doesNotMatch(markup, /下架项目/);
@@ -273,7 +273,7 @@ test('admin sees "下架项目" button even when mod has no versions or is a spr
 
   const markupNoVersions = renderToStaticMarkup(
     <AppContext.Provider value={noVersionsCtx}>
-      <ModDetailModal modId={sampleMod.id} downloadVersionId={null} onClose={() => {}} onTriggerClientPlan={() => {}} />
+      <ModDetailModal modId={sampleMod.id} downloadVersionId={null} onClose={() => {}} />
     </AppContext.Provider>
   );
   assert.match(markupNoVersions, /下架项目/);
@@ -288,7 +288,7 @@ test('admin sees "下架项目" button even when mod has no versions or is a spr
 
   const markupSpritepack = renderToStaticMarkup(
     <AppContext.Provider value={spritepackCtx}>
-      <ModDetailModal modId={spritepackMod.id} downloadVersionId={null} onClose={() => {}} onTriggerClientPlan={() => {}} />
+      <ModDetailModal modId={spritepackMod.id} downloadVersionId={null} onClose={() => {}} />
     </AppContext.Provider>
   );
   assert.match(markupSpritepack, /下架项目/);
@@ -327,7 +327,6 @@ test('clicking "下架项目" and cancelling confirmation does not send request 
           modId={sampleMod.id}
           downloadVersionId={null}
           onClose={() => { closeCalled = true; }}
-          onTriggerClientPlan={() => {}}
         />
       </AppContext.Provider>
     );
@@ -386,7 +385,6 @@ test('clicking "下架项目" and confirming: success closes modal; failure pres
           modId={sampleMod.id}
           downloadVersionId={null}
           onClose={() => { closeCalled = true; }}
-          onTriggerClientPlan={() => {}}
         />
       </AppContext.Provider>
     );
@@ -476,7 +474,6 @@ test('stale unpublish request of mod A does not close modal when user switches t
           modId="mod_a"
           downloadVersionId={null}
           onClose={() => { closeCallCount++; }}
-          onTriggerClientPlan={() => {}}
         />
       </AppContext.Provider>
     );
@@ -499,7 +496,6 @@ test('stale unpublish request of mod A does not close modal when user switches t
           modId="mod_b"
           downloadVersionId={null}
           onClose={() => { closeCallCount++; }}
-          onTriggerClientPlan={() => {}}
         />
       </AppContext.Provider>
     );
@@ -557,7 +553,6 @@ test('stale unpublish request does not invoke onClose after modal unmounts', asy
           modId={sampleMod.id}
           downloadVersionId={null}
           onClose={() => { closeCallCount++; }}
-          onTriggerClientPlan={() => {}}
         />
       </AppContext.Provider>
     );
@@ -600,7 +595,6 @@ const FullIntegrationApp: React.FC = () => {
           modId={detailModalModId}
           downloadVersionId={null}
           onClose={() => setDetailModalModId(null)}
-          onTriggerClientPlan={() => {}}
         />
       )}
       <div id="mods-state">

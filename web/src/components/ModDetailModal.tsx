@@ -23,7 +23,6 @@ import {
   AlertTriangle,
   Copy,
   Check,
-  Terminal,
   EyeOff,
 } from 'lucide-react';
 
@@ -31,14 +30,12 @@ interface ModDetailModalProps {
   modId: string | null;
   downloadVersionId: string | null;
   onClose: () => void;
-  onTriggerClientPlan: (modId: string, versionId: string) => void;
 }
 
 export const ModDetailModal: React.FC<ModDetailModalProps> = ({
   modId,
   downloadVersionId,
   onClose,
-  onTriggerClientPlan,
 }) => {
   const { mods, versions, scanReports, getDownloadDescriptor, showToast, currentUser, unpublishVersion, markVersionDeprecated, clearVersionDeprecation, deleteVersion, setDetailModalModId, unpublishMod } = useApp();
 
@@ -460,19 +457,6 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                 >
                   <Download className="w-3.5 h-3.5" />
                   {isDownloading ? '正在下载并校验' : '校验并下载 ZIP'}
-                </button>
-
-                <button
-                  onClick={() => {
-                    if (currentVersion) {
-                      onTriggerClientPlan(currentMod.id, currentVersion.id);
-                      onClose();
-                    }
-                  }}
-                  className="px-3.5 py-1.5 text-xs font-medium text-neutral-800 bg-white hover:bg-neutral-100 rounded border border-neutral-300 flex items-center gap-1.5 transition-colors"
-                >
-                  <Terminal className="w-3.5 h-3.5 text-neutral-600" />
-                  在客户端安装预览 (Go 契约计划)
                 </button>
               </div>
             </div>

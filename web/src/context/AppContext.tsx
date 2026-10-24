@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
 import { apiBase } from '../apiBase';
 
 import {
@@ -7,21 +7,8 @@ import {
   ModSummary,
   ModVersion,
   ScanReport,
-  AuditLog,
-  Installation,
-  InstalledMod,
-  InstalledFileList,
-  InstallationPlan,
-  OperationLog,
   DownloadDescriptor,
 } from '../types/submodhub';
-import {
-  INITIAL_SCAN_REPORTS,
-  INITIAL_AUDIT_LOGS,
-  INITIAL_INSTALLATIONS,
-  INITIAL_INSTALLED_MODS,
-  MOCK_INSTALLED_FILES,
-} from '../data/mockData';
 import { fetchDownloadDescriptor, fetchPublishedCatalog, fetchPublishedVersions } from '../../../ui/catalog-api';
 import { loginFlarum as loginFlarumRequest, logout as logoutRequest, readSession, Session } from '../../../ui/auth-api';
 import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, markPublishedVersionLatest, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages, syncAuthorModGitHub, type SyncSummary } from '../../../ui/submission-api';
@@ -32,9 +19,7 @@ export type NavTab =
   | 'catalog'
   | 'author'
   | 'reviewer'
-  | 'admin'
-  | 'client'
-  | 'states';
+  | 'admin';
 
 interface Toast {
   id: string;
@@ -56,7 +41,6 @@ export interface AppContextType {
 
   // Session & Roles
   currentUser: User | null;
-  switchRolePersona: (role: 'visitor' | 'author' | 'reviewer' | 'admin') => void;
   loginFlarum: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   hasRole: (role: UserRole) => boolean;
@@ -69,7 +53,6 @@ export interface AppContextType {
   mods: ModSummary[];
   versions: ModVersion[];
   scanReports: Record<string, ScanReport>;
-  auditLogs: AuditLog[];
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   categoryFilter: string;
@@ -112,7 +95,6 @@ export interface AppContextType {
   publishApprovedVersion: (submissionId: string) => Promise<boolean>;
 
   // Admin Actions
-  updateUserRoles: (userId: string, newRoles: UserRole[], reason: string) => void;
   unpublishVersion: (versionId: string, reason: string) => Promise<void>;
   syncModReleases: (modId: string) => Promise<SyncSummary | null>;
   markVersionDeprecated: (versionId: string, reason: string) => Promise<void>;
@@ -121,22 +103,6 @@ export interface AppContextType {
   unpublishMod: (modId: string) => Promise<boolean>;
   deleteModDraft: (modId: string) => Promise<void>;
   editVersion: (versionId: string, version: string, releaseNotes: string, dependencies?: ModVersion['dependencies']) => Promise<boolean>;
-
-  // Client Simulation (Section 4)
-  installations: Installation[];
-  activeInstallationId: string;
-  setActiveInstallationId: (id: string) => void;
-  installedMods: InstalledMod[];
-  currentPlan: InstallationPlan | null;
-  operations: OperationLog[];
-  previewInstallPlan: (modId: string, versionId: string) => InstallationPlan;
-  applyPlan: (plan: InstallationPlan) => Promise<void>;
-  simulateExternalChange: (filePath: string) => void;
-  adoptUnmanagedMod: (modId: string) => void;
-  clearCurrentPlan: () => void;
-  // File List Inspection
-  getInstalledModFiles: (modId: string, bypassCache?: boolean) => Promise<InstalledFileList>;
-  clearFileListCache: (targetModId?: string) => void;
 
   // Notifications
   toasts: Toast[];
@@ -161,74 +127,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Data Store
   const [mods, setMods] = useState<ModSummary[]>([]);
   const [versions, setVersions] = useState<ModVersion[]>([]);
-  const [scanReports, setScanReports] = useState<Record<string, ScanReport>>(INITIAL_SCAN_REPORTS);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDIT_LOGS);
+  // Scan reports are server-side artifacts: they start empty and are filled by
+  // the upload / catalog paths. No local seed, no fabricated report.
+  const [scanReports, setScanReports] = useState<Record<string, ScanReport>>({});
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [tagFilter, setTagFilter] = useState('all');
-
-  // Client Companion Simulator State
-  const [installations, setInstallations] = useState<Installation[]>(INITIAL_INSTALLATIONS);
-  const [activeInstallationId, setActiveInstallationId] = useState<string>(INITIAL_INSTALLATIONS[0].id);
-  const fileListCacheRef = useRef<Record<string, InstalledFileList>>({});
-
-  const clearFileListCache = useCallback((targetModId?: string) => {
-    if (!targetModId) {
-      fileListCacheRef.current = {};
-      return;
-    }
-    const next: Record<string, InstalledFileList> = {};
-    for (const [k, v] of Object.entries(fileListCacheRef.current)) {
-      if (!k.endsWith(':' + targetModId)) {
-        next[k] = v;
-      }
-    }
-    fileListCacheRef.current = next;
-  }, []);
-
-  const handleSetActiveInstallationId = useCallback((id: string) => {
-    setActiveInstallationId(id);
-    clearFileListCache();
-  }, [clearFileListCache]);
-
-  const getInstalledModFiles = useCallback(
-    async (modId: string, bypassCache: boolean = false): Promise<InstalledFileList> => {
-      const cacheKey = activeInstallationId + ':' + modId;
-      if (!bypassCache && fileListCacheRef.current[cacheKey]) {
-        return fileListCacheRef.current[cacheKey];
-      }
-      try {
-        if (typeof window !== 'undefined' && (window as any).DesktopService?.ListInstalledModFiles) {
-          const res = await (window as any).DesktopService.ListInstalledModFiles(activeInstallationId, modId);
-          if (res) {
-            fileListCacheRef.current[cacheKey] = res;
-            return res;
-          }
-        }
-      } catch (err: any) {
-        throw err;
-      }
-      const mock = MOCK_INSTALLED_FILES[modId];
-      if (mock) {
-        const cloned: InstalledFileList = {
-          ...mock,
-          installation_id: activeInstallationId,
-        };
-        fileListCacheRef.current[cacheKey] = cloned;
-        return cloned;
-      }
-      const notFoundErr: any = new Error('未找到模组 ' + modId + ' 的安装文件清单');
-      notFoundErr.code = 'not_found';
-      throw notFoundErr;
-    },
-    [activeInstallationId]
-  );
-  const [installedMods, setInstalledMods] = useState<InstalledMod[]>(INITIAL_INSTALLED_MODS);
-  const [currentPlan, setCurrentPlan] = useState<InstallationPlan | null>(null);
-  const [operations, setOperations] = useState<OperationLog[]>([]);
 
   // Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -325,10 +232,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     void reloadCatalog();
   }, [reloadCatalog]);
-
-  const switchRolePersona = useCallback((_role: 'visitor' | 'author' | 'reviewer' | 'admin') => {
-    showToast('warning', '角色切换仅属于设计稿，服务端身份认证尚未接入。');
-  }, [showToast]);
 
   const hasRole = useCallback(
     (role: UserRole) => {
@@ -706,32 +609,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const publishApprovedVersion = useCallback((id: string) => performReview(id, 'publish'), [performReview]);
 
   // Admin Actions
-  const updateUserRoles = useCallback(
-    (userId: string, newRoles: UserRole[], reason: string) => {
-      if (!currentUser || !currentUser.roles.includes('admin')) {
-        showToast('error', '缺少管理员权限 (admin)。', 'forbidden');
-        return;
-      }
-
-      // Record Audit
-      const auditItem: AuditLog = {
-        id: 'audit_' + Date.now(),
-        timestamp: new Date().toISOString(),
-        actor_id: currentUser.id,
-        actor_name: currentUser.display_name,
-        actor_role: 'admin',
-        action: 'role_grant',
-        target_type: 'user',
-        target_id: userId,
-        target_label: `用户 ${userId} 角色变更为 [${newRoles.join(', ')}]`,
-        reason,
-      };
-      setAuditLogs((prev) => [auditItem, ...prev]);
-      showToast('success', `用户角色已更新并在系统审计流中留痕。`);
-    },
-    [currentUser, showToast]
-  );
-
   const unpublishVersion = useCallback(
     async (versionId: string, reason: string): Promise<void> => {
       if (!currentUser) { showToast('error', '请先登录。', 'unauthenticated'); return; }
@@ -744,24 +621,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try { await unpublishVersionRequest(base, versionId, reason); } catch (error) { showToast('error', `下架失败：${error instanceof Error ? error.message : 'unknown_error'}`); return; }
       setVersions((prev) => prev.map((v) => v.id === versionId ? { ...v, state: 'unpublished', unpublish_reason: reason } : v));
 
-      const targetVer = versions.find((v) => v.id === versionId);
-      const auditItem: AuditLog = {
-        id: 'audit_' + Date.now(),
-        timestamp: new Date().toISOString(),
-        actor_id: currentUser.id,
-        actor_name: currentUser.display_name,
-        actor_role: 'admin',
-        action: 'version_unpublish',
-        target_type: 'version',
-        target_id: versionId,
-        target_label: `版本 ${targetVer?.version || versionId} 紧急下架`,
-        reason,
-      };
-      setAuditLogs((prev) => [auditItem, ...prev]);
-
       showToast('warning', `该版本已被安全下架（不可变归档字节保留在后端，公开目录已隐藏）。`);
     },
-    [currentUser, versions, showToast]
+    [currentUser, showToast]
   );
 
   const setLatestPublishedVersion = useCallback(async (versionId: string): Promise<void> => {
@@ -833,216 +695,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [showToast, versions]);
 
   // Client Simulation Methods (Section 4)
-  const previewInstallPlan = useCallback(
-    (modId: string, versionId: string): InstallationPlan => {
-      const mod = mods.find((m) => m.id === modId);
-      const v = versions.find((item) => item.id === versionId);
-      const inst = installations.find((i) => i.id === activeInstallationId);
-
-      const dependencyBlockers: string[] = [];
-      const semanticBlockers: string[] = [];
-      const warnings: string[] = [];
-
-      // Check MAS version range
-      if (inst && mod?.mas_version_range) {
-        if (inst.mas_version === '0.12.10' && mod.mas_version_range.includes('0.12.14')) {
-          dependencyBlockers.push(
-            `MAS 版本不满足要求：当前游戏版本为 ${inst.mas_version}，模组需要 ${mod.mas_version_range}`
-          );
-        }
-      }
-
-      // Check required dependencies
-      if (v?.dependencies && v.dependencies.length > 0) {
-        for (const dep of v.dependencies) {
-          if (dep.required) {
-            const isInstalled = installedMods.some((im) => im.mod_id === dep.mod_id);
-            if (!isInstalled) {
-              dependencyBlockers.push(`缺少必需前置模组 [${dep.mod_title || dep.mod_id}] (${dep.version_range})`);
-            }
-          }
-        }
-      }
-
-
-      // Check Spritepack giftname semantic conflicts
-      const report = v?.scan_report_id ? scanReports[v.scan_report_id] : null;
-      if (report && report.derived_gifts.length > 0) {
-        // check if already installed spritepack has duplicate
-        if (installedMods.some((im) => im.mod_id === 'mod_emerald_blossoms') && modId !== 'mod_emerald_blossoms') {
-          // simulation check
-        }
-      }
-
-      const plan: InstallationPlan = {
-        plan_id: 'plan_' + Math.random().toString(36).substring(2, 9),
-        kind: 'install',
-        installation_id: activeInstallationId,
-        mod_id: modId,
-        version_id: versionId,
-        expires_at: new Date(Date.now() + 600 * 1000).toISOString(),
-        dependency_blockers: dependencyBlockers,
-        semantic_blockers: semanticBlockers,
-        changes: [
-          {
-            target_path: `game/Submods/${mod?.id || 'Mod'}/core.rpy`,
-            action: 'create',
-            next_owner: modId,
-            reason: '新增模组主入口脚本',
-          },
-          {
-            target_path: `game/Submods/${mod?.id || 'Mod'}/assets/pack.png`,
-            action: 'create',
-            next_owner: modId,
-            reason: '新增材质资源包',
-          },
-        ],
-        backups_required: [`game/Submods/${mod?.id || 'Mod'}/backup_manifest.json`],
-        bytes_required: v?.size_bytes || 5242880,
-        warnings,
-        is_ready_to_apply: dependencyBlockers.length === 0 && semanticBlockers.length === 0,
-      };
-
-      setCurrentPlan(plan);
-      return plan;
-    },
-    [mods, versions, installations, activeInstallationId, installedMods, scanReports]
-  );
-
-  const applyPlan = useCallback(
-    async (plan: InstallationPlan) => {
-      if (!plan.is_ready_to_apply) {
-        showToast('error', '存在未解决的依赖阻断或语义冲突，无法执行安装。', 'dependency_missing');
-        return;
-      }
-
-      const opId = 'op_' + Math.random().toString(36).substring(2, 9);
-      const mod = mods.find((m) => m.id === plan.mod_id);
-      const v = versions.find((item) => item.id === plan.version_id);
-
-      const newOp: OperationLog = {
-        operation_id: opId,
-        installation_id: plan.installation_id,
-        mod_title: mod?.title || plan.mod_id,
-        version: v?.version || '1.0.0',
-        state: 'downloading',
-        progress_percent: 15,
-        current_file: '正在拉取加密归档描述符...',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      setOperations((prev) => [newOp, ...prev]);
-
-      // Step 1: downloading -> scanning
-      await new Promise((res) => setTimeout(res, 600));
-      setOperations((prev) =>
-        prev.map((o) =>
-          o.operation_id === opId
-            ? { ...o, state: 'scanning', progress_percent: 45, current_file: '静态文件树与校验和验证中...' }
-            : o
-        )
-      );
-
-      // Step 2: backed_up
-      await new Promise((res) => setTimeout(res, 600));
-      setOperations((prev) =>
-        prev.map((o) =>
-          o.operation_id === opId
-            ? { ...o, state: 'backed_up', progress_percent: 70, current_file: '生成覆盖层快照与备份清单...' }
-            : o
-        )
-      );
-
-      // Step 3: writing
-      await new Promise((res) => setTimeout(res, 600));
-      setOperations((prev) =>
-        prev.map((o) =>
-          o.operation_id === opId
-            ? { ...o, state: 'writing', progress_percent: 90, current_file: '写入目标文件并应用权限...' }
-            : o
-        )
-      );
-
-      // Step 4: committed
-      await new Promise((res) => setTimeout(res, 500));
-      setOperations((prev) =>
-        prev.map((o) =>
-          o.operation_id === opId
-            ? { ...o, state: 'committed', progress_percent: 100, current_file: '写入完成，状态已提交。' }
-            : o
-        )
-      );
-
-      // Add to installedMods
-      setInstalledMods((prev) => [
-        {
-          id: 'im_' + Date.now(),
-          mod_id: plan.mod_id,
-          title: mod?.title || plan.mod_id,
-          version: v?.version || '1.0.0',
-          category: mod?.category || 'submod',
-          is_managed: true,
-          priority: mod?.recommended_priority || 20,
-          installed_at: new Date().toISOString(),
-        },
-        ...prev.filter((item) => item.mod_id !== plan.mod_id),
-      ]);
-
-      clearFileListCache(plan.mod_id);
-      setCurrentPlan(null);
-      showToast('success', `模组 [${mod?.title}] 安装成功并已提交事务！`);
-    },
-    [mods, versions, showToast]
-  );
-
-  const simulateExternalChange = useCallback(
-    (filePath: string) => {
-      const opId = 'op_drift_' + Math.random().toString(36).substring(2, 7);
-      const newOp: OperationLog = {
-        operation_id: opId,
-        installation_id: activeInstallationId,
-        mod_title: 'Extra Everything (更新验证)',
-        version: '1.3.0',
-        state: 'blocked',
-        progress_percent: 65,
-        current_file: filePath,
-        error_code: 'external_change',
-        error_message: '文件哈希外部漂移：目标路径存在外部非托管手动改动，禁止静默覆盖！',
-        external_change_details: {
-          path: filePath,
-          expected_hash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
-          actual_hash: '44aa88220011ccff8899aabbccddeeff11223344556677889900aabbccddeeff (本地外部修改)',
-        },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      setOperations((prev) => [newOp, ...prev]);
-      showToast(
-        'error',
-        '触发 external_change 安全护栏：文件哈希漂移已暂停写入，保护用户未备份的手动修改！',
-        'external_change'
-      );
-    },
-    [activeInstallationId, showToast]
-  );
-
-  const adoptUnmanagedMod = useCallback(
-    (modId: string) => {
-      clearFileListCache(modId);
-      setInstalledMods((prev) =>
-        prev.map((m) => (m.mod_id === modId ? { ...m, is_managed: true, version: '1.0.0 (已收养托管)' } : m))
-      );
-      showToast('success', '未托管脚本已完成显式收养，纳入 RezeHub 版本管理与恢复树！');
-    },
-    [showToast]
-  );
-
-  const clearCurrentPlan = useCallback(() => {
-    setCurrentPlan(null);
-  }, []);
-
   const syncModReleases = useCallback(
     async (modId: string): Promise<SyncSummary | null> => {
       const base = apiBase();
@@ -1073,7 +725,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       detailModalModId,
       setDetailModalModId,
       currentUser,
-      switchRolePersona,
       loginFlarum,
       logout,
       hasRole,
@@ -1081,7 +732,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       mods,
       versions,
       scanReports,
-      auditLogs,
       searchQuery,
       setSearchQuery,
       categoryFilter,
@@ -1107,7 +757,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       approveSubmission,
       rejectSubmission,
       publishApprovedVersion,
-      updateUserRoles,
       unpublishVersion,
       markVersionDeprecated,
       clearVersionDeprecation,
@@ -1115,19 +764,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unpublishMod,
       deleteModDraft,
       editVersion,
-      installations,
-      activeInstallationId,
-      setActiveInstallationId: handleSetActiveInstallationId,
-      getInstalledModFiles,
-      clearFileListCache,
-      installedMods,
-      currentPlan,
-      operations,
-      previewInstallPlan,
-      applyPlan,
-      simulateExternalChange,
-      adoptUnmanagedMod,
-      clearCurrentPlan,
       toasts,
       showToast,
       removeToast,
@@ -1137,7 +773,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       selectedModId,
       detailModalModId,
       currentUser,
-      switchRolePersona,
       loginFlarum,
       logout,
       hasRole,
@@ -1145,7 +780,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       mods,
       versions,
       scanReports,
-      auditLogs,
       searchQuery,
       categoryFilter,
       platformFilter,
@@ -1166,7 +800,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       approveSubmission,
       rejectSubmission,
       publishApprovedVersion,
-      updateUserRoles,
       unpublishVersion,
       markVersionDeprecated,
       clearVersionDeprecation,
@@ -1174,19 +807,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unpublishMod,
       deleteModDraft,
       editVersion,
-      installations,
-      activeInstallationId,
-      handleSetActiveInstallationId,
-      getInstalledModFiles,
-      clearFileListCache,
-      installedMods,
-      currentPlan,
-      operations,
-      previewInstallPlan,
-      applyPlan,
-      simulateExternalChange,
-      adoptUnmanagedMod,
-      clearCurrentPlan,
       toasts,
       showToast,
       removeToast,

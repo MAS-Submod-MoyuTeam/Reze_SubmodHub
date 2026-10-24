@@ -7,7 +7,6 @@ import { ModDetailModal } from './components/ModDetailModal';
 import { AuthorWorkbench } from './components/AuthorWorkbench';
 import { ReviewerWorkbench } from './components/ReviewerWorkbench';
 import { AdminPanel } from './components/AdminPanel';
-import { ClientCompanion } from './components/ClientCompanion';
 import { ClientDownloadModal } from './components/ClientDownloadModal';
 import { ToastContainer } from './components/ToastContainer';
 
@@ -16,7 +15,6 @@ const MainLayout: React.FC = () => {
     activeTab,
     detailModalModId,
     setDetailModalModId,
-    showToast,
   } = useApp();
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -31,10 +29,6 @@ const MainLayout: React.FC = () => {
   const handleOpenDownloadModal = (versionId: string) => {
     setDownloadModalVersionId(versionId);
     setDetailModalModId(null);
-  };
-
-  const handleTriggerClientPlan = (_modId: string, _versionId: string) => {
-    showToast('warning', '客户端安装绑定尚未接入，未生成安装计划。');
   };
 
   return (
@@ -56,7 +50,6 @@ const MainLayout: React.FC = () => {
         {activeTab === 'author' && <AuthorWorkbench />}
         {activeTab === 'reviewer' && <ReviewerWorkbench />}
         {activeTab === 'admin' && <AdminPanel />}
-        {activeTab === 'client' && <ClientCompanion />}
       </main>
 
       {/* Mod Detail & Download Descriptor Modal */}
@@ -68,7 +61,6 @@ const MainLayout: React.FC = () => {
             setDetailModalModId(null);
             setDownloadModalVersionId(null);
           }}
-          onTriggerClientPlan={handleTriggerClientPlan}
         />
       )}
 
