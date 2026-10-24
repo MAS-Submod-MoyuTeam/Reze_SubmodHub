@@ -18,7 +18,7 @@ import {
   X,
   AlertCircle,
 } from 'lucide-react';
-import { InstalledItem, ModSummary } from '../types/client';
+import { InstalledItem } from '../types/client';
 import { Spritepack } from '../wails';
 import { LoadingStatus, isActionBlocked } from '../installedLoading';
 
@@ -39,7 +39,8 @@ interface InstalledViewProps {
   onRefreshSpritepacks: () => void;
   onCreateSpriteGift: (file: string) => Promise<string>;
   onDeleteSpritepack: (file: string) => Promise<void>;
-  onStartUpdatePlan: (modSummary: ModSummary) => void;
+  /** 规划更新只传标识：真实 ModSummary 由 App 从目录里解析，避免临时拼装假字段。 */
+  onStartUpdatePlan: (modId: string, title: string) => void;
   onStartUninstallPlan: (installedItem: InstalledItem) => void;
   onStartRepairPlan: (installedItem: InstalledItem) => void;
   onOpenAdoptModal: (unmanagedItem: InstalledItem) => void;
@@ -612,26 +613,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                   {item.has_update && (
                                     <button
                                       disabled={isModsActionBlocked}
-                                      onClick={() => {
-                                        const dummyMod: ModSummary = {
-                                          id: item.mod_id,
-                                          title: item.title,
-                                          summary: item.summary,
-                                          author: { id: 'usr', display_name: item.author_name },
-                                          category: item.category,
-                                          tags: [],
-                                          supported_platforms: ['windows'],
-                                          mas_version_range: '>=0.12.0',
-                                          recommended_priority: item.priority,
-                                          latest_version_id: item.latest_version_id,
-                                          latest_version: item.latest_version,
-                                          size_bytes: item.size_bytes,
-                                          sha256: item.sha256,
-                                          updated_at: '2026-10-01T00:00:00Z',
-                                          downloads_count: 0,
-                                        };
-                                        onStartUpdatePlan(dummyMod);
-                                      }}
+                                      onClick={() => onStartUpdatePlan(item.mod_id, item.title)}
                                       className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-400 hover:bg-amber-300 text-neutral-900 transition-colors shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                       title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法规划更新' : '正在读取模组列表…') : undefined}
                                     >
@@ -742,26 +724,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             {item.has_update && (
                               <button
                                 disabled={isModsActionBlocked}
-                                onClick={() => {
-                                  const dummyMod: ModSummary = {
-                                    id: item.mod_id,
-                                    title: item.title,
-                                    summary: item.summary,
-                                    author: { id: 'usr', display_name: item.author_name },
-                                    category: item.category,
-                                    tags: [],
-                                    supported_platforms: ['windows'],
-                                    mas_version_range: '>=0.12.0',
-                                    recommended_priority: item.priority,
-                                    latest_version_id: item.latest_version_id,
-                                    latest_version: item.latest_version,
-                                    size_bytes: item.size_bytes,
-                                    sha256: item.sha256,
-                                    updated_at: '2026-10-01T00:00:00Z',
-                                    downloads_count: 0,
-                                  };
-                                  onStartUpdatePlan(dummyMod);
-                                }}
+                                onClick={() => onStartUpdatePlan(item.mod_id, item.title)}
                                 className="px-3 py-1.5 text-xs font-semibold rounded bg-amber-400 hover:bg-amber-300 text-neutral-900 transition-colors shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法规划更新' : '正在读取模组列表…') : undefined}
                               >

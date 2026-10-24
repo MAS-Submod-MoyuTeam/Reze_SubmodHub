@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { mapPlanPreview } from './planPreview';
+import { loadInstalledFiles } from './installedFiles';
 import { PreviewRepair, fetchRegistrationMatches } from './wails';
 import { isAllowedNavTab } from './priorityLayers';
 import { TitleBar } from './components/TitleBar';
@@ -25,8 +26,7 @@ import {
   type InstanceSyncReason,
 } from './storagePermissionSync';
 import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
-import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewAdopt, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive, GetAndroidStorageAccess, RequestAndroidStorageAccess, ConfirmAppUpdateStartup, CheckForAppUpdate, DownloadAppUpdate, CancelAppUpdate, GetAppUpdateStatus, InstallAppUpdate, OpenAppUpdateSettings, isAndroid } from './wails';
-import { INITIAL_OPERATIONS } from './data/mockData';
+import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewAdopt, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, ListInstalledModFiles, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive, GetAndroidStorageAccess, RequestAndroidStorageAccess, ConfirmAppUpdateStartup, CheckForAppUpdate, DownloadAppUpdate, CancelAppUpdate, GetAppUpdateStatus, InstallAppUpdate, OpenAppUpdateSettings, isAndroid } from './wails';
 import { createInstalledLoadCoordinator, LoadingStatus } from './installedLoading';
 import { getPlanActionText, resolveModInstallationId, describeExecutionError } from './planExecution';
 import {
@@ -525,21 +525,12 @@ export default function App() {
       if (reqId !== operationsRequestIdRef.current || (targetInstId && activeInstallationIdRef.current !== targetInstId)) {
         return;
       }
-      if (Array.isArray(ops) && ops.length > 0) {
-        setOperations(ops);
-        return;
-      }
-      if (import.meta.env.VITE_BROWSER_MODE === '1') {
-        setOperations(INITIAL_OPERATIONS);
-      } else {
-        setOperations(ops || []);
-      }
+      // 空列表就是空列表：浏览器模式也不注入编造的事务历史。
+      setOperations(Array.isArray(ops) ? ops : []);
     } catch {
+      // 查询失败时保留上一次已知状态，不再伪造事务记录。
       if (reqId !== operationsRequestIdRef.current || (targetInstId && activeInstallationIdRef.current !== targetInstId)) {
         return;
-      }
-      if (import.meta.env.VITE_BROWSER_MODE === '1') {
-        setOperations(INITIAL_OPERATIONS);
       }
     }
   };
@@ -701,12 +692,35 @@ export default function App() {
   };
 
   // Handler: Verify Integrity
-  const handleVerifyIntegrity = () => {
+  // 真实校验：逐个模组取后端文件清单 / 本地扫描结果，按账本哈希比对后报数。
+  // 之前这里用 setTimeout 假装校验完成并写死“109 个文件”，是纯假成功。
+  const handleVerifyIntegrity = async () => {
+    if (isVerifying) return;
     setIsVerifying(true);
-    setTimeout(() => {
+    const targetInstId = activeInstallationIdRef.current;
+    let checkedFiles = 0;
+    let driftedFiles = 0;
+    const unreadable: string[] = [];
+    try {
+      for (const item of installedMods) {
+        try {
+          const files = await loadInstalledFiles(item, { list: ListInstalledModFiles, scan: ScanLocalSubmods });
+          checkedFiles += files.length;
+          driftedFiles += files.filter((file) => file.status === 'modified' || file.status === 'overridden').length;
+        } catch {
+          unreadable.push(item.title || item.mod_id);
+        }
+      }
+      if (activeInstallationIdRef.current !== targetInstId) return;
+      const unreadableNote = unreadable.length > 0 ? `，${unreadable.length} 个模组读取清单失败` : '';
+      showToast(
+        driftedFiles > 0
+          ? `完整性校验完成：核对 ${checkedFiles} 个文件，其中 ${driftedFiles} 个与账本不一致${unreadableNote}。`
+          : `完整性校验完成：核对 ${checkedFiles} 个文件，全部与账本一致${unreadableNote}。`
+      );
+    } finally {
       setIsVerifying(false);
-      showToast('全量文件散列哈希校验完毕：已验证 109 个托管文件');
-    }, 1000);
+    }
   };
 
   // Handler: Download, verify, and install the selected published archive.
@@ -843,6 +857,16 @@ export default function App() {
     }
   };
 
+  // 「规划更新」来自已安装列表，只有 mod_id 与标题；真实 ModSummary 从目录里取。
+  // 目录里找不到就直说，不再临时拼一个字段造假的 ModSummary 塞给安装链路。
+  const handleStartUpdatePlanFromInstalled = (modId: string, title: string) => {
+    const target = catalogMods.find((mod) => mod.id === modId);
+    if (!target) {
+      showToast(`「${title}」已不在当前目录中，无法规划更新。`);
+      return;
+    }
+    void handleStartInstallPlan(target);
+  };
   const handleStartUninstallPlan = async (item: InstalledItem) => {
     const targetInstId = activeInstallationIdRef.current;
     if (!activeInstallation.is_valid || !item.managed_operation_id || targetInstId === 'unverified') {
@@ -1203,11 +1227,11 @@ export default function App() {
   };
 
   // Handler: Check all updates
-  const handleCheckAllUpdates = () => {
-    showToast('正在向云端匹配版本签名与 SHA-256 归档...');
-    setTimeout(() => {
-      showToast('已完成全量更新比对：发现 1 个模组有新候选版本');
-    }, 700);
+  // 真实比对：刷新目录并强制重扫本地，可更新状态由扫描结果决定；不再写死“发现 1 个更新”。
+  const handleCheckAllUpdates = async () => {
+    await handleRefreshCatalog();
+    await scanLocalSubmods(activeInstallationIdRef.current, { forced: true });
+    showToast('已按最新目录重新比对本地版本，列表中带“可更新”标记的即为本次结果。');
   };
 
   // Handler: Add Custom Instance
@@ -1375,7 +1399,7 @@ export default function App() {
                   }
                 }
               }}
-              onStartUpdatePlan={handleStartInstallPlan}
+              onStartUpdatePlan={handleStartUpdatePlanFromInstalled}
               onStartUninstallPlan={handleStartUninstallPlan}
               onStartRepairPlan={handleStartRepairPlan}
               onOpenAdoptModal={(item) => setAdoptTarget(item)}
