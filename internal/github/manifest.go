@@ -35,9 +35,9 @@ var ErrInvalidManifest = errors.New("invalid " + ManifestFileName + " manifest")
 
 var manifestSHA256Regex = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
-// manifestBranches are tried in order. HEAD always resolves to the default
-// branch, so main/master are only a fallback for mirrors that do not support it.
-var manifestBranches = []string{"HEAD", "main", "master"}
+// manifestBranches are tried in order; the list is owned by the raw-file reader
+// because every repository-root file is probed the same way.
+var manifestBranches = rawFileBranches
 
 // ManifestRelease is one publishable version pointed at by the manifest. The
 // download URL is copied verbatim from the GitHub release asset, so importing
@@ -118,15 +118,10 @@ func parseManifest(body []byte, allowInsecureHosts bool) (*Manifest, error) {
 }
 
 // ManifestSourceURL builds the raw.githubusercontent.com address for a repo
-// manifest. It is derived from the configured API base so tests and self-hosted
-// mirrors that override BaseURL can serve the manifest from the same origin.
+// manifest. It shares the raw-file addressing of the VERSION probe so both read
+// repository-root files from the same origin.
 func (c *Client) manifestURL(owner, repo, ref string) string {
-	base := c.baseURL
-	if base == "" || base == "https://api.github.com" {
-		base = "https://raw.githubusercontent.com"
-	}
-	return fmt.Sprintf("%s/%s/%s/%s/%s", strings.TrimRight(base, "/"),
-		url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(ref), ManifestFileName)
+	return c.rawFileURL(owner, repo, ref, ManifestFileName)
 }
 
 // FetchManifest downloads and validates rezehub.yml for a repository. The

@@ -30,3 +30,8 @@ Local reference projects used during design:
 | 2026-10-23 | work | docs/aegis/work/2026-10-23-web-client-download-entry/20-checkpoint.md | Web 客户端下载入口 checkpoint（选路、tag 守卫、白名单口径） |
 | 2026-10-23 | work | docs/aegis/work/2026-10-23-web-client-download-entry/90-evidence.md | Web 客户端下载入口 evidence（静态检查、单测与四档视口布局度量） |
 | 2026-10-23 | work | docs/aegis/work/2026-10-23-web-client-download-entry/91-review-fixes.md | Web 客户端下载入口评审发现与修复 |
+| 2026-10-24 | plan | docs/aegis/plans/2026-10-24-app-update-version-probe.md | 后端直读仓库根 VERSION 作为「可能有新版本」的触发信号，1 分钟缓存，被动探测；本地测试与静态检查通过，测试服验收待补 |
+| 2026-10-24 | work | docs/aegis/work/2026-10-24-app-update-version-probe/10-intent.md | VERSION 探测 intent |
+| 2026-10-24 | work | docs/aegis/work/2026-10-24-app-update-version-probe/20-checkpoint.md | VERSION 探测 checkpoint（触发式探测、节奏门收敛、观测消费规则） |
+| 2026-10-24 | work | docs/aegis/work/2026-10-24-app-update-version-probe/90-evidence.md | VERSION 探测 evidence（全量 go test、10 轮连跑、真实 raw 探测） |
+| 2026-10-24 | work | docs/aegis/work/2026-10-24-app-update-version-probe/91-review-fixes.md | VERSION 探测自查修复（时间戳 flaky、撤掉多余参数、行尾还原、P1 构建期每分钟 REST） |

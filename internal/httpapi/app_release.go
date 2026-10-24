@@ -65,11 +65,28 @@ type appReleaseState struct {
 	mu sync.Mutex
 	// release/checksums are the last successful snapshot; fetchedAt is when that
 	// snapshot was taken, which is what the descriptor reports as its age.
-	release    *github.Release
-	checksums  map[string]string
-	fetchedAt  time.Time
-	checkedAt  time.Time
+	release   *github.Release
+	checksums map[string]string
+	fetchedAt time.Time
+	// checkedAt is the last *attempt*, not the last success: refreshDueLocked
+	// derives both the steady-state interval and the retry delay from it.
+	checkedAt time.Time
+	// lastErr records whether that attempt failed, so the retry delay no longer
+	// has to be encoded as a faked earlier timestamp.
+	lastErr    bool
 	refreshing bool
+	// probedAt is when VERSION was last read; probeAhead records whether that
+	// observation still names a release the snapshot does not have.
+	probedAt   time.Time
+	probing    bool
+	probeAhead bool
+	// aheadVersion is the VERSION value that has already been paid for with a
+	// REST refresh. It only matters when the tag exists but no usable release
+	// does (a draft, a prerelease, or a release call still in flight): that is
+	// the one state the raw host cannot distinguish from "not yet", so it is
+	// capped per value instead of per probe window. A version whose tag does not
+	// exist yet never reaches this field — it costs no REST at all.
+	aheadVersion string
 }
 
 // appReleaseRepo resolves the published repository coordinates. Tests override
@@ -95,6 +112,19 @@ func (s *Store) appReleaseSnapshot() (github.Release, map[string]string, bool) {
 	return *state.release, state.checksums, true
 }
 
+// appReleaseServedTag reports the tag of the snapshot that is served now. The
+// probe uses it to decide which tag a newer VERSION would be released under, and
+// reports false before the first snapshot exists.
+func (s *Store) appReleaseServedTag() (string, bool) {
+	state := &s.appRelease
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.release == nil {
+		return "", false
+	}
+	return state.release.TagName, true
+}
+
 // appReleaseAge reports how old the served snapshot is. Clients use it to decide
 // that an API which cannot reach GitHub any more is no longer an authority.
 func (s *Store) appReleaseAge() time.Duration {
@@ -111,10 +141,31 @@ func (s *Store) appReleaseAge() time.Duration {
 	return age
 }
 
-func (s *Store) appReleaseStale() bool {
+// appReleaseRefreshDue reports whether the served snapshot is due for a
+// refresh. The rule lives in refreshDueLocked so the request path and the
+// delivery worker cannot drift apart.
+func (s *Store) appReleaseRefreshDue() bool {
 	state := &s.appRelease
 	state.mu.Lock()
 	defer state.mu.Unlock()
+	return state.refreshDueLocked()
+}
+
+// refreshDueLocked is the single refresh-rhythm rule:
+//   - never refreshed: now;
+//   - last attempt failed: after appReleaseRetryInterval;
+//   - VERSION reports a release the snapshot does not have: now;
+//   - otherwise: after appReleaseRefreshInterval.
+func (state *appReleaseState) refreshDueLocked() bool {
+	if state.release == nil && state.checkedAt.IsZero() {
+		return true
+	}
+	if state.lastErr {
+		return time.Since(state.checkedAt) >= appReleaseRetryInterval
+	}
+	if state.probeAhead {
+		return true
+	}
 	return time.Since(state.checkedAt) >= appReleaseRefreshInterval
 }
 
@@ -127,7 +178,7 @@ func (s *Store) reserveAppReleaseRefresh(force bool) bool {
 	if state.refreshing {
 		return false
 	}
-	if !force && time.Since(state.checkedAt) < appReleaseRefreshInterval {
+	if !force && !state.refreshDueLocked() {
 		return false
 	}
 	state.refreshing = true
@@ -139,16 +190,19 @@ func (s *Store) finishAppReleaseRefresh(release *github.Release, sums map[string
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	state.refreshing = false
-	if err == nil {
-		state.release = release
-		state.checksums = sums
-		state.fetchedAt = time.Now()
-		state.checkedAt = time.Now()
+	// Any attempt, scheduled or probe-driven, settles the outstanding observation:
+	// either the snapshot caught up, or the next probe has to re-establish that a
+	// release is still missing. The VERSION value that paid for this call stays in
+	// aheadVersion, so the same value cannot buy a second one.
+	state.probeAhead = false
+	state.checkedAt = time.Now()
+	state.lastErr = err != nil
+	if err != nil {
 		return
 	}
-	// A failed refresh retries sooner than the steady-state interval, but never
-	// on every worker tick.
-	state.checkedAt = time.Now().Add(-(appReleaseRefreshInterval - appReleaseRetryInterval))
+	state.release = release
+	state.checksums = sums
+	state.fetchedAt = time.Now()
 }
 
 func (s *Store) refreshAppRelease(ctx context.Context, force bool) error {
@@ -560,7 +614,15 @@ func (s *Store) appUpdateDescriptor(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	ctx, cancel := context.WithTimeout(r.Context(), appReleaseRequestBudget)
 	defer cancel()
-	if s.appReleaseStale() {
+	// The VERSION probe is a trigger, never a source: it can only make the
+	// refresh below happen sooner. It is skipped when a refresh is already due,
+	// because that request would have happened anyway.
+	if !s.appReleaseRefreshDue() {
+		probeCtx, cancelProbe := context.WithTimeout(ctx, appVersionProbeBudget)
+		s.probeAppReleaseVersion(probeCtx)
+		cancelProbe()
+	}
+	if s.appReleaseRefreshDue() {
 		_ = s.refreshAppRelease(ctx, false)
 	}
 	release, sums, ok := s.appReleaseSnapshot()

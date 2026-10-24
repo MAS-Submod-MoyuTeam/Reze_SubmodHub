@@ -70,6 +70,21 @@ ADR-0001 把普通包下载从主 API 剥离到 Cloudreve 镜像与独立 relay�
 
 `github_url` 仍然始终返回：这是为了让「API 可达但节点不可用」的客户端还能下载，属于对「隐藏 GitHub 地址」目标的**有意例外**，后续重构不应把它当泄漏删除。
 
+## Amendment 2026-10-24 — VERSION 只作触发信号
+
+在「主 API 是检查权威」的前提下，补一条降级路径：主 API 会直读仓库根 `VERSION`（`raw.githubusercontent.com`，不在 REST 限流范围内），用于更快发现新版本。边界如下：
+
+- **只触发，不供数据**：`VERSION` 高于当前快照 `tag_name`、且该版本对应的 tag 已存在时，唯一效果是把权威 Release 刷新提前到本次请求。资产、哈希、说明仍全部来自 Release 快照；`VERSION` 永远不能成为描述内容的来源。
+- **tag 已存在才花配额**：发布流程先 bump `VERSION`、构建完成后才建 tag，所以「`VERSION` 领先于 tag」是构建期的常态而非边缘。只看版本号会把整段构建时间变成每分钟一次 REST 刷新；因此探测在花 REST 前先用同一 raw 主机确认该 tag 存在（零配额）。tag 不存在 ⇒ Release 一定不存在 ⇒ 不刷新。
+- **同一 VERSION 值只付一次**：tag 已存在但 Release 仍不可用（草稿、预发布、发布调用在途）时，raw 无法区分「还没到」与「永远不到」。该状态按值封顶为一次 REST，而不是每个探测窗口一次；代价是新版本最多晚一个 10 分钟窗口被发现。
+- **被动**：只在有人请求 `/api/v1/app-update` 且权威刷新尚未到期时探测。投递 worker 的 10 分钟节奏不因它加快，也不会为探测单独唤醒。
+- **缓存 1 分钟**：窗口内复用同一结论，突发流量只产生一次 raw 请求；失败同样占用窗口，避免每个到达的客户端都重试。
+- **失败静默**：404/5xx/超时一律回落到原有 10 分钟刷新与 2 分钟重试，不改变描述可用性，也不新增错误码。
+- **不污染年龄**：`snapshot_age_seconds` 仍只表示最近一次成功读取 Release 距今，探测不刷新它。
+- **不越权取凭据**：raw 主机不是 API 主机，探测沿用既有的「仅对 API 主机附带 Token」规则。
+
+上游 CDN 对 raw 文件自带 `max-age=300`，因此 1 分钟窗口观察到的值最多可能落后约 5 分钟。这是上游属性：本决策不为此加 `no-cache` 去对抗 CDN，探测的价值在「比 10 分钟快且零配额」。
+
 ## Boundary
 
 This ADR is an advisory Aegis Method Pack record. It does not grant completion authority or replace project-authoritative architecture sources.
