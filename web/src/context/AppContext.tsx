@@ -694,7 +694,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     catch (error) { showToast('error', `编辑版本失败：${error instanceof Error ? error.message : 'unknown_error'}`); return false; }
   }, [showToast, versions]);
 
-  // Client Simulation Methods (Section 4)
   const syncModReleases = useCallback(
     async (modId: string): Promise<SyncSummary | null> => {
       const base = apiBase();

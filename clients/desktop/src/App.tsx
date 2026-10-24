@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { mapPlanPreview } from './planPreview';
 import { loadInstalledFiles } from './installedFiles';
+import { resolveHasUpdate, summarizeIntegrity } from './modHealth';
+import type { IntegrityTotals } from './modHealth';
 import { PreviewRepair, fetchRegistrationMatches } from './wails';
 import { isAllowedNavTab } from './priorityLayers';
 import { TitleBar } from './components/TitleBar';
@@ -61,6 +63,9 @@ const UNVERIFIED_INSTALLATION: Installation = {
  */
 const MAS_GAME_PROCESS_DETECTED = false;
 
+/** 提示分的只有两种语气：普通结果与需要用户注意的坏消息。 */
+type ToastTone = 'info' | 'warn';
+
 export default function App() {
   // Installations
   const [installations, setInstallations] = useState<Installation[]>([UNVERIFIED_INSTALLATION]);
@@ -99,6 +104,8 @@ export default function App() {
   // Installed scan loading state
   const loadCoordinatorRef = useRef(createInstalledLoadCoordinator());
   const operationsRequestIdRef = useRef(0);
+  // 事务列表读取失败要可见，但轮询/切换实例会重复触发，只提示一次直到下一次成功。
+  const operationsErrorShownRef = useRef(false);
   const [modsLoadingStatus, setModsLoadingStatus] = useState<LoadingStatus>('idle');
   const [modsError, setModsError] = useState<string | null>(null);
   const [isModsInitialLoading, setIsModsInitialLoading] = useState(false);
@@ -336,20 +343,28 @@ export default function App() {
   const [inspectTarget, setInspectTarget] = useState<InstalledItem | null>(null);
 
   // Toast / System notice
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+  const showToast = (message: string, tone: ToastTone = 'info') => {
+    setToast({ message, tone });
+    // 新提示必须完整显示，不能被上一条的计时器提前清掉。
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 3500);
   };
 
-  const loadCatalog = async () => {
+  /**
+   * 拉取公开目录。返回本次真实拿到的目录（失败返回 null），
+   * 并在拿到结果的同一刻同步 `catalogModsRef`——否则后续「刷新后立即比对」会用到旧目录，
+   * 因为 ref 原本只在下一次渲染的 effect 里才更新。
+   */
+  const loadCatalog = async (): Promise<ModSummary[] | null> => {
     setIsRefreshing(true);
     setCatalogError(null);
     try {
       const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
       const entries = await fetchPublishedCatalog(base);
-      setCatalogMods(entries.map(({ mod, version }) => ({
+      const mapped: ModSummary[] = entries.map(({ mod, version }) => ({
         id: mod.id, title: mod.title, summary: mod.summary || '', description: mod.description || mod.summary || '',
         author: mod.author || { id: '', display_name: '未知作者' },
         category: mod.category || 'submod', tags: mod.tags || [],
@@ -357,28 +372,32 @@ export default function App() {
         recommended_priority: mod.recommended_priority || 0, latest_version_id: version.id,
         latest_version: version.version, size_bytes: version.size_bytes, sha256: version.sha256,
         updated_at: '', downloads_count: mod.downloads_count || 0,
-      })));
+      }));
+      catalogModsRef.current = mapped;
+      setCatalogMods(mapped);
+      return mapped;
     } catch (error) {
       // 保留上一次成功的数据，同时把失败暴露出来（页面级失败态 + 提示）。
       const detail = error instanceof Error ? error.message : 'unknown_error';
       setCatalogError(detail);
-      showToast(`目录加载失败：${detail}`);
+      showToast(`目录加载失败：${detail}`, 'warn');
+      return null;
     } finally {
       setIsRefreshing(false);
     }
   };
 
-  const scanLocalSubmods = async (targetInstanceId?: string, options?: { forced?: boolean }) => {
+  const scanLocalSubmods = async (targetInstanceId?: string, options?: { forced?: boolean }): Promise<InstalledItem[] | null> => {
     const instId = targetInstanceId || activeInstallationIdRef.current;
-    if (!instId || instId === 'unverified') return;
-    if (instId !== activeInstallationIdRef.current) return;
+    if (!instId || instId === 'unverified') return null;
+    if (instId !== activeInstallationIdRef.current) return null;
     const token = await loadCoordinatorRef.current.waitForModsScan(instId, options);
-    if (!token) return;
+    if (!token) return null;
     updateCoordinatorUIState();
 
     try {
       const [local, receipts] = await Promise.all([ScanLocalSubmods(), ListInstalledArchives()]) as [LocalSubmod[], InstalledArchive[]];
-      if (activeInstallationIdRef.current !== instId) return;
+      if (activeInstallationIdRef.current !== instId) return null;
       const managedDirs = new Set(receipts.flatMap((receipt) => receipt.submod_dirs || []).map((dir) => dir.toLowerCase()));
       const catalog = catalogModsRef.current.length > 0 ? catalogModsRef.current : catalogMods;
       const catalogMap = new Map(catalog.map((item) => [item.id, item]));
@@ -389,7 +408,15 @@ export default function App() {
           mod_id: receipt.mod_id, installation_id: receipt.operation_id || receipt.mod_id, title: receipt.title, summary: '已通过 RezeHub 安装',
           author_name: authorName, category: (receipt.category as any) || catMod?.category || 'submod', installed_version: receipt.version,
           installed_version_id: receipt.version_id, latest_version: catMod?.latest_version || receipt.version,
-          latest_version_id: catMod?.latest_version_id || receipt.version_id, has_update: false, priority: receipt.priority ?? 0,
+          latest_version_id: catMod?.latest_version_id || receipt.version_id,
+          // 更新标记只能来自「本地已装版本 vs 目录最新版本」的真实比较，不能写死也不能臆断。
+          has_update: resolveHasUpdate({
+            installedVersionId: receipt.version_id,
+            installedVersion: receipt.version,
+            latestVersionId: catMod?.latest_version_id,
+            latestVersion: catMod?.latest_version,
+          }),
+          priority: receipt.priority ?? 0,
           is_managed: true, files_count: receipt.files, size_bytes: receipt.size_bytes,
           installed_at: receipt.installed_at ? new Date(receipt.installed_at).toISOString() : new Date().toISOString(), sha256: receipt.sha256,
           integrity_status: 'unknown', managed_operation_id: receipt.operation_id,
@@ -478,15 +505,16 @@ export default function App() {
       }
 
       const combined = [...managed, ...unmanaged];
-      if (loadCoordinatorRef.current.completeModsScan(token, combined)) {
-        setInstalledMods(combined);
-      }
+      if (!loadCoordinatorRef.current.completeModsScan(token, combined)) return null;
+      setInstalledMods(combined);
+      return combined;
     } catch (error) {
-      if (activeInstallationIdRef.current !== instId) return;
+      if (activeInstallationIdRef.current !== instId) return null;
       const msg = error instanceof Error ? error.message : String(error);
       if (loadCoordinatorRef.current.failModsScan(token, msg)) {
-        showToast(`本地子模组扫描失败：${msg}`);
+        showToast(`本地子模组扫描失败：${msg}`, 'warn');
       }
+      return null;
     } finally {
       updateCoordinatorUIState();
     }
@@ -527,10 +555,16 @@ export default function App() {
       }
       // 空列表就是空列表：浏览器模式也不注入编造的事务历史。
       setOperations(Array.isArray(ops) ? ops : []);
-    } catch {
-      // 查询失败时保留上一次已知状态，不再伪造事务记录。
+      operationsErrorShownRef.current = false;
+    } catch (error) {
+      // 保留上一次已知状态，但必须让用户知道屏幕上是旧数据。
       if (reqId !== operationsRequestIdRef.current || (targetInstId && activeInstallationIdRef.current !== targetInstId)) {
         return;
+      }
+      if (!operationsErrorShownRef.current) {
+        operationsErrorShownRef.current = true;
+        const detail = error instanceof Error ? error.message : String(error);
+        showToast(`事务列表读取失败：${detail}。当前显示的是上一次已知状态。`, 'warn');
       }
     }
   };
@@ -661,9 +695,8 @@ export default function App() {
   const formatTransferBytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
   // Handler: Refresh Catalog
-  const handleRefreshCatalog = () => {
-    void loadCatalog();
-  };
+  // 返回本次拉取到的真实目录，供「刷新后立刻比对」这类调用方接力使用。
+  const handleRefreshCatalog = () => loadCatalog();
 
   const handleDownloadArchive = async (mod: ModSummary, versionId = mod.latest_version_id) => {
     if (isDownloadingArchive || installingRef.current) return;
@@ -698,26 +731,45 @@ export default function App() {
     if (isVerifying) return;
     setIsVerifying(true);
     const targetInstId = activeInstallationIdRef.current;
-    let checkedFiles = 0;
-    let driftedFiles = 0;
-    const unreadable: string[] = [];
+    const totals: IntegrityTotals = {
+      modCount: installedMods.length,
+      checkedFiles: 0,
+      driftedFiles: 0,
+      overriddenFiles: 0,
+      unmanagedFiles: 0,
+      unreadableMods: [],
+    };
     try {
+      if (!activeInstallation.is_valid || !targetInstId || targetInstId === 'unverified') {
+        showToast('请先验证 MAS 目录后再校验文件完整性。', 'warn');
+        return;
+      }
+      if (installedMods.length === 0) {
+        showToast(summarizeIntegrity(totals).text, 'warn');
+        return;
+      }
+      // 未托管项的清单来自本地扫描：整轮校验只扫一次，所有散落项共用，避免 N 次全盘扫描。
+      let scanOnce: ReturnType<typeof ScanLocalSubmods> | null = null;
+      const scan = () => (scanOnce ??= ScanLocalSubmods());
+
       for (const item of installedMods) {
         try {
-          const files = await loadInstalledFiles(item, { list: ListInstalledModFiles, scan: ScanLocalSubmods });
-          checkedFiles += files.length;
-          driftedFiles += files.filter((file) => file.status === 'modified' || file.status === 'overridden').length;
+          const files = await loadInstalledFiles(item, { list: ListInstalledModFiles, scan });
+          if (item.is_managed) {
+            // 只有托管文件有账本可比对；非活动文件是被覆盖，不是漂移。
+            totals.checkedFiles += files.filter((file) => file.status === 'intact' || file.status === 'modified').length;
+            totals.driftedFiles += files.filter((file) => file.status === 'modified').length;
+            totals.overriddenFiles += files.filter((file) => file.status === 'overridden').length;
+          } else {
+            totals.unmanagedFiles += files.length;
+          }
         } catch {
-          unreadable.push(item.title || item.mod_id);
+          totals.unreadableMods.push(item.title || item.mod_id);
         }
       }
       if (activeInstallationIdRef.current !== targetInstId) return;
-      const unreadableNote = unreadable.length > 0 ? `，${unreadable.length} 个模组读取清单失败` : '';
-      showToast(
-        driftedFiles > 0
-          ? `完整性校验完成：核对 ${checkedFiles} 个文件，其中 ${driftedFiles} 个与账本不一致${unreadableNote}。`
-          : `完整性校验完成：核对 ${checkedFiles} 个文件，全部与账本一致${unreadableNote}。`
-      );
+      const summary = summarizeIntegrity(totals);
+      showToast(summary.text, summary.tone);
     } finally {
       setIsVerifying(false);
     }
@@ -862,7 +914,13 @@ export default function App() {
   const handleStartUpdatePlanFromInstalled = (modId: string, title: string) => {
     const target = catalogMods.find((mod) => mod.id === modId);
     if (!target) {
-      showToast(`「${title}」已不在当前目录中，无法规划更新。`);
+      // 区分「目录没加载」和「模组已下架」：前者是网络问题，不该说成业务结论。
+      showToast(
+        catalogError
+          ? `目录未加载（${catalogError}），暂时无法规划「${title}」的更新。`
+          : `「${title}」已不在当前目录中（可能已下架），无法规划更新。`,
+        'warn'
+      );
       return;
     }
     void handleStartInstallPlan(target);
@@ -1227,11 +1285,36 @@ export default function App() {
   };
 
   // Handler: Check all updates
-  // 真实比对：刷新目录并强制重扫本地，可更新状态由扫描结果决定；不再写死“发现 1 个更新”。
+  // 真实比对：先拿到刷新后的目录，再用它重扫本地并按目录版本算 has_update；不再写死“发现 1 个更新”。
   const handleCheckAllUpdates = async () => {
-    await handleRefreshCatalog();
-    await scanLocalSubmods(activeInstallationIdRef.current, { forced: true });
-    showToast('已按最新目录重新比对本地版本，列表中带“可更新”标记的即为本次结果。');
+    const targetInstId = activeInstallationIdRef.current;
+    if (!activeInstallation.is_valid || !targetInstId || targetInstId === 'unverified') {
+      showToast('请先验证 MAS 目录后再比对更新。', 'warn');
+      return;
+    }
+    // 顺序必须成立：目录没刷新成功就比对，结论会基于旧版本。
+    const catalog = await handleRefreshCatalog();
+    if (activeInstallationIdRef.current !== targetInstId) return;
+    if (!catalog) {
+      showToast('目录刷新失败，更新比对未执行。', 'warn');
+      return;
+    }
+    if (catalog.length === 0) {
+      showToast('目录为空，没有可用来比对更新的版本。', 'warn');
+      return;
+    }
+    const scanned = await scanLocalSubmods(targetInstId, { forced: true });
+    if (activeInstallationIdRef.current !== targetInstId) return;
+    if (!scanned) {
+      showToast('本地模组扫描未完成，更新比对已中止。', 'warn');
+      return;
+    }
+    const updateCount = scanned.filter((item) => item.has_update).length;
+    showToast(
+      updateCount > 0
+        ? `已比对 ${scanned.length} 个本地模组：${updateCount} 个有比当前版本更新的发布版本，可在列表里直接规划更新。`
+        : `已比对 ${scanned.length} 个本地模组：没有比当前安装版本更新的发布版本。`
+    );
   };
 
   // Handler: Add Custom Instance
@@ -1414,7 +1497,9 @@ export default function App() {
             <PriorityLayersView
               installedMods={installedMods}
               currentInstanceId={activeInstallationId}
-              onRefreshInstalled={(options) => scanLocalSubmods(undefined, options)}
+              onRefreshInstalled={async (options) => {
+                await scanLocalSubmods(undefined, options);
+              }}
               showToast={showToast}
             />
           )}
@@ -1442,10 +1527,15 @@ export default function App() {
           )}
 
           {/* Toast Notification */}
-          {toastMessage && (
-            <div className="absolute bottom-4 right-4 max-w-[calc(100vw-2rem)] z-50 px-4 py-2.5 rounded-lg bg-neutral-900 border border-neutral-700 shadow-xl text-xs text-neutral-200 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-150 break-words pointer-events-auto">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-              <span className="min-w-0">{toastMessage}</span>
+          {toast && (
+            <div
+              role="status"
+              className={`absolute bottom-4 right-4 max-w-[calc(100vw-2rem)] z-50 px-4 py-2.5 rounded-lg bg-neutral-900 border shadow-xl text-xs flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-150 break-words pointer-events-auto ${
+                toast.tone === 'warn' ? 'border-amber-500/60 text-amber-100' : 'border-neutral-700 text-neutral-200'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full shrink-0 ${toast.tone === 'warn' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+              <span className="min-w-0">{toast.message}</span>
             </div>
           )}
         </main>
