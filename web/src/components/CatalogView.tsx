@@ -7,6 +7,8 @@ import { formatVersionLabel } from './versionHistory';
 import { useLoadMoreOnScroll } from './useLoadMoreOnScroll';
 import { fetchTagCatalog, type TagGroup } from '../../../ui/tags-api';
 import { buildTagFilterModel, childTagsFor } from './tagFilters';
+import { pageScrollPane, usePaneScrolled } from './usePaneScrolled';
+import { scrollPaneToTop } from './scrollToTop';
 import {
   Search,
   Download,
@@ -14,6 +16,7 @@ import {
   Layers,
   Sparkles,
   AlertCircle,
+  ArrowUp,
   RefreshCw,
 } from 'lucide-react';
 
@@ -38,6 +41,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     tagFilter,
     setTagFilter,
     catalogLoading,
+    catalogRefreshing,
     catalogError,
     reloadCatalog,
   } = useApp();
@@ -132,6 +136,10 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     setCursorPage(1);
   };
 
+  // 整页滚动：目录页没有内部滚动容器（续页观察器也以视口为根），所以观察对象是文档本身。
+  const pagePane = useMemo(() => pageScrollPane(), []);
+  const scrolled = usePaneScrolled(pagePane);
+
   const handleResetFilters = () => {
     setSearchQuery('');
     setCategoryFilter('all');
@@ -141,7 +149,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6 relative">
       {/* Hero / Filter Bar Header */}
       <div className="bg-white border border-neutral-200 rounded-lg p-5 space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -321,60 +329,70 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             </div>
           ))}
         </div>
-      ) : catalogError ? (
-        /* Load Failure State: 没有离线快照，失败必须与「无结果」区分开 */
-        <div className="bg-white border border-amber-200 rounded-lg p-12 text-center space-y-3">
-          <AlertCircle className="w-8 h-8 text-amber-500 mx-auto" />
-          <h3 className="text-sm font-semibold text-neutral-800">目录加载失败</h3>
-          <p className="text-xs text-neutral-500 max-w-md mx-auto">
-            无法从服务器读取已发布目录：{catalogError}。项目不提供离线缓存快照，请检查网络后重新加载。
-          </p>
-          <div className="pt-2">
-            <button
-              onClick={() => void handleReloadCatalog()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 rounded border border-amber-200 transition-colors"
-            >
-              <RefreshCw className="w-3 h-3" />
-              重新加载目录
-            </button>
-          </div>
-        </div>
-      ) : paginatedMods.length === 0 ? (
-        /* Empty Results State (Section 1 requirement) */
-        <div className="bg-white border border-neutral-200 rounded-lg p-12 text-center space-y-3">
-          <Filter className="w-8 h-8 text-neutral-300 mx-auto" />
-          <h3 className="text-sm font-semibold text-neutral-800">未找到匹配的模组</h3>
-          <p className="text-xs text-neutral-500 max-w-sm mx-auto">
-            没有符合当前关键词或分类条件的已发布模组。你可以尝试清空筛选条件或调整搜索词。
-          </p>
-          <div className="pt-2">
-            <button
-              onClick={handleResetFilters}
-              className="px-3.5 py-1.5 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 transition-colors"
-            >
-              重置所有筛选条件
-            </button>
-          </div>
-        </div>
       ) : (
-        /* Populated Grid */
-        <div className="space-y-4">
-          <div className="flex items-center justify-between text-xs text-neutral-500 px-1">
-            <span aria-live="polite">
-              显示 <strong className="font-semibold text-neutral-800 tabular-nums">{paginatedMods.length}</strong> /{' '}
-              <span className="tabular-nums">{filteredMods.length}</span> 个已验证模组
-            </span>
-            <button
-              onClick={() => void handleReloadCatalog()}
-              disabled={catalogLoading}
-              className="flex items-center gap-1 text-neutral-400 hover:text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <RefreshCw className="w-3 h-3" />
-              刷新
-            </button>
-          </div>
+        <>
+          {/* Load Failure State: 没有离线快照，失败必须与「无结果」区分开。
+              `reloadCatalog` 失败时保留上一次成功的数据，所以这里不能独占列表区：
+              一结束就把整块换成骨架，用户只会看到一屏「加载中」而没有重试入口，
+              失败永远看不见。失败条因此挂在列表上方，有旧数据时仍能继续浏览。
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              同一份结果在同一时刻只能呈现一种「没有」：失败条在场时不渲染
+              「未找到匹配的模组」，否则同一屏同时说着「读不到目录」和「筛不到」，
+              而后者是拿上一次的残留数据算出来的，在这个上下文中不成立。 */}
+          {catalogError ? (
+            <div className="bg-white border border-amber-200 rounded-lg p-6 text-center space-y-3">
+              <AlertCircle className="w-8 h-8 text-amber-500 mx-auto" />
+              <h3 className="text-sm font-semibold text-neutral-800">目录加载失败</h3>
+              <p className="text-xs text-neutral-500 max-w-md mx-auto">
+                无法从服务器读取已发布目录：{catalogError}。项目不提供离线缓存快照，请检查网络后重新加载。
+              </p>
+              <div className="pt-2">
+                <button
+                  onClick={() => void handleReloadCatalog()}
+                  disabled={catalogRefreshing}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 rounded border border-amber-200 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${catalogRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+                  <span>{catalogRefreshing ? '重新加载中…' : '重新加载目录'}</span>
+                </button>
+              </div>
+            </div>
+          ) : paginatedMods.length === 0 ? (
+            /* Empty Results State (Section 1 requirement) */
+            <div className="bg-white border border-neutral-200 rounded-lg p-12 text-center space-y-3">
+              <Filter className="w-8 h-8 text-neutral-300 mx-auto" />
+              <h3 className="text-sm font-semibold text-neutral-800">未找到匹配的模组</h3>
+              <p className="text-xs text-neutral-500 max-w-sm mx-auto">
+                没有符合当前关键词或分类条件的已发布模组。你可以尝试清空筛选条件或调整搜索词。
+              </p>
+              <div className="pt-2">
+                <button
+                  onClick={handleResetFilters}
+                  className="px-3.5 py-1.5 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 transition-colors"
+                >
+                  重置所有筛选条件
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Populated Grid */
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-xs text-neutral-500 px-1">
+                <span aria-live="polite">
+                  显示 <strong className="font-semibold text-neutral-800 tabular-nums">{paginatedMods.length}</strong> /{' '}
+                  <span className="tabular-nums">{filteredMods.length}</span> 个已验证模组
+                </span>
+                <button
+                  onClick={() => void handleReloadCatalog()}
+                  disabled={catalogRefreshing}
+                  className="flex items-center gap-1 text-neutral-400 hover:text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${catalogRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+                  刷新
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {paginatedMods.map((mod) => {
               const latestVer = versions.find((v) => v.id === mod.latest_version_id);
               const isSpritepack = mod.category === 'spritepack';
@@ -454,24 +472,69 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 </div>
               );
             })}
-          </div>
+              </div>
 
-          {/* Cursor Pagination (Section 1 requirement) */}
-          <div ref={loadMoreSentinelRef} className="pt-6 text-center">
-            {hasNextCursor && (
-              <>
-                <button
-                  onClick={loadMore}
-                  className="px-5 py-2 text-xs font-medium text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 rounded-md transition-colors"
-                >
-                  加载更多模组 (游标分页)
-                </button>
-                <p className="mt-2 text-[11px] text-neutral-400">继续向下滚动会自动加载下一页</p>
-              </>
-            )}
-          </div>
-        </div>
+              {/* Cursor Pagination (Section 1 requirement) */}
+              <div ref={loadMoreSentinelRef} className="pt-6 text-center">
+                {hasNextCursor && (
+                  <>
+                    <button
+                      onClick={loadMore}
+                      className="px-5 py-2 text-xs font-medium text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 rounded-md transition-colors"
+                    >
+                      加载更多模组 (游标分页)
+                    </button>
+                    <p className="mt-2 text-[11px] text-neutral-400">继续向下滚动会自动加载下一页</p>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
+
+      {/* 悬浮控件：整页滚动时 `fixed` 才是相对于视口定位；`pointer-events-none` 铺满
+          一层只为了让两个真正可点的按钮各自可点，不挡住下面的卡片。 */}
+      <div className="fixed inset-x-0 bottom-6 z-30 px-4 sm:px-6 max-w-7xl mx-auto pointer-events-none flex flex-col items-end gap-3">
+        {/* 返回顶部只在离开顶部后出现，滚回顶部自行收回；刷新常驻在它下方。 */}
+        {scrolled ? (
+          <button
+            type="button"
+            onClick={() => scrollPaneToTop(pagePane)}
+            aria-label="返回顶部"
+            title="返回顶部"
+            data-testid="catalog-back-to-top"
+            className="pointer-events-auto w-11 h-11 rounded-full flex items-center justify-center border border-neutral-200 bg-white/95 text-neutral-600 shadow-lg transition-colors cursor-pointer hover:border-emerald-300 hover:text-emerald-700"
+          >
+            <ArrowUp className="w-4 h-4" aria-hidden="true" />
+          </button>
+        ) : null}
+        {/* 刷新失败时隐藏：此时失败条里的「重新加载目录」就是同一个动作，
+            两个入口并排只会让人猜哪个才算数。 */}
+        {catalogError ? null : (
+          <button
+            type="button"
+            onClick={() => void handleReloadCatalog()}
+            disabled={catalogRefreshing}
+            aria-busy={catalogRefreshing}
+            aria-label="刷新模组目录"
+            title={catalogRefreshing ? '正在刷新模组目录…' : '刷新模组目录'}
+            data-testid="catalog-refresh"
+            className={`pointer-events-auto w-11 h-11 rounded-full flex items-center justify-center border shadow-lg transition-colors ${
+              catalogRefreshing
+                ? 'cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400'
+                : 'cursor-pointer border-neutral-200 bg-white/95 text-neutral-600 hover:border-emerald-300 hover:text-emerald-700'
+            }`}
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${catalogRefreshing ? 'animate-spin' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+        )}
+      </div>
     </div>
   );
 };
+
+

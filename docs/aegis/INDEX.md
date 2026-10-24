@@ -35,3 +35,5 @@ Local reference projects used during design:
 | 2026-10-24 | work | docs/aegis/work/2026-10-24-app-update-version-probe/20-checkpoint.md | VERSION 探测 checkpoint（触发式探测、节奏门收敛、观测消费规则） |
 | 2026-10-24 | work | docs/aegis/work/2026-10-24-app-update-version-probe/90-evidence.md | VERSION 探测 evidence（全量 go test、10 轮连跑、真实 raw 探测） |
 | 2026-10-24 | work | docs/aegis/work/2026-10-24-app-update-version-probe/91-review-fixes.md | VERSION 探测自查修复（时间戳 flaky、撤掉多余参数、行尾还原、P1 构建期每分钟 REST） |
+| 2026-10-25 | work | docs/aegis/work/2026-10-25-web-catalog-refresh-and-back-to-top/20-checkpoint.md | Web 目录刷新改常驻悬浮入口与失败态修复 checkpoint |
+| 2026-10-25 | work | docs/aegis/work/2026-10-25-web-catalog-refresh-and-back-to-top/90-evidence.md | Web 目录刷新与返回顶部 evidence（122 条单测、真实浏览器几何与失败路径验收） |

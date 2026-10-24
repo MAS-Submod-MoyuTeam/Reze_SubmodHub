@@ -40,6 +40,9 @@ export const sampleVersion: ModVersion = {
 };
 
 export function createMockContext(overrides: Partial<AppContextType> = {}): AppContextType {
+  // 版本只在它的模组也可见时才留得下：`mods: []` 的用例是在说「目录是空的」，
+  // 默认再塞一条 `v1` 会让列表以为还有一个模组可渲染，空态与失败态同时出现。
+  const versions = overrides.mods && overrides.mods.length === 0 ? [] : [sampleVersion];
   return {
     refreshWindowText: '1 小时',
     cacheAuthorPage: () => {},
@@ -54,7 +57,7 @@ export function createMockContext(overrides: Partial<AppContextType> = {}): AppC
     logout: () => {},
     hasRole: () => false,
     mods: [sampleMod],
-    versions: [sampleVersion],
+    versions,
     scanReports: {},
     searchQuery: '',
     setSearchQuery: () => {},
@@ -65,6 +68,7 @@ export function createMockContext(overrides: Partial<AppContextType> = {}): AppC
     tagFilter: 'all',
     setTagFilter: () => {},
     catalogLoading: false,
+    catalogRefreshing: false,
     catalogError: null,
     reloadCatalog: async () => {},
     getModWithVersions: () => ({ mod: sampleMod, versions: [sampleVersion] }),

@@ -882,7 +882,10 @@ test('CatalogView: a failed catalog load shows a retry state, never the empty-re
     assert.equal(
       findNodeByText(container, /未找到匹配的模组/),
       null,
-      'a failed load must not degrade into the "no results" state',
+      // 自定义提示语里不能出现未转义的 `"`：整条提示一旦含引号，
+      // Node 的断言库会去解析/申请一段提示缓冲区，直接抛 `Array buffer allocation failed`，
+      // 把一个「断言失败」伪装成内存错误，掩盖真正的原因。
+      'a failed load must not degrade into the no-results state',
     );
 
     const retryBtn = findButtonByText(container, /重新加载目录/);

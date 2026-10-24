@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { apiBase } from '../apiBase';
 
 import {
@@ -63,11 +63,21 @@ export interface AppContextType {
   setTagFilter: (t: string) => void;
 
   // Catalog Load State
-  /** 目录是否正在拉取；页面据此显示骨架屏。 */
+  /** 目录是否正在拉取，且手上没有任何可留下的数据；页面据此显示骨架屏。 */
   catalogLoading: boolean;
+  /**
+   * 目录是否正在刷新，同时保留着上一次成功的数据。
+   *
+   * 刷新时清空屏幕等于把失败藏起来：拉取一结束骨架消失，用户只会看到「加载中」。
+   * 刷新入口因此用这个状态置灰并旋转，列表继续显示旧内容。
+   */
+  catalogRefreshing: boolean;
   /** 最近一次目录拉取的失败原因；null 表示上次拉取成功。项目没有离线快照，失败必须可见。 */
   catalogError: string | null;
-  /** 重新拉取已发布目录。失败时写入 catalogError 并提示，不向上抛错。 */
+  /**
+   * 重新拉取已发布目录。失败时写入 catalogError 并提示，不向上抛错。
+   * 并发调用共享同一次拉取：两个刷新入口同时点击不会把同一份目录请求两遍。
+   */
   reloadCatalog: () => Promise<void>;
 
   // Mod Detail Helper
@@ -158,7 +168,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogRefreshing, setCatalogRefreshing] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  // 手上已经有一份成功拉取的目录：之后的拉取都是「刷新」，旧内容留在屏幕上。
+  const catalogLoadedRef = useRef(false);
+  // 正在进行的拉取。刷新入口不止一个（悬浮按钮、失败条），重复点击不该打两遍请求。
+  const catalogReloadRef = useRef<Promise<void> | null>(null);
 
   const applySession = useCallback((session: Session) => {
     setCsrfToken(session.csrf_token);
@@ -215,17 +230,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // 项目不提供离线缓存快照：拉取失败时保留上一次成功的数据，但失败必须可见
   // （页面级失败态 + 提示），否则会把「加载失败」退化成「目录为空」。
+  // 首次加载与刷新的区别只在「有没有旧数据可留」：有旧数据时刷新不能清屏，
+  // 否则失败条永远轮不到渲染，用户只看到一屏骨架。
   const reloadCatalog = useCallback(async () => {
-    setCatalogLoading(true);
+    const running = catalogReloadRef.current;
+    if (running) return running;
+    const keepsContent = catalogLoadedRef.current;
+    if (keepsContent) setCatalogRefreshing(true);
+    else setCatalogLoading(true);
     setCatalogError(null);
+    const attempt = (async () => {
+      try {
+        await refreshPublishedCatalog();
+        catalogLoadedRef.current = true;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : 'unknown_error';
+        setCatalogError(detail);
+        showToast('error', `目录加载失败：${detail}`);
+      } finally {
+        setCatalogLoading(false);
+        setCatalogRefreshing(false);
+      }
+    })();
+    catalogReloadRef.current = attempt;
     try {
-      await refreshPublishedCatalog();
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : 'unknown_error';
-      setCatalogError(detail);
-      showToast('error', `目录加载失败：${detail}`);
+      await attempt;
     } finally {
-      setCatalogLoading(false);
+      catalogReloadRef.current = null;
     }
   }, [refreshPublishedCatalog, showToast]);
 
@@ -740,6 +771,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       tagFilter,
       setTagFilter,
       catalogLoading,
+      catalogRefreshing,
       catalogError,
       reloadCatalog,
       getModWithVersions,
@@ -784,6 +816,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       platformFilter,
       tagFilter,
       catalogLoading,
+      catalogRefreshing,
       catalogError,
       reloadCatalog,
       getModWithVersions,
