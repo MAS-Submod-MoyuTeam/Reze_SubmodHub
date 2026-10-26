@@ -363,6 +363,13 @@ func RecoverTaskFile(path string) error {
 	if e != nil {
 		return e
 	}
+	logger := &Logger{}
+	if t.LogPath != "" {
+		if opened, logErr := NewLogger(t.LogPath); logErr == nil {
+			logger = opened
+			defer opened.Close()
+		}
+	}
 	unlock, e := lockTarget(t.TargetExePath)
 	if e != nil {
 		return e
@@ -372,7 +379,11 @@ func RecoverTaskFile(path string) error {
 	if e != nil {
 		return e
 	}
-	return RecoverInterruptedTransaction(t, &Logger{})
+	e = RecoverInterruptedTransaction(t, logger)
+	if e != nil {
+		logger.Logf("recovery failed: %v", e)
+	}
+	return e
 }
 
 // RecoverDirectory scans fixed task paths in an actual application directory.

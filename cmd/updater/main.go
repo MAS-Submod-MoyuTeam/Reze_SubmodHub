@@ -27,6 +27,7 @@ func main() {
 		}
 	}
 	var err error
+	var logger *winupdate.Logger
 	if *recoverOnly || *taskPath == "" {
 		if *target != "" {
 			err = winupdate.RecoverTaskFile(updater.StableTaskPath(*target))
@@ -46,7 +47,6 @@ func main() {
 		var task *winupdate.UpdateTask
 		task, err = winupdate.ReadTaskFile(*taskPath)
 		if err == nil {
-			var logger *winupdate.Logger
 			logger, err = winupdate.NewLogger(task.LogPath)
 			if err == nil {
 				defer logger.Close()
@@ -55,6 +55,11 @@ func main() {
 		}
 	}
 	if err != nil {
+		// The parent app starts the updater without stdio, so stderr is lost.
+		// A terminal failure must still leave a checkpoint trace.
+		if logger != nil {
+			logger.Logf("update failed: %v", err)
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

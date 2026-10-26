@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/reze/submodhub/internal/updater"
 )
@@ -54,7 +55,11 @@ func (w *WindowsInstaller) Install(ctx context.Context, targetFilePath string, c
 	taskFile := updater.StableTaskPath(currentAppPath)
 	if previous, err := ReadTaskFile(taskFile); err == nil {
 		if previous.Phase != PhaseCompleted && previous.Phase != PhaseRolledBack {
-			return fmt.Errorf("unfinished update requires recovery: %s", taskFile)
+			recovery, resolveErr := updater.ResolveUpdaterPath(previous.UpdaterExePath, currentAppPath)
+			if resolveErr != nil {
+				return fmt.Errorf("unfinished update requires recovery: %s (%v)", taskFile, resolveErr)
+			}
+			return fmt.Errorf("unfinished update requires recovery: %s; exit the app and run %q --recover --target %q", taskFile, recovery, currentAppPath)
 		}
 		if err := osRemoveIfExists(previous.BackupPath); err != nil {
 			return err
@@ -115,12 +120,18 @@ func (w *WindowsInstaller) Install(ctx context.Context, targetFilePath string, c
 	if err != nil {
 		return err
 	}
-	task.UpdaterExePath = updaterPath
+	// Publish a durable helper beside the target before anything can be wiped
+	// from the disposable staging directory. Recovery must never depend on it.
+	durableUpdater, err := publishDurableUpdater(updaterPath, updater.StableUpdaterPath(currentAppPath))
+	if err != nil {
+		return err
+	}
+	task.UpdaterExePath = durableUpdater
 	if err := WriteTaskFile(taskFile, task); err != nil {
 		return err
 	}
 	unlock()
-	cmd := exec.Command(updaterPath, "-task", taskFile)
+	cmd := exec.Command(durableUpdater, "-task", taskFile)
 	cmd.Env = cleanStartupEnvironment()
 	if err := cmd.Start(); err != nil {
 		startErr := fmt.Errorf("failed to start updater process: %w", err)
@@ -131,6 +142,25 @@ func (w *WindowsInstaller) Install(ctx context.Context, targetFilePath string, c
 	}
 
 	return nil
+}
+
+// publishDurableUpdater copies the staged helper beside the target and proves
+// the copy matches before the task can reference it.
+func publishDurableUpdater(staged, durable string) (string, error) {
+	if strings.EqualFold(filepath.Clean(staged), filepath.Clean(durable)) {
+		return durable, nil
+	}
+	sum, err := updater.CalculateFileSHA256(staged)
+	if err != nil {
+		return "", err
+	}
+	if err = CopyFile(staged, durable); err != nil {
+		return "", fmt.Errorf("failed to publish recovery updater: %w", err)
+	}
+	if err = updater.VerifyFileSHA256(durable, sum); err != nil {
+		return "", fmt.Errorf("published recovery updater does not match its source: %w", err)
+	}
+	return durable, nil
 }
 
 // retireUnstartedTask permits retries only when this exact published task has
