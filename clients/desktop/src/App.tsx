@@ -547,8 +547,14 @@ export default function App() {
     }
   };
 
+  const activeInstanceAuthorizedRef = useRef<boolean>(false);
+
   const refreshOperations = async (expectedInstId?: string) => {
     const targetInstId = expectedInstId ?? activeInstallationIdRef.current;
+    // 事务属于具体实例：和本地模组/精灵包扫描同一个前置条件。没有已验证的活动实例时，
+    // 后端只能拒绝读取（invalid_mas_root / permission_lost），那不是事务读取失败，
+    // 而是实例尚未就绪；这种情况由实例视图的诊断负责说明。
+    if (!targetInstId || targetInstId === 'unverified' || !activeInstanceAuthorizedRef.current) return;
     const reqId = ++operationsRequestIdRef.current;
     try {
       const ops = await ListOperations();
@@ -570,8 +576,6 @@ export default function App() {
       }
     }
   };
-
-  const activeInstanceAuthorizedRef = useRef<boolean>(false);
 
   const syncInstances = (
     state: MASInstancesState,
@@ -663,7 +667,6 @@ export default function App() {
         // Startup update discovery is optional; manual checks remain available.
       }
     }).catch((error) => showToast(`启动初始化失败：${String(error)}`));
-    void refreshOperations();
   }, []);
 
   useEffect(() => {
