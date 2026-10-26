@@ -6,13 +6,13 @@ import (
 	"syscall"
 )
 
-// GetAvailableDiskSpace returns the free bytes available on the volume hosting path.
-// If the path cannot be queried, it returns an error.
-func GetAvailableDiskSpace(path string) (uint64, error) {
+// GetDiskSpace returns the bytes available to the current user and the total
+// capacity of the volume hosting path. If the path cannot be queried, it
+// returns an error.
+func GetDiskSpace(path string) (available uint64, total uint64, err error) {
 	var stat syscall.Statfs_t
-	err := syscall.Statfs(path, &stat)
-	if err != nil {
-		return 0, err
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return 0, 0, err
 	}
-	return stat.Bavail * uint64(stat.Bsize), nil
+	return stat.Bavail * uint64(stat.Bsize), stat.Blocks * uint64(stat.Bsize), nil
 }

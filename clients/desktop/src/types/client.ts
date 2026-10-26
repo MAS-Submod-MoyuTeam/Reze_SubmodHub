@@ -90,6 +90,7 @@ export interface Installation {
   is_valid: boolean;
   is_running: boolean;
   disk_available_bytes?: number | null;
+  disk_total_bytes?: number | null;
   last_validated_at: string;
   diagnostic?: string;
   diagnostic_detail?: string;

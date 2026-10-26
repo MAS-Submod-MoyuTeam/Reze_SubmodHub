@@ -192,8 +192,9 @@ func inspectMASDirectory(root string) MASStatus {
 	}
 
 	status.Valid = true
-	if space, err := core.GetAvailableDiskSpace(root); err == nil {
-		status.AvailableBytes = int64(space)
+	if available, total, err := core.GetDiskSpace(root); err == nil {
+		status.AvailableBytes = int64(available)
+		status.TotalBytes = int64(total)
 	}
 
 	gameInfo, err := os.Stat(game)

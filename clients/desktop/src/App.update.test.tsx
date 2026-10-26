@@ -139,7 +139,7 @@ test('foreground events and reopening the modal reconcile backend state and perm
     await act(async () => document.dispatchEvent(new window.Event('visibilitychange')));
     assert.equal(f.modal().updateState.requires_install_permission, false);
     f.backend(state('ready', { error: 'returned from installer' }));
-    await act(async () => f.views.Sidebar.onOpenAppUpdate());
+    await act(async () => f.views.TitleBar.onOpenAppUpdate());
     assert.equal(f.modal().isOpen, true);
     assert.equal(f.modal().updateState.error, 'returned from installer');
   } finally { await f.close(); }

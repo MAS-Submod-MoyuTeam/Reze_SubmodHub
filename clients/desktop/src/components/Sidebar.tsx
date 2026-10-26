@@ -6,10 +6,9 @@ import {
   History,
   FolderCog,
   HardDrive,
-  AlertCircle,
-  FileCode2,
 } from 'lucide-react';
 import { Installation } from '../types/client';
+import { computeDiskUsage } from '../diskUsage';
 
 export type ActiveTab = 'catalog' | 'installed' | 'priority' | 'operations' | 'instances';
 
@@ -20,8 +19,6 @@ interface SidebarProps {
   installedCount: number;
   unmanagedCount: number;
   recoverableOpsCount: number;
-  onOpenAppUpdate?: () => void;
-  hasAppUpdate?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -31,12 +28,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   installedCount,
   unmanagedCount,
   recoverableOpsCount,
-  onOpenAppUpdate,
-  hasAppUpdate = false,
 }) => {
   const formatBytes = (bytes: number) => {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
   };
+
+  const diskUsage = computeDiskUsage(
+    activeInstallation.disk_available_bytes,
+    activeInstallation.disk_total_bytes,
+  );
 
   const navItems = [
     {
@@ -124,7 +124,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Bottom Storage & Status Section */}
-      <div className="p-3 border-t border-neutral-800 space-y-3 bg-neutral-900/40">
+      <div className="p-3 border-t border-neutral-800 bg-neutral-900/40">
         {/* Active Instance Storage Overview */}
         <div className="px-3 py-2.5 rounded-lg bg-neutral-950/60 border border-neutral-800 text-xs">
           <div className="flex items-center justify-between text-neutral-400 mb-1.5">
@@ -136,35 +136,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {activeInstallation.disk_available_bytes != null ? `${formatBytes(activeInstallation.disk_available_bytes)} 可用` : '容量未知'}
             </span>
           </div>
-          <div className="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden">
+          <div
+            className="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden"
+            role="progressbar"
+            aria-label="存储占用"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={diskUsage ? diskUsage.percent : undefined}
+            title={diskUsage ? `已用 ${formatBytes(diskUsage.usedBytes)} / ${formatBytes(activeInstallation.disk_total_bytes ?? 0)}` : '容量未知'}
+          >
             <div
               className="bg-emerald-500 h-full rounded-full transition-all"
-              style={{ width: '42%' }}
+              style={{ width: `${diskUsage ? diskUsage.percent : 0}%` }}
             />
           </div>
           <div className="flex items-center justify-between text-[10px] text-neutral-400 mt-1 font-mono">
             <span className="truncate max-w-[120px]">{activeInstallation.label}</span>
-            <span>已校验根目录</span>
+            <span className="tabular-nums">{diskUsage ? `已用 ${diskUsage.percent}%` : '—'}</span>
           </div>
-        </div>
-
-        {/* Build identity & App update trigger */}
-        <div className="flex items-center justify-between px-1 text-[10px] font-mono text-neutral-500">
-          <span>RezeHub</span>
-          {onOpenAppUpdate ? (
-            <button
-              onClick={onOpenAppUpdate}
-              className={`flex items-center gap-1 hover:text-neutral-300 transition-colors ${
-                hasAppUpdate ? 'text-emerald-400 font-semibold' : ''
-              }`}
-              title={`点击检查更新 (当前 v${__APP_VERSION__})`}
-            >
-              <span>v{__APP_VERSION__}</span>
-              {hasAppUpdate && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
-            </button>
-          ) : (
-            <span title={`RezeHub v${__APP_VERSION__}`}>v{__APP_VERSION__}</span>
-          )}
         </div>
       </div>
     </aside>

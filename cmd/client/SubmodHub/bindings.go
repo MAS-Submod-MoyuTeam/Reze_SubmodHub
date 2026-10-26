@@ -29,6 +29,7 @@ type MASStatus struct {
 	GameExists       bool   `json:"game_exists"`
 	Submods          int    `json:"submods"`
 	AvailableBytes   int64  `json:"available_bytes"`
+	TotalBytes       int64  `json:"total_bytes"`
 	Diagnostic       string `json:"diagnostic,omitempty"`
 	DiagnosticDetail string `json:"diagnostic_detail,omitempty"`
 }
@@ -359,11 +360,12 @@ func (s *DesktopService) GetMASStatus() (MASStatus, error) {
 			count++
 		}
 	}
-	var avail int64
-	if space, err := core.GetAvailableDiskSpace(s.root); err == nil {
-		avail = int64(space)
+	var avail, capacity int64
+	if available, total, err := core.GetDiskSpace(s.root); err == nil {
+		avail = int64(available)
+		capacity = int64(total)
 	}
-	return MASStatus{Root: s.root, GamePath: game, Valid: fileExists(s.root), GameExists: fileExists(game), Submods: count, AvailableBytes: avail}, nil
+	return MASStatus{Root: s.root, GamePath: game, Valid: fileExists(s.root), GameExists: fileExists(game), Submods: count, AvailableBytes: avail, TotalBytes: capacity}, nil
 }
 
 func (s *DesktopService) ScanLocalSubmods() ([]LocalSubmod, error) {

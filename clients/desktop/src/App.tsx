@@ -53,6 +53,7 @@ const UNVERIFIED_INSTALLATION: Installation = {
   is_valid: false,
   is_running: false,
   disk_available_bytes: null,
+  disk_total_bytes: null,
   last_validated_at: '',
 };
 
@@ -606,6 +607,7 @@ export default function App() {
       is_valid: item.status.valid && item.status.game_exists,
       is_running: false,
       disk_available_bytes: item.status.available_bytes !== undefined ? item.status.available_bytes : null,
+      disk_total_bytes: item.status.total_bytes !== undefined ? item.status.total_bytes : null,
       last_validated_at: new Date().toISOString(),
       diagnostic: item.status.diagnostic,
       diagnostic_detail: item.status.diagnostic_detail,
@@ -1413,8 +1415,6 @@ export default function App() {
           installedCount={installedMods.filter((m) => m.is_managed).length}
           unmanagedCount={unmanagedCount}
           recoverableOpsCount={recoverableOpsCount}
-          onOpenAppUpdate={() => setIsAppUpdateOpen(true)}
-          hasAppUpdate={appUpdateState.status === 'available' || appUpdateState.status === 'ready'}
         />
 
         {/* Center Main Viewport */}

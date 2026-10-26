@@ -20,7 +20,7 @@ cat VERSION            # 或 go run ./cmd/version
 | `cmd/client/SubmodHub/build/windows/nsis/wails_tools.nsh` | NSIS 安装包版本 | `cmd/version -set` |
 | `cmd/client/SubmodHub/build/{darwin,ios}/Info*.plist` | macOS / iOS 包版本 | `cmd/version -set` |
 | `cmd/client/SubmodHub/build/android/app/build.gradle` | Android `versionName` / `versionCode` | 构建时读取 `VERSION`（或 `SUBMODHUB_VERSION`） |
-| `clients/desktop`、`web` 前端 | 界面左下角 / 标题后的 `vX.Y.Z` | Vite 构建时读取 `VERSION` |
+| `clients/desktop`、`web` 前端 | 客户端标题栏 / Web 顶部导航的 `vX.Y.Z` | Vite 构建时读取 `VERSION` |
 
 Android 的 `versionCode` 由版本号推导：`MAJOR * 10000 + MINOR * 100 + PATCH`（因此各段必须 ≤ 99；计算时会忽略 `+build.5` 这类构建元数据和 `-beta.1` 这类预发布后缀）。
 
@@ -49,7 +49,7 @@ go run ./cmd/version -set 0.9.1
 ## 版本号出现的位置
 
 - **API**：`GET /api/v1/version` 返回版本号，以及可选的 `commit` / `build_time`，并附带 `go_version`、`platform`；`GET /healthz` 也会带上 `version`。
-- **桌面 / Android 客户端**：桌面端标题栏与侧边栏、Android 端标题栏显示 `vX.Y.Z`。
+- **桌面 / Android 客户端**：桌面端与 Android 端仅在标题栏显示 `vX.Y.Z`（侧边栏不再重复显示版本号）。
 - **Web 控制台**：顶部导航品牌名旁显示 `vX.Y.Z`。
 - **Windows**：`SubmodHub.exe` 的文件属性使用 `build/windows/info.json` 中的版本。
 - **Android**：APK 的 `versionName` 为版本号，`versionCode` 由版本号推导，可在系统应用信息中看到。
