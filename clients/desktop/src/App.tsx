@@ -1426,6 +1426,7 @@ export default function App() {
               mods={catalogMods}
               installedMods={installedMods}
               activeInstallation={activeInstallation}
+              defaultPlatform={isAndroidDevice ? 'android' : 'windows'}
               catalogError={catalogError}
               isCatalogRefreshing={isRefreshing}
               onReloadCatalog={handleRefreshCatalog}

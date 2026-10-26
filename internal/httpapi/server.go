@@ -652,6 +652,10 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 	if rules, err := normalizePlatformRules(req.GitHubPlatformAssets); err == nil {
 		mod.GitHubPlatformAssets = rules
 	}
+	// The source configuration, not the request body, owns the platform set for
+	// GitHub mods: a split config lists exactly its configured platforms, while
+	// a shared file or manifest serves all of them.
+	mod.SupportedPlatforms = mod.effectiveSupportedPlatforms()
 	s.mu.Lock()
 	s.Catalog.Mods = append(s.Catalog.Mods, mod)
 	if err := s.saveLocked(); err != nil {
@@ -1000,6 +1004,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		mod.GitHubSourceCode = req.GitHubSourceCode
 		mod.GitHubManifest = req.GitHubManifest
 		mod.GitHubPlatformAssets = rules
+		mod.SupportedPlatforms = mod.effectiveSupportedPlatforms()
 		mod.GitHubLastSyncError = ""
 		mod.GitHubBackoffUntil = nil
 		if err := s.saveLocked(); err != nil {
@@ -1239,6 +1244,10 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			mod.GitHubManifest = newManifest
 			mod.GitHubPlatformAssets = normalizedRules
 		}
+		// Keep the advertised platform set derived even when this edit only
+		// touched metadata, so a mod saved with one platform never keeps listing
+		// the other one.
+		mod.SupportedPlatforms = mod.effectiveSupportedPlatforms()
 		if err := s.saveLocked(); err != nil {
 			s.mu.Unlock()
 			writeError(w, 500, "storage_error", "mod was not saved")

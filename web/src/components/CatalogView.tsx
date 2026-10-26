@@ -7,6 +7,7 @@ import { formatVersionLabel } from './versionHistory';
 import { useLoadMoreOnScroll } from './useLoadMoreOnScroll';
 import { fetchTagCatalog, type TagGroup } from '../../../ui/tags-api';
 import { buildTagFilterModel, childTagsFor } from './tagFilters';
+import { CATALOG_PLATFORM_FILTERS } from './catalogPlatforms';
 import { pageScrollPane, usePaneScrolled } from './usePaneScrolled';
 import { scrollPaneToTop } from './scrollToTop';
 import {
@@ -216,13 +217,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           {/* Platform Filter */}
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
             <span className="text-neutral-400 font-medium mr-1">平台:</span>
-            {[
-              { id: 'all', label: '全部' },
-              { id: 'windows', label: 'Windows' },
-              { id: 'android', label: 'Android' },
-              { id: 'linux', label: 'Linux' },
-              { id: 'macos', label: 'macOS' },
-            ].map((p) => (
+            {CATALOG_PLATFORM_FILTERS.map((p) => (
               <button
                 key={p.id}
                 onClick={() => {

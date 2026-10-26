@@ -99,6 +99,31 @@ func normalizePlatformRules(rules []GitHubPlatformRule) ([]GitHubPlatformRule, e
 	return out, nil
 }
 
+// effectiveSupportedPlatforms is the platform set the catalog advertises for a
+// mod. GitHub discovery owns that decision: while per-platform rules are active
+// (on-demand discovery, at least one rule) the rules are exactly the supported
+// platforms, and leaving a platform out means the mod does not publish for it.
+// A shared archive or a manifest listing serves every supported platform, so it
+// may not be narrowed — otherwise the catalog would hide a mod from a platform
+// that can install the very same bytes. Local mods keep the author's declaration.
+func (m Mod) effectiveSupportedPlatforms() []string {
+	if m.GetSourceType() != "github_releases" {
+		return m.SupportedPlatforms
+	}
+	if m.GitHubManifest || len(m.GitHubPlatformAssets) == 0 {
+		return slices.Clone(SupportedPlatforms)
+	}
+	out := make([]string, 0, len(m.GitHubPlatformAssets))
+	for _, platform := range SupportedPlatforms {
+		if slices.ContainsFunc(m.GitHubPlatformAssets, func(rule GitHubPlatformRule) bool {
+			return rule.Platform == platform
+		}) {
+			out = append(out, platform)
+		}
+	}
+	return out
+}
+
 // splitPlatformDelimited splits one file name into the platforms it declares,
 // using the given separators. A segment must name a platform to count; an
 // unrelated prefix ("MyMod-windows-..." segment "MyMod") is ignored.

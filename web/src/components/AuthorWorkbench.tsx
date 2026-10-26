@@ -7,8 +7,9 @@ import { WindowPager } from './WindowPager';
 import { ModCategory, Platform, ModSummary, ModDependency, ModVersion, ScannedFile, ModSourceType, ASSET_PLATFORMS, ASSET_PLATFORM_LABELS, assetPlatformLabel, type AssetPlatform, type GitHubPlatformRule, type PlatformAsset } from '../types/submodhub';
 import {
   validateGitHubSourceInput,
-  validatePlatformRules,
   validatePlatformRule,
+  configuredPlatformsForRules,
+  supportedPlatformsForSource,
   platformModeTradeoff,
   formatLastSyncTime,
   getGitHubRepoUrl,
@@ -203,15 +204,28 @@ export const AuthorWorkbench: React.FC = () => {
     setVersionFormTarget(version?.id || 'new');
   };
 
-  // 分平台模式提交给服务端的规则：只映射当前勾选的模式，关闭时提交空数组，
-  // 服务端据此回到「全平台共用正则」的行为。
+  // 分平台模式提交给服务端的规则：只映射真正配置过的平台，留空的平台就是
+  // 「不发布该平台」；关闭分平台时提交空数组，服务端据此回到全平台共用正则。
+  // 清单模式的分平台 UI 是隐藏的，但已填的规则仍原样保留并提交：作者只是看一眼
+  // 清单说明不该丢掉配置，服务端在清单模式下也不使用它们。
+  const configuredSplitPlatforms = configuredPlatformsForRules(newPlatformRules);
   const platformRulePayload: GitHubPlatformRule[] = newGitHubSplitPlatforms
-    ? ASSET_PLATFORMS.map((platform) => ({
+    ? configuredSplitPlatforms.map((platform) => ({
         platform,
         regex: newPlatformRules[platform].regex.trim(),
         source_code: newPlatformRules[platform].sourceCode,
       }))
     : [];
+  // 分平台规则本身决定目录里展示的平台集合：只有 GitHub 按需抓取时它才生效，
+  // 清单模式与本地源不据此收紧模组的 supported_platforms。服务端会按同一规则
+  // 重新派生（见 effectiveSupportedPlatforms），这里提交的是同一份事实。
+  const splitPlatformsActive = newSourceType === 'github_releases' && newGitHubSplitPlatforms && !newGitHubManifest;
+  const effectivePlatforms = supportedPlatformsForSource({
+    sourceType: newSourceType,
+    splitPlatforms: splitPlatformsActive,
+    configuredPlatforms: configuredSplitPlatforms,
+    declaredPlatforms: newPlatforms,
+  });
 
   const handleCreateDraftSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,18 +238,12 @@ export const AuthorWorkbench: React.FC = () => {
         assetRegex: newGitHubAssetRegex,
         sourceCode: newGitHubSourceCode,
         manifest: newGitHubManifest,
+        platformMode: newGitHubSplitPlatforms,
         platformRules: newGitHubSplitPlatforms ? platformRulePayload : [],
       });
       if (!sourceValidation.valid) {
         showToast('error', sourceValidation.error || 'GitHub 源配置不合法');
         return;
-      }
-      if (newGitHubSplitPlatforms) {
-        const ruleValidation = validatePlatformRules(platformRulePayload);
-        if (!ruleValidation.valid) {
-          showToast('error', ruleValidation.error || '分平台配置不合法');
-          return;
-        }
       }
     }
 
@@ -259,7 +267,7 @@ export const AuthorWorkbench: React.FC = () => {
         mas_version_range: newMasRange,
         recommended_priority: Number(newPriority),
         tags,
-        supported_platforms: newPlatforms,
+        supported_platforms: effectivePlatforms,
         source_type: newSourceType,
         github_owner: newGitHubOwner.trim(),
         github_repo: newGitHubRepo.trim(),
@@ -315,7 +323,7 @@ export const AuthorWorkbench: React.FC = () => {
       mas_version_range: newMasRange,
       recommended_priority: Number(newPriority),
       tags,
-      supported_platforms: newPlatforms,
+      supported_platforms: effectivePlatforms,
       source_type: newSourceType,
       github_owner: newGitHubOwner.trim(),
       github_repo: newGitHubRepo.trim(),
@@ -1520,6 +1528,9 @@ export const AuthorWorkbench: React.FC = () => {
                         </p>
                         <pre className="bg-neutral-900 text-neutral-100 rounded p-2 overflow-x-auto text-[10px] leading-relaxed">
 {MANIFEST_SNIPPET}</pre>
+                        <p className="text-neutral-600 pt-1">
+                          清单指向的单个归档对所有平台等价，目录会同时向 Windows 与 Android 展示该模组。
+                        </p>
                       </>
                     ) : (
                       <>
@@ -1570,6 +1581,7 @@ export const AuthorWorkbench: React.FC = () => {
                       {ASSET_PLATFORMS.map((platform) => {
                         const label = assetPlatformLabel(platform);
                         const rule = newPlatformRules[platform];
+                        const configured = configuredSplitPlatforms.includes(platform);
                         const ruleCheck = validatePlatformRule(platform, rule.regex, rule.sourceCode);
                         return (
                           <div key={platform} className="rounded border border-neutral-200 bg-white p-2.5 space-y-1.5">
@@ -1577,8 +1589,10 @@ export const AuthorWorkbench: React.FC = () => {
                               <label className="block font-medium text-neutral-700">
                                 {label} 资产文件名正则 (RE2)
                               </label>
-                              <span className={`text-[11px] ${ruleCheck.valid ? 'text-emerald-700' : 'text-rose-700'}`}>
-                                {ruleCheck.valid ? '可用于匹配' : ruleCheck.error}
+                              <span className={`text-[11px] ${
+                                !configured ? 'text-neutral-500' : ruleCheck.valid ? 'text-emerald-700' : 'text-rose-700'
+                              }`}>
+                                {!configured ? '留空则不发布该平台' : ruleCheck.valid ? '可用于匹配' : ruleCheck.error}
                               </span>
                             </div>
                             <input
@@ -1603,8 +1617,13 @@ export const AuthorWorkbench: React.FC = () => {
                           </div>
                         );
                       })}
+                      <p className={`text-[11px] ${configuredSplitPlatforms.length > 0 ? 'text-neutral-600' : 'text-rose-700'}`}>
+                        {configuredSplitPlatforms.length > 0
+                          ? `当前支持 ${configuredSplitPlatforms.map((platform) => assetPlatformLabel(platform)).join('、')} 平台。`
+                          : '至少为 Windows 或 Android 其中一个平台填写规则。'}
+                      </p>
                       <p className="text-[11px] text-neutral-500">
-                        两个平台必须都在同一次 Release 里出现；缺任一平台时这次 Release 会被整条跳过，不会只发布一半。
+                        只填一个平台就只支持这个平台；留空表示该平台不发布。已配置的平台必须都在同一次 Release 里出现，缺任一平台时这次 Release 会被整条跳过，不会只发布一半。
                       </p>
                     </>
                   ) : (
@@ -1638,6 +1657,9 @@ export const AuthorWorkbench: React.FC = () => {
                       </span>
                     </label>
                   </div>
+                  <p className="text-[11px] text-neutral-500">
+                    共用文件对所有平台等价，目录会同时向 Windows 与 Android 展示该模组。要只发布其中一个平台，请改用上面的分平台模式并留空另一个平台。
+                  </p>
                     </>
                   )}
                     </>

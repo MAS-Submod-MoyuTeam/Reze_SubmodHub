@@ -131,3 +131,27 @@ test('CatalogView: a healthy catalog renders neither the failure nor the empty-r
   assert.doesNotMatch(html, /未找到符合条件的模组/);
   assert.match(html, /Monika AI Voice/);
 });
+
+test('CatalogView: defaults the platform filter to the client platform', () => {
+  const windowsOnly: ModSummary = { ...mockMod, id: 'mod_win', title: 'Windows Only Mod', supported_platforms: ['windows'] };
+  const androidOnly: ModSummary = { ...mockMod, id: 'mod_android', title: 'Android Only Mod', supported_platforms: ['android'] };
+
+  const onAndroid = renderCatalog({ mods: [windowsOnly, androidOnly], defaultPlatform: 'android' });
+  assert.match(onAndroid, /Android Only Mod/);
+  assert.doesNotMatch(onAndroid, /Windows Only Mod/);
+
+  const onWindows = renderCatalog({ mods: [windowsOnly, androidOnly], defaultPlatform: 'windows' });
+  assert.match(onWindows, /Windows Only Mod/);
+  assert.doesNotMatch(onWindows, /Android Only Mod/);
+});
+
+test('CatalogView: a platform-filtered empty result names the filter and offers the wider view', () => {
+  const androidOnly: ModSummary = { ...mockMod, id: 'mod_android', title: 'Android Only Mod', supported_platforms: ['android'] };
+
+  const empty = renderCatalog({ mods: [androidOnly], defaultPlatform: 'windows' });
+  assert.match(empty, /未找到符合条件的模组/);
+  // The default filter is the reason this is empty; the generic copy would blame
+  // the keyword and the reset button would clear unrelated search/category/tag.
+  assert.match(empty, /当前只显示 Windows 平台的模组/);
+  assert.match(empty, /显示全部平台/);
+});

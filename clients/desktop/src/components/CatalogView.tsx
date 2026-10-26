@@ -29,6 +29,12 @@ interface CatalogViewProps {
   onStartUpdatePlan: (mod: ModSummary) => void;
   installingModId: string | null;
   installProgress: DownloadProgress | null;
+  /**
+   * 客户端运行平台：Windows 客户端默认筛 Windows，Android 客户端默认筛 Android。
+   * 目前只有这两种构建（Linux / macOS 没有发布计划）；浏览器里的 Web 目录则在
+   * AppContext 里保持「全部」。
+   */
+  defaultPlatform?: 'windows' | 'android';
 }
 
 export const CatalogView: React.FC<CatalogViewProps> = ({
@@ -43,10 +49,11 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   onStartUpdatePlan,
   installingModId,
   installProgress,
+  defaultPlatform = 'windows',
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'submod' | 'spritepack'>('all');
-  const [selectedPlatform, setSelectedPlatform] = useState<'all' | 'windows' | 'android'>('all');
+  const [selectedPlatform, setSelectedPlatform] = useState<'all' | 'windows' | 'android'>(defaultPlatform);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   /** 已加载页数：滚动到列表底部即 +1，目录分页与 Web 一致，不再用页码翻页。 */
   const [loadedPage, setLoadedPage] = useState(1);
@@ -325,20 +332,35 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               <Filter className="w-10 h-10 text-neutral-600 mb-3" />
               <h3 className="text-base font-semibold text-neutral-200">未找到符合条件的模组</h3>
               <p className="text-xs text-neutral-400 mt-1 max-w-sm">
-                请尝试修改关键词，或清除平台与标签过滤条件。
+                {selectedPlatform === 'all'
+                  ? '请尝试修改关键词，或清除平台与标签过滤条件。'
+                  : `当前只显示 ${selectedPlatform === 'windows' ? 'Windows' : 'Android'} 平台的模组，另一个平台的模组不会出现在这里。`}
               </p>
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setSelectedCategory('all');
-                  setSelectedPlatform('all');
-                  setSelectedTag(null);
-                  resetPaging();
-                }}
-                className="mt-4 px-3 py-1.5 text-xs font-medium text-neutral-200 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors"
-              >
-                重置所有筛选
-              </button>
+              <div className="mt-4 flex items-center gap-2">
+                {selectedPlatform !== 'all' && (
+                  <button
+                    onClick={() => {
+                      setSelectedPlatform('all');
+                      resetPaging();
+                    }}
+                    className="px-3 py-1.5 text-xs font-medium text-emerald-100 bg-emerald-800 hover:bg-emerald-700 rounded-lg transition-colors"
+                  >
+                    显示全部平台
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedCategory('all');
+                    setSelectedPlatform('all');
+                    setSelectedTag(null);
+                    resetPaging();
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium text-neutral-200 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors"
+                >
+                  重置所有筛选
+                </button>
+              </div>
             </div>
           ) : (
             <>

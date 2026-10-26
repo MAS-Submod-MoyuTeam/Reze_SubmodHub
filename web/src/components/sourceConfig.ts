@@ -2,7 +2,7 @@
  * GitHub Releases 源配置辅助函数与校验逻辑
  */
 
-import { ASSET_PLATFORMS, type AssetPlatform, type GitHubPlatformRule } from '../types/submodhub';
+import { ASSET_PLATFORMS, type AssetPlatform, type GitHubPlatformRule, type Platform } from '../types/submodhub';
 
 export interface GitHubSourceInput {
   owner?: string;
@@ -16,6 +16,11 @@ export interface GitHubSourceInput {
    * 全平台共用正则 (assetRegex) 不再参与匹配。
    */
   platformRules?: GitHubPlatformRule[];
+  /**
+   * true 表示作者选择了分平台模式。规则列表为空时也必须报「至少配置一个平台」，
+   * 而不是退回「需要共用正则」，否则作者只会看到一句与该模式无关的错误。
+   */
+  platformMode?: boolean;
 }
 
 /** 作者需要自己维护的清单文件名（放在仓库根目录）。 */
@@ -82,13 +87,14 @@ export function validateGitHubSourceInput(input: GitHubSourceInput): { valid: bo
 
   // 清单模式直接按 rezehub.yml 下载，资产正则不再参与匹配，因此不能强制要求填写。
   // 分平台模式下每个平台各自带正则，全平台共用正则不再参与匹配，同样不能强制要求。
-  const splitPlatforms = Boolean(input.platformRules && input.platformRules.length > 0);
+  const platformRules = input.platformRules || [];
+  const splitPlatforms = Boolean(input.platformMode) || platformRules.length > 0;
   if (!manifest && !splitPlatforms && !assetRegex && !sourceCode) {
     return { valid: false, error: '必须配置 Release 资产文件名正则或勾选允许使用源码包 ZIP' };
   }
 
   if (splitPlatforms && !manifest) {
-    const rules = validatePlatformRules(input.platformRules || []);
+    const rules = validatePlatformRules(platformRules);
     if (!rules.valid) return rules;
   }
 
@@ -103,7 +109,7 @@ export function validateGitHubSourceInput(input: GitHubSourceInput): { valid: bo
   return { valid: true };
 }
 
-/** 单个平台正则的校验：为空时该平台只能靠源码包兜底。 */
+/** 单个平台正则的校验：留空且不启用源码包兜底时，该平台视为未配置、不参与发布。 */
 export function validatePlatformRule(platform: AssetPlatform, regex: string, sourceCode: boolean): { valid: boolean; error?: string } {
   const pattern = regex.trim();
   if (!pattern) {
@@ -119,17 +125,56 @@ export function validatePlatformRule(platform: AssetPlatform, regex: string, sou
   return { valid: true };
 }
 
+/** 平台是否真的被作者配置：有正则，或明确允许回退到源码包。 */
+export function isPlatformRuleConfigured(rule: { platform?: AssetPlatform; regex?: string; source_code?: boolean }): boolean {
+  return Boolean((rule.regex || '').trim()) || Boolean(rule.source_code);
+}
+
 /**
- * 分平台模式必须覆盖每一个平台：分平台之后就再也不存在「全平台共用文件」，
- * 缺一个平台意味着该平台的用户拿不到任何东西。
+ * 从表单规则里挑出真正配置过的平台。分平台模式下这个集合就是模组支持的平台：
+ * 只填 Android 就只会返回 Android，另一个平台不会出现在目录筛选与下载里。
+ */
+export function configuredPlatformsForRules(
+  rules: Record<AssetPlatform, { regex: string; sourceCode: boolean }>,
+): AssetPlatform[] {
+  return ASSET_PLATFORMS.filter((platform) =>
+    isPlatformRuleConfigured({ regex: rules[platform].regex, source_code: rules[platform].sourceCode }),
+  );
+}
+
+/**
+ * 作者工作台提交给服务端的 supported_platforms。
+ *
+ * 平台集合由源配置唯一决定，避免出现「分平台规则只剩 Android、
+ * supported_platforms 还写着 Windows」这种界面上看不见的矛盾状态：
+ * - 分平台（GitHub 按需抓取且至少配置了一个平台）：就是已配置的平台；
+ * - GitHub 共用文件 / 清单：一个归档（或清单指向的归档）服务所有平台，
+ *   不能再收窄，否则目录会把能装同一份字节的平台挡在外面；
+ * - 本地源：沿用作者声明的集合（表单没有平台控件，编辑时原样回写）。
+ */
+export function supportedPlatformsForSource(input: {
+  sourceType: string;
+  /** 分平台规则此刻是否真的参与发现（清单模式下不参与）。 */
+  splitPlatforms: boolean;
+  configuredPlatforms: AssetPlatform[];
+  declaredPlatforms: Platform[];
+}): Platform[] {
+  if (input.sourceType !== 'github_releases') return input.declaredPlatforms;
+  return input.splitPlatforms ? [...input.configuredPlatforms] : [...ASSET_PLATFORMS];
+}
+
+/**
+ * 分平台模式只要求「至少一个平台」：作者可以只发 Windows 或只发 Android，
+ * 留空的平台就是该模组不支持的平台，不会产出任何下载。
+ * 已配置的平台必须各自可用；一个平台的正则写坏会拒绝整组配置，避免带着坏规则保存。
  */
 export function validatePlatformRules(rules: GitHubPlatformRule[]): { valid: boolean; error?: string } {
-  for (const platform of ASSET_PLATFORMS) {
-    const rule = rules.find((item) => item.platform === platform);
-    if (!rule) {
-      return { valid: false, error: `分平台分发需要同时配置 Windows 与 Android 平台` };
-    }
-    const result = validatePlatformRule(platform, rule.regex || '', Boolean(rule.source_code));
+  const configured = rules.filter(isPlatformRuleConfigured);
+  if (configured.length === 0) {
+    return { valid: false, error: '分平台分发至少需要配置一个平台（Windows 或 Android）' };
+  }
+  for (const rule of configured) {
+    const result = validatePlatformRule(rule.platform, rule.regex || '', Boolean(rule.source_code));
     if (!result.valid) return result;
   }
   return { valid: true };
@@ -153,13 +198,14 @@ export function suggestPlatformRegex(platform: AssetPlatform): string {
 }
 
 /**
- * 分平台分发的取舍：它换来「每个平台拿到自己的包」，代价是作者每次发版都要
- * 在同一次 Release 里传齐两个文件，缺一个这次同步就整体失败。
+ * 分平台分发的取舍：它换来「每个平台拿到自己的包」，代价是作者要为每个想支持的
+ * 平台单独维护一条规则。只填一个平台就只支持这一个平台，但已配置的平台缺资产时
+ * 这次 Release 会整体跳过，不会只发布一半。
  */
 export function platformModeTradeoff(): DiscoveryModeTradeoff {
   return {
-    benefit: 'Windows 与 Android 各自下载对应的包，安装包里不会再混入另一平台的脚本与资源。',
-    cost: '每次发版都要在同一个 Release 里同时上传两个平台的资产；缺少任一平台时这次 Release 会被整体跳过，不会只发布一半。',
+    benefit: '每个已配置的平台各自下载对应的包，安装包里不会再混入另一平台的脚本与资源。',
+    cost: '只有填了规则的平台才会发布；只填一个平台就是只支持该平台，另一个平台不会产出下载。已配置的平台必须在同一次 Release 里匹配到资产，缺任何一个时这次 Release 会被整体跳过。',
   };
 }
 

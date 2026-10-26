@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -986,6 +987,109 @@ func TestSourceConfigPlatformModeValidation(t *testing.T) {
 	shared.AssetRegex = `.*\.zip`
 	if err := validateSourceConfig(shared); err != nil {
 		t.Fatalf("shared regex rejected: %v", err)
+	}
+}
+
+// The catalog platform set is derived, not copied from the request: active
+// split rules name exactly the supported platforms, while a shared archive or a
+// manifest serves every platform. Local mods keep the author's declaration.
+func TestEffectiveSupportedPlatformsFollowsSourceConfig(t *testing.T) {
+	local := Mod{SupportedPlatforms: []string{"windows", "linux"}}
+	if got := local.effectiveSupportedPlatforms(); !slices.Equal(got, []string{"windows", "linux"}) {
+		t.Fatalf("local platforms = %v", got)
+	}
+	shared := Mod{SourceType: "github_releases", SupportedPlatforms: []string{"android"}}
+	if got := shared.effectiveSupportedPlatforms(); !slices.Equal(got, SupportedPlatforms) {
+		t.Fatalf("shared archive must serve every platform, got %v", got)
+	}
+	manifest := Mod{
+		SourceType:           "github_releases",
+		GitHubManifest:       true,
+		GitHubPlatformAssets: []GitHubPlatformRule{{Platform: "android", Regex: "a"}},
+	}
+	if got := manifest.effectiveSupportedPlatforms(); !slices.Equal(got, SupportedPlatforms) {
+		t.Fatalf("manifest discovery ignores platform rules, got %v", got)
+	}
+	splitAndroid := Mod{
+		SourceType:           "github_releases",
+		GitHubPlatformAssets: []GitHubPlatformRule{{Platform: "android", Regex: "a"}},
+	}
+	if got := splitAndroid.effectiveSupportedPlatforms(); !slices.Equal(got, []string{"android"}) {
+		t.Fatalf("split android platforms = %v", got)
+	}
+	splitBoth := Mod{
+		SourceType: "github_releases",
+		GitHubPlatformAssets: []GitHubPlatformRule{
+			{Platform: "android", Regex: "a"},
+			{Platform: "windows", Regex: "w"},
+		},
+	}
+	if got := splitBoth.effectiveSupportedPlatforms(); !slices.Equal(got, []string{"windows", "android"}) {
+		t.Fatalf("split both platforms = %v", got)
+	}
+}
+
+// Saving through the API must not leave supported_platforms disagreeing with
+// the platform rules: only Android configured means only Android advertised, a
+// metadata-only edit keeps that set, and switching back to a shared file
+// restores both platforms.
+func TestSavedPlatformSetFollowsSourceConfiguration(t *testing.T) {
+	store, err := NewStore(t.TempDir(), Catalog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("a", 64)
+	store.sessions[sessionKey(token)] = authSession{
+		User:    authUser{ID: "author", DisplayName: "Author"},
+		Roles:   []string{"admin"},
+		CSRF:    "csrf",
+		Expires: time.Now().Add(time.Hour),
+	}
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+	do := func(method, path, body string) Mod {
+		t.Helper()
+		req, _ := http.NewRequest(method, server.URL+path, bytes.NewBufferString(body))
+		req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
+		res, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		if res.StatusCode < 200 || res.StatusCode > 299 {
+			t.Fatalf("%s %s: status %d", method, path, res.StatusCode)
+		}
+		var mod Mod
+		if err := json.NewDecoder(res.Body).Decode(&mod); err != nil {
+			t.Fatal(err)
+		}
+		return mod
+	}
+
+	created := do(http.MethodPost, "/api/v1/author/mods", `{
+		"title": "Android Only", "summary": "s", "description": "d", "category": "submod",
+		"tags": ["工具"], "supported_platforms": ["windows", "android"],
+		"source_type": "github_releases", "github_owner": "octocat", "github_repo": "hello",
+		"github_platform_assets": [{"platform": "android", "regex": "a\\.zip$"}]
+	}`)
+	if !slices.Equal(created.SupportedPlatforms, []string{"android"}) {
+		t.Fatalf("create advertised %v, want only android", created.SupportedPlatforms)
+	}
+
+	edited := do(http.MethodPatch, "/api/v1/author/mods/"+created.ID, `{
+		"title": "Android Only v2", "summary": "s", "description": "d", "category": "submod",
+		"tags": ["工具"]
+	}`)
+	if !slices.Equal(edited.SupportedPlatforms, []string{"android"}) {
+		t.Fatalf("metadata-only edit advertised %v, want only android", edited.SupportedPlatforms)
+	}
+
+	shared := do(http.MethodPatch, "/api/v1/author/mods/"+created.ID+"/source", `{
+		"source_type": "github_releases", "github_owner": "octocat", "github_repo": "hello",
+		"github_asset_regex": ".*\\.zip$", "github_platform_assets": []
+	}`)
+	if !slices.Equal(shared.SupportedPlatforms, SupportedPlatforms) {
+		t.Fatalf("shared file advertised %v, want every platform", shared.SupportedPlatforms)
 	}
 }
 

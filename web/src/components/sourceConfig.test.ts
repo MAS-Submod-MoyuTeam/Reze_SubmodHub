@@ -4,6 +4,9 @@ import {
   validateGitHubSourceInput,
   validatePlatformRule,
   validatePlatformRules,
+  isPlatformRuleConfigured,
+  configuredPlatformsForRules,
+  supportedPlatformsForSource,
   guessPlatformFromFileName,
   platformModeTradeoff,
   isCandidateVersionAllowed,
@@ -103,7 +106,7 @@ test('manifest snippet matches the document the server parses', () => {
   assert.ok(MANIFEST_SNIPPET.includes('.zip'));
 });
 
-test('per-platform rules require a usable matcher on every platform', () => {
+test('per-platform rules accept one or both platforms', () => {
   // A blank regex is only acceptable when that platform may fall back to source.
   assert.equal(validatePlatformRule('windows', '', false).valid, false);
   assert.equal(validatePlatformRule('windows', '', true).valid, true);
@@ -115,10 +118,19 @@ test('per-platform rules require a usable matcher on every platform', () => {
   assert.ok(validatePlatformRule('android', '', false).error?.includes('Android'));
   assert.ok(validatePlatformRule('windows', '', false).error?.includes('Windows'));
 
-  // Splitting assets must cover both platforms: a missing one would leave its
-  // users with nothing to download.
+  // A platform with neither a regex nor the source fallback is not configured.
+  assert.equal(isPlatformRuleConfigured({ platform: 'windows' }), false);
+  assert.equal(isPlatformRuleConfigured({ platform: 'windows', regex: '   ' }), false);
+  assert.equal(isPlatformRuleConfigured({ platform: 'android', source_code: true }), true);
+  assert.equal(isPlatformRuleConfigured({ platform: 'android', regex: 'a\\.zip$' }), true);
+
+  // Splitting assets can support only Windows or only Android: whatever is left
+  // blank is a platform this mod does not publish for.
   assert.equal(validatePlatformRules([]).valid, false);
-  assert.equal(validatePlatformRules([{ platform: 'windows', regex: 'w\\.zip$' }]).valid, false);
+  assert.equal(validatePlatformRules([{ platform: 'windows', regex: 'w\\.zip$' }]).valid, true);
+  assert.equal(validatePlatformRules([{ platform: 'android', regex: 'a\\.zip$' }]).valid, true);
+  assert.equal(validatePlatformRules([{ platform: 'android', source_code: true }]).valid, true);
+  assert.equal(validatePlatformRules([{ platform: 'android' }]).valid, false);
   assert.equal(validatePlatformRules([
     { platform: 'windows', regex: 'MyMod-windows\\.zip$' },
     { platform: 'android', regex: 'MyMod-android\\.zip$' },
@@ -128,6 +140,21 @@ test('per-platform rules require a usable matcher on every platform', () => {
     { platform: 'windows', regex: 'MyMod-windows\\.zip$' },
     { platform: 'android', regex: '[broken' },
   ]).valid, false);
+
+  // The configured set is the supported platform set: filling only Android
+  // means the mod supports only Android, not "Windows with nothing to download".
+  assert.deepEqual(configuredPlatformsForRules({
+    windows: { regex: '', sourceCode: false },
+    android: { regex: 'a\\.zip$', sourceCode: false },
+  }), ['android']);
+  assert.deepEqual(configuredPlatformsForRules({
+    windows: { regex: 'w\\.zip$', sourceCode: false },
+    android: { regex: '', sourceCode: true },
+  }), ['windows', 'android']);
+  assert.deepEqual(configuredPlatformsForRules({
+    windows: { regex: '', sourceCode: false },
+    android: { regex: '', sourceCode: false },
+  }), []);
 });
 
 test('shared regex stays optional when per-platform rules exist', () => {
@@ -140,6 +167,16 @@ test('shared regex stays optional when per-platform rules exist', () => {
     sourceCode: false,
     platformRules: [{ platform: 'windows', regex: 'w\\.zip$' }, { platform: 'android', regex: 'a\\.zip$' }],
   }).valid, true);
+  // Choosing split mode without any platform must name that problem instead of
+  // falling back to the unrelated "configure a shared regex" error.
+  const empty = validateGitHubSourceInput({
+    owner: 'octocat',
+    repo: 'hello',
+    platformMode: true,
+    platformRules: [],
+  });
+  assert.equal(empty.valid, false);
+  assert.ok(empty.error?.includes('至少需要配置一个平台'));
 });
 
 test('guesses a file name platform only when the tag is unambiguous', () => {
@@ -153,9 +190,29 @@ test('guesses a file name platform only when the tag is unambiguous', () => {
   assert.equal(guessPlatformFromFileName(''), null);
 });
 
-test('platform tradeoff copy states the all-or-nothing release rule', () => {
+test('the submitted platform set is derived from the source configuration', () => {
+  // Only Android configured means the mod only supports Android.
+  assert.deepEqual(
+    supportedPlatformsForSource({ sourceType: 'github_releases', splitPlatforms: true, configuredPlatforms: ['android'], declaredPlatforms: ['windows', 'android'] }),
+    ['android'],
+  );
+  // A shared archive (and a manifest listing) serves every platform: narrowing a
+  // shared file would hide installable mods from a platform filter.
+  assert.deepEqual(
+    supportedPlatformsForSource({ sourceType: 'github_releases', splitPlatforms: false, configuredPlatforms: [], declaredPlatforms: ['android'] }),
+    ['windows', 'android'],
+  );
+  // Local sources keep the author's declared set.
+  assert.deepEqual(
+    supportedPlatformsForSource({ sourceType: 'local', splitPlatforms: false, configuredPlatforms: [], declaredPlatforms: ['android'] }),
+    ['android'],
+  );
+});
+
+test('platform tradeoff copy states one-platform and all-or-nothing rules', () => {
   const copy = platformModeTradeoff();
-  assert.ok(copy.benefit.includes('Windows'));
-  assert.ok(copy.benefit.includes('Android'));
+  // The benefit must not keep claiming both platforms always ship.
+  assert.ok(!copy.benefit.includes('Windows 与 Android'));
+  assert.ok(copy.cost.includes('只支持'));
   assert.ok(copy.cost.includes('整体跳过'));
 });
