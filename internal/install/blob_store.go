@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type BlobStore struct {
@@ -38,12 +39,18 @@ func (s *BlobStore) Exists(hash string) bool {
 	return err == nil && !info.IsDir()
 }
 
+// Put stores content and returns its hash. A blob that already exists is not
+// rewritten, but its modification time is refreshed: the retention sweep treats
+// a blob as reclaimable only once nobody has needed its content for the whole
+// retention window, and a re-staged preview or a repeated before-image is
+// "needed now" even when the bytes were already on disk.
 func (s *BlobStore) Put(content []byte) (string, error) {
 	h := sha256.Sum256(content)
 	hash := hex.EncodeToString(h[:])
 	dest := s.Path(hash)
 
 	if s.Exists(hash) {
+		s.touch(dest)
 		return hash, nil
 	}
 
@@ -61,6 +68,15 @@ func (s *BlobStore) Put(content []byte) (string, error) {
 		return "", err
 	}
 	return hash, nil
+}
+
+// touch refreshes a blob's modification time so retention cannot mistake a
+// currently needed blob for an abandoned one. Best effort: a store on a
+// read-only or timestamp-rejecting filesystem keeps the older stamp, and the
+// sweep then simply keeps the blob for one more window.
+func (s *BlobStore) touch(path string) {
+	now := time.Now()
+	_ = os.Chtimes(path, now, now)
 }
 
 func (s *BlobStore) Get(hash string) ([]byte, error) {

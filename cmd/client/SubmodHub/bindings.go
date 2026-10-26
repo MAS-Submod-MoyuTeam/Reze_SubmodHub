@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -339,6 +340,10 @@ func (s *DesktopService) SetMASRoot(root string) (MASStatus, error) {
 		}
 	}
 
+	// Retention: finished transactions keep their recovery material for
+	// CompletedRetention, then their journal and unreferenced blobs are dropped.
+	s.pruneFinishedTransactions()
+
 	return s.GetMASStatus()
 }
 
@@ -406,6 +411,7 @@ func (s *DesktopService) ApplyFile(request InstallRequest) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	s.pruneFinishedTransactions()
 	return "committed", nil
 }
 
@@ -1323,6 +1329,8 @@ func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstall
 		return ArchiveInstallResult{}, err
 	}
 
+	s.pruneFinishedTransactions()
+
 	return ArchiveInstallResult{
 		State:                  "committed",
 		Files:                  len(plan.Actions),
@@ -1331,6 +1339,37 @@ func (s *DesktopService) ExecutePlan(request ExecutePlanRequest) (ArchiveInstall
 		SpriteSelectionHash:    plan.SpriteSelectionHash,
 		SelectedSpriteSetCount: plan.SelectedSpriteSetCount,
 	}, nil
+}
+
+// pruneFinishedTransactions applies the transaction retention window. It never
+// blocks an install/update/repair and never deletes unfinished recovery
+// material; see core.Installer.PruneCompleted for the exact rules. It runs
+// synchronously on purpose: the pass holds the instance lock, so overlapping it
+// with the next operation would surface as instance_busy.
+//
+// Targets staged by a preview that has not been confirmed yet need no plan
+// plumbing here: they are protected by their blob timestamps, which BlobStore.Put
+// refreshes on every staging.
+func (s *DesktopService) pruneFinishedTransactions() {
+	if s == nil || s.core == nil {
+		return
+	}
+	result, err := s.core.PruneCompleted(time.Now())
+	if err != nil {
+		log.Printf("Transaction retention: %v", err)
+		return
+	}
+	if result.Skipped {
+		return
+	}
+	if result.DeletedJournals > 0 || result.DeletedLegacyJournals > 0 || result.DeletedBlobs > 0 {
+		log.Printf(
+			"Transaction retention: removed %d finished journals (kept %d), %d legacy journals + %d legacy backup files (kept %d legacy), %d blobs (kept %d), freed %d bytes",
+			result.DeletedJournals, result.RetainedJournals,
+			result.DeletedLegacyJournals, result.DeletedLegacyBackups, result.RetainedLegacyJournals,
+			result.DeletedBlobs, result.RetainedBlobs, result.FreedBytes,
+		)
+	}
 }
 
 func (s *DesktopService) ApplyArchive(request ArchiveInstallRequest) (ArchiveInstallResult, error) {

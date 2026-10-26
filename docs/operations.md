@@ -141,6 +141,19 @@ SubmodHub 安装引擎使用统一的 journal 状态机保障多文件写入的 
 
 此时任务中心会展示冲突文件路径、期望哈希与实测哈希，用户需先备份相关文件，解决外部冲突后，方可由客户端或命令行执行安全重试。
 
+### 已完成事务的保留与自动清理（7 天）
+已提交或已回滚的事务默认保留 **7 天**，之后由客户端自动清理：删除过期 journal，并删除**连续 7 天不再被需要**的 blob（旧版本文件内容的实际副本）。清理在每次启动/切换实例（`SetMASRoot`）和每次成功提交后各执行一次；命中时写入一行日志：`Transaction retention: removed N finished journals (kept K), M legacy journals + B legacy backup files (kept L legacy), X blobs (kept Y), freed Z bytes`。该行走标准 `log`（与 `Update recovery` 同一条输出通道，从控制台启动或抓取 stderr 时可见）。
+
+- **只清理终态**：仅 `committed` / `rolled_back` 且 `updated_at` 早于 7 天的 journal 会过期。**legacy journal（`state/*.json`，由单文件 `Apply` 入口写入）同样适用**，并连带删除其 `state/backups/<journal 文件名>/` 快照目录；目录为空时连 `backups/` 一起移除。
+- **永不清理**：`planned` / `prepared` / `applying` / `committing` / `needs_manual_recovery` 的 journal 及其恢复材料；`manifest.json` 引用的全部 blob（原始快照与每一层，包括被高优先级覆盖的下层）；仍被保留中 journal（含 legacy journal 的 `backups` 映射）引用的 blob；无法解析或缺少时间戳的 journal。
+- **时间戳兜底**：除引用关系外，blob 还必须「连续 7 天没被需要过」才会被删。同一内容再次入池（例如预览重新暂存、事务重新取快照）会刷新 blob 的修改时间，因此**预览后尚未确认安装的目标内容不会被误删**——这类内容只存在于客户端内存的 Plan 里，没有 journal 可查。
+- **manifest 是权威**：`manifest.json` 读不出来时整趟清理放弃，避免把所有 blob 误判为孤儿。
+- **每次都扫一遍 blob**：即使本次没有 journal 到期也会扫描 `blobs/`，用于回收「上一次清理在删完 journal 后被中断」留下的孤儿副本；扫描按前缀目录逐个 `ReadDir`，只对无人引用的候选文件做 `stat`，不按 blob 总数逐条 stat。
+- **跳过而非排队**：若实例正被其他事务锁定，本次清理直接跳过，下次再试；清理不会插入到用户操作之间。
+- **影响面**：任务中心不再显示 7 天前的操作记录；旧版本文件内容不再保留（本来也没有“回滚到旧版本”的入口）。修复、卸载还原、更新时的下层还原只读 manifest 与其 blob，不受影响。
+- **legacy 兜底失效**：`Installer.Uninstall` 在 manifest 缺记录时会用 legacy journal 合成 installation。该类 journal 过期后这条兜底不再可用，极旧实例需重新安装或走收养流程。正常 schema 2 实例的 manifest 记录完整，不依赖它。
+- **统计口径**：`freed Z bytes` 只统计被删除的 blob 与 legacy 备份文件，不含 journal 文件本身。
+
 ### 事务原子性与语义边界
 - **可观察原子性**：本项目中的“原子”指事务级 all-or-nothing 可观察状态和崩溃后可恢复，不声称普通文件系统具备跨文件同时提交的底层操作系统语义。
 - **重试机制**：由于外部环境与 generation 可能已变更，重试失败操作时必须重新生成最新 Plan，不依赖旧事务断点。
