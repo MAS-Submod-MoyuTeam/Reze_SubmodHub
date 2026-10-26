@@ -18,6 +18,7 @@ import { AdoptModal } from './components/AdoptModal';
 import { FileInspectModal } from './components/FileInspectModal';
 import { AppUpdateModal } from './components/AppUpdateModal';
 import { ExecutionProgressBar } from './components/ExecutionProgressBar';
+import { InstanceSwitchOverlay } from './components/InstanceSwitchOverlay';
 import { ExecutionCoordinator } from './executionCoordinator';
 import { StorageAccessBanner } from './components/StorageAccessBanner';
 import { MobileNavBar } from './components/MobileNavBar';
@@ -64,6 +65,35 @@ const UNVERIFIED_INSTALLATION: Installation = {
  */
 const MAS_GAME_PROCESS_DETECTED = false;
 
+/**
+ * 切换实例会整体替换屏幕上的数据。覆盖层文字固定下来，让用户知道冻结期间在读哪个实例，
+ * 而不是看到一次没有说明的卡顿。
+ */
+const INSTANCE_SWITCH_DETAIL = '正在读取该实例的模组、精灵包与事务记录，请稍候。';
+
+/**
+ * 冻结上限：实例级读取正常都在几百毫秒内结束。这个上限只在原生调用或未托管模组的
+ * 商店匹配请求卡死时兜底，让窗口退回各视图自己的加载/错误状态，而不是被永久冻结。
+ */
+const INSTANCE_SWITCH_DEADLINE_MS = 15000;
+
+/** 等待一组实例级读取落定；超过上限就放弃等待，由各视图自己说明还没读到什么。 */
+function settleAllWithDeadline(pending: Promise<unknown>[], deadlineMs: number): Promise<void> {
+  if (pending.length === 0) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, deadlineMs);
+    void Promise.allSettled(pending).then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+interface InstanceSwitchStatus {
+  title: string;
+  detail: string;
+}
+
 /** 提示分的只有两种语气：普通结果与需要用户注意的坏消息。 */
 type ToastTone = 'info' | 'warn';
 
@@ -76,6 +106,10 @@ export default function App() {
 
   // Navigation
   const [activeTab, setActiveTab] = useState<ActiveTab>('catalog');
+
+  // 实例切换期间冻结整个窗口：切换没结束前屏幕上的模组/精灵包/事务都属于旧实例。
+  const [instanceSwitch, setInstanceSwitch] = useState<InstanceSwitchStatus | null>(null);
+  const instanceSwitchRequestRef = useRef(0);
 
   // Catalog and Installed Data
   const [catalogMods, setCatalogMods] = useState<ModSummary[]>([]);
@@ -578,10 +612,14 @@ export default function App() {
     }
   };
 
+  /**
+   * 把后端返回的实例状态落到界面上，并返回这一轮实例级读取（模组/精灵包/事务）的 Promise。
+   * 调用方通常可以忽略返回值；实例切换需要它们来决定冻结何时解除。
+   */
   const syncInstances = (
     state: MASInstancesState,
     options?: { reason?: InstanceSyncReason; forceReset?: boolean }
-  ) => {
+  ): Promise<unknown>[] => {
     const prevActiveId = activeInstallationIdRef.current;
     const prevAuthorized = activeInstanceAuthorizedRef.current;
     const nextActiveId = state.active_id || 'unverified';
@@ -629,24 +667,45 @@ export default function App() {
       setCurrentPlan(null);
     }
 
+    const pending: Promise<unknown>[] = [];
     const modsIdle = loadCoordinatorRef.current.getModsStatus() === 'idle';
     if (reconciliation.shouldTriggerScan || (nextAuthorized && modsIdle && !installingRef.current)) {
-      void scanLocalSubmods(nextActiveId);
-      void refreshSpritepacks(nextActiveId);
-      void refreshOperations(nextActiveId);
+      pending.push(scanLocalSubmods(nextActiveId), refreshSpritepacks(nextActiveId), refreshOperations(nextActiveId));
     } else if (reconciliation.shouldResetOperations && nextActiveId !== 'unverified') {
-      void refreshOperations(nextActiveId);
+      pending.push(refreshOperations(nextActiveId));
     } else if (!installingRef.current && nextActiveId !== 'unverified') {
-      void refreshOperations(nextActiveId);
+      pending.push(refreshOperations(nextActiveId));
     }
+    return pending;
   };
 
   const refreshInstanceState = (state: MASInstancesState) => {
     syncInstances(state, { reason: 'permission_refresh' });
   };
 
-  const switchInstance = (state: MASInstancesState) => {
-    syncInstances(state, { reason: 'switch' });
+  /**
+   * 选择、添加、移除实例都是整屏级别的数据替换：在切换返回且新实例的实例级读取落定之前，
+   * 屏幕上仍是旧实例的模组、精灵包与事务。这里让窗口一直冻结到那一步结束，用户看到的
+   * 是一次带说明的加载，而不是旧数据逐屏闪成新数据、或在冻结期间误触针对新实例的操作。
+   */
+  const runInstanceSwitch = async (
+    status: InstanceSwitchStatus,
+    operation: () => Promise<MASInstancesState>,
+    describeFailure: (detail: string) => string,
+  ): Promise<boolean> => {
+    const request = ++instanceSwitchRequestRef.current;
+    setInstanceSwitch(status);
+    try {
+      const pending = syncInstances(await operation(), { reason: 'switch' });
+      await settleAllWithDeadline(pending, INSTANCE_SWITCH_DEADLINE_MS);
+      return true;
+    } catch (error) {
+      showToast(describeFailure(error instanceof Error ? error.message : String(error)), 'warn');
+      return false;
+    } finally {
+      // 重叠的切换请求不能替最新一次解冻，否则界面会在数据还没就绪时恢复。
+      if (request === instanceSwitchRequestRef.current) setInstanceSwitch(null);
+    }
   };
 
   // MAS 版本只在 ListMASInstances 时从 game/masrun 读取，而 LaunchMASInstance 启动即返回，
@@ -1341,21 +1400,37 @@ export default function App() {
     );
   };
 
+  /** 覆盖层要说明切到哪个实例；不在当前列表里的 id 只能退化成 id 本身。 */
+  const instanceLabelFor = (id: string, fallback?: string) =>
+    installations.find((item) => item.id === id)?.label || fallback || id;
+
   // Handler: Add Custom Instance
   const handleAddCustomInstance = async (label: string, path: string) => {
-    const state = await AddMASInstance(label, path);
-    switchInstance(state as MASInstancesState);
-    showToast('MAS 实例已添加并设为活动实例。');
+    const added = await runInstanceSwitch(
+      { title: `正在添加实例「${label || path}」`, detail: INSTANCE_SWITCH_DETAIL },
+      async () => (await AddMASInstance(label, path)) as MASInstancesState,
+      (detail) => `添加实例失败：${detail}`,
+    );
+    if (added) showToast('MAS 实例已添加并设为活动实例。');
   };
 
   const handleSelectInstance = async (id: string) => {
-    try { switchInstance(await SelectMASInstance(id) as MASInstancesState); }
-    catch (error) { showToast(`切换实例失败：${String(error)}`); }
+    await runInstanceSwitch(
+      { title: `正在切换到「${instanceLabelFor(id)}」`, detail: INSTANCE_SWITCH_DETAIL },
+      async () => (await SelectMASInstance(id)) as MASInstancesState,
+      (detail) => `切换实例失败：${detail}`,
+    );
   };
 
   const handleRemoveInstance = async (id: string) => {
-    try { switchInstance(await RemoveMASInstance(id) as MASInstancesState); }
-    catch (error) { showToast(`移除实例失败：${String(error)}`); }
+    await runInstanceSwitch(
+      {
+        title: `正在移除实例「${instanceLabelFor(id)}」`,
+        detail: '正在重新确定活动实例并读取它的模组、精灵包与事务记录，请稍候。',
+      },
+      async () => (await RemoveMASInstance(id)) as MASInstancesState,
+      (detail) => `移除实例失败：${detail}`,
+    );
   };
 
   const handleLaunchInstance = async (id: string) => {
@@ -1378,292 +1453,303 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen h-[100dvh] w-screen bg-neutral-950 text-neutral-100 overflow-hidden font-sans">
-      {/* 1. PC / Android Native Title Bar */}
-      <TitleBar
-        installations={installations}
-        activeInstallationId={activeInstallationId}
-        onSelectInstallation={(id) => { void handleSelectInstance(id); }}
-        isGameRunning={isGameRunning}
-        onOpenInstancesView={() => setActiveTab('instances')}
-        onLaunchGame={() => handleLaunchInstance(activeInstallationId)}
-        isLaunchingGame={isLaunchingGame}
-        isAndroid={isAndroidDevice}
-        onOpenAppUpdate={() => setIsAppUpdateOpen(true)}
-        hasAppUpdate={appUpdateState.status === 'available' || appUpdateState.status === 'ready'}
-      />
-
-      {executionSession && executionSession.installation_id === activeInstallationId && (
-        <ExecutionProgressBar
-          session={executionSession}
-          onDismiss={() => {
-            setExecutionSession(null);
-            executionCoordinatorRef.current?.clearSession();
-          }}
-          onViewInOperations={() => setActiveTab('operations')}
-          onRecover={(opId) => void handleRecoverOperation(opId)}
-        />
-      )}
-
-      {(isDownloadingArchive || installingModId !== null) && (
-        <div role="status" aria-label="下载进度" className="shrink-0 border-b border-neutral-800 bg-neutral-900 px-4 py-2 text-xs text-neutral-200">
-          <div className="mb-1.5 flex items-center justify-between gap-3">
-            <span className="min-w-0 truncate">{archiveProgress?.stage === 'connecting' ? `正在连接 ${transferTitle}` : archiveProgress?.stage === 'downloading' ? `正在下载 ${transferTitle}` : archiveProgress?.stage === 'verifying' ? `正在校验 ${transferTitle}` : installStage === 'installing' ? `正在安装 ${transferTitle}` : `正在准备 ${transferTitle}`}</span>
-            <span className="shrink-0 font-mono tabular-nums text-neutral-300">{archiveProgress ? (archiveProgress.total > 0 ? `${transferPercent}% · ${formatTransferBytes(archiveProgress.received)} / ${formatTransferBytes(archiveProgress.total)}` : formatTransferBytes(archiveProgress.received)) : installStage === 'installing' ? '下载完成' : '等待响应'}</span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded bg-neutral-700" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={archiveProgress && archiveProgress.total > 0 ? transferPercent : undefined}>
-            <div className={`h-full bg-emerald-500 transition-[width] duration-150 ${archiveProgress && archiveProgress.total > 0 ? '' : 'animate-pulse'}`} style={{ width: archiveProgress && archiveProgress.total > 0 ? `${transferPercent}%` : installStage === 'installing' ? '100%' : '30%' }} />
-          </div>
-        </div>
-      )}
-
-      {/* 2. Main Desktop Workspace (Sidebar + Dynamic Viewport) */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Sidebar Navigation */}
-        <Sidebar
-          activeTab={activeTab}
-          onSelectTab={(tab) => {
-            if (isAllowedNavTab(tab)) {
-              setActiveTab(tab);
-            } else {
-              showToast('本地恢复历史服务尚未接入。');
-            }
-          }}
-          activeInstallation={activeInstallation}
-          installedCount={installedMods.filter((m) => m.is_managed).length}
-          unmanagedCount={unmanagedCount}
-          recoverableOpsCount={recoverableOpsCount}
+      {/* 切换实例期间冻结整块应用内容：背景既点不到也聚焦不到，覆盖层只负责说明正在等什么。 */}
+      <div
+        className="flex min-h-0 flex-1 flex-col"
+        aria-busy={instanceSwitch ? true : undefined}
+        inert={instanceSwitch ? true : undefined}
+      >
+        {/* 1. PC / Android Native Title Bar */}
+        <TitleBar
+          installations={installations}
+          activeInstallationId={activeInstallationId}
+          onSelectInstallation={(id) => { void handleSelectInstance(id); }}
+          isGameRunning={isGameRunning}
+          onOpenInstancesView={() => setActiveTab('instances')}
+          onLaunchGame={() => handleLaunchInstance(activeInstallationId)}
+          isLaunchingGame={isLaunchingGame}
+          isAndroid={isAndroidDevice}
+          onOpenAppUpdate={() => setIsAppUpdateOpen(true)}
+          hasAppUpdate={appUpdateState.status === 'available' || appUpdateState.status === 'ready'}
         />
 
-        {/* Center Main Viewport */}
-        <main className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden relative">
-          <StorageAccessBanner
-            isAndroid={isAndroidDevice}
-            storageState={storageState}
-            onRequestAccess={handleRequestStorageAccess}
-            onRefreshStatus={() => { void checkStoragePermission(); }}
-            isRefreshing={isStorageRefreshing}
+        {executionSession && executionSession.installation_id === activeInstallationId && (
+          <ExecutionProgressBar
+            session={executionSession}
+            onDismiss={() => {
+              setExecutionSession(null);
+              executionCoordinatorRef.current?.clearSession();
+            }}
+            onViewInOperations={() => setActiveTab('operations')}
+            onRecover={(opId) => void handleRecoverOperation(opId)}
           />
-          {activeTab === 'catalog' && (
-            <CatalogView
-              mods={catalogMods}
-              installedMods={installedMods}
-              activeInstallation={activeInstallation}
-              defaultPlatform={isAndroidDevice ? 'android' : 'windows'}
-              catalogError={catalogError}
-              isCatalogRefreshing={isRefreshing}
-              onReloadCatalog={handleRefreshCatalog}
-              onOpenDetail={(mod) => setSelectedModDetail(mod)}
-              onStartInstallPlan={handleStartInstallPlan}
-              onStartUpdatePlan={handleStartInstallPlan}
-              installingModId={installingModId}
-              installProgress={installingModId ? archiveProgress : null}
-            />
-          )}
+        )}
 
-          {activeTab === 'installed' && (
-            <InstalledView
-              installedMods={installedMods}
-              spritepacks={spritepacks}
-              hasValidInstance={activeInstallation.is_valid && activeInstallationId !== 'unverified'}
-              modsStatus={modsLoadingStatus}
-              modsError={modsError}
-              isModsInitialLoading={isModsInitialLoading}
-              isModsRefreshing={isModsRefreshing}
-              spritepacksStatus={spritepacksLoadingStatus}
-              spritepacksError={spritepacksError}
-              isSpritepacksInitialLoading={isSpritepacksInitialLoading}
-              isSpritepacksRefreshing={isSpritepacksRefreshing}
-              onRefreshInstalled={() => { void scanLocalSubmods(); }}
-              onRefreshSpritepacks={() => { void refreshSpritepacks(); }}
-              onCreateSpriteGift={async (file) => {
-                const targetInstId = activeInstallationIdRef.current;
-                try {
-                  const path = await CreateSpriteGift(file);
-                  if (activeInstallationIdRef.current !== targetInstId) return '';
-                  return `礼物已创建：${path}`;
-                } catch (error) {
-                  if (activeInstallationIdRef.current !== targetInstId) return '';
-                  const message = String(error);
-                  if (message.includes('sprite_gift_already_exists')) return '礼物已存在，无需重复创建。';
-                  if (message.includes('spritepack_incomplete')) return '精灵包文件不完整，暂时无法创建礼物。';
-                  if (message.includes('spritepack_has_no_valid_giftname')) return '该精灵包没有可用的礼物名称。';
-                  return '礼物创建失败，请检查游戏目录权限后重试。';
-                }
-              }}
-              onDeleteSpritepack={async (file) => {
-                const targetInstId = activeInstallationIdRef.current;
-                try {
-                  const result = await DeleteSpritepack(file);
-                  if (activeInstallationIdRef.current !== targetInstId) {
-                    return;
-                  }
-                  void refreshSpritepacks(targetInstId, { forced: true });
-                  showToast(`已移出 ${result.files} 项，备份位于 ${result.backup}`);
-                } catch (error) {
-                  if (activeInstallationIdRef.current === targetInstId) {
-                    showToast(`删除精灵包失败：${String(error)}`);
-                  }
-                }
-              }}
-              onStartUpdatePlan={handleStartUpdatePlanFromInstalled}
-              onStartUninstallPlan={handleStartUninstallPlan}
-              onStartRepairPlan={handleStartRepairPlan}
-              onOpenAdoptModal={(item) => setAdoptTarget(item)}
-              onInspectFiles={(item) => setInspectTarget(item)}
-              onCheckAllUpdates={handleCheckAllUpdates}
-              onVerifyIntegrity={handleVerifyIntegrity}
-              isVerifying={isVerifying}
-            />
-          )}
-
-          {activeTab === 'priority' && (
-            <PriorityLayersView
-              installedMods={installedMods}
-              currentInstanceId={activeInstallationId}
-              onRefreshInstalled={async (options) => {
-                await scanLocalSubmods(undefined, options);
-              }}
-              showToast={showToast}
-            />
-          )}
-
-          {activeTab === 'operations' && (
-            <OperationsView
-              operations={operations}
-              onRecoverOperation={handleRecoverOperation}
-            />
-          )}
-
-          {activeTab === 'instances' && (
-            <InstancesView
-              installations={installations}
-              activeInstallationId={activeInstallationId}
-              onSelectActive={handleSelectInstance}
-              onAddCustomInstance={handleAddCustomInstance}
-              onRemoveInstance={handleRemoveInstance}
-              onRefreshInstances={handleRefreshInstances}
-              onBrowseDirectory={BrowseMASDirectory}
-              isAndroid={isAndroidDevice}
-              onOpenAppUpdate={() => setIsAppUpdateOpen(true)}
-              hasAppUpdate={appUpdateState.status === 'available' || appUpdateState.status === 'ready'}
-            />
-          )}
-
-          {/* Toast Notification */}
-          {toast && (
-            <div
-              role="status"
-              className={`absolute bottom-4 right-4 max-w-[calc(100vw-2rem)] z-50 px-4 py-2.5 rounded-lg bg-neutral-900 border shadow-xl text-xs flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-150 break-words pointer-events-auto ${
-                toast.tone === 'warn' ? 'border-amber-500/60 text-amber-100' : 'border-neutral-700 text-neutral-200'
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full shrink-0 ${toast.tone === 'warn' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
-              <span className="min-w-0">{toast.message}</span>
+        {(isDownloadingArchive || installingModId !== null) && (
+          <div role="status" aria-label="下载进度" className="shrink-0 border-b border-neutral-800 bg-neutral-900 px-4 py-2 text-xs text-neutral-200">
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate">{archiveProgress?.stage === 'connecting' ? `正在连接 ${transferTitle}` : archiveProgress?.stage === 'downloading' ? `正在下载 ${transferTitle}` : archiveProgress?.stage === 'verifying' ? `正在校验 ${transferTitle}` : installStage === 'installing' ? `正在安装 ${transferTitle}` : `正在准备 ${transferTitle}`}</span>
+              <span className="shrink-0 font-mono tabular-nums text-neutral-300">{archiveProgress ? (archiveProgress.total > 0 ? `${transferPercent}% · ${formatTransferBytes(archiveProgress.received)} / ${formatTransferBytes(archiveProgress.total)}` : formatTransferBytes(archiveProgress.received)) : installStage === 'installing' ? '下载完成' : '等待响应'}</span>
             </div>
-          )}
-        </main>
+            <div className="h-1.5 overflow-hidden rounded bg-neutral-700" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={archiveProgress && archiveProgress.total > 0 ? transferPercent : undefined}>
+              <div className={`h-full bg-emerald-500 transition-[width] duration-150 ${archiveProgress && archiveProgress.total > 0 ? '' : 'animate-pulse'}`} style={{ width: archiveProgress && archiveProgress.total > 0 ? `${transferPercent}%` : installStage === 'installing' ? '100%' : '30%' }} />
+            </div>
+          </div>
+        )}
+
+        {/* 2. Main Desktop Workspace (Sidebar + Dynamic Viewport) */}
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          {/* Sidebar Navigation */}
+          <Sidebar
+            activeTab={activeTab}
+            onSelectTab={(tab) => {
+              if (isAllowedNavTab(tab)) {
+                setActiveTab(tab);
+              } else {
+                showToast('本地恢复历史服务尚未接入。');
+              }
+            }}
+            activeInstallation={activeInstallation}
+            installedCount={installedMods.filter((m) => m.is_managed).length}
+            unmanagedCount={unmanagedCount}
+            recoverableOpsCount={recoverableOpsCount}
+          />
+
+          {/* Center Main Viewport */}
+          <main className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden relative">
+            <StorageAccessBanner
+              isAndroid={isAndroidDevice}
+              storageState={storageState}
+              onRequestAccess={handleRequestStorageAccess}
+              onRefreshStatus={() => { void checkStoragePermission(); }}
+              isRefreshing={isStorageRefreshing}
+            />
+            {activeTab === 'catalog' && (
+              <CatalogView
+                mods={catalogMods}
+                installedMods={installedMods}
+                activeInstallation={activeInstallation}
+                defaultPlatform={isAndroidDevice ? 'android' : 'windows'}
+                catalogError={catalogError}
+                isCatalogRefreshing={isRefreshing}
+                onReloadCatalog={handleRefreshCatalog}
+                onOpenDetail={(mod) => setSelectedModDetail(mod)}
+                onStartInstallPlan={handleStartInstallPlan}
+                onStartUpdatePlan={handleStartInstallPlan}
+                installingModId={installingModId}
+                installProgress={installingModId ? archiveProgress : null}
+              />
+            )}
+
+            {activeTab === 'installed' && (
+              <InstalledView
+                installedMods={installedMods}
+                spritepacks={spritepacks}
+                hasValidInstance={activeInstallation.is_valid && activeInstallationId !== 'unverified'}
+                modsStatus={modsLoadingStatus}
+                modsError={modsError}
+                isModsInitialLoading={isModsInitialLoading}
+                isModsRefreshing={isModsRefreshing}
+                spritepacksStatus={spritepacksLoadingStatus}
+                spritepacksError={spritepacksError}
+                isSpritepacksInitialLoading={isSpritepacksInitialLoading}
+                isSpritepacksRefreshing={isSpritepacksRefreshing}
+                onRefreshInstalled={() => { void scanLocalSubmods(); }}
+                onRefreshSpritepacks={() => { void refreshSpritepacks(); }}
+                onCreateSpriteGift={async (file) => {
+                  const targetInstId = activeInstallationIdRef.current;
+                  try {
+                    const path = await CreateSpriteGift(file);
+                    if (activeInstallationIdRef.current !== targetInstId) return '';
+                    return `礼物已创建：${path}`;
+                  } catch (error) {
+                    if (activeInstallationIdRef.current !== targetInstId) return '';
+                    const message = String(error);
+                    if (message.includes('sprite_gift_already_exists')) return '礼物已存在，无需重复创建。';
+                    if (message.includes('spritepack_incomplete')) return '精灵包文件不完整，暂时无法创建礼物。';
+                    if (message.includes('spritepack_has_no_valid_giftname')) return '该精灵包没有可用的礼物名称。';
+                    return '礼物创建失败，请检查游戏目录权限后重试。';
+                  }
+                }}
+                onDeleteSpritepack={async (file) => {
+                  const targetInstId = activeInstallationIdRef.current;
+                  try {
+                    const result = await DeleteSpritepack(file);
+                    if (activeInstallationIdRef.current !== targetInstId) {
+                      return;
+                    }
+                    void refreshSpritepacks(targetInstId, { forced: true });
+                    showToast(`已移出 ${result.files} 项，备份位于 ${result.backup}`);
+                  } catch (error) {
+                    if (activeInstallationIdRef.current === targetInstId) {
+                      showToast(`删除精灵包失败：${String(error)}`);
+                    }
+                  }
+                }}
+                onStartUpdatePlan={handleStartUpdatePlanFromInstalled}
+                onStartUninstallPlan={handleStartUninstallPlan}
+                onStartRepairPlan={handleStartRepairPlan}
+                onOpenAdoptModal={(item) => setAdoptTarget(item)}
+                onInspectFiles={(item) => setInspectTarget(item)}
+                onCheckAllUpdates={handleCheckAllUpdates}
+                onVerifyIntegrity={handleVerifyIntegrity}
+                isVerifying={isVerifying}
+              />
+            )}
+
+            {activeTab === 'priority' && (
+              <PriorityLayersView
+                installedMods={installedMods}
+                currentInstanceId={activeInstallationId}
+                onRefreshInstalled={async (options) => {
+                  await scanLocalSubmods(undefined, options);
+                }}
+                showToast={showToast}
+              />
+            )}
+
+            {activeTab === 'operations' && (
+              <OperationsView
+                operations={operations}
+                onRecoverOperation={handleRecoverOperation}
+              />
+            )}
+
+            {activeTab === 'instances' && (
+              <InstancesView
+                installations={installations}
+                activeInstallationId={activeInstallationId}
+                onSelectActive={handleSelectInstance}
+                onAddCustomInstance={handleAddCustomInstance}
+                onRemoveInstance={handleRemoveInstance}
+                onRefreshInstances={handleRefreshInstances}
+                onBrowseDirectory={BrowseMASDirectory}
+                isAndroid={isAndroidDevice}
+                onOpenAppUpdate={() => setIsAppUpdateOpen(true)}
+                hasAppUpdate={appUpdateState.status === 'available' || appUpdateState.status === 'ready'}
+              />
+            )}
+
+            {/* Toast Notification */}
+            {toast && (
+              <div
+                role="status"
+                className={`absolute bottom-4 right-4 max-w-[calc(100vw-2rem)] z-50 px-4 py-2.5 rounded-lg bg-neutral-900 border shadow-xl text-xs flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-150 break-words pointer-events-auto ${
+                  toast.tone === 'warn' ? 'border-amber-500/60 text-amber-100' : 'border-neutral-700 text-neutral-200'
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full shrink-0 ${toast.tone === 'warn' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                <span className="min-w-0">{toast.message}</span>
+              </div>
+            )}
+          </main>
+        </div>
+
+        {/* Mobile Navigation Bar */}
+        <MobileNavBar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          updatesCount={installedMods.filter((m) => m.has_update).length}
+          activeOperationsCount={
+            // 未完成事务只有这两态：planned（计划已确认）与 recoverable（prepared/
+            // applying/committing）。needs_manual_recovery 已终止，不进入“进行中”角标。
+            operations.filter((o) => o.state === 'planned' || o.state === 'recoverable').length
+          }
+        />
+
+        {/* 4. Mod Detail Modal */}
+        {selectedModDetail && (
+          <ModDetailModal
+            mod={selectedModDetail}
+            catalogMods={catalogMods}
+            onSelectMod={setSelectedModDetail}
+            onClose={() => setSelectedModDetail(null)}
+            onDownloadArchive={(mod, versionId) => void handleDownloadArchive(mod, versionId)}
+            isDownloadingArchive={isDownloadingArchive}
+            archiveProgress={archiveProgress}
+            onStartInstallPlan={(mod, version, spriteSetIDs) => {
+              setSelectedModDetail(null);
+              void handleStartInstallPlan(mod, version, spriteSetIDs);
+            }}
+            onStartUninstallPlan={(mod) => {
+              setSelectedModDetail(null);
+              const installed = installedMods.find((i) => i.mod_id === mod.id);
+              if (installed) {
+                void handleStartUninstallPlan(installed);
+              }
+            }}
+            isInstalling={installingModId === selectedModDetail.id}
+            isInstalled={installedMods.some((i) => i.mod_id === selectedModDetail.id)}
+            installedVersion={
+              installedMods.find((i) => i.mod_id === selectedModDetail.id)?.installed_version
+            }
+            hasUpdate={
+              installedMods.find((i) => i.mod_id === selectedModDetail.id)?.has_update
+            }
+            instanceId={activeInstallationId}
+            installationSnapshot={(() => {
+              const installed = installedMods.find((i) => i.mod_id === selectedModDetail.id && i.is_managed);
+              if (!installed) return null;
+              return {
+                instanceId: activeInstallationId,
+                modId: installed.mod_id,
+                versionId: installed.installed_version_id,
+                operationId: installed.managed_operation_id || '',
+                setIds: installed.sprite_set_ids,
+                selectionHash: installed.sprite_selection_hash,
+              };
+            })()}
+            installedLoadingStatus={modsLoadingStatus}
+          />
+        )}
+
+        {/* 5. Plan Preview Modal (Contract: PreviewInstall / PreviewUpdate / PreviewUninstall) */}
+        {currentPlan && (
+          <PlanPreviewModal
+            plan={currentPlan}
+            activeInstallation={activeInstallation}
+            isGameRunning={isGameRunning}
+            onClose={() => { if (currentPlan?.backend_operation_id) void CancelStage(currentPlan.backend_operation_id); setCurrentPlan(null); }}
+            onApplyPlan={() => { if (currentPlan) void handleApplyPlan(currentPlan); }}
+            onOpenRecovery={() => { setCurrentPlan(null); setActiveTab('operations'); void refreshOperations(); }}
+          />
+        )}
+
+        {/* 6. Adopt Unmanaged Mod Modal */}
+        {adoptTarget && (
+          <AdoptModal
+            item={adoptTarget}
+            onClose={() => setAdoptTarget(null)}
+            onConfirmAdopt={handleConfirmAdopt}
+          />
+        )}
+
+        {/* 7. File Inspection Modal */}
+        {inspectTarget && (
+          <FileInspectModal
+            key={`${activeInstallationId}:${inspectTarget.mod_id}`}
+            item={inspectTarget}
+            onClose={() => setInspectTarget(null)}
+          />
+        )}
+
+        {/* 8. App Auto-Update Modal */}
+        <AppUpdateModal
+          isOpen={isAppUpdateOpen}
+          onClose={() => setIsAppUpdateOpen(false)}
+          updateState={appUpdateState}
+          onCheckUpdate={handleCheckAppUpdate}
+          onDownloadUpdate={handleDownloadAppUpdate}
+          onInstallUpdate={handleInstallAppUpdate}
+          onCancelUpdate={handleCancelAppUpdate}
+          onOpenSettings={handleOpenAppUpdateSettings}
+          isAndroid={isAndroidDevice}
+        />
       </div>
 
-      {/* Mobile Navigation Bar */}
-      <MobileNavBar
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        updatesCount={installedMods.filter((m) => m.has_update).length}
-        activeOperationsCount={
-          // 未完成事务只有这两态：planned（计划已确认）与 recoverable（prepared/
-          // applying/committing）。needs_manual_recovery 已终止，不进入“进行中”角标。
-          operations.filter((o) => o.state === 'planned' || o.state === 'recoverable').length
-        }
-      />
-
-      {/* 4. Mod Detail Modal */}
-      {selectedModDetail && (
-        <ModDetailModal
-          mod={selectedModDetail}
-          catalogMods={catalogMods}
-          onSelectMod={setSelectedModDetail}
-          onClose={() => setSelectedModDetail(null)}
-          onDownloadArchive={(mod, versionId) => void handleDownloadArchive(mod, versionId)}
-          isDownloadingArchive={isDownloadingArchive}
-          archiveProgress={archiveProgress}
-          onStartInstallPlan={(mod, version, spriteSetIDs) => {
-            setSelectedModDetail(null);
-            void handleStartInstallPlan(mod, version, spriteSetIDs);
-          }}
-          onStartUninstallPlan={(mod) => {
-            setSelectedModDetail(null);
-            const installed = installedMods.find((i) => i.mod_id === mod.id);
-            if (installed) {
-              void handleStartUninstallPlan(installed);
-            }
-          }}
-          isInstalling={installingModId === selectedModDetail.id}
-          isInstalled={installedMods.some((i) => i.mod_id === selectedModDetail.id)}
-          installedVersion={
-            installedMods.find((i) => i.mod_id === selectedModDetail.id)?.installed_version
-          }
-          hasUpdate={
-            installedMods.find((i) => i.mod_id === selectedModDetail.id)?.has_update
-          }
-          instanceId={activeInstallationId}
-          installationSnapshot={(() => {
-            const installed = installedMods.find((i) => i.mod_id === selectedModDetail.id && i.is_managed);
-            if (!installed) return null;
-            return {
-              instanceId: activeInstallationId,
-              modId: installed.mod_id,
-              versionId: installed.installed_version_id,
-              operationId: installed.managed_operation_id || '',
-              setIds: installed.sprite_set_ids,
-              selectionHash: installed.sprite_selection_hash,
-            };
-          })()}
-          installedLoadingStatus={modsLoadingStatus}
-        />
+      {instanceSwitch && (
+        <InstanceSwitchOverlay title={instanceSwitch.title} detail={instanceSwitch.detail} />
       )}
-
-      {/* 5. Plan Preview Modal (Contract: PreviewInstall / PreviewUpdate / PreviewUninstall) */}
-      {currentPlan && (
-        <PlanPreviewModal
-          plan={currentPlan}
-          activeInstallation={activeInstallation}
-          isGameRunning={isGameRunning}
-          onClose={() => { if (currentPlan?.backend_operation_id) void CancelStage(currentPlan.backend_operation_id); setCurrentPlan(null); }}
-          onApplyPlan={() => { if (currentPlan) void handleApplyPlan(currentPlan); }}
-          onOpenRecovery={() => { setCurrentPlan(null); setActiveTab('operations'); void refreshOperations(); }}
-        />
-      )}
-
-      {/* 6. Adopt Unmanaged Mod Modal */}
-      {adoptTarget && (
-        <AdoptModal
-          item={adoptTarget}
-          onClose={() => setAdoptTarget(null)}
-          onConfirmAdopt={handleConfirmAdopt}
-        />
-      )}
-
-      {/* 7. File Inspection Modal */}
-      {inspectTarget && (
-        <FileInspectModal
-          key={`${activeInstallationId}:${inspectTarget.mod_id}`}
-          item={inspectTarget}
-          onClose={() => setInspectTarget(null)}
-        />
-      )}
-
-      {/* 8. App Auto-Update Modal */}
-      <AppUpdateModal
-        isOpen={isAppUpdateOpen}
-        onClose={() => setIsAppUpdateOpen(false)}
-        updateState={appUpdateState}
-        onCheckUpdate={handleCheckAppUpdate}
-        onDownloadUpdate={handleDownloadAppUpdate}
-        onInstallUpdate={handleInstallAppUpdate}
-        onCancelUpdate={handleCancelAppUpdate}
-        onOpenSettings={handleOpenAppUpdateSettings}
-        isAndroid={isAndroidDevice}
-      />
     </div>
   );
 }
