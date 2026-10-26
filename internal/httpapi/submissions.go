@@ -7,6 +7,7 @@ import (
 	packagezip "github.com/reze/submodhub/internal/package"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -51,16 +52,22 @@ func (s *Store) retireSpritepackVersionsLocked(modID, currentID string) []string
 			}
 			snapshot := old
 			snapshot.ArchivePath = ""
+			snapshot.PlatformAssets = slices.Clone(old.PlatformAssets)
+			for j := range snapshot.PlatformAssets {
+				snapshot.PlatformAssets[j].ArchivePath = ""
+			}
 			sub.VersionSnapshot = &snapshot
 			if report, ok := s.Catalog.ScanReports[old.ScanReportID]; ok {
 				copy := report
 				sub.ScanReportSnapshot = &copy
 			}
 		}
-		if old.ArchivePath != "" {
-			paths = append(paths, old.ArchivePath)
+		paths = append(paths, old.archivePaths()...)
+		// A per-platform version owns one report per file; dropping only the
+		// summary key would leave the other platforms' reports behind.
+		for _, key := range old.scanReportKeys() {
+			delete(s.Catalog.ScanReports, key)
 		}
-		delete(s.Catalog.ScanReports, old.ScanReportID)
 		delete(s.Catalog.Versions, id)
 	}
 	return paths
@@ -295,7 +302,10 @@ func (s *Store) reviewSubmissionResource(w http.ResponseWriter, r *http.Request)
 				version = *sub.VersionSnapshot
 				report = sub.ScanReportSnapshot
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"submission": sub.SanitizeForClient(), "mod": mod, "version": version.SanitizeForClient(), "scan_report": report})
+			// `scan_report` stays the version summary a single-archive version has
+			// always had; `scan_reports` carries every platform's own report so a
+			// reviewer can examine the file list of each build before deciding.
+			writeJSON(w, http.StatusOK, map[string]any{"submission": sub.SanitizeForClient(), "mod": mod, "version": version.SanitizeForClient(), "scan_report": report, "scan_reports": s.versionScanReports(version)})
 			return
 		}
 		writeError(w, 404, "not_found", "submission was not found")

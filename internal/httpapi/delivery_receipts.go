@@ -45,10 +45,24 @@ func receiptHash(token string) string {
 
 // Tokens are stateless and process-scoped. No descriptor persists or reserves
 // capacity. A restart invalidates outstanding receipts, never archive URLs.
+//
+// The receipt binds the bytes the descriptor promised, whichever shape the
+// version has: for a per-platform version that is the requested platform's hash
+// and size, so a completion report can never be satisfied by another platform's
+// archive.
 func (s *Store) issueDownloadAttempt(v Version) (string, error) {
 	s.mu.RLock()
 	current, exists := s.Catalog.Versions[v.ID]
-	valid := exists && current.State == "published" && current.SHA256 == v.SHA256 && current.SizeBytes == v.SizeBytes
+	valid := exists && current.State == "published"
+	// A per-platform version keeps empty wide fields, so its receipt is checked
+	// against the matching platform file instead of the version-wide numbers.
+	if len(current.PlatformAssets) > 0 {
+		valid = valid && slices.ContainsFunc(current.PlatformAssets, func(file PlatformAssetRule) bool {
+			return file.SHA256 == v.SHA256 && file.SizeBytes == v.SizeBytes
+		})
+	} else {
+		valid = valid && current.SHA256 == v.SHA256 && current.SizeBytes == v.SizeBytes
+	}
 	for _, m := range s.Catalog.Mods {
 		if m.ID == v.ModID && m.Unpublished {
 			valid = false

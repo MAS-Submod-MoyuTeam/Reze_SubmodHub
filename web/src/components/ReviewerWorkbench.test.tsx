@@ -112,3 +112,71 @@ test('reviewer requests server pages, retries failures, and refreshes the last f
     Object.assign(globalThis, { window: oldWindow, document: oldDocument, fetch: oldFetch });
   }
 });
+
+// A per-platform version is one submission covering two builds. The reviewer has
+// to be able to read each build's own report, otherwise the second platform is
+// approved on evidence nobody looked at.
+test('reviewer opens each platform report of a per-platform submission', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost/' });
+  const oldWindow = globalThis.window;
+  const oldDocument = globalThis.document;
+  const oldFetch = globalThis.fetch;
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
+  const row = { id: 's1', mod_id: 'm1', version_id: 'v1', author_id: 'author', state: 'ready_for_review', mod_title: '拆分平台模组', author_name: 'Author', version_str: '1.0.0', category: 'submod', created_at: '2026-10-21' };
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    const url = new URL(path, 'http://localhost');
+    if (url.pathname === '/api/v1/session') return Response.json({ user: { id: 'admin', username: 'admin', display_name: 'Admin' }, roles: ['admin'], csrf_token: 'csrf' });
+    if (['/api/v1/mods', '/api/v1/author/mods', '/api/v1/author/submissions'].includes(url.pathname)) return Response.json({ items: [] });
+    if (url.pathname.endsWith('/review/submissions')) {
+      return Response.json({ items: [row], page: 1, page_size: Number(url.searchParams.get('page_size')), total: 1, pending_count: 1 });
+    }
+    if (url.pathname.endsWith('/review/audit')) return Response.json({ items: [], total: 0, page: 1, page_size: 20 });
+    if (url.pathname.endsWith('/' + row.id)) {
+      return Response.json({
+        submission: row,
+        mod: { summary: '拆分平台说明' },
+        version: {
+          id: 'v1',
+          dependencies: [],
+          size_bytes: 0,
+          sha256: '',
+          platform_assets: [
+            { platform: 'windows', size_bytes: 2048, sha256: 'w'.repeat(64) },
+            { platform: 'android', size_bytes: 4096, sha256: 'a'.repeat(64) },
+          ],
+        },
+        scan_report: { files: [{ source: 'windows.rpy', target: 'game/windows.rpy', size: 11, sha256: 'h1', class: 'script' }] },
+        scan_reports: {
+          'scan_v1-windows': { files: [{ source: 'windows.rpy', target: 'game/windows.rpy', size: 11, sha256: 'h1', class: 'script' }] },
+          'scan_v1-android': { files: [{ source: 'android.rpy', target: 'game/android.rpy', size: 22, sha256: 'h2', class: 'script' }] },
+        },
+      });
+    }
+    throw Error('unexpected request ' + path);
+  }) as typeof fetch;
+  const container = dom.window.document.getElementById('root')!;
+  const root = createRoot(container);
+  const settle = async () => { await act(async () => { await new Promise<void>((resolve) => setImmediate(resolve)); }); };
+  const platformTab = (label: string) => {
+    const found = Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.trim() === label);
+    assert.ok(found, `missing platform tab ${label}`);
+    return found;
+  };
+  try {
+    await act(async () => { root.render(<AppProvider><ReviewerWorkbench /></AppProvider>); });
+    await settle();
+    assert.match(container.textContent!, /逐个平台核对报告/);
+    assert.match(container.textContent!, /2048 bytes/, 'the chosen platform size replaces the empty version-wide size');
+    assert.match(container.textContent!, /windows\.rpy/);
+    assert.doesNotMatch(container.textContent!, /android\.rpy/, 'the other platform is not shown until it is selected');
+    await act(async () => { platformTab('Android').click(); });
+    await settle();
+    assert.match(container.textContent!, /android\.rpy/);
+    assert.match(container.textContent!, /4096 bytes/);
+  } finally {
+    await act(async () => { root.unmount(); });
+    dom.window.close();
+    Object.assign(globalThis, { window: oldWindow, document: oldDocument, fetch: oldFetch });
+  }
+});

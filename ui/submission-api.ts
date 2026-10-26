@@ -1,7 +1,13 @@
 import type { ServerScanReport } from '../web/src/context/scanReport';
 
-export interface ApiMod { id: string; title: string; summary: string; description?: string; category: 'submod' | 'spritepack'; author: { id: string; display_name: string }; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; latest_version_id?: string; created_at?: string; unpublished?: boolean; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean; github_manifest?: boolean; github_manifest_digest?: string; github_last_sync_at?: string; github_last_sync_error?: string; github_last_release_id?: number; github_backoff_until?: string }
-export interface ApiVersion { id: string; mod_id: string; version: string; state: string; release_notes: string; size_bytes: number; sha256: string; dependencies: unknown[]; created_at?: string; scan_report_id?: string; deprecated?: boolean; deprecation_reason?: string; image_paths?: string[] }
+// A platform rule mirrors the server's per-platform discovery: one regex (or the
+// source-code fallback) per platform, matched against every release.
+export interface ApiGitHubPlatformRule { platform: 'windows' | 'android'; regex?: string; source_code?: boolean }
+// One platform's file of a version. asset_name/download_url are only set for
+// GitHub-sourced versions; uploaded files carry the hash and size instead.
+export interface ApiPlatformAsset { platform: 'windows' | 'android'; asset_name?: string; size_bytes: number; sha256?: string }
+export interface ApiMod { id: string; title: string; summary: string; description?: string; category: 'submod' | 'spritepack'; author: { id: string; display_name: string }; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; latest_version_id?: string; created_at?: string; unpublished?: boolean; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean; github_platform_assets?: ApiGitHubPlatformRule[]; github_manifest?: boolean; github_manifest_digest?: string; github_last_sync_at?: string; github_last_sync_error?: string; github_last_release_id?: number; github_backoff_until?: string }
+export interface ApiVersion { id: string; mod_id: string; version: string; state: string; release_notes: string; size_bytes: number; sha256: string; platform_assets?: ApiPlatformAsset[]; dependencies: unknown[]; created_at?: string; scan_report_id?: string; deprecated?: boolean; deprecation_reason?: string; image_paths?: string[] }
 export interface ApiSubmission { id: string; mod_id: string; version_id: string; author_id: string; state: string; mark_latest?: boolean; reason?: string; reviewer_id?: string; created_at?: string; decided_at?: string; published_at?: string; version_snapshot?: ApiVersion; scan_report_snapshot?: ServerScanReport }
 export interface ApiPage<T> { items: T[]; total: number; page: number; page_size: number }
 // Author mod windows are keyset based: `cursor` reproduces the returned window
@@ -11,12 +17,20 @@ export interface ApiCursorPage<T> { items: T[]; total: number; page_size: number
 export interface ReviewPageQuery { page: number; pageSize: number; state?: string }
 export interface AuthorModQuery { pageSize: number; cursor?: string; focusModId?: string }
 export interface ApiReviewSubmission { id: string; mod_id: string; version_id: string; author_id: string; state: string; created_at: string; mod_title: string; author_name: string; version_str: string; category: 'submod' | 'spritepack' }
-export interface ApiReviewDetail { submission: ApiSubmission; mod: ApiMod; version: ApiVersion; scan_report?: ServerScanReport }
+export interface ApiReviewDetail { submission: ApiSubmission; mod: ApiMod; version: ApiVersion; scan_report?: ServerScanReport; scan_reports?: Record<string, ServerScanReport> }
 export interface ApiReviewAudit { id: string; timestamp: string; actor_id: string; actor_name: string; actor_role: string; action: string; target_type: string; target_id: string; target_label: string; reason: string; details?: Record<string, unknown> }
+
+// The report a version owns is keyed by which file it describes: `scan_<version>`
+// for the one shared archive, `scan_<version>-<platform>` for each per-platform
+// build. This mirrors the server's scanReportKey; both sides must agree, so this
+// is the only place a client builds the name.
+export function platformScanReportId(versionId: string, platform?: string): string {
+  return platform ? `scan_${versionId}-${platform}` : `scan_${versionId}`;
+}
 
 async function json<T>(response: Response): Promise<T> { if (!response.ok) { const body = await response.json().catch(() => null) as { code?: string } | null; throw new Error(body?.code || `http_${response.status}`); } return response.json() as Promise<T>; }
 function endpoint(base: string, path: string) { return `${base.replace(/\/$/, '')}${path}`; }
-export interface AuthorModInput { title: string; summary: string; description?: string; author_display_name?: string; category: 'submod' | 'spritepack'; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean; github_manifest?: boolean }
+export interface AuthorModInput { title: string; summary: string; description?: string; author_display_name?: string; category: 'submod' | 'spritepack'; tags?: string[]; supported_platforms?: string[]; mas_version_range?: string; recommended_priority?: number; source_type?: 'local' | 'github_releases'; github_owner?: string; github_repo?: string; github_asset_regex?: string; github_source_code?: boolean; github_platform_assets?: ApiGitHubPlatformRule[]; github_manifest?: boolean }
 export async function createAuthorMod(base: string, input: AuthorModInput, fetcher: typeof fetch = fetch): Promise<ApiMod> { return json(await fetcher(endpoint(base, '/author/mods'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })); }
 export async function updateAuthorMod(base: string, id: string, input: AuthorModInput, fetcher: typeof fetch = fetch): Promise<ApiMod> { return json(await fetcher(endpoint(base, `/author/mods/${encodeURIComponent(id)}`), { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })); }
 export interface ApiAuthorModItem { mod: ApiMod; is_published: boolean; has_published_version: boolean; has_archived_version: boolean; has_pending_review: boolean; candidate_version_id?: string }
@@ -34,7 +48,10 @@ export async function listAuthorVersions(base: string, modId: string, query: Rev
 export async function createAuthorVersion(base: string, modID: string, version: string, releaseNotes: string, dependencies: unknown[] = [], fetcher: typeof fetch = fetch): Promise<ApiVersion> { return json(await fetcher(endpoint(base, `/author/mods/${encodeURIComponent(modID)}/versions`), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version, release_notes: releaseNotes, dependencies }) })); }
 export async function submitAuthorVersion(base: string, versionID: string, markLatest = true, fetcher: typeof fetch = fetch): Promise<ApiSubmission> { return json(await fetcher(endpoint(base, `/author/versions/${encodeURIComponent(versionID)}/submit`), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mark_latest: markLatest }) })); }
 export async function markPublishedVersionLatest(base: string, versionID: string, fetcher: typeof fetch = fetch): Promise<ApiMod> { return json(await fetcher(endpoint(base, `/versions/${encodeURIComponent(versionID)}/mark-latest`), { method: 'POST', credentials: 'same-origin' })); }
-export async function uploadAuthorArchive(base: string, versionID: string, file: File | Blob, filename = 'archive.zip', fetcher: typeof fetch = fetch): Promise<{ version_id: string; version: string; state: string; size_bytes: number; sha256: string; dependencies?: unknown[]; scan_report?: ServerScanReport }> { const body = new FormData(); body.append('archive', file, filename); return json(await fetcher(endpoint(base, `/author/versions/${encodeURIComponent(versionID)}/archive`), { method: 'POST', credentials: 'same-origin', body })); }
+export interface AuthorArchiveUploadResult { version_id: string; version: string; state: string; platform?: 'windows' | 'android' | ''; platform_assets?: ApiPlatformAsset[]; size_bytes: number; sha256: string; dependencies?: unknown[]; scan_report?: ServerScanReport }
+// `platform` uploads one platform's archive; omit it for a single archive that
+// serves every platform. A version is one shape or the other, never both.
+export async function uploadAuthorArchive(base: string, versionID: string, file: File | Blob, filename = 'archive.zip', platform?: 'windows' | 'android', fetcher: typeof fetch = fetch): Promise<AuthorArchiveUploadResult> { const body = new FormData(); body.append('archive', file, filename); const suffix = platform ? `?platform=${encodeURIComponent(platform)}` : ''; return json(await fetcher(endpoint(base, `/author/versions/${encodeURIComponent(versionID)}/archive${suffix}`), { method: 'POST', credentials: 'same-origin', body })); }
 export async function uploadModImages(base: string, modID: string, files: File[], append = false, fetcher: typeof fetch = fetch): Promise<{ mod_id: string; count: number; items?: Array<{ url: string }> }> { const body = new FormData(); files.forEach((file) => body.append('images', file, file.name)); const suffix = append ? '?append=true' : ''; return json(await fetcher(endpoint(base, `/author/mods/${encodeURIComponent(modID)}/images${suffix}`), { method: 'POST', credentials: 'same-origin', body })); }
 export async function unpublishAuthorMod(base: string, modID: string, fetcher: typeof fetch = fetch): Promise<ApiMod> { return json(await fetcher(endpoint(base, `/author/mods/${encodeURIComponent(modID)}/unpublish`), { method: 'POST', credentials: 'same-origin' })); }
 export async function deleteAuthorMod(base: string, modID: string, fetcher: typeof fetch = fetch): Promise<void> { const response = await fetcher(endpoint(base, `/author/mods/${encodeURIComponent(modID)}`), { method: 'DELETE', credentials: 'same-origin' }); if (!response.ok) { const body = await response.json().catch(() => null) as { code?: string } | null; throw new Error(body?.code || `http_${response.status}`); } }
@@ -70,6 +87,7 @@ export interface AuthorModSourceInput {
   github_repo?: string;
   github_asset_regex?: string;
   github_source_code?: boolean;
+  github_platform_assets?: ApiGitHubPlatformRule[];
   github_manifest?: boolean;
 }
 

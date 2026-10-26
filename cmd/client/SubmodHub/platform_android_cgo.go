@@ -333,7 +333,10 @@ import (
 	"github.com/reze/submodhub/internal/maspath"
 )
 
-const isAndroidPlatform = true
+const (
+	isAndroidPlatform = true
+	isWindowsBuild    = false
+)
 
 type androidStorageAccessProvider struct{}
 

@@ -1,4 +1,5 @@
 import type { FileKind, ScanReport } from '../types/submodhub';
+import { platformScanReportId } from '../../../ui/submission-api';
 
 export interface ServerScanReport {
   files?: { source: string; target: string; size: number; sha256: string; class: string }[];
@@ -11,7 +12,9 @@ export interface ServerScanReport {
   conflicts?: { kind?: string; value?: string; first?: string; second?: string; Kind?: string; Value?: string; First?: string; Second?: string }[];
 }
 
-export function mapServerScanReport(versionId: string, source: ServerScanReport): ScanReport {
+// `reportId` names the file the report describes. Pass the platform's key when
+// the version ships several builds, so two platforms never share one report id.
+export function mapServerScanReport(versionId: string, source: ServerScanReport, reportId?: string): ScanReport {
   const files = source.files || [];
   const conflicts = source.conflicts || [];
   const kind = (value: string): FileKind => {
@@ -20,7 +23,7 @@ export function mapServerScanReport(versionId: string, source: ServerScanReport)
     return ['script', 'sprite', 'audio', 'font', 'text', 'binary'].includes(value) ? value as FileKind : 'unknown';
   };
   return {
-    id: `scan_${versionId}`, version_id: versionId,
+    id: reportId || platformScanReportId(versionId), version_id: versionId,
     status: 'ready',
     files: files.map((file) => ({
       source_path: file.source, target_path: file.target, size_bytes: file.size, sha256: file.sha256, kind: kind(file.class),

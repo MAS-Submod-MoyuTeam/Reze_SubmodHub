@@ -287,8 +287,10 @@ func (s *Store) authorVersionPage(w http.ResponseWriter, r *http.Request, author
 	for _, id := range ids[start:end] {
 		version := resolveVersionDependencies(s.Catalog, s.Catalog.Versions[id]).SanitizeForClient()
 		items = append(items, version)
-		if report, ok := s.Catalog.ScanReports[version.ScanReportID]; ok {
-			reports[version.ScanReportID] = report
+		// Every platform's report, not just the summary's: the workbench shows the
+		// author what each uploaded build actually contains.
+		for key, report := range s.versionScanReports(version) {
+			reports[key] = report
 		}
 	}
 	writeJSON(w, 200, map[string]any{"items": items, "scan_reports": reports, "total": len(ids), "page": page, "page_size": query.PageSize})

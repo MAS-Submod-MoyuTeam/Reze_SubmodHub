@@ -5,9 +5,15 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
-const isAndroidPlatform = false
+const (
+	isAndroidPlatform = false
+	// A desktop build is either a Windows build or a macOS/Linux build; only the
+	// former has a per-platform archive of its own.
+	isWindowsBuild = runtime.GOOS == "windows"
+)
 
 type defaultStorageAccessProvider struct{}
 

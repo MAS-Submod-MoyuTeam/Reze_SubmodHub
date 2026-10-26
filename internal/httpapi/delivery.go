@@ -23,6 +23,9 @@ type downloadDescription struct {
 	NodeID                 string    `json:"node_id"`
 	AllowedDownloadOrigins []string  `json:"allowed_download_origins"`
 	FallbackReason         string    `json:"fallback_reason,omitempty"`
+	// Platform names the platform file this descriptor resolves to. Empty for
+	// versions that ship one file for every platform.
+	Platform string `json:"platform,omitempty"`
 }
 
 func weightedDeliveryOrder(nodes []DeliveryNode) []DeliveryNode {
@@ -52,6 +55,23 @@ func weightedDeliveryOrder(nodes []DeliveryNode) []DeliveryNode {
 }
 func (s *Store) resolveDelivery(r *http.Request, v Version) downloadDescription {
 	out := downloadDescription{URL: "/api/v1/archives/" + v.ID, ExpiresAt: time.Now().UTC().Add(15 * time.Minute), SHA256: v.SHA256, SizeBytes: v.SizeBytes, DeliveryType: "builtin", NodeID: "builtin", AllowedDownloadOrigins: []string{}}
+	// Per-platform versions deliver one file at a time: the hash, the size and
+	// the upstream URL all belong to the requested platform, so every downstream
+	// check (mirror match, ticket, completion receipt) keeps comparing the bytes
+	// that were actually offered. Nothing here falls back to "the first platform";
+	// the descriptor endpoint rejects a platform-less request before getting here.
+	sourceURL := ""
+	if file, ok := v.platformFileFor(r.URL.Query().Get("platform")); ok {
+		out.SHA256 = file.SHA256
+		out.SizeBytes = file.SizeBytes
+		out.URL = "/api/v1/archives/" + v.ID + "?platform=" + url.QueryEscape(file.Platform)
+		out.Platform = file.Platform
+		if file.ArchivePath == "" && v.GitHubSource != nil {
+			sourceURL = v.GitHubSource.DownloadURL
+		}
+	} else if v.GitHubSource != nil {
+		sourceURL = v.GitHubSource.DownloadURL
+	}
 	s.mu.RLock()
 	nodes := slices.Clone(s.Catalog.DeliveryNodes)
 	mirrors := slices.Clone(s.Catalog.ArchiveMirrors)
@@ -78,13 +98,13 @@ func (s *Store) resolveDelivery(r *http.Request, v Version) downloadDescription 
 		}
 		if n.Type == "cloudreve" {
 			for _, m := range mirrors {
-				if m.NodeID == n.ID && m.NodeRevision == n.Revision && m.VersionID == v.ID && m.SHA256 == v.SHA256 && m.SizeBytes == v.SizeBytes && m.State == "ready" && m.FileID != "" {
+				if m.NodeID == n.ID && m.NodeRevision == n.Revision && m.VersionID == v.ID && m.SHA256 == out.SHA256 && m.SizeBytes == out.SizeBytes && m.State == "ready" && m.FileID != "" {
 					ready = append(ready, n)
 					break
 				}
 			}
 		}
-		if n.Type == "github_relay" && v.GitHubSource != nil {
+		if n.Type == "github_relay" && sourceURL != "" {
 			relays = append(relays, n)
 		}
 	}
@@ -93,7 +113,7 @@ func (s *Store) resolveDelivery(r *http.Request, v Version) downloadDescription 
 	for _, n := range weightedDeliveryOrder(ready) {
 		fileID := ""
 		for _, m := range mirrors {
-			if m.NodeID == n.ID && m.NodeRevision == n.Revision && m.VersionID == v.ID && m.SHA256 == v.SHA256 && m.State == "ready" {
+			if m.NodeID == n.ID && m.NodeRevision == n.Revision && m.VersionID == v.ID && m.SHA256 == out.SHA256 && m.State == "ready" {
 				fileID = m.FileID
 				break
 			}
@@ -106,7 +126,10 @@ func (s *Store) resolveDelivery(r *http.Request, v Version) downloadDescription 
 		// Resolve outside the Store lock, then recheck the configuration and visibility.
 		s.mu.RLock()
 		current, exists := s.Catalog.Versions[v.ID]
-		valid := exists && current.State == "published" && current.SHA256 == v.SHA256
+		// Re-check against the current record, not the snapshot taken when the
+		// request started: a version republished with new bytes, or a platform
+		// whose file was replaced, must not be served under the old descriptor.
+		valid := exists && current.State == "published" && current.SHA256 == out.SHA256 && platformStillOffers(current, out)
 		active := slices.ContainsFunc(s.Catalog.DeliveryNodes, func(now DeliveryNode) bool { return now.ID == n.ID && now.Enabled && now.Revision == n.Revision })
 		s.mu.RUnlock()
 		if !valid || !active {
@@ -134,7 +157,7 @@ func (s *Store) resolveDelivery(r *http.Request, v Version) downloadDescription 
 			continue
 		}
 		expiry := time.Now().UTC().Add(2 * time.Minute)
-		token, err := delivery.SignTicket(key, delivery.Ticket{Audience: n.ID, VersionID: v.ID, SourceURL: v.GitHubSource.DownloadURL, SHA256: v.SHA256, SizeBytes: v.SizeBytes, ExpiresAt: expiry.Unix()})
+		token, err := delivery.SignTicket(key, delivery.Ticket{Audience: n.ID, VersionID: v.ID, SourceURL: sourceURL, SHA256: out.SHA256, SizeBytes: out.SizeBytes, ExpiresAt: expiry.Unix()})
 		if err != nil {
 			out.FallbackReason = "external_unavailable"
 			continue
@@ -161,4 +184,16 @@ func minTime(a, b time.Time) time.Time {
 		return a
 	}
 	return b
+}
+
+// platformStillOffers reports whether the current version record still serves
+// the exact bytes this descriptor promised: the same platform, hash and size.
+// A version that lost a platform file mid-request must not fall through to
+// another platform's bytes under the old promise.
+func platformStillOffers(current Version, out downloadDescription) bool {
+	if out.Platform == "" {
+		return current.SHA256 == out.SHA256
+	}
+	file, ok := current.platformFileFor(out.Platform)
+	return ok && file.SHA256 == out.SHA256 && file.SizeBytes == out.SizeBytes
 }

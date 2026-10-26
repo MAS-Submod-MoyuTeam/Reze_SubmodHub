@@ -8,12 +8,14 @@ import {
   ModVersion,
   ScanReport,
   DownloadDescriptor,
+  type AssetPlatform,
 } from '../types/submodhub';
 import { fetchDownloadDescriptor, fetchPublishedCatalog, fetchPublishedVersions } from '../../../ui/catalog-api';
 import { loginFlarum as loginFlarumRequest, logout as logoutRequest, readSession, Session } from '../../../ui/auth-api';
-import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, markPublishedVersionLatest, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages, syncAuthorModGitHub, type SyncSummary } from '../../../ui/submission-api';
+import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, markPublishedVersionLatest, platformScanReportId, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages, syncAuthorModGitHub, type SyncSummary } from '../../../ui/submission-api';
 import { mapServerScanReport } from './scanReport';
 import { refreshWindowText as formatRefreshWindow, type SourcePolicy } from '../components/sourceConfig';
+import { assetPlatformLabel } from '../types/submodhub';
 
 export type NavTab =
   | 'catalog'
@@ -86,7 +88,7 @@ export interface AppContextType {
     versions: ModVersion[];
     latestVersion?: ModVersion;
   };
-  getDownloadDescriptor: (versionId: string) => Promise<DownloadDescriptor>;
+  getDownloadDescriptor: (versionId: string, platform?: AssetPlatform) => Promise<DownloadDescriptor>;
 
   cacheAuthorPage: (page: AuthorPageData) => void;
 
@@ -94,7 +96,7 @@ export interface AppContextType {
   createModDraft: (data: Partial<ModSummary>) => Promise<string>;
   updateModDraft: (modId: string, data: Partial<ModSummary>) => Promise<boolean>;
   createCandidateVersion: (modId: string, version: string, releaseNotes: string, dependencies?: ModVersion['dependencies']) => Promise<string>;
-  uploadArchiveAndScan: (versionId: string, file: File | { name: string; size: number }) => Promise<string>;
+  uploadArchiveAndScan: (versionId: string, file: File | { name: string; size: number }, platform?: AssetPlatform) => Promise<string>;
   uploadDetailImages: (modId: string, files: File[]) => Promise<boolean>;
   submitVersionForReview: (versionId: string, markLatest: boolean) => Promise<boolean>;
   setLatestPublishedVersion: (versionId: string) => Promise<void>;
@@ -303,10 +305,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const getDownloadDescriptor = useCallback(
-    async (versionId: string): Promise<DownloadDescriptor> => {
+    async (versionId: string, platform?: AssetPlatform): Promise<DownloadDescriptor> => {
       const base = apiBase();
-      const result = await fetchDownloadDescriptor(versionId, base);
-      return { ...result, filename: `submod_${versionId}.zip` };
+      const result = await fetchDownloadDescriptor(versionId, base, fetch, platform);
+      const suffix = result.platform ? `-${result.platform}` : '';
+      return { ...result, filename: `submod_${versionId}${suffix}.zip` };
     },
     []
   );
@@ -366,6 +369,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           github_asset_regex: newMod.github_asset_regex,
           github_source_code: newMod.github_source_code,
           github_manifest: newMod.github_manifest,
+          github_platform_assets: data.github_platform_assets,
         });
         const persisted = {
           ...newMod,
@@ -380,6 +384,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           github_asset_regex: remote.github_asset_regex,
           github_source_code: remote.github_source_code,
           github_manifest: remote.github_manifest,
+          github_platform_assets: remote.github_platform_assets,
         };
         setMods((prev) => [persisted, ...prev]);
         showToast('success', `成功创建模组草稿 [${newMod.title}]`);
@@ -414,6 +419,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           github_asset_regex: data.github_asset_regex ?? existing.github_asset_regex,
           github_source_code: data.github_source_code ?? existing.github_source_code,
           github_manifest: data.github_manifest ?? existing.github_manifest,
+          github_platform_assets: data.github_platform_assets ?? existing.github_platform_assets,
         });
         setMods((prev) => prev.map((mod) => mod.id === modId ? {
           ...mod,
@@ -428,6 +434,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           supported_platforms: (remote.supported_platforms || []) as ModSummary['supported_platforms'],
           mas_version_range: remote.mas_version_range || '',
           recommended_priority: remote.recommended_priority || 0,
+          github_platform_assets: remote.github_platform_assets ?? data.github_platform_assets,
           updated_at: new Date().toISOString(),
         } : mod));
         showToast('success', '模组元数据已保存。');
@@ -457,18 +464,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const uploadArchiveAndScan = useCallback(
-    async (versionId: string, file: File | { name: string; size: number }): Promise<string> => {
-      const reportId = 'scan_' + versionId;
+    async (versionId: string, file: File | { name: string; size: number }, platform?: AssetPlatform): Promise<string> => {
+      const reportId = platformScanReportId(versionId, platform);
 
       if (file instanceof File) {
         const base = apiBase();
         try {
-          const result = await uploadAuthorArchive(base, versionId, file, file.name);
+          const result = await uploadAuthorArchive(base, versionId, file, file.name, platform);
           if (result.scan_report) {
-            setScanReports((prev) => ({ ...prev, [reportId]: mapServerScanReport(versionId, result.scan_report!) }));
+            setScanReports((prev) => ({ ...prev, [reportId]: mapServerScanReport(versionId, result.scan_report!, reportId) }));
           }
-          setVersions((prev) => prev.map((v) => v.id === versionId ? { ...v, version: result.version || v.version, state: result.state as ModVersion['state'], size_bytes: result.size_bytes, sha256: result.sha256, dependencies: (result as typeof result & { dependencies?: unknown[] }).dependencies as ModVersion['dependencies'] || v.dependencies, scan_report_id: result.scan_report ? reportId : v.scan_report_id } : v));
-          showToast('success', result.version ? `ZIP 扫描完成，版本标识：${result.version}` : 'ZIP 扫描完成；提交审核前请填写版本标识。');
+          const platformAssets = result.platform_assets as ModVersion['platform_assets'];
+          setVersions((prev) => prev.map((v) => v.id === versionId ? {
+            ...v,
+            version: result.version || v.version,
+            state: result.state as ModVersion['state'],
+            // A per-platform upload leaves the version-wide numbers empty on the
+            // server; mirror that instead of displaying one platform's size as
+            // the size of the whole version.
+            size_bytes: result.platform ? v.size_bytes : result.size_bytes,
+            sha256: result.platform ? v.sha256 : result.sha256,
+            platform_assets: platformAssets ?? v.platform_assets,
+            dependencies: (result as typeof result & { dependencies?: unknown[] }).dependencies as ModVersion['dependencies'] || v.dependencies,
+            scan_report_id: result.scan_report ? reportId : v.scan_report_id,
+          } : v));
+          const label = platform ? ` · ${assetPlatformLabel(platform)}` : '';
+          showToast('success', result.version ? `ZIP 扫描完成${label}，版本标识：${result.version}` : `ZIP 扫描完成${label}；提交审核前请填写版本标识。`);
           return reportId;
         } catch (error) {
           showToast('error', `ZIP 上传失败：${error instanceof Error ? error.message : 'unknown_error'}`);
@@ -476,9 +497,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      // Update version to uploaded -> scanning
+      // Update version to uploaded -> scanning. A per-platform draft records the
+      // file on its platform entry, so the version-wide size stays unset.
       setVersions((prev) =>
-        prev.map((v) => (v.id === versionId ? { ...v, state: 'scanning', size_bytes: file.size } : v))
+        prev.map((v) => {
+          if (v.id !== versionId) return v;
+          if (platform) {
+            const others = (v.platform_assets || []).filter((asset) => asset.platform !== platform);
+            return { ...v, state: 'scanning', platform_assets: [...others, { platform, size_bytes: file.size }] };
+          }
+          return { ...v, state: 'scanning', size_bytes: file.size };
+        })
       );
 
       // Generate random simulated SHA256

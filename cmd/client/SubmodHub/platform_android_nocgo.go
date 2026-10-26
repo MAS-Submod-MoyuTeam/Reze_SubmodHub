@@ -4,7 +4,10 @@ package main
 
 import "context"
 
-const isAndroidPlatform = true
+const (
+	isAndroidPlatform = true
+	isWindowsBuild    = false
+)
 
 type androidStorageAccessProvider struct{}
 

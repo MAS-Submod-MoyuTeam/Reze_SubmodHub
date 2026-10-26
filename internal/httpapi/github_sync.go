@@ -112,7 +112,12 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 	etag := targetMod.GitHubETag
 	// A failed import must not be mistaken for an unchanged, fully imported
 	// release list.
-	if force || targetMod.GitHubLastSyncError != "" {
+	//
+	// Per-platform selection did not always take part in the ETag: a cache
+	// written while this mod matched one shared file must not hide the assets the
+	// newly declared platform rules need. A mod in per-platform mode therefore
+	// re-reads the list until it has imported under those rules.
+	if force || targetMod.GitHubLastSyncError != "" || len(targetMod.GitHubPlatformAssets) > 0 {
 		etag = ""
 	}
 	releases, newETag, notModified, err := client.ListReleases(ctx, targetMod.GitHubOwner, targetMod.GitHubRepo, etag)
@@ -233,8 +238,19 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 			continue
 		}
 
-		// Select release asset
-		selected, selectErr := github.SelectReleaseAsset(rel, targetMod.GitHubAssetRegex, targetMod.GitHubSourceCode)
+		// Select release asset. Per-platform rules produce one version carrying
+		// every platform's asset; the single-file rule stays the default so an
+		// existing mod keeps matching exactly what it matched before.
+		var (
+			selected  *github.SelectedAsset
+			platforms []platformSelection
+			selectErr error
+		)
+		if len(targetMod.GitHubPlatformAssets) > 0 {
+			platforms, selectErr = selectPlatformsForRelease(rel, targetMod.GitHubPlatformAssets)
+		} else {
+			selected, selectErr = github.SelectReleaseAsset(rel, targetMod.GitHubAssetRegex, targetMod.GitHubSourceCode)
+		}
 		if selectErr != nil {
 			if errors.Is(selectErr, github.ErrNoMatchingAsset) {
 				summary.Skipped++
@@ -261,17 +277,28 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 			releaseNotes = rel.Name
 		}
 
-		result, created := s.importCandidate(ctx, client, *targetMod, releaseCandidate{
-			Version:     tag,
-			Notes:       releaseNotes,
-			DownloadURL: selected.DownloadURL,
-			FileName:    selected.AssetName,
-			AssetID:     selected.AssetID,
-			ReleaseID:   rel.ID,
-			SourceKind:  selected.Kind,
-			Owner:       targetMod.GitHubOwner,
-			Repo:        targetMod.GitHubRepo,
-		}, now)
+		candidate := releaseCandidate{
+			Version:   tag,
+			Notes:     releaseNotes,
+			ReleaseID: rel.ID,
+			Owner:     targetMod.GitHubOwner,
+			Repo:      targetMod.GitHubRepo,
+		}
+		if selected != nil {
+			candidate.DownloadURL = selected.DownloadURL
+			candidate.FileName = selected.AssetName
+			candidate.AssetID = selected.AssetID
+			candidate.SourceKind = selected.Kind
+		}
+		if len(platforms) > 0 {
+			// The per-platform candidate downloads and scans one archive per
+			// platform; importCandidate owns which shape is written.
+			candidate.Platforms = platforms
+			candidate.FileName = platforms[0].Asset.AssetName
+			candidate.AssetID = platforms[0].Asset.AssetID
+			candidate.SourceKind = platforms[0].Asset.Kind
+		}
+		result, created := s.importCandidate(ctx, client, *targetMod, candidate, now)
 		switch {
 		case created:
 			summary.Created++

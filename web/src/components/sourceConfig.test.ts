@@ -2,6 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   validateGitHubSourceInput,
+  validatePlatformRule,
+  validatePlatformRules,
+  guessPlatformFromFileName,
+  platformModeTradeoff,
   isCandidateVersionAllowed,
   formatLastSyncTime,
   getGitHubRepoUrl,
@@ -97,4 +101,61 @@ test('manifest snippet matches the document the server parses', () => {
   assert.ok(MANIFEST_SNIPPET.includes('releases:'));
   assert.ok(MANIFEST_SNIPPET.includes('version:'));
   assert.ok(MANIFEST_SNIPPET.includes('.zip'));
+});
+
+test('per-platform rules require a usable matcher on every platform', () => {
+  // A blank regex is only acceptable when that platform may fall back to source.
+  assert.equal(validatePlatformRule('windows', '', false).valid, false);
+  assert.equal(validatePlatformRule('windows', '', true).valid, true);
+  assert.equal(validatePlatformRule('android', '   ', false).valid, false);
+  assert.equal(validatePlatformRule('android', '[broken', false).valid, false);
+  assert.equal(validatePlatformRule('android', 'MyMod-android\\.zip$', false).valid, true);
+
+  // The message names the platform so the author knows which box is wrong.
+  assert.ok(validatePlatformRule('android', '', false).error?.includes('Android'));
+  assert.ok(validatePlatformRule('windows', '', false).error?.includes('Windows'));
+
+  // Splitting assets must cover both platforms: a missing one would leave its
+  // users with nothing to download.
+  assert.equal(validatePlatformRules([]).valid, false);
+  assert.equal(validatePlatformRules([{ platform: 'windows', regex: 'w\\.zip$' }]).valid, false);
+  assert.equal(validatePlatformRules([
+    { platform: 'windows', regex: 'MyMod-windows\\.zip$' },
+    { platform: 'android', regex: 'MyMod-android\\.zip$' },
+  ]).valid, true);
+  // One bad rule fails the whole set, not just its own platform.
+  assert.equal(validatePlatformRules([
+    { platform: 'windows', regex: 'MyMod-windows\\.zip$' },
+    { platform: 'android', regex: '[broken' },
+  ]).valid, false);
+});
+
+test('shared regex stays optional when per-platform rules exist', () => {
+  // Per-platform mode replaces the shared regex, so an empty shared regex with
+  // platform rules must pass validation instead of demanding a matcher.
+  assert.equal(validateGitHubSourceInput({
+    owner: 'octocat',
+    repo: 'hello',
+    assetRegex: '',
+    sourceCode: false,
+    platformRules: [{ platform: 'windows', regex: 'w\\.zip$' }, { platform: 'android', regex: 'a\\.zip$' }],
+  }).valid, true);
+});
+
+test('guesses a file name platform only when the tag is unambiguous', () => {
+  assert.equal(guessPlatformFromFileName('MyMod-1.2.0-windows.zip'), 'windows');
+  assert.equal(guessPlatformFromFileName('MyMod_1.2.0_Android.zip'), 'android');
+  assert.equal(guessPlatformFromFileName('setup.exe'), 'windows');
+  assert.equal(guessPlatformFromFileName('MyMod.apk'), 'android');
+  // Names carrying both tags, or neither, stay unresolved rather than guessing.
+  assert.equal(guessPlatformFromFileName('MyMod-windows-android.zip'), null);
+  assert.equal(guessPlatformFromFileName('MyMod-1.2.0.zip'), null);
+  assert.equal(guessPlatformFromFileName(''), null);
+});
+
+test('platform tradeoff copy states the all-or-nothing release rule', () => {
+  const copy = platformModeTradeoff();
+  assert.ok(copy.benefit.includes('Windows'));
+  assert.ok(copy.benefit.includes('Android'));
+  assert.ok(copy.cost.includes('整体跳过'));
 });

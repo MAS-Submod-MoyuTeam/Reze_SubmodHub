@@ -941,3 +941,44 @@ test('CatalogView: the refresh button reloads the catalog instead of faking a sp
   }
 });
 
+// A version with no platform_assets ships one archive every platform installs, so
+// the modal must present it as all-platform compatible: no platform picker, and a
+// download that is ready without a choice.
+test('a version without platform assets is offered as all-platform compatible', () => {
+  const ctx = createMockContext({ mods: [sampleMod], versions: [sampleVersion] });
+
+  const markup = renderToStaticMarkup(
+    <AppContext.Provider value={ctx}>
+      <ModDetailModal modId={sampleMod.id} downloadVersionId={null} onClose={() => {}} />
+    </AppContext.Provider>
+  );
+
+  assert.match(markup, /全平台通用/);
+  assert.match(markup, /获取下载描述符/);
+  assert.doesNotMatch(markup, /请先选择平台/);
+});
+
+// Two builds means the reader must choose: the modal cannot download anything
+// until a platform is picked, because there is no default build to fall back on.
+test('a version with two platform builds waits for the reader to pick one', () => {
+  const splitVersion = {
+    ...sampleVersion,
+    size_bytes: 0,
+    sha256: '',
+    platform_assets: [
+      { platform: 'windows' as const, size_bytes: 2048, sha256: 'a'.repeat(64) },
+      { platform: 'android' as const, size_bytes: 4096, sha256: 'b'.repeat(64) },
+    ],
+  };
+  const ctx = createMockContext({ mods: [sampleMod], versions: [splitVersion] });
+
+  const markup = renderToStaticMarkup(
+    <AppContext.Provider value={ctx}>
+      <ModDetailModal modId={sampleMod.id} downloadVersionId={null} onClose={() => {}} />
+    </AppContext.Provider>
+  );
+
+  assert.match(markup, /请先选择平台/);
+  assert.doesNotMatch(markup, /全平台通用/);
+});
+

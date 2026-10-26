@@ -80,6 +80,9 @@ type ArchiveDescriptor struct {
 	ExpiresAt              string   `json:"expires_at"`
 	SHA256                 string   `json:"sha256"`
 	SizeBytes              int64    `json:"size_bytes"`
+	// Platform names the platform build this descriptor resolves to. Absent for a
+	// version that ships one archive for every platform.
+	Platform string `json:"platform"`
 }
 
 const (
@@ -566,10 +569,20 @@ func (m *ArchiveStagingManager) stageAttempt(ctx context.Context, req StageArchi
 		}, nil
 	}
 
-	// 1. Fetch archive descriptor
+	// 1. Fetch archive descriptor. A per-platform version only serves the
+	// platform this build can install, so the request names it; the server
+	// rejects a platform-less request rather than handing out another platform's
+	// package.
 	descURL := fmt.Sprintf("%s/versions/%s/download", apiBase, url.PathEscape(req.VersionID))
+	params := url.Values{}
 	if req.forceBuiltin {
-		descURL += "?delivery=builtin"
+		params.Set("delivery", "builtin")
+	}
+	if platform := downloadPlatform(); platform != "" {
+		params.Set("platform", platform)
+	}
+	if encoded := params.Encode(); encoded != "" {
+		descURL += "?" + encoded
 	}
 	dReq, err := http.NewRequestWithContext(ctx, http.MethodGet, descURL, nil)
 	if err != nil {
@@ -616,6 +629,13 @@ func (m *ArchiveStagingManager) stageAttempt(ctx context.Context, req StageArchi
 	if len(desc.SHA256) != 64 {
 		m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "invalid_descriptor_hash"})
 		return StagedArchiveInfo{}, errors.New("invalid_descriptor_hash")
+	}
+	// A descriptor that names a platform must name this build's platform. The
+	// server is authoritative, but a wrong build is unrecoverable after install,
+	// so the mismatch is refused here instead of trusted.
+	if desc.Platform != "" && desc.Platform != downloadPlatform() {
+		m.setProgress(req.OperationID, StageProgress{Stage: "error", Error: "wrong_platform_delivered"})
+		return StagedArchiveInfo{}, errors.New("wrong_platform_delivered")
 	}
 
 	// Quota reservation check: include both current files and active reservations

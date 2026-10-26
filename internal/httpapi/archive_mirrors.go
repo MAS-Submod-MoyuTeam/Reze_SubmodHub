@@ -39,8 +39,12 @@ type deliveryRuntime struct {
 	workerOnce sync.Once
 }
 
+// mirrorCandidate reports whether a version can be mirrored to a storage node.
+// Per-platform versions are not mirrored: a mirror record keys on one SHA256 and
+// one SizeBytes, so mirroring them would make the node serve a single platform
+// as if it were the whole version.
 func mirrorCandidate(c Catalog, v Version) bool {
-	if v.State != "published" || v.ArchivePath == "" || v.SHA256 == "" {
+	if v.State != "published" || v.ArchivePath == "" || v.SHA256 == "" || len(v.PlatformAssets) > 0 {
 		return false
 	}
 	for _, m := range c.Mods {

@@ -19,6 +19,38 @@ export type ModSourceType = 'local' | 'github_releases';
 
 export type Platform = 'windows' | 'android' | 'linux' | 'macos';
 
+// Platforms a version can ship a separate archive for. Filters accept more, but
+// only these two ever select a file.
+export type AssetPlatform = 'windows' | 'android';
+
+export const ASSET_PLATFORMS: AssetPlatform[] = ['windows', 'android'];
+
+export const ASSET_PLATFORM_LABELS: Record<AssetPlatform, string> = {
+  windows: 'Windows',
+  android: 'Android',
+};
+
+// Same label for every reader (catalog, workbench, downloads) so a platform is
+// never called "PC" in one place and "Windows" in another.
+export function assetPlatformLabel(platform: string): string {
+  return ASSET_PLATFORM_LABELS[platform as AssetPlatform] ?? platform;
+}
+
+// One platform's release-asset matcher on a GitHub-sourced mod.
+export interface GitHubPlatformRule {
+  platform: AssetPlatform;
+  regex?: string;
+  source_code?: boolean;
+}
+
+// One platform's file of a version, as the catalog publishes it.
+export interface PlatformAsset {
+  platform: AssetPlatform;
+  asset_name?: string;
+  size_bytes: number;
+  sha256?: string;
+}
+
 export interface ModSummary {
   id: string; // e.g. "mod_extra_everything"
   title: string;
@@ -49,6 +81,9 @@ export interface ModSummary {
   github_repo?: string;
   github_asset_regex?: string;
   github_source_code?: boolean;
+  // Per-platform discovery rules. A non-empty list replaces github_asset_regex:
+  // every listed platform is matched by its own regex on every release.
+  github_platform_assets?: GitHubPlatformRule[];
   github_manifest?: boolean;
   github_manifest_digest?: string;
   github_last_sync_at?: string;
@@ -91,6 +126,9 @@ export interface ModVersion {
   state: VersionState;
   size_bytes: number;
   sha256: string; // 64 hex characters
+  // Present when the version ships one archive per platform. In that case the
+  // version-wide size_bytes/sha256 are empty and these entries are authoritative.
+  platform_assets?: PlatformAsset[];
   release_notes: string;
   dependencies: ModDependency[];
   scan_report_id?: string;
@@ -189,4 +227,6 @@ export interface DownloadDescriptor {
   sha256: string;
   size_bytes: number;
   filename: string;
+  // The platform this descriptor resolved to; absent for single-archive versions.
+  platform?: AssetPlatform;
 }

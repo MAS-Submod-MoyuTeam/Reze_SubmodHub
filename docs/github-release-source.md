@@ -63,10 +63,29 @@ releases:
 | `GitHub 组织/用户 (Owner)` | 字符串 | 是 | 仓库所属用户名或组织名，例如 `Monika-After-Story` 或 `octocat`。只允许字母、数字和连字符。 |
 | `GitHub 仓库名 (Repo)` | 字符串 | 是 | 仓库名称，例如 `MonikaModDev` 或 `hello-world`。 |
 | `版本发现方式` | 二选一 | 是 | **站内按需抓取（默认）** 或 **仓库清单 `rezehub.yml`**，取舍见 [1.1](#11-版本发现方式按需抓取默认与仓库清单可选)。 |
-| `Release 资产文件名正则 (RE2)` | 正则表达式 | 条件必填* | 匹配 Release Assets 文件名的 Go RE2 正则。必须匹配 `.zip` 文件。例如 `^MyMod[-_]v?\d+\.\d+\.\d+.*\.zip$`。**仅按需抓取模式使用**；清单模式读取清单里写明的 `url`，忽略此字段。 |
+| `Release 资产文件名正则 (RE2)` | 正则表达式 | 条件必填* | 匹配 Release Assets 文件名的 Go RE2 正则。必须匹配 `.zip` 文件。例如 `^MyMod[-_]v?\d+\.\d+\.\d+.*\.zip$`。**仅按需抓取模式使用**；清单模式读取清单里写明的 `url`，忽略此字段；分平台模式下由各平台自己的正则接管。 |
 | `无匹配时使用 Release source code ZIP` | 布尔开关 | 条件必填* | 若 Release 未上传匹配的二进制 assets，是否允许自动使用 GitHub 自动生成的源码包 (`zipball_url`)。**仅按需抓取模式使用**。 |
+| `资产分发方式` | 二选一 | 是 | **全平台共用一个文件（默认）** 或 **Windows / Android 分别匹配**，取舍见 [2.1](#21-分平台分发)。 |
+| `Windows / Android 资产正则` | 正则表达式 | 分平台时必填 | 分平台模式下每个平台各一条 RE2 正则（可各自单独开启源码包兜底），匹配同一次 Release 里的不同资产。 |
 
-*\* 注：在按需抓取模式下，必须至少配置资产文件名正则或开启源码包回退开关之一，否则配置校验不通过；清单模式下两者都可留空。*
+*\* 注：在按需抓取模式下，必须至少配置资产文件名正则或开启源码包回退开关之一，否则配置校验不通过；清单模式下两者都可留空；分平台模式下由两条平台正则替代，共用正则可留空。*
+
+### 2.1 分平台分发
+
+一个模组在同一时刻只有一种资产分发方式，不存在混用：
+
+| 方式 | 存储字段 | 匹配行为 |
+| --- | --- | --- |
+| 全平台共用（默认） | `github_asset_regex` + `github_source_code` | 一次 Release 只取一个文件，所有平台下载同一份 |
+| 分平台 | `github_platform_assets`（`windows`、`android` 各一条） | 一次 Release 依次为每个平台各取一个文件 |
+
+- **默认规则：没分平台就是全平台兼容。** 未配置 `github_platform_assets` 的模组只产出一份归档，每个平台安装的都是同一份字节，下载时不带平台或带任意已知平台都等价（见 `docs/frontend-contract.md` 的下载语义表）。不要把「没有平台专用包」理解成「缺少某个平台」。
+- 分平台必须同时配置 `windows` 与 `android`，只配一个平台会在保存时被拒绝。
+- **原子性**：任一平台在该 Release 里匹配不到 `.zip`（且未开启该平台的源码包兜底）时，这次 Release **整体跳过**并写入同步错误，错误信息里带缺失的资产名。永远不会出现“只发布了 Windows 版”的半成品版本。
+- 切回共用文件时给 `github_platform_assets` 传空数组 `[]`，服务端据此清除分平台规则。
+- 分平台版本在目录里的形状：版本级 `sha256`/`size_bytes` 为空，真实值在 `platform_assets: [{ platform, asset_name, size_bytes, sha256 }]`。每个平台的文件都由服务端落盘（源码包兜底的平台同样落盘并有真实哈希），`asset_name` 只记录来源文件名。
+- 下载分平台版本必须显式指定平台：`GET /api/v1/versions/{id}/download?platform=windows|android`，省略时返回 400 `platform_required`——服务端不替客户端猜平台，避免把 Windows 包发给 Android 用户。反过来，**全平台共用文件的版本带 `platform` 是无害的**（等价于不带）：客户端可以每次都照自己的运行平台请求，历史版本不会因此失效；只有「不是平台的名字」（如 `linux`）才返回 404 `platform_not_found`。
+- 本地上传源同样支持分平台：`POST /api/v1/author/versions/{id}/archive?platform=windows|android` 为每个平台分别上传归档，提交审核前必须每个平台都有文件**且都有各自的扫描报告**（否则 409 `archive_required` / `scan_required`）。每次上传只写该平台自己的报告键 `scan_<version>-<platform>`，重传 android 不会改写 windows 的报告；版本摘要的 `scan_report_id` 恒指向按 `windows`→`android` 顺序排在最前的那个平台，与最后一次上传的是哪个平台无关。
 
 ---
 
@@ -91,8 +110,16 @@ SubmodHub 仅允许下载 `.zip` 格式的 Release 资产文件，非 `.zip` 文
    ^MyMod-.*-windows\.zip$
    ```
 
-4. **多资产稳定排序规则**：
-   若同一个 Release 存在多个资产文件命中正则，系统会按文件名进行稳定字母排序（Alphabetical Order），优先选择排序第一的资产，确保重复同步行为完全确定。
+   注意：若确实要「只要 Windows」，请直接用分平台模式并给 Windows 填这条正则，而不是在全平台共用模式下排掉 Android —— 共用模式下 Android 用户会拿到同一个 Windows 包。
+
+4. **分平台模式下的典型一对正则**：
+   ```regex
+   Windows:  ^MyMod[-_]v?\d+\.\d+\.\d+[-_]windows\.zip$
+   Android:  ^MyMod[-_]v?\d+\.\d+\.\d+[-_]android\.zip$
+   ```
+
+5. **多资产稳定排序规则**：
+   若同一个 Release 存在多个资产文件命中正则，系统会按文件名进行稳定字母排序（Alphabetical Order），优先选择排序第一的资产，确保重复同步行为完全确定。分平台模式下每个平台各自套用这条规则。
 
 ---
 

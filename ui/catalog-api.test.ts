@@ -128,6 +128,50 @@ test('loads a real archive descriptor without inventing a signed URL', async () 
   const descriptor = await fetchDownloadDescriptor('v1', '/api/v1', fetcher as typeof fetch);
   assert.equal(descriptor.url, '/api/v1/archives/v1');
   assert.equal(descriptor.size_bytes, 42);
+  // A shared-archive version reports no platform, so callers keep the plain name.
+  assert.equal(descriptor.platform, undefined);
+});
+
+test('asks for a platform file and reports which platform the bytes belong to', async () => {
+  const bytes = new TextEncoder().encode('android build');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const paths: string[] = [];
+  const fetcher = async (input: RequestInfo | URL) => {
+    const path = String(input);
+    paths.push(path);
+    if (path.includes('/versions/')) {
+      return Response.json({ url: '/api/v1/archives/v1-android', expires_at: new Date(Date.now() + 60_000).toISOString(), sha256: hash, size_bytes: bytes.length, platform: 'android' });
+    }
+    return new Response(bytes);
+  };
+
+  const descriptor = await fetchDownloadDescriptor('v1', '/api/v1', fetcher as typeof fetch, 'android');
+  assert.equal(descriptor.platform, 'android');
+  assert.equal(paths[0], '/api/v1/versions/v1/download?platform=android');
+
+  // The verified download must carry the platform through so the caller can name
+  // the saved file after the build it actually received.
+  const archive = await fetchVerifiedArchive('v1', '/api/v1', fetcher as typeof fetch, undefined, undefined, 'android');
+  assert.equal(archive.platform, 'android');
+  assert.equal(archive.sha256, hash);
+  assert.ok(paths[1].startsWith('/api/v1/versions/v1/download?platform=android'));
+});
+
+test('refuses a descriptor that resolves to a different platform than requested', async () => {
+  const bytes = new TextEncoder().encode('windows build');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const fetcher = async (input: RequestInfo | URL) => {
+    if (String(input).includes('/versions/')) {
+      // The server answered with the wrong build; those bytes must never be used.
+      return Response.json({ url: '/api/v1/archives/v1-windows', expires_at: new Date(Date.now() + 60_000).toISOString(), sha256: hash, size_bytes: bytes.length, platform: 'windows' });
+    }
+    return new Response(bytes);
+  };
+
+  await assert.rejects(
+    fetchVerifiedArchive('v1', '/api/v1', fetcher as typeof fetch, undefined, undefined, 'android'),
+    /wrong_platform_delivered/,
+  );
 });
 
 test('loads every catalog page for web and desktop consumers', async () => {

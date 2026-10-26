@@ -27,6 +27,15 @@ export async function fetchModImages(modID: string, base = '/api/v1', fetcher: t
   return (result.items || []).flatMap((item) => typeof item.url === 'string' ? [item.url] : []);
 }
 
+// One platform's file of a version. Servers that ship a single archive for every
+// platform omit this list entirely.
+export interface CatalogPlatformAsset {
+  platform: 'windows' | 'android';
+  asset_name?: string;
+  size_bytes: number;
+  sha256?: string;
+}
+
 export interface CatalogVersion {
   id: string;
   mod_id: string;
@@ -35,6 +44,7 @@ export interface CatalogVersion {
   state: 'published';
   size_bytes: number;
   sha256: string;
+  platform_assets?: CatalogPlatformAsset[];
   release_notes?: string;
   dependencies?: Array<{ mod_id: string; mod_title?: string; linked_mod_id?: string; linked_mod_ids?: string[]; version_range: string; required: boolean }>;
   scan_report_id?: string;
@@ -56,6 +66,9 @@ export interface ArchiveDescriptor {
   expires_at: string;
   sha256: string;
   size_bytes: number;
+  // The platform this descriptor resolved to. Absent for versions that ship one
+  // archive for every platform.
+  platform?: 'windows' | 'android';
 }
 
 export interface SpriteSet {
@@ -206,9 +219,10 @@ export async function fetchPublishedVersions(modID: string, base = '/api/v1', fe
   return result.items;
 }
 
-export async function fetchDownloadDescriptor(versionID: string, base = '/api/v1', fetcher: typeof fetch = fetch): Promise<ArchiveDescriptor> {
+export async function fetchDownloadDescriptor(versionID: string, base = '/api/v1', fetcher: typeof fetch = fetch, platform?: 'windows' | 'android'): Promise<ArchiveDescriptor> {
   const root = base.replace(/\/$/, '');
-  const path = `${root}/versions/${encodeURIComponent(versionID)}/download`;
+  const suffix = platform ? `?platform=${encodeURIComponent(platform)}` : '';
+  const path = `${root}/versions/${encodeURIComponent(versionID)}/download${suffix}`;
   const descriptor = await readJSON(await fetcher(path)) as ArchiveDescriptor;
   if (!descriptor?.url || !/^[0-9a-f]{64}$/.test(descriptor.sha256) || !Number.isSafeInteger(descriptor.size_bytes)) {
     throw new Error('invalid_download_response');
@@ -222,9 +236,14 @@ export async function fetchVerifiedArchive(
   fetcher: typeof fetch = fetch,
   onProgress?: DownloadProgressCallback,
   signal?: AbortSignal,
-): Promise<{ blob: Blob; sha256: string; size_bytes: number }> {
+  platform?: 'windows' | 'android',
+): Promise<{ blob: Blob; sha256: string; size_bytes: number; platform?: 'windows' | 'android' }> {
   onProgress?.({ received: 0, total: 0, stage: 'connecting' });
-  const descriptor = await fetchDownloadDescriptor(versionID, base, fetcher);
+  const descriptor = await fetchDownloadDescriptor(versionID, base, fetcher, platform);
+  // A per-platform version only serves the platform that was asked for. The
+  // server is authoritative, but a mismatch here means the archive on disk is not
+  // the build the caller can install, so it never reaches the user.
+  if (platform && descriptor.platform && descriptor.platform !== platform) throw new Error('wrong_platform_delivered');
   if (descriptor.size_bytes < 1 || descriptor.size_bytes > 128 * 1024 * 1024) throw new Error('download_too_large');
   if (descriptor.url.startsWith('//') || (!descriptor.url.startsWith('/') && !descriptor.url.startsWith('https://'))) {
     throw new Error('invalid_download_response');
@@ -279,5 +298,7 @@ export async function fetchVerifiedArchive(
   }
   const hash = bytesToHex(sha256(bytes));
   if (hash !== descriptor.sha256) throw new Error('download_hash_mismatch');
-  return { blob: new Blob([bytes], { type: 'application/zip' }), sha256: hash, size_bytes: size };
+  // The descriptor names the platform it resolved, so a caller can label the file
+  // it received without guessing from the requested value.
+  return { blob: new Blob([bytes], { type: 'application/zip' }), sha256: hash, size_bytes: size, platform: descriptor.platform };
 }

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { apiBase } from '../apiBase';
 
 import { useApp } from '../context/AppContext';
-import { ModVersion, DownloadDescriptor } from '../types/submodhub';
+import { ModVersion, DownloadDescriptor, ASSET_PLATFORM_LABELS, assetPlatformLabel, type AssetPlatform } from '../types/submodhub';
 import { fetchModImages, fetchVerifiedArchive } from '../../../ui/catalog-api';
 import { MarkdownText } from './MarkdownText';
 import { DeprecationNotice } from './DeprecationNotice';
@@ -63,6 +63,9 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
   }, [currentMod?.id, currentMod?.latest_version_id, downloadVersionId]);
 
   const [downloadDescriptor, setDownloadDescriptor] = useState<DownloadDescriptor | null>(null);
+  // The platform the reader is downloading. Empty means "whatever this version
+  // ships", which is the normal case for single-archive versions.
+  const [downloadPlatform, setDownloadPlatform] = useState<AssetPlatform | ''>('');
   const [isDownloading, setIsDownloading] = useState(false);
   const [unpublishingModId, setUnpublishingModId] = useState<string | null>(null);
   const [detailImages, setDetailImages] = useState<string[]>([]);
@@ -121,14 +124,21 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
     return () => { active = false; };
   }, [currentMod?.id, currentMod?.category]);
 
+  // A per-platform version has no default build, so there is nothing to prefetch
+  // until the reader picks one: asking without a platform would replace the
+  // platform buttons with a 400 toast.
+  const prefetchTarget = downloadVersionId ? versions.find((v) => v.id === downloadVersionId) : undefined;
+  const canPrefetchDescriptor =
+    Boolean(downloadVersionId) && currentMod?.category !== 'spritepack' && !prefetchTarget?.platform_assets?.length;
+
   useEffect(() => {
-    if (!downloadVersionId || currentMod?.category === 'spritepack') return;
+    if (!canPrefetchDescriptor || !downloadVersionId) return;
     let active = true;
     getDownloadDescriptor(downloadVersionId)
       .then((descriptor) => { if (active) setDownloadDescriptor(descriptor); })
       .catch((error) => { if (active) showToast('error', `无法取得下载信息：${error.message}`); });
     return () => { active = false; };
-  }, [downloadVersionId, currentMod?.category, getDownloadDescriptor, showToast]);
+  }, [canPrefetchDescriptor, downloadVersionId, getDownloadDescriptor, showToast]);
 
   const [copiedHash, setCopiedHash] = useState(false);
 
@@ -140,10 +150,32 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
     ? scanReports[currentVersion.scan_report_id]
     : null;
 
-  const handleFetchDownloadDescriptor = async (vId: string) => {
+  // A version without platform_assets ships one archive that every platform
+  // installs, so it is compatible with all of them and there is no platform to
+  // choose. A version that ships exactly one platform means that platform — no
+  // guess is involved, there is only one build. Only a version with several
+  // builds needs a decision, and that decision is the reader's.
+  const currentPlatforms = currentVersion?.platform_assets ?? [];
+  const pickedPlatform: AssetPlatform | undefined = downloadPlatform || undefined;
+  const requestedPlatform: AssetPlatform | undefined =
+    currentPlatforms.length === 1
+      ? currentPlatforms[0].platform
+      : pickedPlatform && currentPlatforms.some((asset) => asset.platform === pickedPlatform)
+        ? pickedPlatform
+        : undefined;
+  const platformChoicePending = currentPlatforms.length > 1 && !requestedPlatform;
+
+  // Picking one platform's hash must also pick that platform: a download issued
+  // from a highlighted hash must describe the bytes it just showed.
+  const selectPlatform = (platform: AssetPlatform) => {
+    setDownloadPlatform(platform);
+    setDownloadDescriptor(null);
+  };
+
+  const handleFetchDownloadDescriptor = async (vId: string, platform?: AssetPlatform) => {
     setDownloadDescriptor(null);
     try {
-      setDownloadDescriptor(await getDownloadDescriptor(vId));
+      setDownloadDescriptor(await getDownloadDescriptor(vId, platform));
     } catch (error) {
       showToast('error', `无法取得下载信息：${error instanceof Error ? error.message : 'unknown_error'}`);
     }
@@ -154,11 +186,13 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
     setIsDownloading(true);
     try {
       const base = apiBase();
-      const archive = await fetchVerifiedArchive(currentVersion.id, base);
+      // Download the platform the reader picked, not whichever file happens to
+      // be first: an Android reader must get the Android build.
+      const archive = await fetchVerifiedArchive(currentVersion.id, base, fetch, undefined, undefined, requestedPlatform);
       const url = URL.createObjectURL(archive.blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `submod_${currentVersion.id}.zip`;
+      link.download = `submod_${currentVersion.id}${archive.platform ? `-${archive.platform}` : ''}.zip`;
       document.body.append(link);
       link.click();
       link.remove();
@@ -280,18 +314,43 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                       )}
                     </div>
                     <div className="text-[11px] text-neutral-500 font-mono mt-0.5">
-                      大小: {formatBytes(currentVersion.size_bytes)} ({currentVersion.size_bytes.toLocaleString()} 字节)
+                      {currentVersion.platform_assets && currentVersion.platform_assets.length > 0
+                        ? currentVersion.platform_assets
+                            .map((asset) => `${assetPlatformLabel(asset.platform)} ${formatBytes(asset.size_bytes)}`)
+                            .join(' · ')
+                        : `大小: ${formatBytes(currentVersion.size_bytes)} (${currentVersion.size_bytes.toLocaleString()} 字节) · 全平台通用`}
                     </div>
                   </div>
 
                   {/* Download Action Trigger */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {currentVersion.platform_assets && currentVersion.platform_assets.length > 1 && (
+                      <div className="flex items-center bg-white p-0.5 rounded border border-neutral-200 text-[11px] font-medium">
+                        {currentVersion.platform_assets.map((asset) => (
+                          <button
+                            key={asset.platform}
+                            type="button"
+                            aria-pressed={requestedPlatform === asset.platform}
+                            onClick={() => selectPlatform(asset.platform)}
+                            className={`px-2 py-1 rounded transition-colors ${
+                              requestedPlatform === asset.platform
+                                ? 'bg-neutral-900 text-white'
+                                : 'text-neutral-600 hover:text-neutral-900'
+                            }`}
+                          >
+                            {ASSET_PLATFORM_LABELS[asset.platform]}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <button
-                      onClick={() => handleFetchDownloadDescriptor(currentVersion.id)}
-                      className="px-3.5 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded flex items-center gap-1.5 transition-colors shadow-xs"
+                      onClick={() => handleFetchDownloadDescriptor(currentVersion.id, requestedPlatform)}
+                      disabled={platformChoicePending}
+                      title={platformChoicePending ? '该版本为 Windows 与 Android 提供了不同的包，请先选择平台' : undefined}
+                      className="px-3.5 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded flex items-center gap-1.5 transition-colors shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      获取下载描述符 (GET /download)
+                      {platformChoicePending ? '请先选择平台' : '获取下载描述符 (GET /download)'}
                     </button>
                   </div>
                 </div>
@@ -332,7 +391,9 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                   </div>
                 )}
 
-                {/* SHA-256 Hash box */}
+                {/* SHA-256 Hash box. A per-platform version has one hash per
+                    file, so every platform is listed instead of a single value
+                    that belongs to only one of them. */}
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-medium text-neutral-500 flex items-center gap-1">
@@ -340,16 +401,44 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                       归档完整性 SHA-256 校验和 (不可变约束):
                     </span>
                     <button
-                      onClick={() => handleCopyHash(currentVersion.sha256)}
+                      onClick={() => handleCopyHash(
+                        currentVersion.platform_assets && currentVersion.platform_assets.length > 0
+                          ? currentVersion.platform_assets.map((asset) => `${assetPlatformLabel(asset.platform)} ${asset.sha256 || ''}`).join('\n')
+                          : currentVersion.sha256
+                      )}
                       className="text-[11px] text-emerald-700 hover:underline flex items-center gap-1"
                     >
                       {copiedHash ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                       复制哈希
                     </button>
                   </div>
-                  <div className="font-mono text-[11px] bg-white p-2 rounded border border-neutral-200 text-neutral-800 break-all select-all tabular-nums">
-                    {currentVersion.sha256}
-                  </div>
+                  {currentVersion.platform_assets && currentVersion.platform_assets.length > 0 ? (
+                    <div className="space-y-1">
+                      {currentVersion.platform_assets.map((asset) => (
+                        <div key={asset.platform} className="flex items-start gap-2">
+                          {/* The label is the selector: reading one platform's hash
+                              and then downloading is one decision, not two. */}
+                          <button
+                            type="button"
+                            aria-pressed={requestedPlatform === asset.platform}
+                            onClick={() => selectPlatform(asset.platform)}
+                            className={`text-[11px] w-16 shrink-0 pt-1.5 text-left transition-colors ${
+                              requestedPlatform === asset.platform ? 'text-neutral-900 font-medium' : 'text-neutral-500 hover:text-neutral-800'
+                            }`}
+                          >
+                            {assetPlatformLabel(asset.platform)}
+                          </button>
+                          <div className="font-mono text-[11px] bg-white p-2 rounded border border-neutral-200 text-neutral-800 break-all select-all tabular-nums flex-1">
+                            {asset.sha256 || '尚未就绪'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="font-mono text-[11px] bg-white p-2 rounded border border-neutral-200 text-neutral-800 break-all select-all tabular-nums">
+                      {currentVersion.sha256}
+                    </div>
+                  )}
                 </div>
 
                 {/* Scan Summary */}
@@ -429,6 +518,12 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
               </div>
 
               <div className="space-y-1.5 text-xs text-emerald-950">
+                {downloadDescriptor.platform && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-500">分发平台:</span>
+                    <span className="font-mono">{assetPlatformLabel(downloadDescriptor.platform)}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-neutral-500">归档文件名:</span>
                   <span className="font-mono">{downloadDescriptor.filename}</span>

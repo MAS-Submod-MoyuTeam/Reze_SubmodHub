@@ -5,8 +5,9 @@ import { MarkdownText } from './MarkdownText';
 import { Pagination } from './Pagination';
 import { useReviewPage } from './useReviewPage';
 import { mapServerScanReport } from '../context/scanReport';
+import { assetPlatformLabel } from '../types/submodhub';
 import { formatVersionLabel } from './versionHistory';
-import { getReviewSubmission, listReviewSubmissions, listReviewAudit } from '../../../ui/submission-api';
+import { getReviewSubmission, listReviewSubmissions, listReviewAudit, platformScanReportId } from '../../../ui/submission-api';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -66,7 +67,24 @@ export const ReviewerWorkbench: React.FC = () => {
   const loadDetail = React.useCallback((signal: AbortSignal) => getReviewSubmission(base, activeSubmissionId!, (input, init) => fetch(input, { ...init, signal })), [base, activeSubmissionId, activeSubmissionState, userId]);
   const detailRequest = useReviewPage(loadDetail, isReviewer && !!activeSubmissionId && activeReviewTab === 'queue', `detail|${userId}|${activeSubmissionId}|${activeSubmissionState}`);
   const reviewDetail = detailRequest.data;
-  const activeReport = React.useMemo(() => reviewDetail?.scan_report ? mapServerScanReport(reviewDetail.version.id, reviewDetail.scan_report) : null, [reviewDetail]);
+  // A per-platform version owns one report per build. The reviewer decides for all
+  // of them, so the panel follows an explicit platform choice — defaulting to the
+  // platform the version summary points at — instead of showing one fixed report
+  // and letting the other build through unexamined.
+  const shippedPlatforms = reviewDetail?.version?.platform_assets;
+  const [reportPlatform, setReportPlatform] = useState('');
+  const chosenPlatform = reportPlatform && shippedPlatforms?.some((asset) => asset.platform === reportPlatform)
+    ? reportPlatform
+    : shippedPlatforms?.[0]?.platform || '';
+  const selectedServerReport = shippedPlatforms?.length
+    ? reviewDetail?.scan_reports?.[platformScanReportId(reviewDetail.version.id, chosenPlatform)]
+    : reviewDetail?.scan_report;
+  const activeReport = React.useMemo(
+    () => (reviewDetail && selectedServerReport
+      ? mapServerScanReport(reviewDetail.version.id, selectedServerReport, shippedPlatforms?.length ? platformScanReportId(reviewDetail.version.id, chosenPlatform) : undefined)
+      : null),
+    [reviewDetail, selectedServerReport, chosenPlatform, shippedPlatforms?.length],
+  );
   const [decisionModalMode, setDecisionModalMode] = useState<'approve' | 'reject' | null>(null);
   const [decisionReason, setDecisionReason] = useState('');
   const [decisionSubmissionId, setDecisionSubmissionId] = useState('');
@@ -387,15 +405,47 @@ export const ReviewerWorkbench: React.FC = () => {
                     <div><span className="font-semibold">模组简介：</span>{reviewDetail.mod?.summary || '未填写'}</div>
                     <div><span className="font-semibold">版本说明：</span><MarkdownText value={reviewDetail.version?.release_notes || '未填写'} /></div>
                     <div><span className="font-semibold">前置依赖：</span>{(reviewDetail.version?.dependencies as Array<{ mod_title?: string; mod_id?: string; version_range?: string }> | undefined)?.map((item) => `${item.mod_title || item.mod_id} ${item.version_range || '*'}`).join('、') || '无'}</div>
-                    <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-700">
-                      <span>归档大小：{reviewDetail.version?.size_bytes || 0} bytes</span>
-                      <span className="font-mono">SHA-256：{reviewDetail.version?.sha256 || '-'}</span>
-                    </div>
-                    <div><span className="font-semibold">文件变化：</span>{reviewDetail.scan_report?.files?.length || 0} 个文件；不支持路径 {reviewDetail.scan_report?.unsupported?.length || 0} 个；冲突 {reviewDetail.scan_report?.conflicts?.length || 0} 个</div>
-                    {reviewDetail.scan_report?.sprite_sets && <div className="space-y-1"><span className="font-semibold">精灵包套件：</span>{reviewDetail.scan_report.sprite_sets.length} 套<div className="max-h-36 overflow-auto border border-sky-200 bg-white rounded p-2">{reviewDetail.scan_report.sprite_sets.map((set) => <div key={set.id}>{set.name}：{set.items.map((item) => item.display_name).join('、')}</div>)}</div></div>}
-                    {reviewDetail.scan_report?.files && reviewDetail.scan_report.files.length > 0 && (
+                    {shippedPlatforms?.length ? (
+                      <div className="space-y-1">
+                        <div className="text-[11px] text-neutral-700">本版本为每个平台各提供一份归档，请逐个平台核对报告：</div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {shippedPlatforms.map((asset) => (
+                            <button
+                              key={asset.platform}
+                              type="button"
+                              aria-pressed={chosenPlatform === asset.platform}
+                              onClick={() => setReportPlatform(asset.platform)}
+                              className={`px-2 py-1 rounded border text-[11px] font-medium transition-colors ${chosenPlatform === asset.platform ? 'bg-sky-900 text-white border-sky-900' : 'bg-white text-sky-900 border-sky-200 hover:border-sky-400'}`}
+                            >
+                              {assetPlatformLabel(asset.platform)}
+                            </button>
+                          ))}
+                        </div>
+                        {shippedPlatforms.filter((asset) => asset.platform === chosenPlatform).map((asset) => (
+                          <div key={asset.platform} className="grid grid-cols-2 gap-2 text-[11px] text-neutral-700">
+                            <span>归档大小：{asset.size_bytes || 0} bytes</span>
+                            <span className="font-mono break-all">SHA-256：{asset.sha256 || '-'}</span>
+                          </div>
+                        ))}
+                        {!selectedServerReport && (
+                          <div role="alert" className="text-[11px] font-semibold text-rose-700">
+                            缺少 {assetPlatformLabel(chosenPlatform)} 的扫描报告，无法核对这个平台的文件变化。
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-700">
+                        <span>归档大小：{reviewDetail.version?.size_bytes || 0} bytes</span>
+                        <span className="font-mono">SHA-256：{reviewDetail.version?.sha256 || '-'}</span>
+                      </div>
+                    )}
+                    {selectedServerReport && (
+                      <div><span className="font-semibold">{shippedPlatforms?.length ? `${assetPlatformLabel(chosenPlatform)} 报告变化：` : '文件变化：'}</span>{selectedServerReport.files?.length || 0} 个文件；不支持路径 {selectedServerReport.unsupported?.length || 0} 个；冲突 {selectedServerReport.conflicts?.length || 0} 个</div>
+                    )}
+                    {selectedServerReport?.sprite_sets && <div className="space-y-1"><span className="font-semibold">精灵包套件：</span>{selectedServerReport.sprite_sets.length} 套<div className="max-h-36 overflow-auto border border-sky-200 bg-white rounded p-2">{selectedServerReport.sprite_sets.map((set) => <div key={set.id}>{set.name}：{set.items.map((item) => item.display_name).join('、')}</div>)}</div></div>}
+                    {selectedServerReport?.files && selectedServerReport.files.length > 0 && (
                       <div className="max-h-40 overflow-auto border border-sky-200 bg-white rounded">
-                        {reviewDetail.scan_report.files.map((file, index) => <div key={index} className="px-2 py-1 font-mono text-[10px] border-b border-neutral-100 last:border-0">{file.source || '-'} → {file.target || '-'} ({file.class || 'file'}, {file.size || 0} bytes)</div>)}
+                        {selectedServerReport.files.map((file, index) => <div key={index} className="px-2 py-1 font-mono text-[10px] border-b border-neutral-100 last:border-0">{file.source || '-'} → {file.target || '-'} ({file.class || 'file'}, {file.size || 0} bytes)</div>)}
                       </div>
                     )}
                   </div>

@@ -57,12 +57,83 @@ type Version struct {
 	GitHubReleaseID   int64                  `json:"github_release_id,omitempty"`
 	GitHubAssetID     int64                  `json:"github_asset_id,omitempty"`
 	GitHubSource      *VersionSourceLocation `json:"github_source,omitempty"`
+	// PlatformAssets lists the per-platform files of this version. It replaces
+	// the version-wide SHA256/SizeBytes as the download authority; a nil slice
+	// keeps the single-file behaviour every existing version relies on.
+	PlatformAssets []PlatformAssetRule `json:"platform_assets,omitempty"`
 }
 
 func (v Version) SanitizeForClient() Version {
 	v.GitHubSource = nil
 	v.ArchivePath = ""
+	for i := range v.PlatformAssets {
+		// Local file locations are server-side bookkeeping, like ArchivePath.
+		v.PlatformAssets[i].ArchivePath = ""
+	}
 	return v
+}
+
+// platformFiles returns the per-platform rules in the fixed platform order.
+func (v Version) platformFiles() []PlatformAssetRule {
+	if len(v.PlatformAssets) == 0 {
+		return nil
+	}
+	out := slices.Clone(v.PlatformAssets)
+	slices.SortFunc(out, func(a, b PlatformAssetRule) int {
+		return platformOrder(a.Platform) - platformOrder(b.Platform)
+	})
+	return out
+}
+
+// platformOrder indexes a platform in SupportedPlatforms; an unknown platform
+// sorts last so a hand-edited catalog never lands at the front.
+func platformOrder(platform string) int {
+	if index := slices.Index(SupportedPlatforms, platform); index >= 0 {
+		return index
+	}
+	return len(SupportedPlatforms)
+}
+
+// summaryScanReportID is the one platform report a version summary points at: it
+// is the first supported platform the version actually ships, i.e. exactly what
+// a platform-less download resolves to. Both the upload path and the GitHub
+// import go through here, so the summary never claims a report that belongs to a
+// platform the descriptor would not serve.
+func (v Version) summaryScanReportID() string {
+	if len(v.PlatformAssets) == 0 {
+		return "scan_" + v.ID
+	}
+	return scanReportKey(v.ID, v.platformFiles()[0].Platform)
+}
+
+// hasLocalArchive reports whether at least one ZIP of this version exists on
+// this server, whichever shape the version takes.
+func (v Version) hasLocalArchive() bool {
+	if v.ArchivePath != "" {
+		return true
+	}
+	for _, file := range v.PlatformAssets {
+		if file.ArchivePath != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// archivePaths lists every stored ZIP of this version, for cleanup after a
+// retired or deleted version. The same helper serves every caller so no delete
+// path can forget the per-platform files.
+func (v Version) archivePaths() []string {
+	paths := []string{}
+	if v.ArchivePath != "" {
+		paths = append(paths, v.ArchivePath)
+	}
+	for _, file := range v.PlatformAssets {
+		if file.ArchivePath != "" {
+			paths = append(paths, file.ArchivePath)
+		}
+	}
+	return paths
 }
 
 func (s Submission) SanitizeForClient() Submission {
@@ -107,6 +178,10 @@ type Mod struct {
 	GitHubRepo              string     `json:"github_repo,omitempty"`
 	GitHubAssetRegex        string     `json:"github_asset_regex,omitempty"`
 	GitHubSourceCode        bool       `json:"github_source_code,omitempty"`
+	// GitHubPlatformAssets switches GitHub discovery to per-platform release
+	// assets. Each listed platform is matched by its own regex on every release;
+	// an empty list keeps the single-file rule (github_asset_regex).
+	GitHubPlatformAssets []GitHubPlatformRule `json:"github_platform_assets,omitempty"`
 	GitHubManifest          bool       `json:"github_manifest,omitempty"`
 	GitHubManifestDigest    string     `json:"github_manifest_digest,omitempty"`
 	GitHubLastSyncAt        *time.Time `json:"github_last_sync_at,omitempty"`
@@ -129,12 +204,14 @@ var githubRepoRegex = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 // sourceConfigInput is the author-supplied description of where a mod's
 // versions come from.
 type sourceConfigInput struct {
-	SourceType string
-	Owner      string
-	Repo       string
-	AssetRegex string
-	SourceCode bool
-	Manifest   bool
+	SourceType   string
+	Owner        string
+	Repo         string
+	AssetRegex   string
+	SourceCode   bool
+	Manifest     bool
+	PlatformMode bool
+	PlatformRules []GitHubPlatformRule
 }
 
 func validateSourceConfig(in sourceConfigInput) error {
@@ -160,6 +237,28 @@ func validateSourceConfig(in sourceConfigInput) error {
 			if strings.TrimSpace(in.AssetRegex) != "" {
 				if _, err := regexp.Compile(in.AssetRegex); err != nil {
 					return fmt.Errorf("invalid github_asset_regex: %w", err)
+				}
+			}
+			if len(in.PlatformRules) > 0 {
+				if _, err := normalizePlatformRules(in.PlatformRules); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		// Per-platform discovery replaces the single-file rule entirely: every
+		// platform declares its own matcher, so the shared regex is not used.
+		if in.PlatformMode {
+			rules, err := normalizePlatformRules(in.PlatformRules)
+			if err != nil {
+				return err
+			}
+			if len(rules) == 0 {
+				return ErrPlatformRulesRequired
+			}
+			for _, rule := range rules {
+				if rule.Regex == "" && !rule.SourceCode {
+					return fmt.Errorf("%s requires an asset regex or the source code fallback", rule.Platform)
 				}
 			}
 			return nil
@@ -357,8 +456,15 @@ func newStore(dataDir string, initial Catalog, loadLocalCatalog bool) (*Store, e
 	for id, v := range s.Catalog.Versions {
 		if v.ArchivePath != "" {
 			v.ArchivePath = filepath.Join(dataDir, "archives", filepath.Base(v.ArchivePath))
-			s.Catalog.Versions[id] = v
 		}
+		// Per-platform paths are rewritten the same way: the catalog stores an
+		// absolute path, and the data directory may differ between deployments.
+		for i := range v.PlatformAssets {
+			if v.PlatformAssets[i].ArchivePath != "" {
+				v.PlatformAssets[i].ArchivePath = filepath.Join(dataDir, "archives", filepath.Base(v.PlatformAssets[i].ArchivePath))
+			}
+		}
+		s.Catalog.Versions[id] = v
 	}
 	s.GitHubSyncMaxAge = resolveGitHubSyncMaxAge(s.Catalog.Settings.GitHubSyncMaxAge)
 	return s, nil
@@ -475,6 +581,9 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		GitHubAssetRegex    string   `json:"github_asset_regex"`
 		GitHubSourceCode    bool     `json:"github_source_code"`
 		GitHubManifest      bool     `json:"github_manifest"`
+		// A non-nil list switches this source to per-platform discovery; nil or
+		// empty keeps the single-file rule.
+		GitHubPlatformAssets []GitHubPlatformRule `json:"github_platform_assets"`
 	}
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
@@ -483,12 +592,14 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := validateSourceConfig(sourceConfigInput{
-		SourceType: req.SourceType,
-		Owner:      req.GitHubOwner,
-		Repo:       req.GitHubRepo,
-		AssetRegex: req.GitHubAssetRegex,
-		SourceCode: req.GitHubSourceCode,
-		Manifest:   req.GitHubManifest,
+		SourceType:    req.SourceType,
+		Owner:         req.GitHubOwner,
+		Repo:          req.GitHubRepo,
+		AssetRegex:    req.GitHubAssetRegex,
+		SourceCode:    req.GitHubSourceCode,
+		Manifest:      req.GitHubManifest,
+		PlatformMode:  len(req.GitHubPlatformAssets) > 0,
+		PlatformRules: req.GitHubPlatformAssets,
 	}); err != nil {
 		writeError(w, 400, "validation_failed", err.Error())
 		return
@@ -535,6 +646,11 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		GitHubAssetRegex:    strings.TrimSpace(req.GitHubAssetRegex),
 		GitHubSourceCode:    req.GitHubSourceCode,
 		GitHubManifest:      req.GitHubManifest,
+	}
+	// Validation already normalized the rules; store the canonical order so the
+	// workbench and the sync loop agree without re-sorting.
+	if rules, err := normalizePlatformRules(req.GitHubPlatformAssets); err == nil {
+		mod.GitHubPlatformAssets = rules
 	}
 	s.mu.Lock()
 	s.Catalog.Mods = append(s.Catalog.Mods, mod)
@@ -592,8 +708,11 @@ func (s *Store) authorVersionResource(w http.ResponseWriter, r *http.Request) {
 				s.Catalog.Submissions[i].State = "deleted"
 			}
 		}
-		if v.ArchivePath != "" {
-			_ = os.Remove(v.ArchivePath)
+		for _, stale := range v.archivePaths() {
+			_ = os.Remove(stale)
+		}
+		for _, key := range v.scanReportKeys() {
+			delete(s.Catalog.ScanReports, key)
 		}
 		if err := s.saveLocked(); err != nil {
 			s.mu.Unlock()
@@ -678,6 +797,10 @@ func (s *Store) authorVersionResource(w http.ResponseWriter, r *http.Request) {
 				if s.Catalog.Submissions[i].VersionID == versionID && s.Catalog.Submissions[i].State == "rejected" && s.Catalog.Submissions[i].VersionSnapshot == nil {
 					original := version
 					original.ArchivePath = ""
+					original.PlatformAssets = slices.Clone(version.PlatformAssets)
+					for j := range original.PlatformAssets {
+						original.PlatformAssets[j].ArchivePath = ""
+					}
 					s.Catalog.Submissions[i].VersionSnapshot = &original
 					if report, ok := s.Catalog.ScanReports[version.ScanReportID]; ok {
 						originalReport := report
@@ -712,9 +835,8 @@ func (s *Store) authorVersionResource(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 409, "invalid_state", "version is not ready for review")
 			return
 		}
-		archiveInfo, archiveErr := os.Stat(version.ArchivePath)
-		if version.ArchivePath == "" || archiveErr != nil || !archiveInfo.Mode().IsRegular() {
-			writeError(w, 409, "archive_required", "upload a ZIP archive before submitting for review")
+		if err := s.requireSubmittableArchives(version); err != nil {
+			writeError(w, 409, "archive_required", err.Error())
 			return
 		}
 		if version.ScanReportID == "" {
@@ -723,9 +845,14 @@ func (s *Store) authorVersionResource(w http.ResponseWriter, r *http.Request) {
 		}
 		s.mu.RLock()
 		_, hasReport := s.Catalog.ScanReports[version.ScanReportID]
+		platformScanErr := s.requirePlatformScanReports(version)
 		s.mu.RUnlock()
 		if !hasReport {
 			writeError(w, 409, "scan_required", "scan the ZIP archive before submitting for review")
+			return
+		}
+		if platformScanErr != nil {
+			writeError(w, 409, "scan_required", platformScanErr.Error())
 			return
 		}
 		var req struct {
@@ -821,6 +948,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			GitHubAssetRegex string `json:"github_asset_regex"`
 			GitHubSourceCode bool   `json:"github_source_code"`
 			GitHubManifest   bool   `json:"github_manifest"`
+			GitHubPlatformAssets []GitHubPlatformRule `json:"github_platform_assets"`
 		}
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
@@ -829,16 +957,19 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := validateSourceConfig(sourceConfigInput{
-			SourceType: req.SourceType,
-			Owner:      req.GitHubOwner,
-			Repo:       req.GitHubRepo,
-			AssetRegex: req.GitHubAssetRegex,
-			SourceCode: req.GitHubSourceCode,
-			Manifest:   req.GitHubManifest,
+			SourceType:    req.SourceType,
+			Owner:         req.GitHubOwner,
+			Repo:          req.GitHubRepo,
+			AssetRegex:    req.GitHubAssetRegex,
+			SourceCode:    req.GitHubSourceCode,
+			Manifest:      req.GitHubManifest,
+			PlatformMode:  len(req.GitHubPlatformAssets) > 0,
+			PlatformRules: req.GitHubPlatformAssets,
 		}); err != nil {
 			writeError(w, 400, "validation_failed", err.Error())
 			return
 		}
+		rules, _ := normalizePlatformRules(req.GitHubPlatformAssets)
 		s.mu.Lock()
 		index = -1
 		for i := range s.Catalog.Mods {
@@ -857,7 +988,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		if srcType == "" {
 			srcType = "local"
 		}
-		if mod.GitHubOwner != strings.TrimSpace(req.GitHubOwner) || mod.GitHubRepo != strings.TrimSpace(req.GitHubRepo) || mod.GitHubManifest != req.GitHubManifest {
+		if mod.GitHubOwner != strings.TrimSpace(req.GitHubOwner) || mod.GitHubRepo != strings.TrimSpace(req.GitHubRepo) || mod.GitHubManifest != req.GitHubManifest || !slices.Equal(mod.GitHubPlatformAssets, rules) {
 			mod.GitHubETag = ""
 			mod.GitHubManifestDigest = ""
 			mod.GitHubBackoffUntil = nil
@@ -868,6 +999,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		mod.GitHubAssetRegex = strings.TrimSpace(req.GitHubAssetRegex)
 		mod.GitHubSourceCode = req.GitHubSourceCode
 		mod.GitHubManifest = req.GitHubManifest
+		mod.GitHubPlatformAssets = rules
 		mod.GitHubLastSyncError = ""
 		mod.GitHubBackoffUntil = nil
 		if err := s.saveLocked(); err != nil {
@@ -954,8 +1086,8 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 				}
 				for _, v := range s.Catalog.Versions {
 					if v.ModID == modID {
-						if v.ArchivePath != "" {
-							_ = os.Remove(v.ArchivePath)
+						for _, stale := range v.archivePaths() {
+							_ = os.Remove(stale)
 						}
 						delete(s.Catalog.Versions, v.ID)
 					}
@@ -999,6 +1131,9 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			GitHubAssetRegex    *string  `json:"github_asset_regex"`
 			GitHubSourceCode    *bool    `json:"github_source_code"`
 			GitHubManifest      *bool    `json:"github_manifest"`
+			// Omitted keeps the stored platform rules; an explicit list replaces
+			// them, and an empty list returns to the single-file rule.
+			GitHubPlatformAssets *[]GitHubPlatformRule `json:"github_platform_assets"`
 		}
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
@@ -1045,7 +1180,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		mod.SupportedPlatforms = req.SupportedPlatforms
 		mod.MASVersionRange = req.MASVersionRange
 		mod.RecommendedPriority = req.RecommendedPriority
-		if req.SourceType != nil || req.GitHubOwner != nil || req.GitHubRepo != nil || req.GitHubAssetRegex != nil || req.GitHubSourceCode != nil || req.GitHubManifest != nil {
+		if req.SourceType != nil || req.GitHubOwner != nil || req.GitHubRepo != nil || req.GitHubAssetRegex != nil || req.GitHubSourceCode != nil || req.GitHubManifest != nil || req.GitHubPlatformAssets != nil {
 			newSourceType := mod.GetSourceType()
 			if req.SourceType != nil {
 				newSourceType = *req.SourceType
@@ -1070,22 +1205,29 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			if req.GitHubManifest != nil {
 				newManifest = *req.GitHubManifest
 			}
+			newRules := mod.GitHubPlatformAssets
+			if req.GitHubPlatformAssets != nil {
+				newRules = *req.GitHubPlatformAssets
+			}
 			if err := validateSourceConfig(sourceConfigInput{
-				SourceType: newSourceType,
-				Owner:      newOwner,
-				Repo:       newRepo,
-				AssetRegex: newRegex,
-				SourceCode: newSourceCode,
-				Manifest:   newManifest,
+				SourceType:    newSourceType,
+				Owner:         newOwner,
+				Repo:          newRepo,
+				AssetRegex:    newRegex,
+				SourceCode:    newSourceCode,
+				Manifest:      newManifest,
+				PlatformMode:  len(newRules) > 0,
+				PlatformRules: newRules,
 			}); err != nil {
 				s.mu.Unlock()
 				writeError(w, 400, "validation_failed", err.Error())
 				return
 			}
+			normalizedRules, _ := normalizePlatformRules(newRules)
 			// A different repository or a different version-discovery mode
 			// invalidates both cached cursors: the ETag belongs to the releases
 			// API listing and the digest belongs to rezehub.yml.
-			if mod.GitHubOwner != strings.TrimSpace(newOwner) || mod.GitHubRepo != strings.TrimSpace(newRepo) || mod.GitHubManifest != newManifest {
+			if mod.GitHubOwner != strings.TrimSpace(newOwner) || mod.GitHubRepo != strings.TrimSpace(newRepo) || mod.GitHubManifest != newManifest || !slices.Equal(mod.GitHubPlatformAssets, normalizedRules) {
 				mod.GitHubETag = ""
 				mod.GitHubManifestDigest = ""
 			}
@@ -1095,6 +1237,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			mod.GitHubAssetRegex = strings.TrimSpace(newRegex)
 			mod.GitHubSourceCode = newSourceCode
 			mod.GitHubManifest = newManifest
+			mod.GitHubPlatformAssets = normalizedRules
 		}
 		if err := s.saveLocked(); err != nil {
 			s.mu.Unlock()
@@ -1578,12 +1721,38 @@ func (s *Store) downloadDescriptor(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "not_found", "version was not found")
 		return
 	}
-	if v.ArchivePath == "" || v.State != "published" {
+	// A published version with neither stored nor recorded bytes cannot be
+	// downloaded at all: no descriptor should promise an archive that does not
+	// exist. GitHub-sourced versions always carry a source location, so they pass.
+	if !v.hasLocalArchive() && v.GitHubSource == nil {
 		writeError(w, 404, "not_found", "published archive was not found")
 		return
 	}
+	// A per-platform version only serves a platform the caller named. Falling
+	// back to "the first platform" would hand an Android user the Windows build
+	// with a 200 status, which is exactly the mistake per-platform delivery
+	// exists to prevent: the caller has to say which build it can install.
+	// A version with one shared archive is all-platform compatible, so naming any
+	// supported platform is a no-op there — clients that always state their own
+	// platform must not be locked out of those versions.
+	if err := v.platformQueryError(r.URL.Query().Get("platform")); err != nil {
+		writePlatformQueryError(w, err)
+		return
+	}
 	description := s.resolveDelivery(r, v)
-	token, err := s.issueDownloadAttempt(v)
+	// The receipt must describe the bytes this descriptor promised. A
+	// per-platform version resolves one platform, so the attempt is issued
+	// against that platform's hash and size instead of the empty wide fields.
+	issued := v
+	if description.Platform != "" {
+		if file, found := v.platformFileFor(description.Platform); found {
+			issued.SHA256 = file.SHA256
+			issued.SizeBytes = file.SizeBytes
+			issued.ArchivePath = file.ArchivePath
+			issued.PlatformAssets = nil
+		}
+	}
+	token, err := s.issueDownloadAttempt(issued)
 	if err != nil {
 		if errors.Is(err, errDeliveryPublicationChanged) {
 			writeError(w, 404, "not_found", "published archive was not found")
@@ -1643,6 +1812,23 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "immutable_version", "version archive cannot be replaced")
 		return
 	}
+	// A platform query uploads one platform's archive. A version is either
+	// version-wide or per-platform, never both: switching shape would leave the
+	// catalog claiming files that no longer exist.
+	rawPlatform := strings.TrimSpace(r.URL.Query().Get("platform"))
+	platform := normalizePlatform(rawPlatform)
+	if rawPlatform != "" && platform == "" {
+		writeError(w, 400, "unsupported_platform", "platform must be one of windows, android")
+		return
+	}
+	if platform != "" && len(version.PlatformAssets) == 0 && version.ArchivePath != "" {
+		writeError(w, http.StatusConflict, "archive_shape_conflict", "this version already ships one archive for every platform; delete it and upload per-platform archives instead")
+		return
+	}
+	if platform == "" && len(version.PlatformAssets) > 0 {
+		writeError(w, http.StatusConflict, "archive_shape_conflict", "this version already ships per-platform archives; upload with ?platform=")
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxArchiveSize+(2<<20))
 	if err := r.ParseMultipartForm(maxArchiveSize); err != nil {
 		writeError(w, 400, "invalid_upload", err.Error())
@@ -1658,6 +1844,13 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid_archive", "archive must be a ZIP file")
 		return
 	}
+	// A file whose name names a different platform is a mistake worth stopping:
+	// publishing it under this platform would ship the wrong bytes with a
+	// plausible label.
+	if platform != "" && platformConflictsWithName(platform, header.Filename) {
+		writeError(w, 400, "platform_mismatch", fmt.Sprintf("%s does not look like a %s archive (it names %s)", header.Filename, platform, strings.Join(InferPlatformTags(header.Filename), ", ")))
+		return
+	}
 	isSpritepack := false
 	s.mu.RLock()
 	for _, mod := range s.Catalog.Mods {
@@ -1667,7 +1860,7 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.mu.RUnlock()
-	archivePath, size, hash, report, err := s.persistArchive(versionID, file, isSpritepack)
+	archivePath, size, hash, report, err := s.persistArchiveAs(versionID, archiveFileBase(versionID, platform), file, isSpritepack)
 	if err != nil {
 		writeError(w, 400, "invalid_archive", err.Error())
 		return
@@ -1691,6 +1884,10 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 			if s.Catalog.Submissions[i].VersionID == versionID && s.Catalog.Submissions[i].State == "rejected" && s.Catalog.Submissions[i].VersionSnapshot == nil {
 				original := v
 				original.ArchivePath = ""
+				original.PlatformAssets = slices.Clone(v.PlatformAssets)
+				for j := range original.PlatformAssets {
+					original.PlatformAssets[j].ArchivePath = ""
+				}
 				s.Catalog.Submissions[i].VersionSnapshot = &original
 				if previousReport, ok := s.Catalog.ScanReports[v.ScanReportID]; ok {
 					originalReport := previousReport
@@ -1699,10 +1896,39 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	v.SizeBytes = size
-	oldArchivePath := v.ArchivePath
-	v.SHA256 = hash
-	v.ArchivePath = archivePath
+	var replacedPaths []string
+	if platform == "" {
+		if v.ArchivePath != "" {
+			replacedPaths = append(replacedPaths, v.ArchivePath)
+		}
+		v.SizeBytes = size
+		v.SHA256 = hash
+		v.ArchivePath = archivePath
+		v.PlatformAssets = nil
+	} else {
+		// One platform file replaced at a time; the others keep their bytes.
+		index := slices.IndexFunc(v.PlatformAssets, func(rule PlatformAssetRule) bool { return rule.Platform == platform })
+		if index >= 0 {
+			if v.PlatformAssets[index].ArchivePath != "" {
+				replacedPaths = append(replacedPaths, v.PlatformAssets[index].ArchivePath)
+			}
+			v.PlatformAssets = slices.Delete(v.PlatformAssets, index, index+1)
+		}
+		v.PlatformAssets = append(v.PlatformAssets, PlatformAssetRule{
+			Platform:    platform,
+			ArchivePath: archivePath,
+			SizeBytes:   size,
+			SHA256:      hash,
+		})
+		// The version-wide hash and size describe nothing once a version has
+		// per-platform files, so they stay empty rather than keep stale numbers.
+		v.SizeBytes = 0
+		v.SHA256 = ""
+		v.ArchivePath = ""
+	}
+	// The report belongs to the uploaded file, so it is filed under that file's
+	// key; the summary then points at the first platform the version ships.
+	s.storeArchiveScanReport(&v, platform, report)
 	if v.Version == "" {
 		versions := map[string]struct{}{}
 		for _, registration := range report.Submods {
@@ -1722,7 +1948,6 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 	if len(report.Conflicts) > 0 {
 		v.State = "scanning"
 	}
-	v.ScanReportID = "scan_" + versionID
 	if len(v.Dependencies) == 0 {
 		seen := map[string]bool{}
 		for _, registration := range report.Submods {
@@ -1736,10 +1961,6 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	v = resolveVersionDependencies(s.Catalog, v)
-	if s.Catalog.ScanReports == nil {
-		s.Catalog.ScanReports = map[string]packagezip.Report{}
-	}
-	s.Catalog.ScanReports[v.ScanReportID] = report
 	s.Catalog.Versions[versionID] = v
 	err = s.saveLocked()
 	s.mu.Unlock()
@@ -1748,10 +1969,14 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "storage_error", err.Error())
 		return
 	}
-	if oldArchivePath != "" && oldArchivePath != archivePath {
-		_ = os.Remove(oldArchivePath)
+	// Replaced files are removed only after the new record is durable, so a
+	// failed save leaves the previous archive downloadable.
+	for _, stale := range replacedPaths {
+		if stale != "" && stale != archivePath {
+			_ = os.Remove(stale)
+		}
 	}
-	writeJSON(w, 201, map[string]any{"version_id": versionID, "version": v.Version, "size_bytes": size, "sha256": hash, "state": v.State, "dependencies": v.Dependencies, "scan_report": report})
+	writeJSON(w, 201, map[string]any{"version_id": versionID, "version": v.Version, "platform": platform, "platform_assets": v.platformFiles(), "size_bytes": size, "sha256": hash, "state": v.State, "dependencies": v.Dependencies, "scan_report": report})
 }
 
 func (s *Store) downloadImage(w http.ResponseWriter, r *http.Request) {
@@ -1808,10 +2033,17 @@ func dependencyRange(minimum, maximum string) string {
 	}
 }
 func (s *Store) persistArchive(versionID string, src io.Reader, isSpritepack bool) (string, int64, string, packagezip.Report, error) {
-	if strings.ContainsAny(versionID, "/\\") || versionID == "." || versionID == ".." {
+	return s.persistArchiveAs(versionID, versionID, src, isSpritepack)
+}
+
+// persistArchiveAs stores one ZIP under the given file base name. A version with
+// per-platform files uses one base per platform so its archives stay
+// distinguishable on disk; the random suffix keeps replacements immutable.
+func (s *Store) persistArchiveAs(versionID, base string, src io.Reader, isSpritepack bool) (string, int64, string, packagezip.Report, error) {
+	if strings.ContainsAny(versionID, "/\\") || versionID == "." || versionID == ".." || strings.ContainsAny(base, "/\\") || base == "." || base == ".." {
 		return "", 0, "", packagezip.Report{}, errors.New("invalid version id")
 	}
-	tmp := filepath.Join(s.DataDir, "archives", versionID+".tmp")
+	tmp := filepath.Join(s.DataDir, "archives", base+".tmp")
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o640)
 	if err != nil {
 		return "", 0, "", packagezip.Report{}, err
@@ -1832,12 +2064,7 @@ func (s *Store) persistArchive(versionID string, src io.Reader, isSpritepack boo
 		_ = os.Remove(tmp)
 		return "", 0, "", packagezip.Report{}, err
 	}
-	var report packagezip.Report
-	if isSpritepack {
-		report, err = packagezip.ScanSpriteArchive(bytes.NewReader(b), int64(len(b)), packagezip.Limits{})
-	} else {
-		report, err = packagezip.Scan(bytes.NewReader(b), int64(len(b)), packagezip.Limits{})
-	}
+	report, err := scanArchiveBytes(b, isSpritepack)
 	if err != nil {
 		_ = os.Remove(tmp)
 		return "", 0, "", packagezip.Report{}, err
@@ -1847,13 +2074,33 @@ func (s *Store) persistArchive(versionID string, src io.Reader, isSpritepack boo
 		_ = os.Remove(tmp)
 		return "", 0, "", packagezip.Report{}, err
 	}
-	final := filepath.Join(s.DataDir, "archives", versionID+"-"+token[:12]+".zip")
+	final := filepath.Join(s.DataDir, "archives", base+"-"+token[:12]+".zip")
 	if err = os.Rename(tmp, final); err != nil {
 		_ = os.Remove(tmp)
 		return "", 0, "", packagezip.Report{}, err
 	}
 	return final, n, hex.EncodeToString(h.Sum(nil)), report, nil
 }
+
+// scanArchiveBytes is the single owner of "which scanner runs for this mod":
+// spritepacks and submods are read by their own scanner and nothing else picks
+// between them.
+func scanArchiveBytes(data []byte, isSpritepack bool) (packagezip.Report, error) {
+	if isSpritepack {
+		return packagezip.ScanSpriteArchive(bytes.NewReader(data), int64(len(data)), packagezip.Limits{})
+	}
+	return packagezip.Scan(bytes.NewReader(data), int64(len(data)), packagezip.Limits{})
+}
+
+// archiveFileBase names one archived ZIP of a version. The platform suffix only
+// exists for per-platform files, so single-file versions keep their old names.
+func archiveFileBase(versionID, platform string) string {
+	if platform == "" {
+		return versionID
+	}
+	return versionID + "-" + platform
+}
+
 func (s *Store) downloadArchive(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		writeError(w, 405, "method_not_allowed", "method is not supported")
@@ -1868,34 +2115,68 @@ func (s *Store) downloadArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-platform versions serve one file per request and require the request to
+	// name it, for the same reason the descriptor does: this endpoint is reached
+	// directly by download clients, and defaulting to one platform would install
+	// the wrong build.
+	served := v
+	if len(v.PlatformAssets) > 0 {
+		if err := v.platformQueryError(r.URL.Query().Get("platform")); err != nil {
+			writePlatformQueryError(w, err)
+			return
+		}
+		file, _ := v.platformFileFor(r.URL.Query().Get("platform"))
+		served.SHA256 = file.SHA256
+		served.SizeBytes = file.SizeBytes
+		served.ArchivePath = file.ArchivePath
+		served.GitHubSource = relayLocationFor(v, file)
+	}
+
 	if r.Method == http.MethodHead {
 		w.Header().Set("Content-Type", "application/zip")
-		w.Header().Set("Content-Length", fmt.Sprint(v.SizeBytes))
-		w.Header().Set("X-Archive-SHA256", v.SHA256)
+		w.Header().Set("Content-Length", fmt.Sprint(served.SizeBytes))
+		w.Header().Set("X-Archive-SHA256", served.SHA256)
 		return
 	}
 
-	if v.GitHubSource != nil && v.GitHubSource.DownloadURL != "" {
-		s.relayDownloadArchive(w, r, v)
+	if served.GitHubSource != nil && served.GitHubSource.DownloadURL != "" {
+		s.relayDownloadArchive(w, r, served)
 		return
 	}
 
-	if v.ArchivePath == "" {
+	if served.ArchivePath == "" {
 		writeError(w, 404, "not_found", "archive was not found")
 		return
 	}
-	f, err := os.Open(v.ArchivePath)
+	f, err := os.Open(served.ArchivePath)
 	if err != nil {
 		writeError(w, 404, "not_found", "archive was not found")
 		return
 	}
 	defer f.Close()
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Length", fmt.Sprint(v.SizeBytes))
-	w.Header().Set("X-Archive-SHA256", v.SHA256)
-	if n, err := io.Copy(w, f); err == nil && n == v.SizeBytes {
+	w.Header().Set("Content-Length", fmt.Sprint(served.SizeBytes))
+	w.Header().Set("X-Archive-SHA256", served.SHA256)
+	if n, err := io.Copy(w, f); err == nil && n == served.SizeBytes {
 		s.recordDownload(v.ModID)
 	}
+}
+
+// relayLocationFor turns one platform file into the release provenance the relay
+// needs. A file stored on this server keeps no upstream location at all, so the
+// relay branch can never hand out bytes that do not belong to this platform.
+//
+// The upstream URL is the release asset's own recorded URL. Deriving it from the
+// file name would invent a URL for a release-zipball fallback, which has no asset
+// of that name.
+func relayLocationFor(v Version, file PlatformAssetRule) *VersionSourceLocation {
+	if file.ArchivePath != "" || v.GitHubSource == nil {
+		return nil
+	}
+	location := *v.GitHubSource
+	location.AssetID = 0
+	location.FileName = file.AssetName
+	return &location
 }
 func (s *Store) recordDownload(modID string) {
 	s.mu.Lock()

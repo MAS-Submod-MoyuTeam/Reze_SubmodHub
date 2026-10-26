@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, createAuthorMod, reorderModImages, uploadModImages, updateAuthorModSource, syncAuthorModGitHub, unpublishAuthorMod } from './submission-api';
+import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, createAuthorMod, reorderModImages, uploadModImages, updateAuthorModSource, syncAuthorModGitHub, unpublishAuthorMod, uploadAuthorArchive } from './submission-api';
 
 test('loads one authenticated author mod window without nested versions', async () => {
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -208,5 +208,72 @@ test('unpublishes author mod through authenticated endpoint', async () => {
   const result = await unpublishAuthorMod('/api/v1', 'mod_test', fetcher);
   assert.equal(result.id, 'mod_test');
   assert.equal(result.unpublished, true);
+});
+
+test('uploads one archive per platform and without a platform for shared versions', async () => {
+  const requests: string[] = [];
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push(String(input));
+    assert.equal(init?.method, 'POST');
+    assert.equal(init?.credentials, 'same-origin');
+    const body = init?.body as FormData;
+    assert.ok(body instanceof FormData);
+    assert.ok(body.get('archive'));
+    const url = String(input);
+    if (url.endsWith('?platform=android')) {
+      return Response.json({
+        version_id: 'ver_1',
+        version: '1.2.0',
+        state: 'scanning',
+        platform: 'android',
+        size_bytes: 20,
+        sha256: 'b'.repeat(64),
+        platform_assets: [{ platform: 'android', size_bytes: 20, sha256: 'b'.repeat(64) }],
+      });
+    }
+    assert.equal(url, '/api/v1/author/versions/ver_1/archive');
+    return Response.json({ version_id: 'ver_1', version: '1.2.0', state: 'scanning', size_bytes: 10, sha256: 'a'.repeat(64) });
+  }) as typeof fetch;
+
+  const shared = await uploadAuthorArchive('/api/v1', 'ver_1', new Blob(['zip']), 'MyMod.zip', undefined, fetcher);
+  assert.equal(shared.platform, undefined);
+
+  const android = await uploadAuthorArchive('/api/v1', 'ver_1', new Blob(['zip']), 'MyMod-android.zip', 'android', fetcher);
+  assert.equal(android.platform, 'android');
+  assert.equal(android.platform_assets?.[0].platform, 'android');
+  assert.deepEqual(requests, ['/api/v1/author/versions/ver_1/archive', '/api/v1/author/versions/ver_1/archive?platform=android']);
+});
+
+test('sends per-platform release rules and clears them with an empty list', async () => {
+  const bodies: unknown[] = [];
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), '/api/v1/author/mods/mod_test/source');
+    bodies.push(JSON.parse(String(init?.body)));
+    return Response.json({ id: 'mod_test', source_type: 'github_releases' });
+  }) as typeof fetch;
+
+  await updateAuthorModSource('/api/v1', 'mod_test', {
+    source_type: 'github_releases',
+    github_owner: 'octocat',
+    github_repo: 'hello',
+    github_platform_assets: [
+      { platform: 'windows', regex: 'MyMod-windows\\.zip$' },
+      { platform: 'android', regex: 'MyMod-android\\.zip$' },
+    ],
+  }, fetcher);
+  // An empty list is the explicit "back to one shared regex" instruction; it must
+  // survive JSON serialisation instead of being dropped as absent.
+  await updateAuthorModSource('/api/v1', 'mod_test', {
+    source_type: 'github_releases',
+    github_owner: 'octocat',
+    github_repo: 'hello',
+    github_platform_assets: [],
+  }, fetcher);
+
+  assert.deepEqual((bodies[0] as { github_platform_assets?: unknown }).github_platform_assets, [
+    { platform: 'windows', regex: 'MyMod-windows\\.zip$' },
+    { platform: 'android', regex: 'MyMod-android\\.zip$' },
+  ]);
+  assert.deepEqual((bodies[1] as { github_platform_assets?: unknown }).github_platform_assets, []);
 });
 

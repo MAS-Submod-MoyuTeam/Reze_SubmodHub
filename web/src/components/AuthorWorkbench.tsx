@@ -4,9 +4,12 @@ import { useAuthorWorkspace } from './useAuthorWorkspace';
 import { Pagination } from './Pagination';
 import { SpritepackPanel } from './SpritepackPanel';
 import { WindowPager } from './WindowPager';
-import { ModCategory, Platform, ModSummary, ModDependency, ModVersion, ScannedFile, ModSourceType } from '../types/submodhub';
+import { ModCategory, Platform, ModSummary, ModDependency, ModVersion, ScannedFile, ModSourceType, ASSET_PLATFORMS, ASSET_PLATFORM_LABELS, assetPlatformLabel, type AssetPlatform, type GitHubPlatformRule, type PlatformAsset } from '../types/submodhub';
 import {
   validateGitHubSourceInput,
+  validatePlatformRules,
+  validatePlatformRule,
+  platformModeTradeoff,
   formatLastSyncTime,
   getGitHubRepoUrl,
   MANIFEST_FILE_NAME,
@@ -16,12 +19,13 @@ import {
 } from './sourceConfig';
 import { formatVersionCreatedAt } from './versionDate';
 import { formatVersionLabel } from './versionHistory';
+import { formatBytes } from './formatBytes';
 import { DeprecationNotice } from './DeprecationNotice';
 import { MarkdownText } from './MarkdownText';
 import { mapDependencyInput, mapDependencyRangeInput, mapDependencySelection } from './dependencyMapping';
 import { DependencyNamePicker } from './DependencyNamePicker';
 import { canEditVersion, versionFormState } from './versionFormState';
-import { clearModImages, fetchModImages, reorderModImages, uploadModImages } from '../../../ui/submission-api';
+import { clearModImages, fetchModImages, platformScanReportId, reorderModImages, uploadModImages } from '../../../ui/submission-api';
 import { fetchTagCatalog, type TagGroup } from '../../../ui/tags-api';
 import { TagPicker } from './TagPicker';
 import { isValidTagSelection, orderByCatalog } from './tagSelection';
@@ -115,10 +119,18 @@ export const AuthorWorkbench: React.FC = () => {
   const [newGitHubAssetRegex, setNewGitHubAssetRegex] = useState('');
   const [newGitHubSourceCode, setNewGitHubSourceCode] = useState(false);
   const [newGitHubManifest, setNewGitHubManifest] = useState(false);
+  // 分平台抓取：打开后每个平台各自用一条正则匹配同一次 Release 的资产，
+  // 全平台共用正则不再参与匹配；关闭时保持原来的“一个文件覆盖全平台”。
+  const [newGitHubSplitPlatforms, setNewGitHubSplitPlatforms] = useState(false);
+  const [newPlatformRules, setNewPlatformRules] = useState<Record<AssetPlatform, { regex: string; sourceCode: boolean }>>({
+    windows: { regex: '', sourceCode: false },
+    android: { regex: '', sourceCode: false },
+  });
   // 两种版本发现方式的取舍必须如实展示给作者：清单模式用“多维护一个文件”换“零延迟”。
   // 窗口引用服务端实际生效的值，避免文案与设置页不一致。
   const manifestTradeoff = manifestModeTradeoff();
   const onDemandTradeoff = onDemandModeTradeoff(refreshWindowText);
+  const splitPlatformTradeoff = platformModeTradeoff();
   const [isSyncingReleases, setIsSyncingReleases] = useState(false);
 
   // Version Draft Creation Dialog
@@ -136,6 +148,17 @@ export const AuthorWorkbench: React.FC = () => {
   const [selectedVersionForUpload, setSelectedVersionForUpload] = useState<string>('');
   const archiveInputRef = useRef<HTMLInputElement>(null);
   const uploadVersionIdRef = useRef<string>('');
+  // Which platform the picked file belongs to. Empty means the single archive
+  // that serves every platform.
+  const uploadPlatformRef = useRef<AssetPlatform | ''>('');
+
+  // Opens the shared file input for one platform (or for the whole version).
+  const pickArchive = (versionId: string, platform: AssetPlatform | '') => {
+    uploadVersionIdRef.current = versionId;
+    uploadPlatformRef.current = platform;
+    if (archiveInputRef.current) archiveInputRef.current.value = '';
+    archiveInputRef.current?.click();
+  };
 
   // GitHub Import Dialog
   const [isGithubImportOpen, setIsGithubImportOpen] = useState(false);
@@ -180,6 +203,16 @@ export const AuthorWorkbench: React.FC = () => {
     setVersionFormTarget(version?.id || 'new');
   };
 
+  // 分平台模式提交给服务端的规则：只映射当前勾选的模式，关闭时提交空数组，
+  // 服务端据此回到「全平台共用正则」的行为。
+  const platformRulePayload: GitHubPlatformRule[] = newGitHubSplitPlatforms
+    ? ASSET_PLATFORMS.map((platform) => ({
+        platform,
+        regex: newPlatformRules[platform].regex.trim(),
+        source_code: newPlatformRules[platform].sourceCode,
+      }))
+    : [];
+
   const handleCreateDraftSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
@@ -191,10 +224,18 @@ export const AuthorWorkbench: React.FC = () => {
         assetRegex: newGitHubAssetRegex,
         sourceCode: newGitHubSourceCode,
         manifest: newGitHubManifest,
+        platformRules: newGitHubSplitPlatforms ? platformRulePayload : [],
       });
       if (!sourceValidation.valid) {
         showToast('error', sourceValidation.error || 'GitHub 源配置不合法');
         return;
+      }
+      if (newGitHubSplitPlatforms) {
+        const ruleValidation = validatePlatformRules(platformRulePayload);
+        if (!ruleValidation.valid) {
+          showToast('error', ruleValidation.error || '分平台配置不合法');
+          return;
+        }
       }
     }
 
@@ -225,6 +266,7 @@ export const AuthorWorkbench: React.FC = () => {
         github_asset_regex: newGitHubAssetRegex.trim(),
         github_source_code: newGitHubSourceCode,
         github_manifest: newGitHubManifest,
+        github_platform_assets: platformRulePayload,
       });
       if (saved) {
         const base = apiBase();
@@ -280,6 +322,7 @@ export const AuthorWorkbench: React.FC = () => {
       github_asset_regex: newGitHubAssetRegex.trim(),
       github_source_code: newGitHubSourceCode,
       github_manifest: newGitHubManifest,
+      github_platform_assets: platformRulePayload,
     });
 
     if (createdId) {
@@ -316,6 +359,20 @@ export const AuthorWorkbench: React.FC = () => {
     setNewGitHubAssetRegex(mod.github_asset_regex || '');
     setNewGitHubSourceCode(Boolean(mod.github_source_code));
     setNewGitHubManifest(Boolean(mod.github_manifest));
+    // 已存在的分平台规则必须原样回显，否则作者一打开编辑器就会被“关闭分平台”
+    // 悄悄改回全平台共用正则。
+    const existingRules = mod.github_platform_assets || [];
+    setNewGitHubSplitPlatforms(existingRules.length > 0);
+    setNewPlatformRules({
+      windows: {
+        regex: existingRules.find((rule) => rule.platform === 'windows')?.regex || '',
+        sourceCode: Boolean(existingRules.find((rule) => rule.platform === 'windows')?.source_code),
+      },
+      android: {
+        regex: existingRules.find((rule) => rule.platform === 'android')?.regex || '',
+        sourceCode: Boolean(existingRules.find((rule) => rule.platform === 'android')?.source_code),
+      },
+    });
     setPendingDetailImages([]);
     setPendingDetailImageKeys([]);
     setClearExistingDetailImages(false);
@@ -343,6 +400,8 @@ export const AuthorWorkbench: React.FC = () => {
     setNewGitHubAssetRegex('');
     setNewGitHubSourceCode(false);
     setNewGitHubManifest(false);
+    setNewGitHubSplitPlatforms(false);
+    setNewPlatformRules({ windows: { regex: '', sourceCode: false }, android: { regex: '', sourceCode: false } });
     setPendingDetailImages([]);
     setPendingDetailImageKeys([]);
     setExistingDetailImages([]);
@@ -398,14 +457,16 @@ export const AuthorWorkbench: React.FC = () => {
     setVersionFormTarget(null);
   };
 
-  const handleUploadArchive = async (versionId: string, file: File) => {
+  const handleUploadArchive = async (versionId: string, file: File, platform?: AssetPlatform) => {
     setIsUploading(true);
     setSelectedVersionForUpload(versionId);
     setUploadProgress(20);
     try {
-      await uploadArchiveAndScan(versionId, file);
+      await uploadArchiveAndScan(versionId, file, platform);
       setUploadProgress(100);
-      setInspectingReportId(`scan_${versionId}`);
+      // The report key follows the platform, so the inspector must open the one
+      // that was just written instead of a same-named single-archive report.
+      setInspectingReportId(platformScanReportId(versionId, platform));
     } catch {
       // Context action already exposes the server error toast.
     } finally {
@@ -479,8 +540,9 @@ export const AuthorWorkbench: React.FC = () => {
           const file = event.target.files?.[0];
           event.target.value = '';
           const versionId = uploadVersionIdRef.current;
+          const platform = uploadPlatformRef.current;
           if (file && versionId === 'spritepack:new') void handleSpritepackUpload(file);
-          else if (file && versionId) void handleUploadArchive(versionId, file);
+          else if (file && versionId) void handleUploadArchive(versionId, file, platform || undefined);
         }}
         />
       {/* Top Banner & Stats */}
@@ -757,7 +819,20 @@ export const AuthorWorkbench: React.FC = () => {
                         </div>
                         {!activeMod.github_manifest && (
                           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-600">
-                            <span>正则: <code className="text-neutral-800">{activeMod.github_asset_regex || '无（仅源码包）'}</code></span>
+                            <span>
+                              资产匹配:{' '}
+                              {activeMod.github_platform_assets && activeMod.github_platform_assets.length > 0 ? (
+                                <span className="space-x-2">
+                                  {activeMod.github_platform_assets.map((rule) => (
+                                    <span key={rule.platform}>
+                                      {assetPlatformLabel(rule.platform)} <code className="text-neutral-800">{rule.regex || (rule.source_code ? '源码包' : '未配置')}</code>
+                                    </span>
+                                  ))}
+                                </span>
+                              ) : (
+                                <code className="text-neutral-800">{activeMod.github_asset_regex || '无（仅源码包）'}</code>
+                              )}
+                            </span>
                           </div>
                         )}
                         {!activeMod.github_manifest && (
@@ -1024,22 +1099,37 @@ export const AuthorWorkbench: React.FC = () => {
                             {/* Version Action Toolbar */}
                             <div className="pt-1 flex flex-wrap items-center justify-between gap-3 text-xs">
                               <div className="flex items-center gap-2">
-                                {/* Upload / Re-upload ZIP Trigger */}
+                                {/* Upload / Re-upload ZIP Trigger. A version with
+                                    per-platform files gets one button per
+                                    platform, so each file is attached to the
+                                    platform it was built for. */}
                                 {!isPublished && (
-                                  <div className="flex items-center gap-1.5">
-                                    <button
-                                      disabled={isUploading}
-                                      onClick={() => {
-                                        uploadVersionIdRef.current = v.id;
-                                        setSelectedVersionForUpload(v.id);
-                                        if (archiveInputRef.current) archiveInputRef.current.value = '';
-                                        archiveInputRef.current?.click();
-                                      }}
-                                      className="px-3 py-1.5 font-medium text-neutral-800 bg-white hover:bg-neutral-100 rounded border border-neutral-300 flex items-center gap-1.5 transition-colors"
-                                    >
-                                      <Upload className="w-3.5 h-3.5 text-neutral-600" />
-                                      {report ? '重新上传 ZIP 归档' : '上传 ZIP 归档 (application/zip)'}
-                                    </button>
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {v.platform_assets && v.platform_assets.length > 0 ? (
+                                      ASSET_PLATFORMS.map((platform) => {
+                                        const asset = v.platform_assets?.find((entry) => entry.platform === platform);
+                                        return (
+                                          <button
+                                            key={platform}
+                                            disabled={isUploading}
+                                            onClick={() => pickArchive(v.id, platform)}
+                                            className="px-3 py-1.5 font-medium text-neutral-800 bg-white hover:bg-neutral-100 rounded border border-neutral-300 flex items-center gap-1.5 transition-colors"
+                                          >
+                                            <Upload className="w-3.5 h-3.5 text-neutral-600" />
+                                            {asset ? `${assetPlatformLabel(platform)}：重新上传 (${formatBytes(asset.size_bytes)})` : `上传 ${assetPlatformLabel(platform)} 归档`}
+                                          </button>
+                                        );
+                                      })
+                                    ) : (
+                                      <button
+                                        disabled={isUploading}
+                                        onClick={() => pickArchive(v.id, '')}
+                                        className="px-3 py-1.5 font-medium text-neutral-800 bg-white hover:bg-neutral-100 rounded border border-neutral-300 flex items-center gap-1.5 transition-colors"
+                                      >
+                                        <Upload className="w-3.5 h-3.5 text-neutral-600" />
+                                        {report ? '重新上传 ZIP 归档' : '上传 ZIP 归档 (application/zip)'}
+                                      </button>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -1442,6 +1532,84 @@ export const AuthorWorkbench: React.FC = () => {
                   {!newGitHubManifest && (
                     <>
                   <div>
+                    <label className="block font-medium text-neutral-700 mb-1">资产分发方式</label>
+                    <div className="grid grid-cols-2 gap-2 p-1 bg-white rounded border border-neutral-200">
+                      <button
+                        type="button"
+                        aria-pressed={!newGitHubSplitPlatforms}
+                        onClick={() => setNewGitHubSplitPlatforms(false)}
+                        className={`py-1.5 text-xs font-medium rounded transition-colors ${
+                          !newGitHubSplitPlatforms
+                            ? 'bg-neutral-900 text-white'
+                            : 'text-neutral-500 hover:text-neutral-800'
+                        }`}
+                      >
+                        全平台共用一个文件（默认）
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={newGitHubSplitPlatforms}
+                        onClick={() => setNewGitHubSplitPlatforms(true)}
+                        className={`py-1.5 text-xs font-medium rounded transition-colors ${
+                          newGitHubSplitPlatforms
+                            ? 'bg-emerald-700 text-white'
+                            : 'text-neutral-500 hover:text-neutral-800'
+                        }`}
+                      >
+                        Windows / Android 分别匹配
+                      </button>
+                    </div>
+                  </div>
+
+                  {newGitHubSplitPlatforms ? (
+                    <>
+                      <div className="rounded border border-emerald-300 bg-white p-2.5 text-[11px] space-y-1">
+                        <p className="text-emerald-800">好处：{splitPlatformTradeoff.benefit}</p>
+                        <p className="text-amber-800">代价：{splitPlatformTradeoff.cost}</p>
+                      </div>
+                      {ASSET_PLATFORMS.map((platform) => {
+                        const label = assetPlatformLabel(platform);
+                        const rule = newPlatformRules[platform];
+                        const ruleCheck = validatePlatformRule(platform, rule.regex, rule.sourceCode);
+                        return (
+                          <div key={platform} className="rounded border border-neutral-200 bg-white p-2.5 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="block font-medium text-neutral-700">
+                                {label} 资产文件名正则 (RE2)
+                              </label>
+                              <span className={`text-[11px] ${ruleCheck.valid ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                {ruleCheck.valid ? '可用于匹配' : ruleCheck.error}
+                              </span>
+                            </div>
+                            <input
+                              type="text"
+                              placeholder={platform === 'windows' ? '例如: MyMod-windows\\.zip$' : '例如: MyMod-android\\.zip$'}
+                              value={rule.regex}
+                              onChange={(e) => setNewPlatformRules((prev) => ({ ...prev, [platform]: { ...prev[platform], regex: e.target.value } }))}
+                              className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600 bg-white font-mono"
+                            />
+                            <div className="flex items-start gap-2">
+                              <input
+                                type="checkbox"
+                                id={`gh_platform_source_code_${platform}`}
+                                checked={rule.sourceCode}
+                                onChange={(e) => setNewPlatformRules((prev) => ({ ...prev, [platform]: { ...prev[platform], sourceCode: e.target.checked } }))}
+                                className="mt-0.5 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
+                              />
+                              <label htmlFor={`gh_platform_source_code_${platform}`} className="text-[11px] text-neutral-600 cursor-pointer">
+                                {label} 无匹配时使用源码包 ZIP
+                              </label>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <p className="text-[11px] text-neutral-500">
+                        两个平台必须都在同一次 Release 里出现；缺任一平台时这次 Release 会被整条跳过，不会只发布一半。
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                  <div>
                     <label className="block font-medium text-neutral-700 mb-1">Release 资产文件名正则 (RE2)</label>
                     <input
                       type="text"
@@ -1470,6 +1638,8 @@ export const AuthorWorkbench: React.FC = () => {
                       </span>
                     </label>
                   </div>
+                    </>
+                  )}
                     </>
                   )}
                 </div>

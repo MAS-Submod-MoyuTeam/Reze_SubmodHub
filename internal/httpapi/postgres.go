@@ -53,8 +53,13 @@ func NewPostgresStore(ctx context.Context, dsn, dataDir string, initial Catalog)
 		for id, version := range s.Catalog.Versions {
 			if version.ArchivePath != "" {
 				version.ArchivePath = filepath.Join(s.DataDir, "archives", filepath.Base(version.ArchivePath))
-				s.Catalog.Versions[id] = version
 			}
+			for i := range version.PlatformAssets {
+				if version.PlatformAssets[i].ArchivePath != "" {
+					version.PlatformAssets[i].ArchivePath = filepath.Join(s.DataDir, "archives", filepath.Base(version.PlatformAssets[i].ArchivePath))
+				}
+			}
+			s.Catalog.Versions[id] = version
 		}
 	} else if errors.Is(err, sql.ErrNoRows) {
 		b, marshalErr := json.Marshal(s.Catalog)

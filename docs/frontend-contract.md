@@ -200,10 +200,60 @@ journal 事务阶段为 `planned -> prepared -> applying -> committing -> commit
 - `github_last_sync_at`: 最近一次同步时间（仅作者工作台与管理端可见，公开目录自动脱敏）。
 - `github_last_sync_error`: 最近一次同步非致命错误描述（仅作者工作台与管理端可见）。
 - `github_last_release_id`: 最近处理的 GitHub Release ID（仅作者工作台与管理端可见）。
+- `github_platform_assets`: 可选的分平台资产规则数组 `[{ "platform": "windows" | "android", "regex": "...", "source_code": false }]`。**非空时分平台分发**：每个平台用自己的 RE2 正则匹配同一次 Release 里的资产，`github_asset_regex` 与 `github_source_code` 不再参与匹配。空数组/省略即回到「全平台共用同一个文件」的现行为，因此该字段可以显式传 `[]` 表示“关掉分平台”。非空时该模组的同步不复用 Release 列表 ETag（见下文「下载与描述符」末条）。
+
+### 分平台资产（GitHub Releases）
+两种分发方式二选一，不存在混用：
+
+| 方式 | 配置 | 一次 Release 的匹配结果 |
+| --- | --- | --- |
+| 全平台共用（默认） | `github_asset_regex`（+ `github_source_code` 兜底） | 一个文件，所有平台下载同一份 |
+| 分平台 | `github_platform_assets`（`windows`、`android` 各一条） | 每个平台各一份文件，互不相同 |
+
+约束与前端必读项：
+- **默认互通规则：没有 `platform_assets` 的版本视为全平台兼容。** 它只有一份归档，`windows`/`android`/桌面各平台安装的都是同一份字节，因此下载时不带平台、或带任意已知平台都等价；前端与客户端不得因「缺平台文件」把这种版本判为不可安装，也不要为它展示平台选择器或要求用户先选平台。只有 `platform_assets` 非空的版本才有「这份包属于哪个平台」的问题。
+- 分平台必须同时给出 `windows` 与 `android`（`ASSET_PLATFORMS`）；缺一条返回 400。
+- 每条规则要么有 `regex`，要么 `source_code: true`（该平台允许用 Release 源码包兜底）；两者都空返回 400。
+- **整条 Release 原子生效**：任一平台没匹配到资产时，这次 Release 整体跳过并记录同步错误（错误里列出缺失的资产名），不会只发布一半平台。前端必须把这一点写进代价文案。
+- 源码包兜底的平台**与资产平台一样落盘**：它有真实的 `archive_path`/`size_bytes`/`sha256`，可以正常下载，只是 `asset_name` 记录的是 `<tag>-source.zip` 这一来源名。
+- 单一版本内的形状互斥：一个版本要么是「一个文件覆盖全平台」（`sha256`/`size_bytes` 为版本级值），要么是「每个平台一个文件」（版本级 `sha256`/`size_bytes` 为空，真实值在 `platform_assets`）。上传时混用会返回 409 `archive_shape_conflict`。
+- 只出一个平台的版本（`platform_assets` 恰好一条）不需要用户选择：那份归档就是该平台的包，前端可以直接按它请求，这不属于「替用户猜平台」。
 
 ### 接口定义
-- `PATCH /api/v1/author/mods/{id}/source`：更新模组的源配置。鉴权要求作者或管理员。校验 owner/repo 格式及 asset regex 语法，保存后清空上次同步错误。接受 `github_manifest`（清单模式，此时 `github_asset_regex` 可留空）；切换 owner/repo/清单模式会清空 ETag 与清单摘要。
+- `PATCH /api/v1/author/mods/{id}/source`：更新模组的源配置。鉴权要求作者或管理员。校验 owner/repo 格式及 asset regex 语法，保存后清空上次同步错误。接受 `github_manifest`（清单模式，此时 `github_asset_regex` 可留空）与 `github_platform_assets`（分平台，此时 `github_asset_regex` 同样可留空；传 `[]` 回到共用文件）。切换 owner/repo/清单模式/分平台规则会清空 ETag 与清单摘要。
 - `POST /api/v1/author/mods/{id}/github-sync`：手动触发立即同步（强制回源，忽略 ETag 与清单摘要缓存）。返回 `{ mod_id, synced_at, created, skipped, failed, items: [...] }` 汇总。
+
+### 分平台归档（本站上传源）
+`POST /api/v1/author/versions/{id}/archive?platform=windows|android`：为该版本上传**一个平台**的归档。
+- 不带 `platform` 时行为不变（单一归档覆盖全平台）。
+- 目标版本已经是另一形状时返回 409 `archive_shape_conflict`；未知平台返回 400 `unsupported_platform`。
+- 文件名里出现的平台标记必须与 `platform` 一致（`-`/`_`/`.`/空格/`/`/`\\` 视为分隔符，`.apk`/`.exe` 也参与推断），否则返回 400 `platform_mismatch`。
+- 响应额外返回 `platform` 与该版本当前完整的 `platform_assets`；扫描报告按平台区分（`scan_<version>-<platform>`，单一归档的版本仍是 `scan_<version>`）。服务端在每次上传后**只写本次上传平台自己的报告键**，版本摘要的 `scan_report_id` 因此固定指向「版本实际拥有的、按 `windows`→`android` 顺序排在最前的那个平台」，与最后一次上传的是哪个平台无关；重传 android 不会改动 windows 的报告。删除版本或退役版本会同时清掉该版本名下的**全部**平台报告键。
+- `POST /api/v1/author/versions/{id}/submit` 要求每个已声明的平台都有归档**且都有各自的扫描报告**；归档缺失返回 409 `archive_required`，扫描报告缺失返回 409 `scan_required`，两者都在消息里列出缺失平台。
+- 审核页按平台逐个展示报告：`GET /review/submissions/{id}` 额外返回 `scan_reports`（该版本名下的**全部**报告，键与上传时一致：`scan_<version>` 或 `scan_<version>-<platform>`），审核台据此为每个平台渲染一份，默认落在版本摘要平台；`scan_report` 仍保留为摘要平台那一份。缺少某平台报告时审核台显式提示「无法核对这个平台的文件变化」，而不是显示成 0 个文件。
+- `GET /author/mods/{id}/versions` 的 `scan_reports` 同样包含当前页每个版本的**全部**平台报告。
+- 残余限制：已发布版本被新的分平台版本替换时（spritepack 替换路径），旧版本连同它名下的全部报告一起删除，`scan_report_snapshot` 只保留摘要平台那一份，其余平台只剩 `version_snapshot.platform_assets` 里的哈希与大小。驳回不会删报告，被驳回版本的各平台报告仍可从 `scan_reports` 查阅。
+
+### 下载与描述符
+`GET /api/v1/versions/{id}/download` 与 `GET /api/v1/archives/{id}` 都接受 `?platform=windows|android`。同一个查询参数在两种版本形状下语义不同，客户端必须按此实现：
+
+| 版本形状 | 不带 `platform` | `platform=windows` / `android` | `platform=<其他名字>` |
+| --- | --- | --- | --- |
+| 无 `platform_assets`（默认，**全平台兼容**） | 正常下发该共用文件 | **等价于不带**：共用文件服务所有平台，描述符不带 `platform`、URL 不追加参数 | 404 `platform_not_found` |
+| 分平台，只出一个平台 | 400 `platform_required` | 只有声明的那一个平台可下载，另一个返回 404 | 404 `platform_not_found` |
+| 分平台，出多个平台 | 400 `platform_required` | 下发该平台的文件，描述符带 `platform` | 404 `platform_not_found` |
+
+- 第一行的规则就是**「没分平台即全平台兼容」**：Android 与 Windows 桌面客户端**无条件**按自身平台请求，若把「共用文件 + 指定平台」判为错误，所有历史单文件版本都会在客户端失联；同理，前端不要为这类版本渲染平台选择器，也不要要求用户先选平台。
+- 分平台版本没有默认包，因此省略 `platform` 一律 400；只出一个平台的版本由界面直接按那一个平台请求（见上文「只出一个平台的版本」），而不是让用户二选一。
+- 描述符的 `platform` 字段表示「本次解析到某个平台文件」，**只在分平台版本上出现**；单文件版本的响应里没有该字段，客户端据此不要做平台比对（`desc.platform != "" && desc.platform != 本机平台` 才拒绝）。
+- `sha256`/`size_bytes` 始终是**本次下发字节**的真实值：单文件版本为版本级值，分平台版本为选中平台的值。
+- 「不是平台的名字」（如 `linux`）在任何形状下都返回 404 `platform_not_found`：契约只描述 `windows`/`android`，不猜测别名（`Windows`、`安卓` 由服务端归一化后仍属已知平台）。
+- `GET /api/v1/archives/{id}` 对**无 `platform_assets` 的版本**忽略 `platform`（直接回传共用字节），因为它只负责把已解析的字节送出；平台解析的唯一决策点是描述符。分平台版本在该端点上仍必须给平台。
+- 客户端必须校验响应里的 `platform` 与本机一致，不一致时拒绝安装（桌面/Android 客户端已按 `downloadPlatform()` 实现）。
+- 目前只有 Windows 桌面与 Android 两个平台有专用包，因此只有这两种构建会带 `platform` 请求；若将来出现 macOS/Linux 桌面构建，它没有专用包，只能下载全平台兼容版本，遇到分平台版本会得到 400 `platform_required` —— 这是如实拒绝，不是缺陷。
+- 公开目录里的 `platform_assets` 只含 `platform`/`size_bytes`/`sha256`/`asset_name`，**永不暴露 `archive_path`**。
+- 服务端镜像（Cloudreve）不为分平台版本建立镜像记录；`github_relay` 仍可按平台工作。下载回执绑定的是解析后的平台字节，因此平台文件变化后旧回执自动失效。
+- `github_platform_assets` 非空的模组不复用 Release 列表 ETag：切换分平台规则时必须重新读取资产列表，否则旧缓存会让按新规则尚未导入的 Release 永久不可见。
 
 ### 版本发现方式（前端必读）
 `GET /api/v1/mods/{id}` 与作者工作台列表加载会在胶水层按 `GITHUB_SYNC_MAX_AGE`（默认 60 分钟）异步触发一次回源（每页最多 3 个模组、同一模组单飞），页面响应不被阻塞；后台巡检每分钟把过期模组补一遍。
