@@ -43,7 +43,7 @@ const idleAppUpdate = {
   total_bytes: 0, can_install: false, requires_user_action: false, requires_install_permission: false,
 };
 
-/** 无活动实例、目录无效、可读取三种启动形态共用的 App 挂载夹具。 */
+/** 无活动实例、目录无效、可读取等启动形态共用的 App 挂载夹具；`instances` 可以是按调用次数返回不同结果的函数。 */
 async function fixture(options: { instances: unknown; listOperations: () => Promise<unknown> }) {
   const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost/' });
   Object.assign(globalThis, {
@@ -58,7 +58,9 @@ async function fixture(options: { instances: unknown; listOperations: () => Prom
     native(name: string, ...args: unknown[]) {
       calls.push(name);
       if (name === 'isAndroid') return false;
-      if (name === 'ListMASInstances') return Promise.resolve(options.instances);
+      if (name === 'ListMASInstances') {
+        return Promise.resolve(typeof options.instances === 'function' ? (options.instances as () => unknown)() : options.instances);
+      }
       if (name === 'ListOperations') return options.listOperations();
       if (name === 'ScanLocalSubmods') return Promise.resolve([]);
       if (name === 'ScanInstalledSpritepacks') return Promise.resolve([]);
@@ -74,6 +76,11 @@ async function fixture(options: { instances: unknown; listOperations: () => Prom
   await settle();
   return {
     calls,
+    views,
+    settle,
+    focus: async () => {
+      await act(async () => { dom.window.dispatchEvent(new dom.window.Event('focus')); });
+    },
     body: () => dom.window.document.body.textContent ?? '',
     async close() {
       await act(async () => root.unmount());
@@ -125,5 +132,57 @@ test('活动实例通过验证后，事务列表照常从后端读取', async ()
   try {
     assert.equal(f.calls.filter((name) => name === 'ListOperations').length, 1, '实例就绪后应恰好读取一次事务列表');
     assert.doesNotMatch(f.body(), /事务列表读取失败/);
+  } finally { await f.close(); }
+});
+
+test('MAS 版本取后端读到的 game/masrun，缺失时标注未检测', async () => {
+  const f = await fixture({
+    instances: {
+      instances: [
+        {
+          id: 'mas-1', label: 'MAS', root: 'C:\\MAS',
+          status: { valid: true, game_exists: true, mas_version: '0.12.15' },
+        },
+        {
+          id: 'mas-2', label: 'MAS 未运行', root: 'C:\\MAS2',
+          status: { valid: true, game_exists: true },
+        },
+      ],
+      active_id: 'mas-1',
+    },
+    listOperations: async () => [],
+  });
+  try {
+    const installations = f.views.TitleBar.installations as Array<{ id: string; mas_version: string }>;
+    assert.equal(installations.find((item) => item.id === 'mas-1')?.mas_version, '0.12.15');
+    assert.equal(installations.find((item) => item.id === 'mas-2')?.mas_version, '未检测');
+  } finally { await f.close(); }
+});
+
+test('回到应用时重扫实例，MAS 首次运行后版本不再停留在未检测', async () => {
+  let reads = 0;
+  const f = await fixture({
+    instances: () => {
+      reads += 1;
+      // 第一次扫描时 MAS 还没运行过；用户启动 MAS 再切回应用后，masrun 里已有版本。
+      return {
+        instances: [{
+          id: 'mas-1', label: 'MAS', root: 'C:\\MAS',
+          status: reads === 1
+            ? { valid: true, game_exists: true }
+            : { valid: true, game_exists: true, mas_version: '0.13.0' },
+        }],
+        active_id: 'mas-1',
+      };
+    },
+    listOperations: async () => [],
+  });
+  const version = () => (f.views.TitleBar.installations as Array<{ id: string; mas_version: string }>)[0]?.mas_version;
+  try {
+    assert.equal(version(), '未检测');
+    await f.focus();
+    await f.settle();
+    assert.equal(reads, 2, '窗口重新获得焦点时应重扫实例');
+    assert.equal(version(), '0.13.0');
   } finally { await f.close(); }
 });

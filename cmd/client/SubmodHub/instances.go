@@ -214,6 +214,8 @@ func inspectMASDirectory(root string) MASStatus {
 
 	status.GameExists = true
 	status.Diagnostic = "game_directory_verified"
+	// 版本来自 MAS 自己写的 game/masrun；没运行过 MAS 时它还不存在，版本留空。
+	status.MASVersion = readMASVersion(game)
 
 	if entries, err := os.ReadDir(filepath.Join(game, "Submods")); err == nil {
 		for _, entry := range entries {

@@ -603,7 +603,9 @@ export default function App() {
       platform: item.id === 'android-mas' || isAndroidDevice ? 'android' : 'windows',
       path_hint: item.root,
       permission_state: item.status.valid && item.status.game_exists ? 'authorized' : 'revoked',
-      mas_version: '未检测',
+      // 版本来自 game/masrun（MAS 启动时写入）；缺失通常表示还没运行过 MAS，
+      // 读取失败时同样留空，两种情况都只能显示「未检测」。
+      mas_version: item.status.mas_version || '未检测',
       is_valid: item.status.valid && item.status.game_exists,
       is_running: false,
       disk_available_bytes: item.status.available_bytes !== undefined ? item.status.available_bytes : null,
@@ -646,6 +648,21 @@ export default function App() {
   const switchInstance = (state: MASInstancesState) => {
     syncInstances(state, { reason: 'switch' });
   };
+
+  // MAS 版本只在 ListMASInstances 时从 game/masrun 读取，而 LaunchMASInstance 启动即返回，
+  // 所以首次运行 MAS 后标题栏会一直停在「未检测」。用户从 MAS 切回来时窗口重新获得焦点，
+  // 正是重扫实例的时机，顺带刷新磁盘占用与目录诊断。
+  // Android 已在 storage_state 事件和焦点回调里重查实例，这里不重复。
+  useEffect(() => {
+    if (isAndroidDevice) return;
+    const onFocus = () => {
+      void ListMASInstances().then((state) => refreshInstanceState(state as MASInstancesState)).catch(() => {
+        // 后台重扫失败不打扰用户：手动「重新检查」会报出具体错误。
+      });
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isAndroidDevice]);
 
   useEffect(() => {
     void loadCatalog();

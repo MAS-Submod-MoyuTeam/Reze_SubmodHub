@@ -29,6 +29,7 @@ type MASStatus struct {
 	Valid            bool   `json:"valid"`
 	GameExists       bool   `json:"game_exists"`
 	Submods          int    `json:"submods"`
+	MASVersion       string `json:"mas_version"`
 	AvailableBytes   int64  `json:"available_bytes"`
 	TotalBytes       int64  `json:"total_bytes"`
 	Diagnostic       string `json:"diagnostic,omitempty"`

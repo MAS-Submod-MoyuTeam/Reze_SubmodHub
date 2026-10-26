@@ -131,6 +131,7 @@ export interface MASStatus {
     "valid": boolean;
     "game_exists": boolean;
     "submods": number;
+    "mas_version": string;
     "available_bytes": number;
     "total_bytes": number;
     "diagnostic"?: string;

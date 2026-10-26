@@ -132,7 +132,7 @@
 
 | 绑定调用 | 输入 | 输出 |
 | --- | --- | --- |
-| `ListInstallations` | 无 | `Installation[]`，含 `id,label,platform,path_hint,permission_state,mas_version` |
+| `ListInstallations` | 无 | `Installation[]`，含 `id,label,platform,path_hint,permission_state,mas_version`；`mas_version` 取自 `game/masrun`（MAS 在 splash 阶段写入的单行 `config.name|config.version`，每次启动重写，取最后一个竖线之后的版本段）。文件不存在（从未运行过 MAS）、不是普通文件、不可读或内容无法识别时返回空串，客户端一律显示「未检测」；版本随每次实例重扫更新，重扫时机为启动、切换实例、手动「重新检查」与窗口重新获得焦点 |
 | `GetAndroidStorageAccess` | 无 | `{state:"granted|denied|unsupported",root:"/storage/emulated/0/MAS/",game_path:"/storage/emulated/0/MAS/game"}`；每次调用查询系统授权，不使用缓存判断 |
 | `RequestAndroidStorageAccess` | 无 | 打开本应用“所有文件访问权限”系统设置页；返回 `{opened:true}` 只表示设置页已打开，不表示已授权 |
 | `DiscoverInstallations` / `SelectInstallation` | 平台选择结果 | Windows 为验证后的选择结果；Android 只验证固定 MAS 根目录，未授权返回 `permission_lost`，无效目录返回 `invalid_mas_root` |
