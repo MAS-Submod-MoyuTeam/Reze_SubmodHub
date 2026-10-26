@@ -132,6 +132,37 @@ test('CatalogView: a healthy catalog renders neither the failure nor the empty-r
   assert.match(html, /Monika AI Voice/);
 });
 
+test('CatalogView: a catalog request with no data yet renders a loading skeleton, never a verdict', () => {
+  const html = renderCatalog({ mods: [], catalogError: null, isCatalogRefreshing: true });
+
+  // 客户端启动时 mods 一定是空的；在真实目录到达之前，界面不能先报「没找到」。
+  assert.doesNotMatch(html, /未找到符合条件的模组/);
+  assert.doesNotMatch(html, /目录加载失败/);
+  assert.match(html, /正在读取模组目录…/);
+  assert.match(html, /data-testid="catalog-loading-skeleton"/);
+  assert.match(html, /aria-busy="true"/);
+  assert.equal((html.match(/data-testid="catalog-loading-card"/g) ?? []).length, 6, 'the skeleton mirrors one page of cards');
+});
+
+test('CatalogView: the skeleton yields to the empty-result state once the request settles', () => {
+  const loading = renderCatalog({ mods: [], isCatalogRefreshing: true });
+  const settled = renderCatalog({ mods: [], isCatalogRefreshing: false });
+
+  assert.match(loading, /正在读取模组目录…/);
+  // 目录真的空了才允许给出结论；两个状态不能同时出现在一屏。
+  assert.match(settled, /未找到符合条件的模组/);
+  assert.doesNotMatch(settled, /正在读取模组目录…/);
+  assert.doesNotMatch(settled, /data-testid="catalog-loading-card"/);
+  assert.doesNotMatch(settled, /aria-busy/, 'a settled pane must not keep claiming it is busy');
+});
+
+test('CatalogView: the floating refresh control is busy while the first request is in flight', () => {
+  const control = floatingRefreshMarkup(renderCatalog({ mods: [], isCatalogRefreshing: true }));
+
+  assert.match(control, /disabled=""/, 'the first request is already in flight; a second click must not be offered');
+  assert.match(control, /animate-spin/);
+});
+
 test('CatalogView: defaults the platform filter to the client platform', () => {
   const windowsOnly: ModSummary = { ...mockMod, id: 'mod_win', title: 'Windows Only Mod', supported_platforms: ['windows'] };
   const androidOnly: ModSummary = { ...mockMod, id: 'mod_android', title: 'Android Only Mod', supported_platforms: ['android'] };

@@ -21,7 +21,10 @@ interface CatalogViewProps {
   activeInstallation: Installation;
   /** 最近一次目录拉取的失败原因；null 表示上次拉取成功。没有离线快照，失败必须以独立状态呈现。 */
   catalogError: string | null;
-  /** 目录是否正在重新拉取，用于禁用重试入口。 */
+  /**
+   * 目录请求在飞（含首屏那一次）：启动时 `mods` 必然为空，所以这段窗口里列表区只能有加载骨架，
+   * 不能在真实目录到达前先报「未找到符合条件的模组」。
+   */
   isCatalogRefreshing: boolean;
   onReloadCatalog: () => void;
   onOpenDetail: (mod: ModSummary) => void;
@@ -109,6 +112,11 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   // 列表区有独立状态（失败 / 无匹配）时不存在可滚动的内容，也不该出现计数页脚。
   const showsList = !catalogError && filteredMods.length > 0;
   const footerLabel = loadFooterLabel(showsList ? visibleCount : 0, filteredMods.length, submodUnit);
+  // 「一条目录数据都还没有、但请求在飞」就是加载中，而不是「没有匹配」：首屏请求与
+  // 空目录刷新都落在这里。结论性文案只在请求真正落地后出现，否则启动时会先闪一帧
+  // 「未找到符合条件的模组」再被真实目录替换。只留一个真值来源（请求在飞），
+  // 不再另设「首屏是否加载过」的平行状态。
+  const showsCatalogSkeleton = !catalogError && mods.length === 0 && isCatalogRefreshing;
 
   // 自动续页与手动「加载更多」共用同一个动作，避免两条各自演进的续页路径。
   // 只许再追加一页：观察器重挂前已经排队的回调，以及在列表里点按钮，都可能在同一批已渲染
@@ -309,7 +317,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             last row's right-most card buttons stay reachable instead of sitting
             underneath it. */}
         {/* 这个面板是目录真正的滚动容器，续页观察根必须绑定到它，而不是窗口视口。 */}
-        <div ref={setScrollPane} data-testid="catalog-scroll-pane" className="h-full overflow-y-auto p-4 pb-20">
+        <div ref={setScrollPane} data-testid="catalog-scroll-pane" aria-busy={showsCatalogSkeleton || undefined} className="h-full overflow-y-auto p-4 pb-20">
           {catalogError ? (
             /* Load Failure State: 没有离线快照，失败必须与「无匹配结果」区分开 */
             <div className="h-full flex flex-col items-center justify-center text-center p-8">
@@ -326,6 +334,36 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 <RefreshCw className="w-3.5 h-3.5" />
                 <span>{isCatalogRefreshing ? '重新加载中…' : '重新加载目录'}</span>
               </button>
+            </div>
+          ) : showsCatalogSkeleton ? (
+            /* Loading Skeleton State: 请求落地前只摆占位卡片，不报任何结论 */
+            <div className="space-y-3" data-testid="catalog-loading-skeleton" role="status">
+              <div className="flex items-center gap-2 text-xs text-neutral-400 bg-neutral-900/40 p-2.5 rounded-lg border border-neutral-800/60">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none text-emerald-400 shrink-0" aria-hidden="true" />
+                <span>正在读取模组目录…</span>
+              </div>
+              {/* 占位卡片与真卡片同构，数量跟随真实页大小：加载完成时列表高度不会突然跳一截。 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5" aria-hidden="true">
+                {Array.from({ length: pageSize }, (_, index) => (
+                  <div
+                    key={index}
+                    data-testid="catalog-loading-card"
+                    className="bg-neutral-900/40 border border-neutral-800/60 rounded-xl p-4 flex flex-col justify-between animate-pulse motion-reduce:animate-none"
+                  >
+                    <div className="space-y-2.5">
+                      <div className="h-4 bg-neutral-800/80 rounded w-3/4" />
+                      <div className="h-3 bg-neutral-800/60 rounded w-1/2" />
+                      <div className="h-3 bg-neutral-800/40 rounded w-full" />
+                      <div className="h-3 bg-neutral-800/40 rounded w-2/3" />
+                      <div className="h-3 bg-neutral-800/30 rounded w-1/3" />
+                    </div>
+                    <div className="pt-3 border-t border-neutral-800/80 flex items-center justify-between gap-2">
+                      <div className="h-6 w-16 bg-neutral-800/50 rounded-md" />
+                      <div className="h-6 w-20 bg-neutral-800/60 rounded-md" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : filteredMods.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-400">
@@ -521,7 +559,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             type="button"
             onClick={onReloadCatalog}
             disabled={isCatalogRefreshing}
-            aria-busy={isCatalogRefreshing}
+            aria-busy={isCatalogRefreshing || undefined}
             aria-label="刷新模组目录"
             title={isCatalogRefreshing ? '正在刷新模组目录…' : '刷新模组目录'}
             className={`absolute right-4 bottom-4 z-10 w-11 h-11 rounded-full flex items-center justify-center border shadow-lg transition-colors ${

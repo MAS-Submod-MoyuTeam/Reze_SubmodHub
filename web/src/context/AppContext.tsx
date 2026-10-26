@@ -169,7 +169,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setVersions((prev) => [...publishedVersions, ...prev.filter((version) => version.state !== 'published' && !publishedVersions.some((published) => published.id === version.id))]);
   }, []);
 
-  const [catalogLoading, setCatalogLoading] = useState(false);
+  // 目录请求在飞（首屏也归它管，所以初值是 true）：挂载 effect 的第一件事就是拉目录，
+  // 第一帧不能先摆出「未找到匹配的模组」，那只是一句还没成立的结论。
+  const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogRefreshing, setCatalogRefreshing] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   // 手上已经有一份成功拉取的目录：之后的拉取都是「刷新」，旧内容留在屏幕上。

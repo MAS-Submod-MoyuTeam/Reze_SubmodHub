@@ -68,3 +68,6 @@ deploy/data/
 deploy/build/
 submodhub-deploy.tar
 cmd/client/SubmodHub/build/android/build/reports/problems/problems-report.html
+
+# App 级测试在打包失败时会留下的临时 bundle 目录
+clients/desktop/.app-*-test-*/

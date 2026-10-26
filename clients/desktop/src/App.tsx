@@ -324,7 +324,9 @@ export default function App() {
 
   // MAS 进程检测尚未接入，这里恒为 false；显式标注 boolean，避免守卫被当成字面量死代码。
   const isGameRunning: boolean = MAS_GAME_PROCESS_DETECTED;
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  // 这个标志唯一的含义是「目录请求在飞」，首屏也归它管：挂载 effect 的第一件事就是发请求，
+  // 所以初值必须是 true，否则第一帧会在真实目录到达前先摆出「未找到符合条件的模组」这句结论。
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(true);
   // 目录失败必须可见：没有离线快照，失败要显示页面级失败态，不能退化成「空目录」。
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
