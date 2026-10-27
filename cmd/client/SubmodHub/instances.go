@@ -320,6 +320,28 @@ func (s *DesktopService) RemoveMASInstance(id string) (MASInstancesState, error)
 	return MASInstancesState{}, errors.New("mas_instance_not_found")
 }
 
+// ErrTransactionInProgress 表示该实例仍有未完成的事务，此时不允许启动游戏。
+// 前端按这个稳定错误码本地化提示，不解析错误文本。
+var ErrTransactionInProgress = errors.New("transaction_in_progress")
+
+// ensureNoTransactionInProgress 阻止在事务进行时启动游戏：Ren'Py 启动会立刻加载并
+// 锁定 game/ 下的脚本与资源，与事务的原子替换、缓存清理和回滚互相干扰，可能让一次
+// 本可安全回滚的写入变成人工恢复。
+//
+// 判断只读持久化 journal，因此跨重启、跨进程都成立，也不受前端本地状态是否及时
+// 刷新影响。只读实例状态：不获取实例锁，避免把「事务进行中」变成阻塞等待。
+func ensureNoTransactionInProgress(root string) error {
+	installer := core.New(root, filepath.Join(root, ".submodhub", "state"))
+	inProgress, err := installer.HasInProgressTransaction()
+	if err != nil {
+		return err
+	}
+	if inProgress {
+		return ErrTransactionInProgress
+	}
+	return nil
+}
+
 func (s *DesktopService) LaunchMASInstance(id string) error {
 	if s.isAndroid() {
 		return errors.New("unsupported_platform")
@@ -340,6 +362,9 @@ func (s *DesktopService) LaunchMASInstance(id string) error {
 			return errors.New("mas_executable_missing")
 		}
 		if err != nil {
+			return err
+		}
+		if err := ensureNoTransactionInProgress(instance.Root); err != nil {
 			return err
 		}
 		cmd := exec.Command(executable)

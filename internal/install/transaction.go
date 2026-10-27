@@ -86,6 +86,23 @@ type TxJournal struct {
 	UpdatedAt            time.Time                  `json:"updated_at"`
 }
 
+// IsInProgress reports whether the journal has not reached a terminal phase, so
+// its file changes may still be in flight (or were interrupted before either
+// committing or rolling back). needs_manual_recovery counts as terminal on
+// purpose: its writing has stopped, and the remaining work is an explicit
+// rollback the user has to trigger.
+func (j *TxJournal) IsInProgress() bool {
+	if j == nil {
+		return false
+	}
+	switch j.Phase {
+	case TxPhaseCommitted, TxPhaseRolledBack, TxPhaseNeedsManualRecovery:
+		return false
+	default:
+		return true
+	}
+}
+
 // HasRecoveryMaterial reports whether the journal contains valid and complete metadata required for rollback.
 func (j *TxJournal) HasRecoveryMaterial() bool {
 	if j == nil {
@@ -1072,6 +1089,30 @@ func (i *Installer) ListTxJournals() ([]TxJournal, error) {
 	})
 
 	return list, nil
+}
+
+// HasInProgressTransaction reports whether this instance owns any journal that
+// has not reached a terminal phase. Callers that must not race a write (for
+// example launching the game, which locks and loads the files being replaced)
+// gate on this instead of on an in-process flag, so the answer also covers
+// transactions started before a restart or by another process.
+//
+// Reading is safe while a transaction runs: journal files are replaced by atomic
+// rename, so a reader always sees a complete JSON document.
+func (i *Installer) HasInProgressTransaction() (bool, error) {
+	if i == nil {
+		return false, nil
+	}
+	journals, err := i.ListTxJournals()
+	if err != nil {
+		return false, err
+	}
+	for idx := range journals {
+		if journals[idx].IsInProgress() {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // GetTxJournal retrieves a TxJournal by ID, falling back to legacy journal if needed.

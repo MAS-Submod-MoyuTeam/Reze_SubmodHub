@@ -33,6 +33,7 @@ function titleBarProps(isAndroid = false) {
     onOpenInstancesView: () => {},
     onLaunchGame: async () => {},
     isLaunchingGame: false,
+    isTransactionActive: false,
     isAndroid,
   };
 }
@@ -211,4 +212,44 @@ test('TitleBar DOM: double-clicking inert drag-area content still toggles maximi
   await doubleClick(brand);
 
   assert.deepEqual(windowCalls, ['toggle-maximise']);
+});
+
+test('TitleBar: 没有事务时启动按钮保持可用的强调色', () => {
+  const html = renderToStaticMarkup(<TitleBar {...titleBarProps()} />);
+
+  assert.match(html, /bg-emerald-700/);
+  assert.doesNotMatch(html, /事务进行中 \(启动已锁定\)/);
+  assert.doesNotMatch(html, /aria-label="启动游戏（事务进行中，暂不可用）"/);
+});
+
+test('TitleBar: 事务进行中时启动按钮置灰，并说明为什么点不动', () => {
+  const html = renderToStaticMarkup(<TitleBar {...titleBarProps()} isTransactionActive />);
+
+  // 置灰：中性底色取代强调色，且按钮真正 disabled。
+  assert.match(html, /border-neutral-700 bg-neutral-800 text-neutral-500/);
+  assert.doesNotMatch(html, /bg-emerald-700/);
+  assert.match(html, /<button[^>]*disabled=""[^>]*aria-label="启动游戏（事务进行中，暂不可用）"/);
+  assert.match(html, /事务进行中：事务提交或回滚完成前不能启动游戏/);
+  // 不只靠颜色：标题栏里仍有一枚说明状态的徽标。
+  assert.match(html, /事务进行中 \(启动已锁定\)/);
+});
+
+test('TitleBar DOM: 事务进行中的启动按钮不触发启动', async () => {
+  let launches = 0;
+  const { container } = await renderTitleBar({
+    isTransactionActive: true,
+    onLaunchGame: async () => {
+      launches += 1;
+    },
+  });
+
+  const button = container.querySelector<HTMLButtonElement>('button[aria-label="启动游戏（事务进行中，暂不可用）"]');
+  assert.ok(button, 'expected the guarded launch button');
+  assert.equal(button.disabled, true);
+
+  await act(async () => {
+    button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  });
+
+  assert.equal(launches, 0, '事务进行中点击启动不得触发原生启动');
 });

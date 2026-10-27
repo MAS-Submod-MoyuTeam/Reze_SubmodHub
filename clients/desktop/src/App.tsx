@@ -20,6 +20,7 @@ import { AppUpdateModal } from './components/AppUpdateModal';
 import { ExecutionProgressBar } from './components/ExecutionProgressBar';
 import { InstanceSwitchOverlay } from './components/InstanceSwitchOverlay';
 import { ExecutionCoordinator } from './executionCoordinator';
+import { describeLaunchFailure, hasInProgressTransaction, isTransactionInProgressError } from './launchGuard';
 import { StorageAccessBanner } from './components/StorageAccessBanner';
 import { MobileNavBar } from './components/MobileNavBar';
 import {
@@ -117,6 +118,9 @@ export default function App() {
   const [installedMods, setInstalledMods] = useState<InstalledItem[]>([]);
   const [spritepacks, setSpritepacks] = useState<Spritepack[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
+  // 回滚本身也是写事务：回滚进行中同样不允许启动游戏，而它要回滚的事务可能已是
+  // 终态（recoverable / needs_manual_recovery），不能只靠 operations 判断。
+  const [rollbackInFlight, setRollbackInFlight] = useState<string[]>([]);
 
   // Execution session coordinator
   const [executionSession, setExecutionSession] = useState<ExecutionSession | null>(null);
@@ -135,6 +139,11 @@ export default function App() {
       executionCoordinatorRef.current?.stopPolling();
     };
   }, []);
+
+  // 任意事务进行时（计划已确认 / 正在应用 / 正在回滚），启动游戏入口必须禁用：
+  // 这段时间 game/ 下的文件正在被替换或还原，Ren'Py 启动会同时读写同一批文件。
+  // 后端 LaunchMASInstance 按 journal 独立复核，不依赖这里的前端判断。
+  const isTransactionActive = hasInProgressTransaction(operations) || rollbackInFlight.length > 0;
 
   // Installed scan loading state
   const loadCoordinatorRef = useRef(createInstalledLoadCoordinator());
@@ -1290,6 +1299,7 @@ export default function App() {
 
   // Handler: Recover / Safe Rollback Operation
   const handleRecoverOperation = async (opId: string) => {
+    setRollbackInFlight((prev) => (prev.includes(opId) ? prev : [...prev, opId]));
     showToast(`正在安全回滚操作 [${opId}]...`);
     try {
       await RollbackOperation(opId);
@@ -1300,6 +1310,8 @@ export default function App() {
     } catch (err: any) {
       showToast(`回滚失败：${err.message || String(err)}`);
       await refreshOperations(activeInstallationIdRef.current);
+    } finally {
+      setRollbackInFlight((prev) => prev.filter((id) => id !== opId));
     }
   };
 
@@ -1435,12 +1447,17 @@ export default function App() {
 
   const handleLaunchInstance = async (id: string) => {
     if (isLaunchingGame) return;
+    // 按钮已置灰；这里再拦一次，覆盖键盘/程序化触发以及事务状态刚更新的那一帧。
+    if (isTransactionActive) {
+      showToast('事务进行中，游戏启动已被阻止。请等待事务提交或回滚完成后再启动游戏。', 'warn');
+      return;
+    }
     setIsLaunchingGame(true);
     try {
       await LaunchMASInstance(id);
       showToast('游戏已启动。');
     } catch (error) {
-      showToast(`启动失败：${String(error)}`);
+      showToast(describeLaunchFailure(error), isTransactionInProgressError(error) ? 'warn' : 'info');
     } finally {
       setIsLaunchingGame(false);
     }
@@ -1468,6 +1485,7 @@ export default function App() {
           onOpenInstancesView={() => setActiveTab('instances')}
           onLaunchGame={() => handleLaunchInstance(activeInstallationId)}
           isLaunchingGame={isLaunchingGame}
+          isTransactionActive={isTransactionActive}
           isAndroid={isAndroidDevice}
           onOpenAppUpdate={() => setIsAppUpdateOpen(true)}
           hasAppUpdate={appUpdateState.status === 'available' || appUpdateState.status === 'ready'}

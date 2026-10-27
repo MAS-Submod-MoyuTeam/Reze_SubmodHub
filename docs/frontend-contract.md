@@ -145,6 +145,7 @@
 | `ListInstalled` | 安装实例 | 托管版本、未托管检测结果、更新状态 |
 | `ListInstalledModFiles` | `installation_id, mod_id` [, `cursor, limit`] | `InstalledFileList`：只读文件清单、哈希、生效状态、外部漂移标志与统计摘要；不读取文件内容，不修改状态 |
 | `ListOperations` / `GetOperation` | 实例/操作 ID | 阶段、逐文件进度、阻断信息与恢复选项 |
+| `LaunchMASInstance` | 实例 ID | 启动该实例根目录下的 `DDLC.exe`；实例存在非终态事务时返回 `transaction_in_progress` 且不启动进程 |
 | `RecoverOperation` | 操作 ID | `operation_id,status` |
 
 事务诊断的展示归属：`ListOperations` / `GetOperation` 返回的全部字段（阶段、进度、恢复材料、冲突路径、期望/实测哈希、错误代号与详情、时间戳）在客户端“事务详情”弹窗内展示并可整份复制；客户端不提供文件导出入口。
@@ -154,6 +155,8 @@
 **精灵包选择最终状态语义**：客户端的套装勾选表示“应用后最终安装的集合”，不是本次增量下载清单。若已安装 A，追加 B 须保持 A 勾选并勾选 B（提交 A+B）；若仅勾选 B，则应用后 A 将被卸载；若取消勾选全部套装，操作路由至“卸载此精灵包”。首次安装默认全选；已有可验证安装默认仅勾选已安装集合；未知旧记录默认零选且须确认替换风险。若存在移除已安装套装、版本缺失集合或未知旧记录替换，预览弹窗要求用户显式勾选“我确认应用后将卸载未保留的已安装套装”方可执行写入。下载 ZIP 行为独立于安装状态，不支持零集合下载。
 
 journal 事务阶段为 `planned -> prepared -> applying -> committing -> committed`，客户端将其映射为 `planned | recoverable | committed | rolled_back | needs_manual_recovery`（`recoverable` 覆盖 prepared/applying/committing）。除此之外只保留一个客户端本地哨兵 `query_failed`：执行已结束但后端状态查询失败，结果未知，后端永远不会返回该值；客户端不得再自造其他“看起来像后端状态”的值（原先的 `downloading / scanning / backed_up / writing / blocked / rolling_back / unknown` 已退役）。前端必须能在重启后通过 `operation_id` 重连状态。进度事件可优化体验，但持久化的 `GetOperation` 是权威来源。
+
+**事务进行时不得启动游戏**：任一事务未到达终态（journal 处于 `planned/prepared/applying/committing`）时，`LaunchMASInstance` 返回 `transaction_in_progress` 且不创建游戏进程，避免 Ren'Py 启动加载、锁定正在被原子替换或回滚的文件。客户端据此把启动入口置灰：`operations` 中存在 `planned`/`recoverable`，或正在执行安全回滚时禁用，并在标题栏与按钮 Tooltip 说明原因与解除条件。前端判断只用于即时反馈与可及性说明，后端按 journal 独立复核，不依赖前端状态是否及时刷新。`needs_manual_recovery` 属终态，不阻止启动（其剩余工作是一次显式回滚，把用户锁在游戏之外只会抬高恢复门槛）。
 
 ## 5. 状态机与错误展示
 
@@ -170,6 +173,7 @@ journal 事务阶段为 `planned -> prepared -> applying -> committing -> commit
 | `permission_lost`, `invalid_mas_root` | Android 前者打开系统“所有文件访问权限”页并在返回后刷新，后者报告固定 MAS 根目录无效；Windows 可重新选择目录 |
 | `not_found`, `manifest_corrupt` | 提示模组未安装或 manifest 损坏，引导刷新状态或重新扫描，不伪装成空文件 |
 | `game_running`, `insufficient_space` | 停止写入，说明可恢复条件 |
+| `transaction_in_progress` | 启动游戏被进行中的事务阻止：启动入口保持置灰并说明「等待事务提交或回滚完成」，不按普通启动失败处理，也不引导重试 |
 | `external_change` | 展示路径及预期/当前哈希，禁止自动覆盖 |
 | `operation_recoverable`, `backup_missing` | 进入恢复流程或报告无法自动恢复的原因 |
 | `offline` | 请求无法到达服务器：目录显示独立的“加载失败”状态并提供重新加载入口，不读取本地目录快照；下载同样不保存归档，安装仅限已验证的本地 ZIP |

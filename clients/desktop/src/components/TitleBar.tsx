@@ -11,6 +11,7 @@ import {
   ChevronDown,
   CheckCircle2,
   Lock,
+  Loader2,
   Play,
 } from 'lucide-react';
 import { Installation } from '../types/client';
@@ -23,6 +24,8 @@ interface TitleBarProps {
   onOpenInstancesView: () => void;
   onLaunchGame: () => Promise<void>;
   isLaunchingGame: boolean;
+  /** 当前实例仍有未完成的事务（安装/更新/卸载/修复/收养/回滚）时为 true。 */
+  isTransactionActive: boolean;
   isAndroid?: boolean;
   onOpenAppUpdate?: () => void;
   hasAppUpdate?: boolean;
@@ -46,6 +49,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onOpenInstancesView,
   onLaunchGame,
   isLaunchingGame,
+  isTransactionActive,
   isAndroid = false,
   onOpenAppUpdate,
   hasAppUpdate = false,
@@ -106,6 +110,17 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     if (target.closest(HEADER_INTERACTIVE_SELECTOR)) return;
     handleToggleMaximise();
   };
+
+  // 启动按钮的每个禁用原因都要能单独说清楚，否则用户只会看到一个点不动的灰按钮。
+  const launchBlockedByTransaction = isTransactionActive;
+  const launchDisabled = !activeInst.is_valid || isLaunchingGame || launchBlockedByTransaction;
+  const launchTitle = !activeInst.is_valid
+    ? '请先选择有效的 MAS 实例'
+    : launchBlockedByTransaction
+      ? '事务进行中：事务提交或回滚完成前不能启动游戏，避免与正在写入的文件冲突'
+      : isLaunchingGame
+        ? '正在启动游戏…'
+        : `启动 ${activeInst.label} 的 DDLC.exe`;
 
   return (
     <header
@@ -224,27 +239,49 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         {!isAndroid && (
           <button
             onClick={() => void onLaunchGame()}
-            disabled={!activeInst.is_valid || isLaunchingGame}
-            className="wails-no-drag flex h-[26px] shrink-0 items-center gap-1.5 rounded bg-emerald-700 px-2.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
-            title={activeInst.is_valid ? `启动 ${activeInst.label} 的 DDLC.exe` : '请先选择有效的 MAS 实例'}
-            aria-label={isLaunchingGame ? '启动中' : '启动游戏'}
+            disabled={launchDisabled}
+            className={`wails-no-drag flex h-[26px] shrink-0 items-center gap-1.5 rounded border px-2.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
+              launchDisabled
+                ? 'border-neutral-700 bg-neutral-800 text-neutral-500'
+                : 'border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-600'
+            }`}
+            title={launchTitle}
+            aria-label={
+              isLaunchingGame
+                ? '启动中'
+                : launchBlockedByTransaction
+                  ? '启动游戏（事务进行中，暂不可用）'
+                  : '启动游戏'
+            }
           >
-            <Play className="h-3.5 w-3.5" />
+            {launchBlockedByTransaction ? <Lock className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
             <span className="hidden sm:inline">{isLaunchingGame ? '启动中…' : '启动游戏'}</span>
           </button>
         )}
       </div>
 
       {/* Middle zone: Real-time Guards & Indicators — 空闲且实例有效时整块不渲染 */}
-      {(!activeInst.is_valid || isGameRunning) && (
+      {(!activeInst.is_valid || isGameRunning || isTransactionActive) && (
         <div className="hidden xl:flex items-center gap-3">
-          {/* Game Process Guard */}
-          {!activeInst.is_valid ? (
+          {/* Instance Validity Guard */}
+          {!activeInst.is_valid && (
             <div className="flex items-center gap-1.5 text-amber-400 text-[11px]">
               <AlertTriangle className="w-3.5 h-3.5" />
               <span>MAS 状态未验证</span>
             </div>
-          ) : (
+          )}
+          {/* Transaction Guard — 灰掉的启动按钮在这里说明原因 */}
+          {isTransactionActive && activeInst.is_valid && (
+            <div
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-sky-950/70 border border-sky-800/80 text-sky-300"
+              title="事务进行中：事务提交或回滚完成前，游戏启动被锁定，避免与正在写入的文件冲突。"
+            >
+              <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" />
+              <span className="font-medium text-[11px]">事务进行中 (启动已锁定)</span>
+            </div>
+          )}
+          {/* Game Process Guard */}
+          {isGameRunning && (
             <div
               className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/70 border border-amber-800/80 text-amber-300"
               title="MAS 正在运行：为防止 Ren'Py 运行时损坏，写操作被物理锁定。"
