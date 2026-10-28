@@ -46,9 +46,37 @@ func compiledArtifactCandidates(root, display string) []string {
 	return out
 }
 
+// DerivedArtifactKeys returns the canonical keys of the compiled cache files
+// that the given managed source files produce and that currently exist on disk.
+//
+// Callers that must decide whether a discovered artifact belongs to the ledger
+// ask this function for the whole owned set and then test membership, instead of
+// reconstructing a source path from the artifact and asking the ledger about it.
+// Reconstructing goes backwards through a lossy naming rule (a __pycache__ entry
+// is "<module>.<tag>.pyc", and the module name may itself contain dots), while
+// expanding forwards reuses compiledArtifactCandidates — so the scan and the
+// install-time cache cleanup can never disagree about the same file.
+func DerivedArtifactKeys(root string, sources []string) map[string]bool {
+	if len(sources) == 0 {
+		return nil
+	}
+	keys := make(map[string]bool)
+	for _, source := range sources {
+		for _, rel := range compiledArtifactCandidates(root, source) {
+			keys[manifestCanonicalKey(rel)] = true
+		}
+	}
+	return keys
+}
+
 // pycacheArtifacts lists CPython's __pycache__ entries for a .py source file.
 // Only bytecode belonging to that module is returned; unrelated caches in the
 // same directory are preserved.
+//
+// The module name is compared case-insensitively: derived-artifact callers pass
+// canonical ledger keys, which are lowercased on Windows, while the directory
+// entries keep the casing CPython wrote ("Helper.cpython-311.pyc"). A
+// case-sensitive prefix would silently miss every mixed-case module.
 func pycacheArtifacts(root, display string) []string {
 	dir := path.Dir(display)
 	stem := path.Base(display[:len(display)-len(".py")])
@@ -58,14 +86,14 @@ func pycacheArtifacts(root, display string) []string {
 		return nil
 	}
 
-	prefix := stem + "."
+	prefix := strings.ToLower(stem) + "."
 	var out []string
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasPrefix(name, prefix) {
+		if !strings.HasPrefix(strings.ToLower(name), prefix) {
 			continue
 		}
 		if !strings.HasSuffix(name, ".pyc") && !strings.HasSuffix(name, ".pyo") {

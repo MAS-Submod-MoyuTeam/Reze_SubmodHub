@@ -120,7 +120,7 @@ func (s *DesktopService) PreviewAdopt(request AdoptRequest) (PlanResult, error) 
 		return PlanResult{}, errors.New("no_files_specified")
 	}
 
-	manifest, err := s.core.LoadManifest()
+	manifest, err := s.loadLedger()
 	if err != nil {
 		return PlanResult{}, err
 	}

@@ -374,6 +374,34 @@ func (s *DesktopService) GetMASStatus() (MASStatus, error) {
 	return MASStatus{Root: s.root, GamePath: game, Valid: fileExists(s.root), GameExists: fileExists(game), Submods: count, AvailableBytes: avail, TotalBytes: capacity}, nil
 }
 
+// ErrManifestCorrupt 表示账本（`.submodhub/state/manifest.json`）读不出来，复用
+// internal/install 与 docs/frontend-contract.md 错误码表里的稳定错误码。账本是
+// 「哪些文件属于 RezeHub」的唯一记录，因此任何要按账本分类文件或读取逐安装状态的
+// 调用都必须失败，不能靠猜：读不出来的账本会把每个托管文件都退化成「未托管」，
+// 或静默丢掉优先级等账本字段。
+//
+// 返回的就是裸码：客户端把这个字符串当作提示文案展示，不解析错误文本，所以把底层
+// 解析错误包装进来只会让同一个码出现两种写法，而解析细节在客户端没有任何呈现出口。
+var ErrManifestCorrupt = errors.New("manifest_corrupt")
+
+// loadLedger is the single reader of the installation ledger: scan, receipts,
+// install/repair/priority previews and adoption all go through it, so "the ledger
+// is unreadable" has exactly one error code and one policy — report it, never
+// degrade into a guess. Anything that needs ledger contents must call this rather
+// than s.core.LoadManifest, which would hand the UI a raw parse error instead.
+func (s *DesktopService) loadLedger() (*core.Manifest, error) {
+	if s.core == nil {
+		// s.root and s.core are cleared together, so this only happens before an
+		// instance is configured; callers check that case first.
+		return nil, errors.New("mas_root_not_configured")
+	}
+	manifest, err := s.core.LoadManifest()
+	if err != nil {
+		return nil, ErrManifestCorrupt
+	}
+	return manifest, nil
+}
+
 func (s *DesktopService) ScanLocalSubmods() ([]LocalSubmod, error) {
 	if err := s.checkStorageAccess(); err != nil {
 		return nil, err
@@ -381,11 +409,12 @@ func (s *DesktopService) ScanLocalSubmods() ([]LocalSubmod, error) {
 	if s.root == "" {
 		return nil, errors.New("mas_root_not_configured")
 	}
-	var manifest *core.Manifest
-	if s.core != nil {
-		if m, err := s.core.LoadManifest(); err == nil {
-			manifest = m
-		}
+	// Without the ledger every managed file is indistinguishable from an
+	// unmanaged one, so a failed load must surface as an error instead of
+	// relabelling the whole installed set as unmanaged detections.
+	manifest, err := s.loadLedger()
+	if err != nil {
+		return nil, err
 	}
 	return scanLocalSubmodsCore(s.root, manifest)
 }
@@ -790,7 +819,7 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 		return PlanResult{}, err
 	}
 
-	manifest, err := s.core.LoadManifest()
+	manifest, err := s.loadLedger()
 	if err != nil {
 		return PlanResult{}, err
 	}
@@ -952,7 +981,7 @@ func (s *DesktopService) PreviewUninstallWithOpID(targetID, uninstallOpID string
 		return PlanResult{}, errors.New("target_id_required")
 	}
 
-	manifest, err := s.core.LoadManifest()
+	manifest, err := s.loadLedger()
 	if err != nil {
 		return PlanResult{}, err
 	}
@@ -1085,7 +1114,7 @@ func (s *DesktopService) PreviewPriority(priorities map[string]int) (PlanResult,
 			return PlanResult{}, err
 		}
 	}
-	manifest, err := s.core.LoadManifest()
+	manifest, err := s.loadLedger()
 	if err != nil {
 		return PlanResult{}, err
 	}

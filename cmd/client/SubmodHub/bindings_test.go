@@ -481,6 +481,103 @@ func TestDesktopServiceScansLocalSubmods(t *testing.T) {
 	}
 }
 
+// End-to-end: a mod installed through the ledger must not reappear in the
+// unmanaged list just because Ren'Py compiled its scripts on the next launch.
+func TestDesktopServiceScanSkipsCompiledArtifactsOfInstalledMod(t *testing.T) {
+	root := setupTestMASRoot(t)
+	service := NewDesktopService()
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ApplyFile(InstallRequest{
+		OperationID: "op_install_managed",
+		Path:        "game/Submods/ManagedMod/main.rpy",
+		Content:     "init python:\n    Submod(name='Managed', version='1.0')\n",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	compiled := filepath.Join(root, "game", "Submods", "ManagedMod", "main.rpyc")
+	if err := os.WriteFile(compiled, []byte("compiled"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.ScanLocalSubmods()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 0 {
+		t.Fatalf("compiled output of an installed mod must not count as unmanaged: %+v", result)
+	}
+}
+
+// A ledger that cannot be parsed must stop the scan instead of relabelling every
+// managed file as an unmanaged detection, and it must report the documented
+// stable code instead of a raw parse error.
+func TestDesktopServiceScanRefusesUnreadableLedger(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "game", "Submods", "ManagedMod")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.rpy"), []byte("init python:\n    Submod(name='Managed', version='1.0')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	corruptLedger(t, root)
+
+	service := NewDesktopService()
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.ScanLocalSubmods()
+	if !errors.Is(err, ErrManifestCorrupt) {
+		t.Fatalf("expected ErrManifestCorrupt, got %v (result %+v)", err, result)
+	}
+	if err.Error() != "manifest_corrupt" {
+		t.Fatalf("the UI shows this string verbatim, so it must be the code alone: %q", err.Error())
+	}
+	if result != nil {
+		t.Fatalf("expected no partial result alongside the error, got %+v", result)
+	}
+}
+
+// The installed list and the unmanaged scan are two views of the same ledger, so
+// they must agree about an unreadable one: receipts are not served with silently
+// defaulted priorities while the scan claims the ledger is broken.
+func TestDesktopServiceInstalledArchivesRefuseUnreadableLedger(t *testing.T) {
+	root := setupTestMASRoot(t)
+	service := NewDesktopService()
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+	receipts := []InstalledArchive{{ModID: "mod_managed", OperationID: "op_managed", Title: "Managed"}}
+	if err := service.saveInstalledArchives(receipts); err != nil {
+		t.Fatal(err)
+	}
+	corruptLedger(t, root)
+
+	got, err := service.ListInstalledArchives()
+	if !errors.Is(err, ErrManifestCorrupt) {
+		t.Fatalf("expected ErrManifestCorrupt, got %v (receipts %+v)", err, got)
+	}
+	if err.Error() != "manifest_corrupt" {
+		t.Fatalf("the installed view must report the same string the scan reports: %q", err.Error())
+	}
+	if got != nil {
+		t.Fatalf("expected no receipts alongside the error, got %+v", got)
+	}
+}
+
+func corruptLedger(t *testing.T, root string) {
+	t.Helper()
+	stateDir := filepath.Join(root, ".submodhub", "state")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "manifest.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDesktopServiceOperationsAndRollback(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "game"), 0o755); err != nil {
@@ -1585,4 +1682,3 @@ func TestPreviewRepairEmptyTarget(t *testing.T) {
 		t.Fatalf("expected target_id_required for whitespace, got: %v", err)
 	}
 }
-

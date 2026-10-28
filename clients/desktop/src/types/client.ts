@@ -251,6 +251,8 @@ export interface InstalledItem {
   sha256: string;
   unmanaged_paths?: string[];
   submod_dir_name?: string;
+  /** 该目录已被这些托管安装占用；空表示整组文件都不在账本内。 */
+  managed_owners?: Array<{ installation_id: string; mod_id?: string; title?: string }>;
   scan_item_id?: string;
   registrations?: Array<{
     name: string;

@@ -93,6 +93,18 @@ export interface InstalledArchive {
 }
 
 /**
+ * LocalSubmodOwner names a managed installation that already owns files inside a
+ * discovered directory. A directory can hold files outside the ledger, so the
+ * client must be able to say "this folder belongs to a managed mod" instead of
+ * presenting the leftovers as an unrelated unmanaged submod.
+ */
+export interface LocalSubmodOwner {
+    "installation_id": string;
+    "mod_id"?: string;
+    "title"?: string;
+}
+
+/**
  * LocalSubmod represents an unmanaged submod directory or root-scattered group.
  */
 export interface LocalSubmod {
@@ -103,6 +115,7 @@ export interface LocalSubmod {
     "version": string;
     "registrations": SubmodRegistration[] | null;
     "files": LocalSubmodFile[] | null;
+    "managed_owners"?: LocalSubmodOwner[] | null;
     "warnings"?: string[] | null;
     "incomplete"?: boolean;
 }

@@ -50,6 +50,15 @@ interface InstalledViewProps {
   isVerifying: boolean;
 }
 
+/**
+ * 已托管目录的展示名：优先标题，其次商店 ID，最后内部安装 ID。
+ * 同一目录可能被多个安装占用（层叠覆盖），去重后按后端顺序展示。
+ */
+function managedOwnerLabels(item: InstalledItem): string {
+  const labels = (item.managed_owners || []).map((owner) => owner.title || owner.mod_id || owner.installation_id);
+  return Array.from(new Set(labels.filter((label) => !!label))).join('、');
+}
+
 export const InstalledView: React.FC<InstalledViewProps> = ({
   installedMods,
   spritepacks,
@@ -801,6 +810,11 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             <span className="px-2 py-0.5 text-[10px] rounded bg-amber-950 text-amber-300 border border-amber-800 font-mono">
                               未托管发现项
                             </span>
+                            {item.managed_owners && item.managed_owners.length > 0 && (
+                              <span className="px-2 py-0.5 text-[10px] rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono">
+                                所在目录已托管
+                              </span>
+                            )}
                             {item.match_status === 'matched' && (
                               <span className="px-2 py-0.5 text-[10px] rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono">
                                 商店可匹配: {item.match_candidates?.[0]?.title}
@@ -816,6 +830,11 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
                             {item.author_name} · 声明版本: {item.installed_version} · 文件数: {item.unmanaged_paths?.length || 0}
                           </p>
+                          {item.managed_owners && item.managed_owners.length > 0 && (
+                            <p className="text-xs text-sky-300/90 mt-1 leading-relaxed">
+                              该目录属于已托管模组「{managedOwnerLabels(item)}」，下列 {item.unmanaged_paths?.length || 0} 个文件不在安装账本内。收养只新增这些文件的归属，不会改动已托管文件。
+                            </p>
+                          )}
 
                           <div className="mt-2 space-y-1 font-mono text-[11px] text-neutral-400 bg-neutral-950/60 p-2.5 rounded-lg border border-neutral-800/80">
                             <div className="flex items-center justify-between text-neutral-400">

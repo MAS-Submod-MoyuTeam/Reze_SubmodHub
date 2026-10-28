@@ -56,18 +56,22 @@ func (s *DesktopService) ListInstalledArchives() ([]InstalledArchive, error) {
 	if receipts == nil {
 		receipts = []InstalledArchive{}
 	}
-	if s.core != nil {
-		if manifest, mErr := s.core.LoadManifest(); mErr == nil && manifest != nil {
-			for i := range receipts {
-				if inst := manifest.Installations[receipts[i].ModID]; inst != nil {
-					receipts[i].Priority = inst.Priority
-				} else {
-					for _, cand := range manifest.Installations {
-						if cand.ModID == receipts[i].ModID {
-							receipts[i].Priority = cand.Priority
-							break
-						}
-					}
+	// Priority lives in the ledger, and so does the answer to "which files does
+	// RezeHub own". Both halves of one installed-view refresh therefore share one
+	// policy: an unreadable ledger is reported as manifest_corrupt instead of
+	// being presented as installations with default priorities.
+	manifest, err := s.loadLedger()
+	if err != nil {
+		return nil, err
+	}
+	for i := range receipts {
+		if inst := manifest.Installations[receipts[i].ModID]; inst != nil {
+			receipts[i].Priority = inst.Priority
+		} else {
+			for _, cand := range manifest.Installations {
+				if cand.ModID == receipts[i].ModID {
+					receipts[i].Priority = cand.Priority
+					break
 				}
 			}
 		}

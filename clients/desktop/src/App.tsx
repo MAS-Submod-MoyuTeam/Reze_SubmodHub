@@ -21,6 +21,7 @@ import { ExecutionProgressBar } from './components/ExecutionProgressBar';
 import { InstanceSwitchOverlay } from './components/InstanceSwitchOverlay';
 import { ExecutionCoordinator } from './executionCoordinator';
 import { describeLaunchFailure, hasInProgressTransaction, isTransactionInProgressError } from './launchGuard';
+import { describeScanFailure } from './scanErrors';
 import { StorageAccessBanner } from './components/StorageAccessBanner';
 import { MobileNavBar } from './components/MobileNavBar';
 import {
@@ -444,7 +445,6 @@ export default function App() {
     try {
       const [local, receipts] = await Promise.all([ScanLocalSubmods(), ListInstalledArchives()]) as [LocalSubmod[], InstalledArchive[]];
       if (activeInstallationIdRef.current !== instId) return null;
-      const managedDirs = new Set(receipts.flatMap((receipt) => receipt.submod_dirs || []).map((dir) => dir.toLowerCase()));
       const catalog = catalogModsRef.current.length > 0 ? catalogModsRef.current : catalogMods;
       const catalogMap = new Map(catalog.map((item) => [item.id, item]));
       const managed: InstalledItem[] = receipts.map((receipt) => {
@@ -486,6 +486,7 @@ export default function App() {
         submod_dir_name: item.directory,
         scan_item_id: item.id || item.directory,
         registrations: item.registrations || [],
+        managed_owners: item.managed_owners,
         warnings: item.warnings,
         incomplete: item.incomplete,
         integrity_status: 'unknown',
@@ -556,7 +557,9 @@ export default function App() {
       return combined;
     } catch (error) {
       if (activeInstallationIdRef.current !== instId) return null;
-      const msg = error instanceof Error ? error.message : String(error);
+      // 账本错误在错误码表里有专门的文案要求（给出路径、说明不可自愈），
+      // 这里同时喂给内联错误态和 toast，避免两处显示不同的话术。
+      const msg = describeScanFailure(error instanceof Error ? error.message : String(error));
       if (loadCoordinatorRef.current.failModsScan(token, msg)) {
         showToast(`本地子模组扫描失败：${msg}`, 'warn');
       }

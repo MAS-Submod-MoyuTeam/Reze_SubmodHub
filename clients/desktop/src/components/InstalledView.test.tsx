@@ -29,6 +29,69 @@ function makeMockInstalledItem(override?: Partial<InstalledItem>): InstalledItem
   };
 }
 
+function renderUnmanagedTab(item: InstalledItem): string {
+  return renderToStaticMarkup(
+    <InstalledView
+      installedMods={[item]}
+      spritepacks={[]}
+      hasValidInstance={true}
+      modsStatus="idle"
+      modsError={null}
+      isModsInitialLoading={false}
+      isModsRefreshing={false}
+      spritepacksStatus="idle"
+      spritepacksError={null}
+      isSpritepacksInitialLoading={false}
+      isSpritepacksRefreshing={false}
+      isVerifying={false}
+      initialSubTab="unmanaged"
+      onRefreshInstalled={() => {}}
+      onRefreshSpritepacks={() => {}}
+      onCreateSpriteGift={async () => 'gift_file'}
+      onDeleteSpritepack={async () => {}}
+      onStartUninstallPlan={() => {}}
+      onStartRepairPlan={() => {}}
+      onStartUpdatePlan={() => {}}
+      onOpenAdoptModal={() => {}}
+      onInspectFiles={() => {}}
+      onCheckAllUpdates={() => {}}
+      onVerifyIntegrity={() => {}}
+    />
+  );
+}
+
+test('InstalledView: leftovers inside a managed directory name their owner instead of posing as a new submod', () => {
+  const item = makeMockInstalledItem({
+    mod_id: 'local:ManagedMod',
+    title: 'ManagedMod',
+    is_managed: false,
+    files_count: 1,
+    unmanaged_paths: ['game/Submods/ManagedMod/user_notes.rpy'],
+    submod_dir_name: 'ManagedMod',
+    managed_owners: [{ installation_id: 'inst_managed', mod_id: 'mod_managed', title: 'Managed Title' }],
+  });
+
+  const html = renderUnmanagedTab(item);
+  assert.match(html, /所在目录已托管/);
+  assert.match(html, /该目录属于已托管模组「Managed Title」/);
+  assert.match(html, /收养只新增这些文件的归属/);
+});
+
+test('InstalledView: a directory without a managed owner makes no ownership claim', () => {
+  const item = makeMockInstalledItem({
+    mod_id: 'local:LooseMod',
+    title: 'LooseMod',
+    is_managed: false,
+    files_count: 1,
+    unmanaged_paths: ['game/Submods/LooseMod/main.rpy'],
+    submod_dir_name: 'LooseMod',
+  });
+
+  const html = renderUnmanagedTab(item);
+  assert.doesNotMatch(html, /所在目录已托管/);
+  assert.doesNotMatch(html, /该目录属于已托管模组/);
+});
+
 test('InstalledView: repair button is rendered with real preview tooltip for drifted item', () => {
   const item = makeMockInstalledItem();
   const html = renderToStaticMarkup(

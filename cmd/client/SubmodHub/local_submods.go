@@ -32,6 +32,16 @@ type SubmodRegistration struct {
 	DependenciesUnknown bool                          `json:"dependencies_unknown,omitempty"`
 }
 
+// LocalSubmodOwner names a managed installation that already owns files inside a
+// discovered directory. A directory can hold files outside the ledger, so the
+// client must be able to say "this folder belongs to a managed mod" instead of
+// presenting the leftovers as an unrelated unmanaged submod.
+type LocalSubmodOwner struct {
+	InstallationID string `json:"installation_id"`
+	ModID          string `json:"mod_id,omitempty"`
+	Title          string `json:"title,omitempty"`
+}
+
 // LocalSubmod represents an unmanaged submod directory or root-scattered group.
 type LocalSubmod struct {
 	ID            string               `json:"id"`
@@ -41,6 +51,7 @@ type LocalSubmod struct {
 	Version       string               `json:"version"`
 	Registrations []SubmodRegistration `json:"registrations"`
 	Files         []LocalSubmodFile    `json:"files"`
+	ManagedOwners []LocalSubmodOwner   `json:"managed_owners,omitempty"`
 	Warnings      []string             `json:"warnings,omitempty"`
 	Incomplete    bool                 `json:"incomplete,omitempty"`
 }
@@ -59,6 +70,76 @@ func canonicalizePathKey(rel string) string {
 	return clean
 }
 
+// compiledArtifactKeys collects the generated compile cache files that managed
+// source scripts under game/Submods produce.
+//
+// Ren'Py writes a sibling .rpyc/.rpymc for every .rpy/.rpym and CPython leaves
+// bytecode next to or inside __pycache__ for every module. Those artifacts are
+// derived data that the ledger never records, so an exact path match alone would
+// resurface the directory of an otherwise fully managed mod as an unmanaged
+// detection. Ownership is decided by the source file, not by the folder.
+//
+// The set is expanded forwards from the ledger's sources instead of backwards
+// from each discovered file, so the scan reuses the one naming rule that the
+// install-time cache cleanup already owns (install.compiledArtifactCandidates).
+//
+// managedKeys are canonical ledger keys, which Windows lowercases. install's
+// expansion compares __pycache__ entries case-insensitively for that reason, so
+// a module's original casing cannot hide its bytecode.
+func compiledArtifactKeys(masRoot string, managedKeys map[string]bool) map[string]bool {
+	sources := make([]string, 0, len(managedKeys))
+	for key := range managedKeys {
+		// Only sources inside a submod directory can leave artifacts behind in
+		// the tree the walk below visits.
+		if submodDirKey(key) == "" {
+			continue
+		}
+		sources = append(sources, key)
+	}
+	return install.DerivedArtifactKeys(masRoot, sources)
+}
+
+// submodDirKey returns the canonical first directory segment under game/Submods
+// for a manifest path, or "" when the path is outside that tree or sits directly
+// in it. Manifest paths are canonical keys, so the comparison is case-insensitive
+// only to survive the mixed casing stored by older ledgers.
+func submodDirKey(pathKey string) string {
+	parts := strings.Split(filepath.ToSlash(pathKey), "/")
+	if len(parts) < 4 {
+		return ""
+	}
+	if !strings.EqualFold(parts[0], "game") || !strings.EqualFold(parts[1], "Submods") {
+		return ""
+	}
+	return canonicalizePathKey(parts[2])
+}
+
+// ownersForDir returns the owners of one discovered directory. File layers decide
+// it whenever they exist; an installation's recorded path list is only consulted
+// for a directory the ledger records no layer for, because a path list can survive
+// a reinstall that moved the file to another installation.
+func ownersForDir(layers, paths map[string]map[string]LocalSubmodOwner, dirKey string) map[string]LocalSubmodOwner {
+	if owners := layers[dirKey]; len(owners) > 0 {
+		return owners
+	}
+	return paths[dirKey]
+}
+
+// orderedOwners flattens the per-directory owner set into a stable list.
+func orderedOwners(byID map[string]LocalSubmodOwner) []LocalSubmodOwner {
+	if len(byID) == 0 {
+		return nil
+	}
+	owners := make([]LocalSubmodOwner, 0, len(byID))
+	for _, owner := range byID {
+		owners = append(owners, owner)
+	}
+	sort.Slice(owners, func(i, j int) bool {
+		return owners[i].InstallationID < owners[j].InstallationID
+	})
+	return owners
+}
+
 // scanLocalSubmodsCore performs file-level discovery of unmanaged submods in game/Submods.
 func scanLocalSubmodsCore(masRoot string, manifest *install.Manifest) ([]LocalSubmod, error) {
 	if masRoot == "" {
@@ -67,19 +148,85 @@ func scanLocalSubmodsCore(masRoot string, manifest *install.Manifest) ([]LocalSu
 
 	// 1. Build set of managed canonical file keys from manifest
 	managedKeys := make(map[string]bool)
+	// Owner sets per canonical directory segment under game/Submods. Layers and
+	// path lists are kept apart because they are not peers; see ownersForDir.
+	layerOwnersByDir := make(map[string]map[string]LocalSubmodOwner)
+	pathOwnersByDir := make(map[string]map[string]LocalSubmodOwner)
 	if manifest != nil {
-		for _, inst := range manifest.Installations {
+		// ownerByID resolves an installation id to its display fields. Layers only
+		// carry the id and mod id, so the title has to come from the installation
+		// record; a layer whose record is gone still names its owner.
+		ownerByID := make(map[string]LocalSubmodOwner, len(manifest.Installations))
+		for instID, inst := range manifest.Installations {
 			if inst == nil {
 				continue
 			}
-			for _, p := range inst.Paths {
-				managedKeys[canonicalizePathKey(p)] = true
+			id := inst.InstallationID
+			if id == "" {
+				id = instID
+			}
+			owner := LocalSubmodOwner{InstallationID: id, ModID: inst.ModID, Title: inst.Title}
+			if _, seen := ownerByID[id]; !seen {
+				ownerByID[id] = owner
+			}
+			// Older ledgers key the record differently from its installation_id.
+			if _, seen := ownerByID[instID]; !seen {
+				ownerByID[instID] = owner
 			}
 		}
-		for key := range manifest.Files {
+		addOwner := func(byDir map[string]map[string]LocalSubmodOwner, pathKey, instID, fallbackModID string) {
+			dirKey := submodDirKey(pathKey)
+			if dirKey == "" || instID == "" {
+				return
+			}
+			owner, known := ownerByID[instID]
+			if !known {
+				owner = LocalSubmodOwner{InstallationID: instID, ModID: fallbackModID}
+			}
+			bucket := byDir[dirKey]
+			if bucket == nil {
+				bucket = make(map[string]LocalSubmodOwner)
+				byDir[dirKey] = bucket
+			}
+			// Two paths can reach the same owner. Keep the write deterministic no
+			// matter which order the maps iterate in: a named owner beats an unnamed
+			// one, and identical owners are idempotent.
+			if existing, seen := bucket[owner.InstallationID]; !seen || (existing.Title == "" && owner.Title != "") {
+				bucket[owner.InstallationID] = owner
+			}
+		}
+
+		for instID, inst := range manifest.Installations {
+			if inst == nil {
+				continue
+			}
+			id := inst.InstallationID
+			if id == "" {
+				id = instID
+			}
+			for _, p := range inst.Paths {
+				managedKeys[canonicalizePathKey(p)] = true
+				addOwner(pathOwnersByDir, p, id, "")
+			}
+		}
+		// File layers are the per-file record of who owns a path, so they name the
+		// owner even when an installation's recorded paths are missing or pruned.
+		for key, record := range manifest.Files {
 			managedKeys[canonicalizePathKey(key)] = true
+			if record == nil {
+				continue
+			}
+			for _, layer := range record.Layers {
+				addOwner(layerOwnersByDir, key, layer.InstallationID, layer.ModID)
+			}
 		}
 	}
+
+	// 2. Expand the managed sources into the compile cache files they produce, so
+	// the walk below can ignore generated artifacts of managed scripts. This costs
+	// a stat per managed source plus one directory read per Python module; it is
+	// paid once per installed-view refresh, not per discovered file.
+	artifactKeys := compiledArtifactKeys(masRoot, managedKeys)
 
 	base := filepath.Join(masRoot, "game", "Submods")
 	entries, err := os.ReadDir(base)
@@ -256,8 +403,8 @@ func scanLocalSubmodsCore(masRoot string, manifest *install.Manifest) ([]LocalSu
 				return nil
 			}
 			canonKey := canonicalizePathKey(filepath.Join("game", relToGame))
-			if managedKeys[canonKey] {
-				// Excluded because it's actively managed by manifest
+			if managedKeys[canonKey] || artifactKeys[canonKey] {
+				// Excluded: recorded in the ledger, or compiled from a managed source
 				return nil
 			}
 
@@ -296,6 +443,7 @@ func scanLocalSubmodsCore(masRoot string, manifest *install.Manifest) ([]LocalSu
 
 		item.Warnings = dirWarnings
 		item.Incomplete = dirIncomplete
+		item.ManagedOwners = orderedOwners(ownersForDir(layerOwnersByDir, pathOwnersByDir, canonicalizePathKey(dirName)))
 
 		// Summarize primary name/author/version for backward compatibility
 		for _, reg := range item.Registrations {
