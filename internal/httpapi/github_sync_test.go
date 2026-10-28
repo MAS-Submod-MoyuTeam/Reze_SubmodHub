@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -776,5 +777,162 @@ func TestGitHubSyncRateLimitBackoff(t *testing.T) {
 	}
 	if allResults["mod_ratelimit"] == nil || allResults["mod_ratelimit"].Failed != 1 {
 		t.Fatalf("expected backoff summary in SyncAllGitHubMods: %+v", allResults)
+	}
+}
+
+// createTestZipFiles builds a ZIP from an explicit file map, so a test can shape
+// an archive the scanner rejects.
+func createTestZipFiles(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, body := range files {
+		entry, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// A release whose asset size is already past the archive limit must be rejected
+// from the release metadata. Downloading it spends bandwidth to learn the same
+// fact the size field already states, and the sweep would repeat that download
+// every window.
+func TestGitHubSyncRejectsOversizedAssetWithoutDownloading(t *testing.T) {
+	var downloads int
+	var ghServer *httptest.Server
+	ghServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/octocat/huge/releases":
+			fmt.Fprintf(w, `[{"id":501,"tag_name":"v1.0.0","assets":[{"id":502,"name":"huge.zip","size":%d,"browser_download_url":%q}]}]`,
+				int64(maxArchiveSize)+1, ghServer.URL+"/download/huge.zip")
+		case "/download/huge.zip":
+			downloads++
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ghServer.Close()
+
+	store, err := NewStore(t.TempDir(), Catalog{Mods: []Mod{{
+		ID: "huge", Author: Author{ID: "author"}, Category: "submod",
+		SourceType: "github_releases", GitHubOwner: "octocat", GitHubRepo: "huge",
+		GitHubAssetRegex: `.*\.zip`,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.GitHubClient = github.NewClient(github.WithBaseURL(ghServer.URL), github.WithHTTPClient(ghServer.Client()))
+
+	for run := 0; run < 2; run++ {
+		summary, err := store.SyncMod(context.Background(), "huge")
+		if err != nil {
+			t.Fatalf("sync %d failed: %v", run, err)
+		}
+		if summary.Failed != 1 || summary.Created != 0 {
+			t.Fatalf("sync %d: expected one failed release, got %+v", run, summary)
+		}
+		if downloads != 0 {
+			t.Fatalf("sync %d: oversized asset was downloaded %d times", run, downloads)
+		}
+		if reason := summary.Items[0].Reason; !strings.Contains(reason, "declares") {
+			t.Fatalf("sync %d: reason does not explain the declared size: %q", run, reason)
+		}
+	}
+
+	store.mu.RLock()
+	failures := store.Catalog.Mods[0].GitHubReleaseFailures
+	store.mu.RUnlock()
+	if len(failures) != 1 || failures[0].Kind != releaseFailureTooLarge {
+		t.Fatalf("expected one recorded too_large verdict, got %+v", failures)
+	}
+	if failures[0].LimitBytes != int64(maxArchiveSize) || failures[0].AssetSize != int64(maxArchiveSize)+1 {
+		t.Fatalf("record does not describe the rejected asset: %+v", failures[0])
+	}
+}
+
+// A scan failure is deterministic for the bytes that produced it, so the sync
+// records the verdict against the asset instead of downloading it again on every
+// sweep. A new asset, or an explicit sync, is what retries it.
+func TestGitHubSyncRecordsRejectedArchiveInsteadOfDownloadingAgain(t *testing.T) {
+	ambiguous := createTestZipFiles(t, map[string]string{
+		"one/game/Submods/demo/main.rpy": "init python:\n    pass\n",
+		"two/game/Submods/demo/main.rpy": "init python:\n    pass\n",
+	})
+	var downloads int
+	var ghServer *httptest.Server
+	ghServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/octocat/ambiguous/releases":
+			fmt.Fprintf(w, `[{"id":601,"tag_name":"v1.0.0","assets":[{"id":602,"name":"demo.zip","size":%d,"browser_download_url":%q}]}]`,
+				len(ambiguous), ghServer.URL+"/download/demo.zip")
+		case "/download/demo.zip":
+			downloads++
+			_, _ = w.Write(ambiguous)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ghServer.Close()
+
+	store, err := NewStore(t.TempDir(), Catalog{Mods: []Mod{{
+		ID: "ambiguous", Author: Author{ID: "author"}, Category: "submod",
+		SourceType: "github_releases", GitHubOwner: "octocat", GitHubRepo: "ambiguous",
+		GitHubAssetRegex: `.*\.zip`,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.GitHubClient = github.NewClient(github.WithBaseURL(ghServer.URL), github.WithHTTPClient(ghServer.Client()))
+
+	first, err := store.SyncMod(context.Background(), "ambiguous")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Failed != 1 || downloads != 1 {
+		t.Fatalf("first sync: summary=%+v downloads=%d", first, downloads)
+	}
+	if reason := first.Items[0].Reason; !strings.Contains(reason, "ambiguous package roots") {
+		t.Fatalf("first sync reason = %q", reason)
+	}
+
+	second, err := store.SyncMod(context.Background(), "ambiguous")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Failed != 1 || downloads != 1 {
+		t.Fatalf("second sync re-downloaded the rejected archive: summary=%+v downloads=%d", second, downloads)
+	}
+	if reason := second.Items[0].Reason; !strings.Contains(reason, "recorded") {
+		t.Fatalf("second sync reason = %q, want the recorded verdict", reason)
+	}
+
+	store.mu.RLock()
+	failures := store.Catalog.Mods[0].GitHubReleaseFailures
+	store.mu.RUnlock()
+	if len(failures) != 1 || failures[0].Kind != releaseFailureRejected {
+		t.Fatalf("expected one recorded rejection, got %+v", failures)
+	}
+
+	// An explicit sync is the administrator's retry.
+	if _, err := store.syncMod(context.Background(), "ambiguous", true); err != nil {
+		t.Fatal(err)
+	}
+	if downloads != 2 {
+		t.Fatalf("forced sync did not retry the rejected archive: downloads=%d", downloads)
+	}
+
+	store.mu.RLock()
+	recordedVersions := len(store.Catalog.Versions)
+	store.mu.RUnlock()
+	if recordedVersions != 0 {
+		t.Fatalf("expected no version for a rejected archive, got %d", recordedVersions)
 	}
 }

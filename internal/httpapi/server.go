@@ -189,6 +189,10 @@ type Mod struct {
 	GitHubLastReleaseID     int64      `json:"github_last_release_id,omitempty"`
 	GitHubETag              string     `json:"github_etag,omitempty"`
 	GitHubBackoffUntil      *time.Time `json:"github_backoff_until,omitempty"`
+	// GitHubReleaseFailures remembers the release assets whose import failed for
+	// a reason those exact bytes always reproduce, so the sweep skips them
+	// instead of downloading them again on every window.
+	GitHubReleaseFailures []GitHubReleaseFailure `json:"github_release_failures,omitempty"`
 }
 
 func (m Mod) GetSourceType() string {
@@ -286,6 +290,7 @@ func cleanPublicMod(m Mod) Mod {
 	cp.GitHubBackoffUntil = nil
 	cp.GitHubETag = ""
 	cp.GitHubManifestDigest = ""
+	cp.GitHubReleaseFailures = nil
 	return cp
 }
 
@@ -351,6 +356,16 @@ type Catalog struct {
 
 const maxModImageSize = 10 << 20
 const maxArchiveSize = 128 << 20
+
+var (
+	// errArchiveRejected marks an archive whose bytes can never be stored or
+	// scanned as-is. The verdict belongs to those bytes, not to this attempt, so
+	// a sync can record it against the source asset and stop fetching it.
+	errArchiveRejected = errors.New("archive rejected")
+	// errImportHashMismatch marks an archive that does not match the hash its
+	// source declared for it; the same download reproduces the same mismatch.
+	errImportHashMismatch = errors.New("download_hash_mismatch")
+)
 
 type ReviewAuditEvent struct {
 	ID          string         `json:"id"`
@@ -2066,7 +2081,7 @@ func (s *Store) persistArchiveAs(versionID, base string, src io.Reader, isSprite
 	}
 	if n > maxArchiveSize {
 		_ = os.Remove(tmp)
-		return "", 0, "", packagezip.Report{}, errors.New("archive exceeds 128 MiB limit")
+		return "", 0, "", packagezip.Report{}, fmt.Errorf("%w: archive exceeds %d MiB limit", errArchiveRejected, int64(maxArchiveSize)>>20)
 	}
 	b, err := os.ReadFile(tmp)
 	if err != nil {
@@ -2076,7 +2091,7 @@ func (s *Store) persistArchiveAs(versionID, base string, src io.Reader, isSprite
 	report, err := scanArchiveBytes(b, isSpritepack)
 	if err != nil {
 		_ = os.Remove(tmp)
-		return "", 0, "", packagezip.Report{}, err
+		return "", 0, "", packagezip.Report{}, fmt.Errorf("%w: %v", errArchiveRejected, err)
 	}
 	token, err := randomToken()
 	if err != nil {

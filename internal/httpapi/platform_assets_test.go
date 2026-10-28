@@ -304,6 +304,54 @@ func TestPlatformRequestWithoutPlatformIsRejected(t *testing.T) {
 	}
 }
 
+// A per-platform release whose asset size is already past the limit must be
+// rejected before any platform is downloaded: fetching the platforms that fit
+// would only end in the same failure once the oversized one is reached.
+func TestImportPlatformCandidateRejectsOversizedAssetBeforeDownload(t *testing.T) {
+	store := newPlatformTestStore(t, Version{})
+	windowsZip := makePlatformZip(t, "windows")
+	var downloads int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		downloads++
+		_, _ = w.Write(windowsZip)
+	}))
+	defer upstream.Close()
+
+	release := github.Release{
+		ID:      8,
+		TagName: "v1.0.0",
+		Assets: []github.Asset{
+			{ID: 11, Name: "MyMod-windows.zip", Size: int64(len(windowsZip)), BrowserDownloadURL: upstream.URL + "/download/MyMod-windows.zip"},
+			{ID: 12, Name: "MyMod-android.zip", Size: int64(maxArchiveSize) + 1, BrowserDownloadURL: upstream.URL + "/download/MyMod-android.zip"},
+		},
+	}
+	mod := store.Catalog.Mods[0]
+	platforms, err := selectPlatformsForRelease(release, []GitHubPlatformRule{
+		{Platform: "windows", Regex: "windows"},
+		{Platform: "android", Regex: "android"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := github.NewClient(github.WithAllowInsecureTestHosts(true))
+	result, created := store.importCandidate(context.Background(), client, mod, releaseCandidate{
+		Version: "v1.0.0", ReleaseID: release.ID, Owner: "o", Repo: "r", Platforms: platforms,
+	}, time.Now(), false)
+	if created || result.Action != "failed" {
+		t.Fatalf("expected the release to be rejected, got %+v", result)
+	}
+	if downloads != 0 {
+		t.Fatalf("oversized platform release downloaded %d archives", downloads)
+	}
+	if result.AssetName != "MyMod-android.zip" {
+		t.Fatalf("rejection names %q, want the oversized asset", result.AssetName)
+	}
+	failures := store.Catalog.Mods[0].GitHubReleaseFailures
+	if len(failures) != 1 || failures[0].Kind != releaseFailureTooLarge || failures[0].AssetID != 12 {
+		t.Fatalf("expected one too_large record for asset 12, got %+v", failures)
+	}
+}
+
 // A platform whose asset regex matched nothing falls back to the release zipball;
 // that platform must still end up with downloadable bytes of its own.
 func TestImportPlatformCandidateStoresSourceCodeFallback(t *testing.T) {
@@ -333,7 +381,7 @@ func TestImportPlatformCandidateStoresSourceCodeFallback(t *testing.T) {
 	client := github.NewClient(github.WithAllowInsecureTestHosts(true))
 	result, created := store.importCandidate(context.Background(), client, mod, releaseCandidate{
 		Version: "v1.0.0", ReleaseID: release.ID, Owner: "o", Repo: "r", Platforms: platforms,
-	}, time.Now())
+	}, time.Now(), false)
 	if !created {
 		t.Fatalf("import failed: %+v", result)
 	}

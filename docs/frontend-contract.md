@@ -204,6 +204,7 @@ journal 事务阶段为 `planned -> prepared -> applying -> committing -> commit
 - `github_last_sync_at`: 最近一次同步时间（仅作者工作台与管理端可见，公开目录自动脱敏）。
 - `github_last_sync_error`: 最近一次同步非致命错误描述（仅作者工作台与管理端可见）。
 - `github_last_release_id`: 最近处理的 GitHub Release ID（仅作者工作台与管理端可见）。
+- `github_release_failures`: 已记录为“重试也没有意义”的 Release 资产数组 `[{ release_id, tag, asset_id, asset_name, asset_size, kind, limit_bytes?, reason, recorded_at }]`，`kind` 为 `too_large`（声明大小超过上限，未下载）或 `rejected`（字节无法存储或扫描）。命中记录的 Release 在同步时不再下载，仍以失败条目显示在同步结果中；强制同步会忽略该记录。公开目录自动脱敏。
 - `github_platform_assets`: 可选的分平台资产规则数组 `[{ "platform": "windows" | "android", "regex": "...", "source_code": false }]`。**非空时分平台分发**：每个平台用自己的 RE2 正则匹配同一次 Release 里的资产，`github_asset_regex` 与 `github_source_code` 不再参与匹配。空数组/省略即回到「全平台共用同一个文件」的现行为，因此该字段可以显式传 `[]` 表示“关掉分平台”。非空时该模组的同步不复用 Release 列表 ETag（见下文「下载与描述符」末条）。
 
 ### 分平台资产（GitHub Releases）

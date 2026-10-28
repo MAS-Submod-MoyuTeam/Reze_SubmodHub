@@ -17,11 +17,15 @@ import (
 // Both version-discovery modes (releases API and rezehub.yml) produce these, so
 // scanning, the review gate and version creation have exactly one owner.
 type releaseCandidate struct {
-	Version      string
-	Notes        string
-	DownloadURL  string
-	FileName     string
-	AssetID      int64
+	Version     string
+	Notes       string
+	DownloadURL string
+	FileName    string
+	AssetID     int64
+	// SizeBytes is the size the source declares for a single-file candidate. It
+	// exists so the import can reject an oversized archive before downloading it;
+	// a per-platform candidate carries each asset's own size instead.
+	SizeBytes    int64
 	ReleaseID    int64
 	SourceKind   github.SelectedSourceKind
 	Owner        string
@@ -38,16 +42,31 @@ func (c releaseCandidate) perPlatform() bool {
 	return len(c.Platforms) > 0
 }
 
-// assetFor returns the asset to fetch for platform; a single-file candidate
-// serves every platform with the same archive.
-func (c releaseCandidate) assetFor(platform string) (github.SelectedAsset, bool) {
+// assets lists every archive this candidate would download, in the order the
+// import fetches them. Size checks and rejection records read this one view, so a
+// single-file and a per-platform release are judged by the same rule.
+func (c releaseCandidate) assets() []github.SelectedAsset {
 	if !c.perPlatform() {
-		return github.SelectedAsset{
+		return []github.SelectedAsset{{
 			Kind:        c.SourceKind,
 			AssetID:     c.AssetID,
 			AssetName:   c.FileName,
 			DownloadURL: c.DownloadURL,
-		}, true
+			SizeBytes:   c.SizeBytes,
+		}}
+	}
+	list := make([]github.SelectedAsset, 0, len(c.Platforms))
+	for _, entry := range c.Platforms {
+		list = append(list, entry.Asset)
+	}
+	return list
+}
+
+// assetFor returns the asset to fetch for platform; a single-file candidate
+// serves every platform with the same archive.
+func (c releaseCandidate) assetFor(platform string) (github.SelectedAsset, bool) {
+	if !c.perPlatform() {
+		return c.assets()[0], true
 	}
 	for _, entry := range c.Platforms {
 		if entry.Platform == platform {
@@ -55,6 +74,106 @@ func (c releaseCandidate) assetFor(platform string) (github.SelectedAsset, bool)
 		}
 	}
 	return github.SelectedAsset{}, false
+}
+
+// GitHubReleaseFailure records that one release asset cannot be imported and why.
+//
+// It is the record that stops a sync from downloading the same impossible archive
+// on every sweep: the rejection is a property of those exact bytes, so repeating
+// the download only spends bandwidth to learn the same fact. The asset's own
+// immutable metadata is the identity — a repository that replaces an archive
+// publishes a new asset id and almost always a new size, so a stale record never
+// blocks new bytes. A forced sync ignores recorded decisions on purpose.
+type GitHubReleaseFailure struct {
+	ReleaseID   int64  `json:"release_id,omitempty"`
+	Tag         string `json:"tag,omitempty"`
+	AssetID     int64  `json:"asset_id,omitempty"`
+	AssetName   string `json:"asset_name,omitempty"`
+	AssetSize   int64  `json:"asset_size,omitempty"`
+	AssetSHA256 string `json:"asset_sha256,omitempty"`
+	// Kind separates the two verdicts this record can hold: an archive past the
+	// size limit, and an archive whose bytes cannot be stored or scanned.
+	Kind string `json:"kind"`
+	// LimitBytes is the archive limit that produced a too_large verdict; a later
+	// limit change makes that verdict obsolete by definition.
+	LimitBytes int64     `json:"limit_bytes,omitempty"`
+	Reason     string    `json:"reason"`
+	RecordedAt time.Time `json:"recorded_at"`
+}
+
+const (
+	releaseFailureTooLarge = "too_large"
+	releaseFailureRejected = "rejected"
+)
+
+// matches reports whether this record describes exactly this candidate's asset.
+// AssetSHA256 takes part because correcting a manifest's declared hash is how its
+// author retries a mismatching download.
+func (f GitHubReleaseFailure) matches(cand releaseCandidate, asset github.SelectedAsset) bool {
+	return f.ReleaseID == cand.ReleaseID &&
+		f.AssetID == asset.AssetID &&
+		f.AssetSize == asset.SizeBytes &&
+		f.AssetName == asset.AssetName &&
+		f.AssetSHA256 == cand.ExpectSHA256
+}
+
+// stillBlocks reports whether the verdict still holds under current
+// configuration. Only a size verdict depends on it at all.
+func (f GitHubReleaseFailure) stillBlocks() bool {
+	if f.Kind != releaseFailureTooLarge {
+		return true
+	}
+	return f.LimitBytes == int64(maxArchiveSize)
+}
+
+// oversizedAsset returns the first archive of this candidate whose declared size
+// is already past the archive limit. Asset sizes are known before a single byte is
+// fetched, so an archive that can only end in a limit error is rejected without
+// paying for the download that would discover it.
+func oversizedAsset(cand releaseCandidate) (github.SelectedAsset, bool) {
+	for _, asset := range cand.assets() {
+		if asset.SizeBytes > maxArchiveSize {
+			return asset, true
+		}
+	}
+	return github.SelectedAsset{}, false
+}
+
+// recordedReleaseFailure returns the recorded decision that still blocks one of
+// this candidate's archives, if any.
+func recordedReleaseFailure(mod Mod, cand releaseCandidate) (GitHubReleaseFailure, bool) {
+	for _, asset := range cand.assets() {
+		for _, recorded := range mod.GitHubReleaseFailures {
+			if recorded.matches(cand, asset) && recorded.stillBlocks() {
+				return recorded, true
+			}
+		}
+	}
+	return GitHubReleaseFailure{}, false
+}
+
+// permanentFailureKind names the record kind for a failure these exact bytes will
+// always reproduce, and reports false for a failure worth retrying. Network, HTTP
+// and disk errors never qualify: those can succeed on the next window.
+func permanentFailureKind(err error) (string, bool) {
+	switch {
+	case errors.Is(err, github.ErrTooLarge):
+		return releaseFailureTooLarge, true
+	case errors.Is(err, errArchiveRejected), errors.Is(err, errImportHashMismatch):
+		return releaseFailureRejected, true
+	}
+	return "", false
+}
+
+// failureResult describes one candidate's failed import for the sync summary.
+func failureResult(cand releaseCandidate, assetName string, err error) SyncItemResult {
+	return SyncItemResult{
+		ReleaseID: cand.ReleaseID,
+		Tag:       cand.Version,
+		AssetName: assetName,
+		Action:    "failed",
+		Reason:    err.Error(),
+	}
 }
 
 // importedArchive is the result of downloading and scanning one candidate.
@@ -85,24 +204,131 @@ func newVersionID() (string, error) {
 }
 
 // importCandidate downloads, scans and records one candidate version.
+//
+// It is also the single owner of "this candidate will never be imported": an
+// archive already past the size limit and an archive with a recorded rejection are
+// both answered without touching the network, and an attempt that fails for a
+// reason those exact bytes always reproduce is recorded so the next sweep skips
+// it instead of downloading it again.
+//
 // The returned bool reports whether a version row was actually created; a false
 // result is either a skip (already present) or a failure, as described by the
 // result's Action.
-func (s *Store) importCandidate(ctx context.Context, client *github.Client, mod Mod, cand releaseCandidate, now time.Time) (SyncItemResult, bool) {
+func (s *Store) importCandidate(ctx context.Context, client *github.Client, mod Mod, cand releaseCandidate, now time.Time, force bool) (SyncItemResult, bool) {
+	if asset, oversized := oversizedAsset(cand); oversized {
+		return s.failCandidate(mod, cand, asset, fmt.Errorf("%w: %s declares %d bytes and the archive limit is %d",
+			github.ErrTooLarge, asset.AssetName, asset.SizeBytes, int64(maxArchiveSize)), now)
+	}
+	// A recorded verdict only applies to the bytes that produced it; an explicit
+	// sync is the administrator's override.
+	if !force {
+		if recorded, ok := recordedReleaseFailure(mod, cand); ok {
+			return failureResult(cand, recorded.AssetName, fmt.Errorf("%s (recorded %s; an explicit sync retries it)",
+				recorded.Reason, recorded.RecordedAt.UTC().Format(time.RFC3339))), false
+		}
+	}
 	if cand.perPlatform() {
 		return s.importPlatformCandidate(ctx, client, mod, cand, now)
 	}
 	archive, err := s.downloadAndScanCandidate(ctx, client, mod, cand, now)
 	if err != nil {
-		return SyncItemResult{
-			ReleaseID: cand.ReleaseID,
-			Tag:       cand.Version,
-			AssetName: cand.FileName,
-			Action:    "failed",
-			Reason:    err.Error(),
-		}, false
+		return s.failCandidate(mod, cand, cand.assets()[0], err, now)
 	}
-	return s.commitImportedVersion(mod, cand, archive, now)
+	result, created := s.commitImportedVersion(mod, cand, archive, now)
+	if created {
+		s.forgetReleaseFailures(mod.ID, cand)
+	}
+	return result, created
+}
+
+// failCandidate reports one failed attempt and records it when the failure is
+// permanent for these exact bytes.
+func (s *Store) failCandidate(mod Mod, cand releaseCandidate, asset github.SelectedAsset, err error, now time.Time) (SyncItemResult, bool) {
+	if kind, permanent := permanentFailureKind(err); permanent {
+		s.recordReleaseFailure(mod.ID, cand, asset, kind, err.Error(), now)
+	}
+	return failureResult(cand, asset.AssetName, err), false
+}
+
+// recordReleaseFailure remembers that one asset of a release cannot be imported,
+// so later sweeps skip it. A record for the same asset is replaced, keeping the
+// newest reason and time.
+func (s *Store) recordReleaseFailure(modID string, cand releaseCandidate, asset github.SelectedAsset, kind, reason string, now time.Time) {
+	entry := GitHubReleaseFailure{
+		ReleaseID:   cand.ReleaseID,
+		Tag:         cand.Version,
+		AssetID:     asset.AssetID,
+		AssetName:   asset.AssetName,
+		AssetSize:   asset.SizeBytes,
+		AssetSHA256: cand.ExpectSHA256,
+		Kind:        kind,
+		Reason:      reason,
+		RecordedAt:  now,
+	}
+	if kind == releaseFailureTooLarge {
+		entry.LimitBytes = int64(maxArchiveSize)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.Catalog.Mods {
+		if s.Catalog.Mods[i].ID != modID {
+			continue
+		}
+		mod := &s.Catalog.Mods[i]
+		for j := range mod.GitHubReleaseFailures {
+			if !mod.GitHubReleaseFailures[j].matches(cand, asset) {
+				continue
+			}
+			// A repeated sweep reaches the same verdict; keeping the earlier
+			// record and skipping the write leaves an unchanged catalog untouched.
+			if mod.GitHubReleaseFailures[j].Kind == entry.Kind &&
+				mod.GitHubReleaseFailures[j].Reason == entry.Reason &&
+				mod.GitHubReleaseFailures[j].LimitBytes == entry.LimitBytes {
+				return
+			}
+			mod.GitHubReleaseFailures[j] = entry
+			_ = s.saveLocked()
+			return
+		}
+		mod.GitHubReleaseFailures = append(mod.GitHubReleaseFailures, entry)
+		_ = s.saveLocked()
+		return
+	}
+}
+
+// forgetReleaseFailures drops the recorded verdicts of a candidate that imported,
+// so the catalog keeps only the assets that still block.
+func (s *Store) forgetReleaseFailures(modID string, cand releaseCandidate) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.Catalog.Mods {
+		if s.Catalog.Mods[i].ID != modID {
+			continue
+		}
+		mod := &s.Catalog.Mods[i]
+		kept := mod.GitHubReleaseFailures[:0]
+		for _, recorded := range mod.GitHubReleaseFailures {
+			blocked := false
+			for _, asset := range cand.assets() {
+				if recorded.matches(cand, asset) {
+					blocked = true
+					break
+				}
+			}
+			if !blocked {
+				kept = append(kept, recorded)
+			}
+		}
+		if len(kept) == 0 {
+			mod.GitHubReleaseFailures = nil
+			_ = s.saveLocked()
+			return
+		}
+		mod.GitHubReleaseFailures = kept
+		_ = s.saveLocked()
+		return
+	}
 }
 
 // importPlatformCandidate downloads, scans and records one version that carries
@@ -128,13 +354,7 @@ func (s *Store) importPlatformCandidate(ctx context.Context, client *github.Clie
 					_ = os.Remove(done.Path)
 				}
 			}
-			return SyncItemResult{
-				ReleaseID: cand.ReleaseID,
-				Tag:       cand.Version,
-				AssetName: entry.Asset.AssetName,
-				Action:    "failed",
-				Reason:    fmt.Sprintf("%s: %v", entry.Platform, err),
-			}, false
+			return s.failCandidate(mod, cand, entry.Asset, fmt.Errorf("%s: %w", entry.Platform, err), now)
 		}
 		archives = append(archives, record)
 	}
@@ -216,7 +436,7 @@ func (s *Store) downloadAndScanCandidate(ctx context.Context, client *github.Cli
 	}
 	if cand.ExpectSHA256 != "" && !strings.EqualFold(cand.ExpectSHA256, hash) {
 		_ = os.Remove(finalPath)
-		return importedArchive{}, fmt.Errorf("download_hash_mismatch: %s declares %s but the archive is %s", cand.Version, cand.ExpectSHA256, hash)
+		return importedArchive{}, fmt.Errorf("%w: %s declares %s but the archive is %s", errImportHashMismatch, cand.Version, cand.ExpectSHA256, hash)
 	}
 	return importedArchive{
 		VersionID: versionID,

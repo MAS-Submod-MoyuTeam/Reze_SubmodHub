@@ -288,6 +288,7 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 			candidate.DownloadURL = selected.DownloadURL
 			candidate.FileName = selected.AssetName
 			candidate.AssetID = selected.AssetID
+			candidate.SizeBytes = selected.SizeBytes
 			candidate.SourceKind = selected.Kind
 		}
 		if len(platforms) > 0 {
@@ -296,9 +297,10 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 			candidate.Platforms = platforms
 			candidate.FileName = platforms[0].Asset.AssetName
 			candidate.AssetID = platforms[0].Asset.AssetID
+			candidate.SizeBytes = platforms[0].Asset.SizeBytes
 			candidate.SourceKind = platforms[0].Asset.Kind
 		}
-		result, created := s.importCandidate(ctx, client, *targetMod, candidate, now)
+		result, created := s.importCandidate(ctx, client, *targetMod, candidate, now, force)
 		switch {
 		case created:
 			summary.Created++
@@ -363,7 +365,7 @@ func (s *Store) syncModFromManifest(ctx context.Context, client *github.Client, 
 			Owner:        mod.GitHubOwner,
 			Repo:         mod.GitHubRepo,
 			ExpectSHA256: rel.SHA256,
-		}, now)
+		}, now, force)
 		switch {
 		case created:
 			summary.Created++
