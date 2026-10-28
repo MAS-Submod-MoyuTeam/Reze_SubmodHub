@@ -37,3 +37,9 @@ Local reference projects used during design:
 | 2026-10-24 | work | docs/aegis/work/2026-10-24-app-update-version-probe/91-review-fixes.md | VERSION 探测自查修复（时间戳 flaky、撤掉多余参数、行尾还原、P1 构建期每分钟 REST） |
 | 2026-10-25 | work | docs/aegis/work/2026-10-25-web-catalog-refresh-and-back-to-top/20-checkpoint.md | Web 目录刷新改常驻悬浮入口与失败态修复 checkpoint |
 | 2026-10-25 | work | docs/aegis/work/2026-10-25-web-catalog-refresh-and-back-to-top/90-evidence.md | Web 目录刷新与返回顶部 evidence（122 条单测、真实浏览器几何与失败路径验收） |
+| 2026-10-27 | adr | docs/aegis/adr/ADR-0002-app-update-delivery-authority.md | ADR-0002 Amendment 2026-10-27 - 软件本体在节点上只保留当前发布版本（应用安装包回收，归档仍不删除） |
+| 2026-10-27 | work | docs/aegis/work/2026-10-27-app-asset-retention/10-intent.md | 节点只保留软件本体最新版 intent |
+| 2026-10-27 | work | docs/aegis/work/2026-10-27-app-asset-retention/20-checkpoint.md | 节点只保留软件本体最新版 checkpoint（先齐后删、按 ID 删除并复核、节流） |
+| 2026-10-27 | work | docs/aegis/work/2026-10-27-app-asset-retention/90-evidence.md | 节点只保留软件本体最新版 evidence（全量 go test / vet、连跑与 GOTMPDIR 环境坑） |
+| 2026-10-27 | work | docs/aegis/work/2026-10-27-app-asset-retention/91-review-fixes.md | 评审修复：目录清单取全、安装包形状判定、保留集合非空校验、单轮预算与节流清理；桌面端账本读取收敛与归属回退语义 |
+| 2026-10-29 | work | docs/aegis/work/2026-10-27-app-asset-retention/92-review-fixes.md | 第二轮评审修复：派生字节码大小写、平台声明服务端校验、approve/publish 复核平台覆盖、manifest_corrupt 文案、回收日志错误码 |

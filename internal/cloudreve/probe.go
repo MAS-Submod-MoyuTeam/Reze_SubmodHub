@@ -11,7 +11,7 @@ func (c *Client) DeleteCreatedObject(ctx context.Context, directory string, crea
 	if created.ID == "" || created.Name == "" || created.Type != "file" {
 		return errors.New("cloudreve_cleanup_identity_invalid")
 	}
-	listing, err := c.List(ctx, directory)
+	listing, err := c.ListAll(ctx, directory)
 	if err != nil {
 		return err
 	}
@@ -28,10 +28,14 @@ func (c *Client) DeleteCreatedObject(ctx context.Context, directory string, crea
 	if !found {
 		return nil
 	}
-	if err = c.do(ctx, "DELETE", "/object", map[string]any{"items": []string{created.ID}, "dirs": []string{}}, nil); err != nil {
+	if err = c.RemoveObjects(ctx, directory, []string{created.ID}); err != nil {
 		return err
 	}
-	listing, err = c.List(ctx, directory)
+	// RemoveObjects already confirmed the ID; a probe also owns the name it
+	// created, so the name must be gone too. This is a third complete listing and
+	// is intentional: names are not an identity, so only the name check can prove
+	// the replacement did not happen.
+	listing, err = c.ListAll(ctx, directory)
 	if err != nil {
 		return err
 	}

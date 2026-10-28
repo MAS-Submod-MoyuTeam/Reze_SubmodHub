@@ -83,7 +83,9 @@ func (c *Client) Upload(ctx context.Context, directory, name string, source io.R
 		}
 		offset += count
 	}
-	listing, err = c.List(ctx, directory)
+	// The post-upload read-back decides "the object is not there", so it must see
+	// the whole directory rather than its first page.
+	listing, err = c.ListAll(ctx, directory)
 	if err != nil {
 		return Object{}, err
 	}

@@ -440,8 +440,9 @@ func TestAppMirrorReconcileClaimAndFinish(t *testing.T) {
 		t.Fatalf("ready mirror: %+v", s.Catalog.AppAssetMirrors[done])
 	}
 
-	// A newer release prunes rows of the previous tag; the object stays in the
-	// provider.
+	// A newer release prunes rows of the previous tag. The provider object is not
+	// removed here: retention only retires it once the newer release is fully
+	// mirrored on that node (see app_asset_retention_test.go).
 	rel.TagName = "v9.9.10"
 	if err := s.reconcileAppMirrors(rel, map[string]string{}); err != nil {
 		t.Fatalf("reconcile new tag: %v", err)

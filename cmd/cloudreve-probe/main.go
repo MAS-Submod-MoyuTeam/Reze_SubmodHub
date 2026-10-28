@@ -44,7 +44,7 @@ func run() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
-	if _, err = client.List(ctx, directory); err != nil {
+	if _, err = client.ListAll(ctx, directory); err != nil {
 		return err
 	}
 	if !*transfer {

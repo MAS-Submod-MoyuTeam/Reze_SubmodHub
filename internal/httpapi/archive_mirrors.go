@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +38,10 @@ type deliveryRuntime struct {
 	mu         sync.Mutex
 	clients    map[string]cloudreveSession
 	workerOnce sync.Once
+	// appPruneAt throttles app-installer retention per node revision; it is
+	// process state only, because a missed pass costs one interval, not data.
+	pruneMu    sync.Mutex
+	appPruneAt map[string]time.Time
 }
 
 // mirrorCandidate reports whether a version can be mirrored to a storage node.
@@ -132,6 +137,16 @@ func (s *Store) forgetDeliverySession(id string) {
 		}
 	}
 	s.deliveryRuntime.mu.Unlock()
+	// Retention pacing is keyed by node revision: a removed, disabled or
+	// reconfigured node must not inherit the old window, and the table must not
+	// accumulate keys for nodes that no longer exist.
+	s.deliveryRuntime.pruneMu.Lock()
+	for key := range s.deliveryRuntime.appPruneAt {
+		if strings.HasPrefix(key, id+"/") {
+			delete(s.deliveryRuntime.appPruneAt, key)
+		}
+	}
+	s.deliveryRuntime.pruneMu.Unlock()
 }
 func (s *Store) finishMirror(job ArchiveMirror, fileID string, workErr error) error {
 	s.mu.Lock()

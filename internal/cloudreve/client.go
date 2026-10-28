@@ -75,10 +75,17 @@ func New(cfg Config) (*Client, error) {
 	}}}, nil
 }
 
-// raw never follows API redirects; cookies cannot reach storage hosts.
+// raw never follows API redirects; cookies cannot reach storage hosts. The path
+// may carry a query string ("/directory/x?page=2"), which becomes the request
+// query instead of being escaped into the path.
 func (c *Client) raw(ctx context.Context, method, path string, body io.Reader, contentType string, out any) error {
 	u := *c.base
-	u.Path = strings.TrimRight(c.base.Path, "/") + path
+	requestPath, rawQuery := path, ""
+	if i := strings.IndexByte(path, '?'); i >= 0 {
+		requestPath, rawQuery = path[:i], path[i+1:]
+	}
+	u.Path = strings.TrimRight(c.base.Path, "/") + requestPath
+	u.RawQuery = rawQuery
 	u.RawPath = ""
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {

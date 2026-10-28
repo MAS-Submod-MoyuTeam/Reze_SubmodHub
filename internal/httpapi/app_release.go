@@ -551,6 +551,9 @@ func (s *Store) maintainAppAssets(ctx context.Context) {
 		return
 	}
 	if !ok {
+		// Nothing left to upload for the served release, so every one of its assets
+		// is downloadable: installers of releases this node no longer serves can go.
+		s.pruneStaleAppAssets(ctx, false)
 		return
 	}
 	workCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
