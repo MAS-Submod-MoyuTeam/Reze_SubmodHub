@@ -355,7 +355,7 @@ type Catalog struct {
 }
 
 const maxModImageSize = 10 << 20
-const maxArchiveSize = 128 << 20
+const maxArchiveSize = 256 << 20
 
 var (
 	// errArchiveRejected marks an archive whose bytes can never be stored or

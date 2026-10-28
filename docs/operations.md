@@ -105,7 +105,7 @@ curl -s http://100.72.137.92:18083/ | grep -o 'assets/index-[^"]*' # 与本地 d
   - 例如：`https://gh-proxy.com/{url}` 或 `https://proxy.example/fetch?url={url_encoded}`
   - 必须使用 `https://` 协议，不得包含凭证或锚点。留空并保存表示清空并恢复直连。
 - **持久化机制**：设置保存在 PostgreSQL `catalog_snapshot`（或本地 JSON 快照）中，API 重启不丢失。
-- **容量与并发**：API 容器 `/tmp` tmpfs 挂载大小为 320 MiB，系统通过全局信号量限制同时进行的临时下载（同步与中转下载合计并发上限为 2），单个下载上限为 128 MiB 与 5 分钟超时，防止耗尽容器 tmpfs。
+- **容量与并发**：API 容器 `/tmp` tmpfs 挂载大小为 640 MiB（容纳 2 个并发 256 MiB 临时文件），系统通过全局信号量限制同时进行的临时下载（同步与中转下载合计并发上限为 2），单个下载上限为 256 MiB 与 5 分钟超时，防止耗尽容器 tmpfs。`deploy/compose.yaml` 的 tmpfs 大小必须不小于「并发上限 × 单文件上限」，否则大包并发会先耗尽 tmpfs。
 - **排障错误码**：
   - `502 github_upstream_failed`：代理服务器不可达或 GitHub 报告 404/网络错误。
   - `504 github_upstream_timeout`：代理或上游下载超时。

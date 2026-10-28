@@ -39,7 +39,7 @@ services:
     volumes:
       - ./data:/data
     tmpfs:
-      - /tmp:size=320m,mode=1777
+      - /tmp:size=640m,mode=1777
     read_only: true
     security_opt:
       - no-new-privileges:true
