@@ -486,6 +486,64 @@ func TestUploadedPlatformVersionCanBeSubmitted(t *testing.T) {
 	}
 }
 
+// The catalog advertises the mod's platforms, not the version's files. A
+// per-platform version that never received one declared platform's archive must
+// not reach review: the listing would stay visible on a platform whose download
+// has no bytes behind it.
+func TestSubmitRequiresEveryDeclaredPlatformArchive(t *testing.T) {
+	store := newPlatformTestStore(t, Version{})
+	store.mu.Lock()
+	store.Catalog.Mods[0].SupportedPlatforms = []string{"windows", "android"}
+	store.mu.Unlock()
+	token := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "author"}, Expires: time.Now().Add(time.Hour)}
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	res := uploadPlatformArchive(t, server, token, "v1", "windows", "MyMod-windows.zip", makePlatformZip(t, "windows"))
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("windows upload status = %d", res.StatusCode)
+	}
+	res.Body.Close()
+
+	submit := func() *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, server.URL+"/api/v1/author/versions/v1/submit", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
+		res, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+
+	res = submit()
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("submit with only windows uploaded = %d: %s", res.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "archive_required") || !strings.Contains(string(body), "android") {
+		t.Fatalf("submit error must name the missing platform: %s", body)
+	}
+
+	res = uploadPlatformArchive(t, server, token, "v1", "android", "MyMod-android.zip", makePlatformZip(t, "android"))
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("android upload status = %d", res.StatusCode)
+	}
+	res.Body.Close()
+
+	res = submit()
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("submit after every declared platform = %d: %s", res.StatusCode, body)
+	}
+}
+
 // Re-uploading one platform of a version that is already back with the author
 // must not rewrite the other platform's report: a reviewer reading the windows
 // report must never see android's file list.
@@ -1225,4 +1283,192 @@ func TestSanitizeForClientClearsPlatformPaths(t *testing.T) {
 	if clean.PlatformAssets[0].SHA256 != "h" || clean.PlatformAssets[0].Platform != "windows" {
 		t.Fatalf("sanitize dropped public platform fields: %+v", clean.PlatformAssets)
 	}
+}
+
+// declarePlatforms drives one author-mod request through the real router.
+func declarePlatforms(t *testing.T, server *httptest.Server, token, method, path, body string) (int, Mod, string) {
+	t.Helper()
+	req, err := http.NewRequest(method, server.URL+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
+	res, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	payload, _ := io.ReadAll(res.Body)
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		return res.StatusCode, Mod{}, string(payload)
+	}
+	var mod Mod
+	if err := json.Unmarshal(payload, &mod); err != nil {
+		t.Fatal(err)
+	}
+	return res.StatusCode, mod, string(payload)
+}
+
+// A local mod's declaration is the platform set the catalog advertises and both
+// publish gates depend on, so the server normalizes and validates it instead of
+// trusting the request body.
+func TestLocalModPlatformDeclarationIsValidatedOnCreate(t *testing.T) {
+	store, err := NewStore(t.TempDir(), Catalog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("a", 64)
+	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "author"}, Roles: []string{"admin", "author"}, Expires: time.Now().Add(time.Hour)}
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	base := `{"title":"Local Mod","summary":"s","description":"d","category":"submod","tags":["工具"]`
+	for _, tc := range []struct {
+		name          string
+		extra         string
+		wantStatus    int
+		wantPlatforms []string
+	}{
+		{"declared", `,"supported_platforms":["android"]`, http.StatusCreated, []string{"android"}},
+		{"canonicalized", `,"supported_platforms":["Windows","android"]`, http.StatusCreated, []string{"windows", "android"}},
+		{"absent keeps the historical default", ``, http.StatusCreated, []string{"windows", "android"}},
+		{"empty is rejected", `,"supported_platforms":[]`, http.StatusBadRequest, nil},
+		{"unknown platform is rejected", `,"supported_platforms":["linux"]`, http.StatusBadRequest, nil},
+		{"duplicate is rejected", `,"supported_platforms":["windows","windows"]`, http.StatusBadRequest, nil},
+	} {
+		status, mod, body := declarePlatforms(t, server, token, http.MethodPost, "/api/v1/author/mods", base+tc.extra+`}`)
+		if status != tc.wantStatus {
+			t.Fatalf("%s: status %d, want %d: %s", tc.name, status, tc.wantStatus, body)
+		}
+		if tc.wantPlatforms == nil {
+			continue
+		}
+		if !slices.Equal(mod.SupportedPlatforms, tc.wantPlatforms) {
+			t.Fatalf("%s: advertised %v, want %v", tc.name, mod.SupportedPlatforms, tc.wantPlatforms)
+		}
+	}
+}
+
+// A metadata-only edit must not wipe the declaration, while an explicit (and
+// invalid) declaration is still rejected instead of being written through.
+func TestLocalModPlatformDeclarationOnEdit(t *testing.T) {
+	store, err := NewStore(t.TempDir(), Catalog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("a", 64)
+	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "author"}, Roles: []string{"admin", "author"}, Expires: time.Now().Add(time.Hour)}
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	status, created, body := declarePlatforms(t, server, token, http.MethodPost, "/api/v1/author/mods",
+		`{"title":"Edit Me","summary":"s","description":"d","category":"submod","tags":["工具"],"supported_platforms":["android"]}`)
+	if status != http.StatusCreated {
+		t.Fatalf("create: %d %s", status, body)
+	}
+
+	metadataOnly := `{"title":"Edit Me v2","summary":"s","description":"d","category":"submod","tags":["工具"]}`
+	status, edited, body := declarePlatforms(t, server, token, http.MethodPatch, "/api/v1/author/mods/"+created.ID, metadataOnly)
+	if status != http.StatusOK {
+		t.Fatalf("metadata edit: %d %s", status, body)
+	}
+	if !slices.Equal(edited.SupportedPlatforms, []string{"android"}) {
+		t.Fatalf("metadata edit wiped the declaration: %v", edited.SupportedPlatforms)
+	}
+
+	status, edited, body = declarePlatforms(t, server, token, http.MethodPatch, "/api/v1/author/mods/"+created.ID,
+		`{"title":"Edit Me v3","summary":"s","description":"d","category":"submod","tags":["工具"],"supported_platforms":["windows"]}`)
+	if status != http.StatusOK {
+		t.Fatalf("declaration edit: %d %s", status, body)
+	}
+	if !slices.Equal(edited.SupportedPlatforms, []string{"windows"}) {
+		t.Fatalf("declaration edit stored %v, want windows", edited.SupportedPlatforms)
+	}
+
+	status, _, body = declarePlatforms(t, server, token, http.MethodPatch, "/api/v1/author/mods/"+created.ID,
+		`{"title":"Edit Me v4","summary":"s","description":"d","category":"submod","tags":["工具"],"supported_platforms":[]}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("empty declaration edit: %d %s", status, body)
+	}
+	stored := store.Catalog.Mods[0]
+	if !slices.Equal(stored.SupportedPlatforms, []string{"windows"}) {
+		t.Fatalf("a rejected edit changed the stored declaration: %v", stored.SupportedPlatforms)
+	}
+}
+
+// A per-platform version that cannot serve a declared platform must not reach
+// the catalog: the submit gate catches the author, and both review transitions
+// re-check because the declaration can widen afterwards.
+func TestReviewPublishRefusesUncoveredDeclaredPlatform(t *testing.T) {
+	store := newPlatformTestStore(t, Version{
+		State:          "ready_for_review",
+		PlatformAssets: []PlatformAssetRule{{Platform: "windows", ArchivePath: "w.zip", SizeBytes: 1, SHA256: "h"}},
+	})
+	token := strings.Repeat("a", 64)
+	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "admin"}, Roles: []string{"admin"}, Expires: time.Now().Add(time.Hour)}
+	store.mu.Lock()
+	store.Catalog.Mods[0].SupportedPlatforms = []string{"windows", "android"}
+	store.Catalog.Submissions = []Submission{{ID: "sub_1", ModID: "m1", VersionID: "v1", State: "ready_for_review"}}
+	store.mu.Unlock()
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	decide := func(body string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, server.URL+"/api/v1/review/submissions/sub_1/decision", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
+		res, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+
+	res := decide(`{"decision":"approve","reason":"ok"}`)
+	expectCode(t, res, "archive_required")
+	store.mu.RLock()
+	sub := store.Catalog.Submissions[0]
+	store.mu.RUnlock()
+	if sub.State != "ready_for_review" || sub.ReviewerID != "" {
+		t.Fatalf("a refused approval must not touch the submission: %+v", sub)
+	}
+
+	// The publish transition of an already-approved submission applies the same
+	// rule, so a declaration widened after approval cannot slip a 404 through.
+	store.mu.Lock()
+	store.Catalog.Submissions[0].State = "approved"
+	store.mu.Unlock()
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/api/v1/review/submissions/sub_1/publish", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
+	res, err = server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectCode(t, res, "archive_required")
+
+	// Once the version covers the declared platform, the same transition works.
+	store.mu.Lock()
+	v := store.Catalog.Versions["v1"]
+	v.PlatformAssets = append(v.PlatformAssets, PlatformAssetRule{Platform: "android", ArchivePath: "a.zip", SizeBytes: 1, SHA256: "h2"})
+	store.Catalog.Versions["v1"] = v
+	store.mu.Unlock()
+	req, err = http.NewRequest(http.MethodPost, server.URL+"/api/v1/review/submissions/sub_1/publish", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
+	res, err = server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("covered version must publish: %d", res.StatusCode)
+	}
+	res.Body.Close()
 }

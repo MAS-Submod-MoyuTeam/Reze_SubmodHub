@@ -214,6 +214,91 @@ func (s *Store) requireSubmittableArchives(v Version) error {
 	return nil
 }
 
+// missingDeclaredPlatformArchives reports platforms the catalog advertises for
+// this mod but the version cannot serve.
+//
+// A shared archive serves every declared platform, so it never misses one. A
+// per-platform version only covers the platforms it actually uploaded files for,
+// and the catalog keeps advertising the mod's supported_platforms: submitting
+// such a version would publish a listing whose download expires in a 404 on the
+// missing platform. The author can still drop the platform from the mod (or
+// upload its archive) before submitting.
+func missingDeclaredPlatformArchives(v Version, declared []string) []string {
+	if len(v.PlatformAssets) == 0 {
+		return nil
+	}
+	missing := []string{}
+	for _, platform := range SupportedPlatforms {
+		if !slices.Contains(declared, platform) {
+			continue
+		}
+		shipped := slices.ContainsFunc(v.PlatformAssets, func(file PlatformAssetRule) bool {
+			return file.Platform == platform
+		})
+		if !shipped {
+			missing = append(missing, platform)
+		}
+	}
+	return missing
+}
+
+// declaredPlatformsForMod returns the platform set the catalog advertises for one
+// mod, or nil when the mod is gone. Callers must hold Store.mu (read or write):
+// the helper does not lock because submit already holds a read lock while review
+// publish holds the write lock.
+func (s *Store) declaredPlatformsForMod(modID string) []string {
+	for i := range s.Catalog.Mods {
+		if s.Catalog.Mods[i].ID == modID {
+			return s.Catalog.Mods[i].SupportedPlatforms
+		}
+	}
+	return nil
+}
+
+// requirePublishablePlatformCoverage refuses a per-platform version that does not
+// cover every platform its mod advertises. Submission checks the same rule for
+// the author, but publishing re-checks it: the declaration can widen after the
+// author submitted, and submissions created before that gate existed never saw
+// it. Callers must hold Store.mu.
+func (s *Store) requirePublishablePlatformCoverage(v Version) error {
+	declared := s.declaredPlatformsForMod(v.ModID)
+	missing := missingDeclaredPlatformArchives(v, declared)
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("upload the ZIP archive for %s before publishing: the catalog advertises this mod on %s", strings.Join(missing, ", "), strings.Join(declared, ", "))
+}
+
+// normalizeDeclaredPlatforms validates the platform declaration of a local mod.
+// Only platforms that can ship their own archive are accepted, duplicates and
+// unknown values are rejected, and the result is empty-free and in canonical
+// order: the catalog filter and both publish gates rely on the stored set being
+// a non-empty subset of SupportedPlatforms.
+//
+// An empty input is a caller error, not "publish everywhere". A request that
+// omits the field entirely is a different case and belongs to the handler, which
+// applies the historical all-platforms default at creation time.
+func normalizeDeclaredPlatforms(raw []string) ([]string, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("declare at least one platform (windows or android)")
+	}
+	out := make([]string, 0, len(raw))
+	seen := map[string]bool{}
+	for _, value := range raw {
+		platform := normalizePlatform(value)
+		if platform == "" {
+			return nil, fmt.Errorf("unsupported platform %q: only windows and android can be declared", value)
+		}
+		if seen[platform] {
+			return nil, fmt.Errorf("platform %s is declared twice", platform)
+		}
+		seen[platform] = true
+		out = append(out, platform)
+	}
+	slices.SortFunc(out, func(a, b string) int { return platformOrder(a) - platformOrder(b) })
+	return out, nil
+}
+
 // requirePlatformScanReports is the review gate for the scan half of the same
 // promise: every platform file a version ships must have been scanned on its
 // own. A per-platform version whose summary report exists but whose second

@@ -20,12 +20,13 @@ import {
 } from './sourceConfig';
 import { formatVersionCreatedAt } from './versionDate';
 import { formatVersionLabel } from './versionHistory';
-import { formatBytes } from './formatBytes';
 import { DeprecationNotice } from './DeprecationNotice';
 import { MarkdownText } from './MarkdownText';
 import { mapDependencyInput, mapDependencyRangeInput, mapDependencySelection } from './dependencyMapping';
 import { DependencyNamePicker } from './DependencyNamePicker';
 import { canEditVersion, versionFormState } from './versionFormState';
+import { VersionArchiveUploader } from './VersionArchiveUploader';
+import { localPlatformDeclaration, missingPlatformArchives, toggleLocalPlatform, uploadPlatforms, versionArchiveShape } from './versionShipping';
 import { clearModImages, fetchModImages, platformScanReportId, reorderModImages, uploadModImages } from '../../../ui/submission-api';
 import { fetchTagCatalog, type TagGroup } from '../../../ui/tags-api';
 import { TagPicker } from './TagPicker';
@@ -231,6 +232,13 @@ export const AuthorWorkbench: React.FC = () => {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
+    // 本站上传的发布平台就是作者勾选的那几个：目录据此展示模组，留空等于
+    // 什么都不发布，所以先拦下来而不是让服务端收到一个空集合。
+    if (newSourceType === 'local' && newPlatforms.length === 0) {
+      showToast('error', '至少勾选一个发布平台（Windows 或 Android）。');
+      return;
+    }
+
     if (newSourceType === 'github_releases') {
       const sourceValidation = validateGitHubSourceInput({
         owner: newGitHubOwner,
@@ -360,7 +368,8 @@ export const AuthorWorkbench: React.FC = () => {
     setNewMasRange(mod.mas_version_range);
     setNewPriority(mod.recommended_priority);
     setNewTags(mod.tags);
-    setNewPlatforms(mod.supported_platforms);
+    // 发布平台只保留真的能单独出包的两个平台；早期草稿的声明集合原样回显。
+    setNewPlatforms(localPlatformDeclaration(mod.supported_platforms));
     setNewSourceType(mod.source_type || 'local');
     setNewGitHubOwner(mod.github_owner || '');
     setNewGitHubRepo(mod.github_repo || '');
@@ -795,6 +804,8 @@ export const AuthorWorkbench: React.FC = () => {
                       <span className="font-medium text-emerald-700">{activeMod.category}</span>
                       <span>·</span>
                       <span>优先级权重: {activeMod.recommended_priority}</span>
+                      <span>·</span>
+                      <span>发布平台: {uploadPlatforms(activeMod.supported_platforms).map(assetPlatformLabel).join(' / ')}</span>
                     </div>
                     <h2 className="text-base font-bold text-neutral-900">{activeMod.title}</h2>
                     <p className="text-xs text-neutral-600 mt-1">{activeMod.summary}</p>
@@ -960,6 +971,11 @@ export const AuthorWorkbench: React.FC = () => {
                         const isPublished = v.state === 'published';
                         const isDraft = v.state === 'draft';
                         const isUploaded = v.state === 'uploaded';
+                        // 目录按模组声明的平台展示，分平台版本缺哪个平台的归档，
+                        // 那个平台的下载就会落空，所以提交前必须补齐。
+                        const missingPlatforms = versionArchiveShape(v) === 'split'
+                          ? missingPlatformArchives(v, uploadPlatforms(activeMod.supported_platforms))
+                          : [];
 
                         return (
                           <div
@@ -1107,53 +1123,36 @@ export const AuthorWorkbench: React.FC = () => {
                             {/* Version Action Toolbar */}
                             <div className="pt-1 flex flex-wrap items-center justify-between gap-3 text-xs">
                               <div className="flex items-center gap-2">
-                                {/* Upload / Re-upload ZIP Trigger. A version with
-                                    per-platform files gets one button per
-                                    platform, so each file is attached to the
-                                    platform it was built for. */}
+                                {/* Upload / Re-upload ZIP Trigger. A version with no
+                                    archive yet picks its shipping shape first:
+                                    one shared ZIP, or one ZIP per platform. */}
                                 {!isPublished && (
-                                  <div className="flex flex-wrap items-center gap-1.5">
-                                    {v.platform_assets && v.platform_assets.length > 0 ? (
-                                      ASSET_PLATFORMS.map((platform) => {
-                                        const asset = v.platform_assets?.find((entry) => entry.platform === platform);
-                                        return (
-                                          <button
-                                            key={platform}
-                                            disabled={isUploading}
-                                            onClick={() => pickArchive(v.id, platform)}
-                                            className="px-3 py-1.5 font-medium text-neutral-800 bg-white hover:bg-neutral-100 rounded border border-neutral-300 flex items-center gap-1.5 transition-colors"
-                                          >
-                                            <Upload className="w-3.5 h-3.5 text-neutral-600" />
-                                            {asset ? `${assetPlatformLabel(platform)}：重新上传 (${formatBytes(asset.size_bytes)})` : `上传 ${assetPlatformLabel(platform)} 归档`}
-                                          </button>
-                                        );
-                                      })
-                                    ) : (
-                                      <button
-                                        disabled={isUploading}
-                                        onClick={() => pickArchive(v.id, '')}
-                                        className="px-3 py-1.5 font-medium text-neutral-800 bg-white hover:bg-neutral-100 rounded border border-neutral-300 flex items-center gap-1.5 transition-colors"
-                                      >
-                                        <Upload className="w-3.5 h-3.5 text-neutral-600" />
-                                        {report ? '重新上传 ZIP 归档' : '上传 ZIP 归档 (application/zip)'}
-                                      </button>
-                                    )}
-                                  </div>
+                                  <VersionArchiveUploader
+                                    version={v}
+                                    declaredPlatforms={activeMod.supported_platforms}
+                                    busy={isUploading}
+                                    onPick={(platform) => pickArchive(v.id, platform)}
+                                  />
                                 )}
                               </div>
 
                               {/* Submit for Review Action (Section 1 & 2 contract) */}
                               {!isPublished && !isUnderReview && isUploaded && report && (
                                 <div className="flex items-center gap-2">
+                                {missingPlatforms.length > 0 && (
+                                  <span className="text-[11px] text-amber-700">
+                                    还需上传 {missingPlatforms.map(assetPlatformLabel).join('、')} 归档（目录已声明这些平台）
+                                  </span>
+                                )}
                                 <label className="flex items-center gap-1.5 text-[11px] text-neutral-600"><input type="checkbox" checked={latestOnPublish[v.id] ?? true} onChange={(event) => setLatestOnPublish((prev) => ({ ...prev, [v.id]: event.target.checked }))} />发布后设为最新版本</label>
                                 <button
-                                  disabled={Boolean(hasBlockers) || !v.version || submittingVersionId === v.id}
+                                  disabled={Boolean(hasBlockers) || !v.version || submittingVersionId === v.id || missingPlatforms.length > 0}
                                   onClick={async () => {
                                     setSubmittingVersionId(v.id);
                                     try { await submitVersionForReview(v.id, latestOnPublish[v.id] ?? true); } finally { setSubmittingVersionId(null); }
                                   }}
                                   className={`px-3.5 py-1.5 font-medium rounded flex items-center gap-1.5 transition-colors shadow-xs ${
-                                    hasBlockers || !v.version || submittingVersionId === v.id
+                                    hasBlockers || !v.version || submittingVersionId === v.id || missingPlatforms.length > 0
                                       ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
                                       : 'bg-emerald-700 hover:bg-emerald-800 text-white'
                                   }`}
@@ -1456,6 +1455,40 @@ export const AuthorWorkbench: React.FC = () => {
                   </button>
                 </div>
               </div>
+
+              {/* 本站上传的发布平台由作者声明：它同时决定目录展示与分平台上传的按钮。
+                  GitHub 源由分平台规则派生，所以这里只对本地源出现。 */}
+              {newSourceType === 'local' && (
+                <div>
+                  <label className="block font-medium text-neutral-700 mb-1">发布平台</label>
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-neutral-100 rounded border border-neutral-200">
+                    {ASSET_PLATFORMS.map((platform) => {
+                      const selected = newPlatforms.includes(platform);
+                      return (
+                        <button
+                          key={platform}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => setNewPlatforms((current) => toggleLocalPlatform(current, platform))}
+                          className={`py-1.5 text-xs font-medium rounded transition-colors ${
+                            selected
+                              ? 'bg-white text-neutral-900 shadow-xs border border-neutral-200/60'
+                              : 'text-neutral-500 hover:text-neutral-800'
+                          }`}
+                        >
+                          {assetPlatformLabel(platform)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-1 text-[11px] text-neutral-500">
+                    只有勾选的平台会出现在目录里。每个版本可以上传一个全平台共用的包，也可以按平台分别上传。
+                  </p>
+                  {newPlatforms.length === 0 && (
+                    <p className="mt-1 text-[11px] text-rose-700">至少勾选一个发布平台。</p>
+                  )}
+                </div>
+              )}
 
               {newSourceType === 'github_releases' && (
                 <div className="rounded border border-emerald-200 bg-emerald-50/40 p-3 space-y-3">

@@ -42,7 +42,7 @@ func TestAuthorReviewPublishLifecycle(t *testing.T) {
 	if v.ReleaseNotes != "first release" {
 		t.Fatalf("release notes were not decoded: %+v", v)
 	}
-	req, _ = http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/author/mods/"+mod.ID, bytes.NewBufferString(`{"title":"Updated Demo","summary":"updated summary","description":"## Updated\n\n**Details**","category":"submod","tags":["功能"],"supported_platforms":["windows","linux"],"mas_version_range":">=0.13.0","recommended_priority":42}`))
+	req, _ = http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/author/mods/"+mod.ID, bytes.NewBufferString(`{"title":"Updated Demo","summary":"updated summary","description":"## Updated\n\n**Details**","category":"submod","tags":["功能"],"supported_platforms":["windows","android"],"mas_version_range":">=0.13.0","recommended_priority":42}`))
 	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
 	res, _ = ts.Client().Do(req)
 	if res.StatusCode != http.StatusOK {

@@ -640,6 +640,20 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 	if srcType == "" {
 		srcType = "local"
 	}
+	// The catalog and both publish gates read supported_platforms as a
+	// non-empty canonical subset of SupportedPlatforms, so a local draft either
+	// declares one (validated here) or falls back to the historical all-platform
+	// default when the field is absent. GitHub sources derive it from their
+	// platform rules below.
+	platforms := slices.Clone(SupportedPlatforms)
+	if srcType != "github_releases" && req.SupportedPlatforms != nil {
+		normalized, err := normalizeDeclaredPlatforms(req.SupportedPlatforms)
+		if err != nil {
+			writeError(w, 400, "validation_failed", err.Error())
+			return
+		}
+		platforms = normalized
+	}
 	// The creation timestamp is the mod's own sort key; it never tracks version
 	// activity, so a strict creation order stays available to list consumers.
 	createdAt := time.Now().UTC()
@@ -651,7 +665,7 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		Author:              Author{ID: session.User.ID, DisplayName: authorDisplayName},
 		Category:            req.Category,
 		Tags:                tags,
-		SupportedPlatforms:  req.SupportedPlatforms,
+		SupportedPlatforms:  platforms,
 		MASVersionRange:     req.MASVersionRange,
 		RecommendedPriority: req.RecommendedPriority,
 		CreatedAt:           &createdAt,
@@ -760,9 +774,11 @@ func (s *Store) authorVersionResource(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	version, exists := s.Catalog.Versions[versionID]
 	var mod *Mod
+	var declaredPlatforms []string
 	for i := range s.Catalog.Mods {
 		if s.Catalog.Mods[i].ID == version.ModID {
 			mod = &s.Catalog.Mods[i]
+			declaredPlatforms = slices.Clone(s.Catalog.Mods[i].SupportedPlatforms)
 			break
 		}
 	}
@@ -856,6 +872,13 @@ func (s *Store) authorVersionResource(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := s.requireSubmittableArchives(version); err != nil {
 			writeError(w, 409, "archive_required", err.Error())
+			return
+		}
+		// The catalog advertises the mod's platforms, not this version's files: a
+		// per-platform version that is missing one of them would go live with a
+		// download that 404s on that platform.
+		if missing := missingDeclaredPlatformArchives(version, declaredPlatforms); len(missing) > 0 {
+			writeError(w, 409, "archive_required", fmt.Sprintf("upload the ZIP archive for %s before submitting for review: the mod publishes for %s", strings.Join(missing, ", "), strings.Join(declaredPlatforms, ", ")))
 			return
 		}
 		if version.ScanReportID == "" {
@@ -1197,7 +1220,6 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		}
 		mod.Category = req.Category
 		mod.Tags = tags
-		mod.SupportedPlatforms = req.SupportedPlatforms
 		mod.MASVersionRange = req.MASVersionRange
 		mod.RecommendedPriority = req.RecommendedPriority
 		if req.SourceType != nil || req.GitHubOwner != nil || req.GitHubRepo != nil || req.GitHubAssetRegex != nil || req.GitHubSourceCode != nil || req.GitHubManifest != nil || req.GitHubPlatformAssets != nil {
@@ -1258,6 +1280,19 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			mod.GitHubSourceCode = newSourceCode
 			mod.GitHubManifest = newManifest
 			mod.GitHubPlatformAssets = normalizedRules
+		}
+		// A local mod's platform declaration is author data, so it is validated on
+		// the way in; omitting the field keeps the stored set (metadata-only edit)
+		// instead of silently wiping the mod's advertising. GitHub sources derive
+		// the set from their rules below.
+		if mod.GetSourceType() != "github_releases" && req.SupportedPlatforms != nil {
+			platforms, err := normalizeDeclaredPlatforms(req.SupportedPlatforms)
+			if err != nil {
+				s.mu.Unlock()
+				writeError(w, 400, "validation_failed", err.Error())
+				return
+			}
+			mod.SupportedPlatforms = platforms
 		}
 		// Keep the advertised platform set derived even when this edit only
 		// touched metadata, so a mod saved with one platform never keeps listing

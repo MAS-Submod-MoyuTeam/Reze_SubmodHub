@@ -333,8 +333,15 @@ func (s *Store) reviewSubmissionResource(w http.ResponseWriter, r *http.Request)
 			writeError(w, 409, "invalid_state", "submission is not approved")
 			return
 		}
-		before, _ := json.Marshal(s.Catalog)
 		v := s.Catalog.Versions[found.VersionID]
+		// Publishing a per-platform version that cannot serve an advertised
+		// platform would put a 404 in the catalog. Submission checks this for the
+		// author; the declaration may have widened since then.
+		if err := s.requirePublishablePlatformCoverage(v); err != nil {
+			writeError(w, 409, "archive_required", err.Error())
+			return
+		}
+		before, _ := json.Marshal(s.Catalog)
 		v.State = "published"
 		s.Catalog.Versions[v.ID] = v
 		for i := range s.Catalog.Mods {
@@ -384,6 +391,15 @@ func (s *Store) reviewSubmissionResource(w http.ResponseWriter, r *http.Request)
 	if found.State != "ready_for_review" {
 		writeError(w, 409, "invalid_state", "submission is not awaiting review")
 		return
+	}
+	// Same promise as submit: approval must not publish a per-platform version
+	// that leaves a declared platform without an archive. Checked before any
+	// in-memory mutation so a rejected approval leaves the submission untouched.
+	if req.Decision == "approve" {
+		if err := s.requirePublishablePlatformCoverage(s.Catalog.Versions[found.VersionID]); err != nil {
+			writeError(w, 409, "archive_required", err.Error())
+			return
+		}
 	}
 	before, _ := json.Marshal(s.Catalog)
 	now := time.Now().UTC()
