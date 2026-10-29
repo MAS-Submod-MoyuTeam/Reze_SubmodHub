@@ -7,7 +7,9 @@ import { useReviewPage } from './useReviewPage';
 import { mapServerScanReport } from '../context/scanReport';
 import { assetPlatformLabel } from '../types/submodhub';
 import { formatVersionLabel } from './versionHistory';
-import { getReviewSubmission, listReviewSubmissions, listReviewAudit, platformScanReportId } from '../../../ui/submission-api';
+import { formatBytes } from './formatBytes';
+import { reviewArchiveErrorText, triggerArchiveSave } from './reviewArchive';
+import { fetchReviewArchive, getReviewSubmission, listReviewSubmissions, listReviewAudit, platformScanReportId } from '../../../ui/submission-api';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -22,6 +24,7 @@ import {
   FileText,
   Clock,
   Sparkles,
+  Download,
 } from 'lucide-react';
 
 export const ReviewerWorkbench: React.FC = () => {
@@ -31,6 +34,7 @@ export const ReviewerWorkbench: React.FC = () => {
     approveSubmission,
     rejectSubmission,
     publishApprovedVersion,
+    showToast,
   } = useApp();
 
   const isReviewer = hasRole('admin');
@@ -89,6 +93,32 @@ export const ReviewerWorkbench: React.FC = () => {
   const [decisionReason, setDecisionReason] = useState('');
   const [decisionSubmissionId, setDecisionSubmissionId] = useState('');
   const [actionPending, setActionPending] = useState(false);
+  const [archiveDownloading, setArchiveDownloading] = useState(false);
+  // The archive under review is not published yet, so the public archive endpoint
+  // would 404 it. The server also says which builds it still stores: a rejection
+  // freezes the build into a snapshot without bytes, and a deleted version keeps
+  // its submission only, so the page must not offer a download that cannot work.
+  // The download follows the platform whose report is on screen, so the ZIP a
+  // reviewer opens is the build the file list above describes.
+  const archivePlatform = shippedPlatforms?.length && (chosenPlatform === 'windows' || chosenPlatform === 'android') ? chosenPlatform : undefined;
+  const archiveAvailability = reviewDetail?.archive_availability;
+  const archiveReady = Boolean(reviewDetail) && (archivePlatform
+    ? (archiveAvailability?.platforms || []).some((platform) => platform === archivePlatform)
+    : Boolean(archiveAvailability?.shared));
+
+  const handleDownloadArchive = async () => {
+    if (!activeSubmissionId || !archiveReady || archiveDownloading) return;
+    setArchiveDownloading(true);
+    try {
+      const archive = await fetchReviewArchive(base, activeSubmissionId, archivePlatform);
+      triggerArchiveSave(archive.blob, archive.filename);
+      showToast('success', `归档已下载并核对 SHA-256（${formatBytes(archive.size_bytes)}）：${archive.filename}`);
+    } catch (error) {
+      showToast('error', `归档下载失败：${reviewArchiveErrorText(error)}`);
+    } finally {
+      setArchiveDownloading(false);
+    }
+  };
 
   if (!isReviewer) {
     return (
@@ -439,6 +469,28 @@ export const ReviewerWorkbench: React.FC = () => {
                         <span className="font-mono">SHA-256：{reviewDetail.version?.sha256 || '-'}</span>
                       </div>
                     )}
+                    {/* Inspecting the package itself, not just its file list, is the point
+                        of a manual review; the bytes live behind an administrator-only route. */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleDownloadArchive}
+                        disabled={!archiveReady || archiveDownloading}
+                        className="px-2.5 py-1 rounded border border-sky-300 bg-white text-sky-900 text-[11px] font-medium hover:border-sky-500 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-400 flex items-center gap-1.5 transition-colors"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        {archiveDownloading
+                          ? '正在下载并校验…'
+                          : `下载${archivePlatform ? ` ${assetPlatformLabel(archivePlatform)} ` : ''}归档核对`}
+                      </button>
+                      <span className="text-[11px] text-neutral-500">
+                        {archiveReady
+                          ? '保存前按服务端记录核对大小与 SHA-256。'
+                          : archivePlatform
+                            ? '服务端没有保留所选平台的归档字节，无法下载核对。'
+                            : '服务端没有保留这个版本的归档字节，无法下载核对。'}
+                      </span>
+                    </div>
                     {selectedServerReport && (
                       <div><span className="font-semibold">{shippedPlatforms?.length ? `${assetPlatformLabel(chosenPlatform)} 报告变化：` : '文件变化：'}</span>{selectedServerReport.files?.length || 0} 个文件；不支持路径 {selectedServerReport.unsupported?.length || 0} 个；冲突 {selectedServerReport.conflicts?.length || 0} 个</div>
                     )}

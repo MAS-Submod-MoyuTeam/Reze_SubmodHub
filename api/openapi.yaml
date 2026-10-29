@@ -173,6 +173,23 @@ paths:
         - {name: submission_id, in: path, required: true, schema: {type: string}}
         - {name: action, in: path, required: true, schema: {type: string, enum: [decision, publish]}}
       responses: {'200': {description: Updated submission}, 'default': {$ref: '#/components/responses/Error'}}
+  /review/submissions/{submission_id}/archive:
+    get:
+      operationId: downloadReviewArchive
+      description: Administrator-only download of the ZIP behind a submission. Serves only bytes this server stores — the file the scan report describes, never a relay of whatever upstream holds now. A rejected submission shows a frozen snapshot and a deleted version keeps no bytes, so both answer 404 archive_not_found. The inspection is not counted as a catalog download.
+      parameters:
+        - {name: submission_id, in: path, required: true, schema: {type: string}}
+        - {name: platform, in: query, schema: {type: string, enum: [windows, android]}, description: 'Required for a per-platform version (400 platform_required, 404 platform_not_found). A single-archive version accepts any supported platform as a no-op, like the public archive endpoint; an unknown platform still answers 404.'}
+      responses:
+        '200':
+          description: The stored archive
+          headers:
+            Content-Disposition: {schema: {type: string}, description: Server-named attachment file.}
+            X-Archive-SHA256: {schema: {type: string}, description: Hash recorded for these bytes.}
+            X-Version-ID: {schema: {type: string}}
+            X-Archive-Platform: {schema: {type: string}, description: Present only for a per-platform build.}
+          content: {application/zip: {schema: {type: string, format: binary}}}
+        'default': {$ref: '#/components/responses/Error'}
 components:
   parameters:
     ReviewPage: {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}

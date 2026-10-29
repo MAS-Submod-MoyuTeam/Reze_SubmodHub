@@ -66,9 +66,16 @@ type Version struct {
 func (v Version) SanitizeForClient() Version {
 	v.GitHubSource = nil
 	v.ArchivePath = ""
-	for i := range v.PlatformAssets {
-		// Local file locations are server-side bookkeeping, like ArchivePath.
-		v.PlatformAssets[i].ArchivePath = ""
+	if len(v.PlatformAssets) > 0 {
+		// Clone before clearing: the slice header is shared with the catalog (and
+		// with any other copy of this version), so writing through it would erase
+		// the server-side paths of a record that was only meant to be projected
+		// for a client.
+		v.PlatformAssets = slices.Clone(v.PlatformAssets)
+		for i := range v.PlatformAssets {
+			// Local file locations are server-side bookkeeping, like ArchivePath.
+			v.PlatformAssets[i].ArchivePath = ""
+		}
 	}
 	return v
 }

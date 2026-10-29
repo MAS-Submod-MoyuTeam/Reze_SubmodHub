@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, createAuthorMod, reorderModImages, uploadModImages, updateAuthorModSource, syncAuthorModGitHub, unpublishAuthorMod, uploadAuthorArchive } from './submission-api';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, createAuthorMod, reorderModImages, uploadModImages, updateAuthorModSource, syncAuthorModGitHub, unpublishAuthorMod, uploadAuthorArchive, fetchReviewArchive } from './submission-api';
 
 test('loads one authenticated author mod window without nested versions', async () => {
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -277,3 +279,38 @@ test('sends per-platform release rules and clears them with an empty list', asyn
   assert.deepEqual((bodies[1] as { github_platform_assets?: unknown }).github_platform_assets, []);
 });
 
+
+test('downloads the archive a reviewer is inspecting and verifies the recorded hash', async () => {
+  const bytes = new TextEncoder().encode('PK-review-archive');
+  const digest = bytesToHex(sha256(bytes));
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), '/api/v1/review/submissions/sub_1/archive?platform=android');
+    assert.equal(init?.credentials, 'same-origin');
+    return new Response(bytes, { status: 200, headers: { 'X-Archive-SHA256': digest, 'Content-Disposition': 'attachment; filename="m1_1.0.0_android.zip"' } });
+  }) as typeof fetch;
+  const result = await fetchReviewArchive('/api/v1', 'sub_1', 'android', fetcher);
+  assert.equal(result.filename, 'm1_1.0.0_android.zip');
+  assert.equal(result.sha256, digest);
+  assert.equal(result.size_bytes, bytes.byteLength);
+  assert.equal(result.blob.size, bytes.byteLength);
+});
+
+test('accepts a single-archive version without naming a platform', async () => {
+  const bytes = new TextEncoder().encode('PK-review-archive');
+  const fetcher = (async (input: RequestInfo | URL) => {
+    assert.equal(String(input), '/api/v1/review/submissions/sub_1/archive');
+    return new Response(bytes, { status: 200 });
+  }) as typeof fetch;
+  const result = await fetchReviewArchive('/api/v1', 'sub_1', undefined, fetcher);
+  assert.equal(result.filename, 'review_sub_1.zip');
+});
+
+test('drops a review archive that does not match the server-recorded hash', async () => {
+  const fetcher = (async () => new Response(new TextEncoder().encode('PK-other'), { status: 200, headers: { 'X-Archive-SHA256': bytesToHex(sha256(new TextEncoder().encode('PK-expected'))) } })) as typeof fetch;
+  await assert.rejects(fetchReviewArchive('/api/v1', 'sub_1', undefined, fetcher), /download_hash_mismatch/);
+});
+
+test('reports the server code when a submission has no stored archive', async () => {
+  const fetcher = (async () => Response.json({ code: 'archive_not_found' }, { status: 404 })) as typeof fetch;
+  await assert.rejects(fetchReviewArchive('/api/v1', 'sub_1', undefined, fetcher), /archive_not_found/);
+});

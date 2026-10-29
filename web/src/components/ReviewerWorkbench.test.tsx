@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createRoot } from 'react-dom/client';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 import { AppProvider } from '../context/AppContext';
 import { ReviewerWorkbench } from './ReviewerWorkbench';
 
@@ -46,7 +48,7 @@ test('reviewer requests server pages, retries failures, and refreshes the last f
     }
     if (url.pathname.endsWith('/review/audit')) return Response.json({ items: [], total: 43, page: Number(url.searchParams.get('page')), page_size: Number(url.searchParams.get('page_size')) });
     const row = rows.find((item) => url.pathname.endsWith('/' + item.id));
-    if (row) return Response.json({ submission: row, mod: { summary: `Detail ${row.id}` }, version: { id: row.version_id, dependencies: [] }, scan_report: { files: [{ source: 'file.rpy', target: 'game/file.rpy', size: 12, sha256: 'hash', class: 'script' }] } });
+    if (row) return Response.json({ submission: row, mod: { summary: `Detail ${row.id}` }, version: { id: row.version_id, dependencies: [] }, scan_report: { files: [{ source: 'file.rpy', target: 'game/file.rpy', size: 12, sha256: 'hash', class: 'script' }] }, archive_availability: { shared: false, platforms: [] } });
     throw Error('unexpected request ' + path);
   }) as typeof fetch;
   const container = dom.window.document.getElementById('root')!;
@@ -151,6 +153,7 @@ test('reviewer opens each platform report of a per-platform submission', async (
           'scan_v1-windows': { files: [{ source: 'windows.rpy', target: 'game/windows.rpy', size: 11, sha256: 'h1', class: 'script' }] },
           'scan_v1-android': { files: [{ source: 'android.rpy', target: 'game/android.rpy', size: 22, sha256: 'h2', class: 'script' }] },
         },
+        archive_availability: { shared: false, platforms: ['windows', 'android'] },
       });
     }
     throw Error('unexpected request ' + path);
@@ -178,5 +181,120 @@ test('reviewer opens each platform report of a per-platform submission', async (
     await act(async () => { root.unmount(); });
     dom.window.close();
     Object.assign(globalThis, { window: oldWindow, document: oldDocument, fetch: oldFetch });
+  }
+});
+
+// Approving a package nobody opened is exactly what this workspace exists to
+// prevent, so the reviewer has to be able to read the ZIP the submission would
+// publish — and the server, not the page, decides whether those bytes exist.
+async function mountReviewArchive(availability: { shared: boolean; platforms: string[] }, versionExtra: Record<string, unknown> = {}) {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost/' });
+  const oldWindow = globalThis.window;
+  const oldDocument = globalThis.document;
+  const oldFetch = globalThis.fetch;
+  const mutableURL = URL as unknown as { createObjectURL?: (blob: Blob) => string; revokeObjectURL?: (url: string) => void };
+  const oldCreate = mutableURL.createObjectURL;
+  const oldRevoke = mutableURL.revokeObjectURL;
+  const oldClick = dom.window.HTMLAnchorElement.prototype.click;
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
+  const row = { id: 's1', mod_id: 'm1', version_id: 'v1', author_id: 'author', state: 'ready_for_review', mod_title: '待审模组', author_name: 'Author', version_str: '1.0.0', category: 'submod', created_at: '2026-10-21' };
+  const archive = new TextEncoder().encode('PK-review-archive');
+  const digest = bytesToHex(sha256(archive));
+  const requests: string[] = [];
+  const saved: Array<{ download: string }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = String(input);
+    requests.push(path);
+    const url = new URL(path, 'http://localhost');
+    if (url.pathname === '/api/v1/session') return Response.json({ user: { id: 'admin', username: 'admin', display_name: 'Admin' }, roles: ['admin'], csrf_token: 'csrf' });
+    if (['/api/v1/mods', '/api/v1/author/mods', '/api/v1/author/submissions'].includes(url.pathname)) return Response.json({ items: [] });
+    if (url.pathname.endsWith('/review/submissions')) return Response.json({ items: [row], page: 1, page_size: 10, total: 1, pending_count: 1 });
+    if (url.pathname.endsWith('/review/audit')) return Response.json({ items: [], total: 0, page: 1, page_size: 20 });
+    if (url.pathname === '/api/v1/review/submissions/s1/archive') {
+      return new Response(archive, { status: 200, headers: { 'Content-Type': 'application/zip', 'X-Archive-SHA256': digest, 'Content-Disposition': 'attachment; filename="m1_1.0.0.zip"' } });
+    }
+    if (url.pathname.endsWith('/s1')) {
+      return Response.json({ submission: row, mod: { summary: '待审说明' }, version: { id: 'v1', dependencies: [], size_bytes: archive.length, sha256: digest, ...versionExtra }, scan_report: { files: [] }, archive_availability: availability });
+    }
+    throw Error('unexpected request ' + path);
+  }) as typeof fetch;
+  mutableURL.createObjectURL = () => 'blob:review-archive';
+  mutableURL.revokeObjectURL = () => undefined;
+  dom.window.HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) { saved.push({ download: this.download }); };
+  const container = dom.window.document.getElementById('root')!;
+  const root = createRoot(container);
+  const settle = async () => { await act(async () => { await new Promise<void>((resolve) => setImmediate(resolve)); }); };
+  await act(async () => { root.render(<AppProvider><ReviewerWorkbench /></AppProvider>); });
+  await settle();
+  return {
+    container,
+    requests,
+    saved,
+    settle,
+    archiveButton: () => Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.includes('归档核对')),
+    platformTab: (label: string) => Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.trim() === label),
+    restore: async () => {
+      await act(async () => { root.unmount(); });
+      dom.window.HTMLAnchorElement.prototype.click = oldClick;
+      mutableURL.createObjectURL = oldCreate;
+      mutableURL.revokeObjectURL = oldRevoke;
+      dom.window.close();
+      Object.assign(globalThis, { window: oldWindow, document: oldDocument, fetch: oldFetch });
+    },
+  };
+}
+
+test('administrator downloads the pending archive with a verified hash', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const harness = await mountReviewArchive({ shared: true, platforms: [] });
+  try {
+    const button = harness.archiveButton();
+    assert.ok(button, 'the review page offers the archive download');
+    assert.equal((button as HTMLButtonElement).disabled, false);
+    assert.match(harness.container.textContent!, /保存前按服务端记录核对大小与 SHA-256/);
+    await act(async () => { (button as HTMLButtonElement).click(); });
+    await harness.settle();
+    assert.ok(harness.requests.includes('/api/v1/review/submissions/s1/archive'), 'the reviewed submission is downloaded');
+    assert.deepEqual(harness.saved, [{ download: 'm1_1.0.0.zip' }], 'the server names the saved file');
+  } finally {
+    await harness.restore();
+  }
+});
+
+test('review page does not offer a download the server cannot serve', async () => {
+  const harness = await mountReviewArchive({ shared: false, platforms: [] });
+  try {
+    const button = harness.archiveButton() as HTMLButtonElement | undefined;
+    assert.ok(button, 'the control is still shown so the state is explainable');
+    assert.equal(button.disabled, true);
+    assert.match(harness.container.textContent!, /服务端没有保留这个版本的归档字节/);
+    await act(async () => { button.click(); });
+    await harness.settle();
+    assert.equal(harness.requests.some((path) => path.endsWith('/archive')), false, 'a disabled control must not request bytes');
+    assert.equal(harness.saved.length, 0);
+  } finally {
+    await harness.restore();
+  }
+});
+
+test('downloads the build whose report is on screen', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const harness = await mountReviewArchive(
+    { shared: false, platforms: ['windows', 'android'] },
+    { platform_assets: [{ platform: 'windows', size_bytes: 2048, sha256: 'w' }, { platform: 'android', size_bytes: 4096, sha256: 'a' }] },
+  );
+  try {
+    const windows = harness.archiveButton() as HTMLButtonElement;
+    assert.match(windows.textContent!, /Windows/, 'the default download is the build whose report is shown');
+    await act(async () => { harness.platformTab('Android')!.click(); });
+    await harness.settle();
+    const android = harness.archiveButton() as HTMLButtonElement;
+    assert.match(android.textContent!, /Android/);
+    await act(async () => { android.click(); });
+    await harness.settle();
+    assert.ok(harness.requests.includes('/api/v1/review/submissions/s1/archive?platform=android'), 'the chosen build is the one downloaded');
+    assert.equal(harness.saved.length, 1);
+  } finally {
+    await harness.restore();
   }
 });

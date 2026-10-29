@@ -1,4 +1,6 @@
 import type { ServerScanReport } from '../web/src/context/scanReport';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 
 // A platform rule mirrors the server's per-platform discovery: one regex (or the
 // source-code fallback) per platform, matched against every release.
@@ -17,7 +19,12 @@ export interface ApiCursorPage<T> { items: T[]; total: number; page_size: number
 export interface ReviewPageQuery { page: number; pageSize: number; state?: string }
 export interface AuthorModQuery { pageSize: number; cursor?: string; focusModId?: string }
 export interface ApiReviewSubmission { id: string; mod_id: string; version_id: string; author_id: string; state: string; created_at: string; mod_title: string; author_name: string; version_str: string; category: 'submod' | 'spritepack' }
-export interface ApiReviewDetail { submission: ApiSubmission; mod: ApiMod; version: ApiVersion; scan_report?: ServerScanReport; scan_reports?: Record<string, ServerScanReport> }
+export interface ApiReviewDetail { submission: ApiSubmission; mod: ApiMod; version: ApiVersion; scan_report?: ServerScanReport; scan_reports?: Record<string, ServerScanReport>; archive_availability: ReviewArchiveAvailability }
+// Which builds of the submission this server can actually hand over. A deleted
+// version keeps its submission but no bytes, and a rejection freezes the reviewed
+// build into a path-less snapshot, so `shared` and `platforms` are both derived
+// from files the server still stores.
+export interface ReviewArchiveAvailability { shared: boolean; platforms: Array<'windows' | 'android'> }
 export interface ApiReviewAudit { id: string; timestamp: string; actor_id: string; actor_name: string; actor_role: string; action: string; target_type: string; target_id: string; target_label: string; reason: string; details?: Record<string, unknown> }
 
 // The report a version owns is keyed by which file it describes: `scan_<version>`
@@ -73,6 +80,36 @@ export async function listReviewAudit(base: string, query: ReviewPageQuery, sign
   return json(await fetcher(endpoint(base, `/review/audit?${params}`), { credentials: 'same-origin', signal }));
 }
 export async function getReviewSubmission(base: string, id: string, fetcher: typeof fetch = fetch): Promise<ApiReviewDetail> { return json(await fetcher(endpoint(base, `/review/submissions/${encodeURIComponent(id)}`), { credentials: 'same-origin' })); }
+export interface ReviewArchiveDownload { blob: Blob; filename: string; sha256: string; size_bytes: number }
+// Reviewers inspect the package a submission would publish. The public archive
+// endpoint answers for published versions only, so this is the only way to read the
+// bytes of a pending build. The response is checked against the size and hash the
+// server recorded, because a byte-level inspection that silently accepted other
+// bytes would be worse than no download at all.
+export async function fetchReviewArchive(base: string, submissionID: string, platform?: 'windows' | 'android', fetcher: typeof fetch = fetch, signal?: AbortSignal): Promise<ReviewArchiveDownload> {
+  const suffix = platform ? `?platform=${encodeURIComponent(platform)}` : '';
+  const response = await fetcher(endpoint(base, `/review/submissions/${encodeURIComponent(submissionID)}/archive${suffix}`), { credentials: 'same-origin', signal });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { code?: string } | null;
+    throw new Error(body?.code || `http_${response.status}`);
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const declared = Number(response.headers.get('content-length') || 0);
+  if (declared > 0 && bytes.byteLength !== declared) throw new Error('download_size_mismatch');
+  const expected = (response.headers.get('x-archive-sha256') || '').trim().toLowerCase();
+  const digest = bytesToHex(sha256(bytes));
+  if (expected && digest !== expected) throw new Error('download_hash_mismatch');
+  return { blob: new Blob([bytes], { type: 'application/zip' }), filename: attachmentName(response.headers.get('content-disposition')) || `review_${submissionID}.zip`, sha256: digest, size_bytes: bytes.byteLength };
+}
+// The server decides what the saved file is called, so the page never has to
+// reconstruct a version's spelling.
+function attachmentName(header: string | null): string {
+  if (!header) return '';
+  const quoted = /filename\s*=\s*"([^"]+)"/i.exec(header);
+  if (quoted) return quoted[1].trim();
+  const bare = /filename\s*=\s*([^;]+)/i.exec(header);
+  return bare ? bare[1].trim() : '';
+}
 export async function unpublishVersion(base: string, id: string, reason: string, fetcher: typeof fetch = fetch): Promise<ApiVersion> { return json(await fetcher(endpoint(base, `/versions/${encodeURIComponent(id)}/unpublish`), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) })); }
 export async function deleteAuthorVersion(base: string, id: string, fetcher: typeof fetch = fetch): Promise<void> { const response = await fetcher(endpoint(base, `/author/versions/${encodeURIComponent(id)}`), { method: 'DELETE', credentials: 'same-origin' }); if (!response.ok) { const body = await response.json().catch(() => null) as { code?: string } | null; throw new Error(body?.code || `http_${response.status}`); } }
 export async function deprecateVersion(base: string, id: string, reason: string, fetcher: typeof fetch = fetch): Promise<ApiVersion> { return json(await fetcher(endpoint(base, `/versions/${encodeURIComponent(id)}/deprecate`), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) })); }

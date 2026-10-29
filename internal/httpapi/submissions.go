@@ -4,11 +4,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	packagezip "github.com/reze/submodhub/internal/package"
+	"io"
 	"net/http"
 	"os"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -274,6 +277,14 @@ func (s *Store) reviewSubmissionResource(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/review/submissions/"), "/"), "/")
+	if len(parts) == 2 && parts[1] == "archive" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not supported")
+			return
+		}
+		s.reviewSubmissionArchive(w, r, parts[0])
+		return
+	}
 	if len(parts) == 1 && r.Method == http.MethodGet {
 		s.mu.RLock()
 		defer s.mu.RUnlock()
@@ -288,24 +299,13 @@ func (s *Store) reviewSubmissionResource(w http.ResponseWriter, r *http.Request)
 					break
 				}
 			}
-			version := s.Catalog.Versions[sub.VersionID]
-			var report *packagezip.Report
-			if s.Catalog.ScanReports != nil {
-				if item, ok := s.Catalog.ScanReports[version.ScanReportID]; ok {
-					report = &item
-				}
-			}
-			if sub.VersionSnapshot != nil && version.ID == "" {
-				version = *sub.VersionSnapshot
-				report = sub.ScanReportSnapshot
-			} else if sub.State == "rejected" && sub.VersionSnapshot != nil {
-				version = *sub.VersionSnapshot
-				report = sub.ScanReportSnapshot
-			}
+			version, report := sub.reviewVersion(s.Catalog.Versions[sub.VersionID], s.Catalog.ScanReports)
 			// `scan_report` stays the version summary a single-archive version has
 			// always had; `scan_reports` carries every platform's own report so a
 			// reviewer can examine the file list of each build before deciding.
-			writeJSON(w, http.StatusOK, map[string]any{"submission": sub.SanitizeForClient(), "mod": mod, "version": version.SanitizeForClient(), "scan_report": report, "scan_reports": s.versionScanReports(version)})
+			// `archive_availability` names the builds this page can actually fetch,
+			// so the workspace never offers a download that cannot succeed.
+			writeJSON(w, http.StatusOK, map[string]any{"submission": sub.SanitizeForClient(), "mod": mod, "version": version.SanitizeForClient(), "scan_report": report, "scan_reports": s.versionScanReports(version), "archive_availability": version.reviewArchiveAvailability()})
 			return
 		}
 		writeError(w, 404, "not_found", "submission was not found")
@@ -446,4 +446,161 @@ func (s *Store) reviewSubmissionResource(w http.ResponseWriter, r *http.Request)
 		_ = os.Remove(oldPath)
 	}
 	writeJSON(w, 200, *found)
+}
+
+// reviewVersion is the version payload a reviewer reads: the live record, or the
+// frozen snapshot once a rejection or a deleted record stops the live record from
+// describing the reviewed build. The report follows the same choice, so the page
+// never shows one build's file list next to another build's metadata.
+func (sub Submission) reviewVersion(live Version, reports map[string]packagezip.Report) (Version, *packagezip.Report) {
+	var report *packagezip.Report
+	if item, ok := reports[live.ScanReportID]; ok {
+		report = &item
+	}
+	if sub.VersionSnapshot == nil {
+		return live, report
+	}
+	if live.ID == "" || sub.State == "rejected" {
+		return *sub.VersionSnapshot, sub.ScanReportSnapshot
+	}
+	return live, report
+}
+
+// reviewArchiveAvailability names the builds of a submission this server can
+// actually hand over. A deleted version keeps its submission but no bytes, and a
+// rejection freezes the reviewed build into a path-less snapshot, so the
+// workspace has to know the difference before it offers a download.
+type reviewArchiveAvailability struct {
+	Shared    bool     `json:"shared"`
+	Platforms []string `json:"platforms"`
+}
+
+func (v Version) reviewArchiveAvailability() reviewArchiveAvailability {
+	availability := reviewArchiveAvailability{Platforms: []string{}}
+	if len(v.PlatformAssets) == 0 {
+		availability.Shared = storedArchiveExists(v.ArchivePath)
+		return availability
+	}
+	for _, file := range v.platformFiles() {
+		if storedArchiveExists(file.ArchivePath) {
+			availability.Platforms = append(availability.Platforms, file.Platform)
+		}
+	}
+	return availability
+}
+
+// storedArchiveExists is the one test for "these bytes are on this server": a
+// recorded path that no longer resolves would otherwise become a download
+// control that can only fail.
+func storedArchiveExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+// reviewSubmissionArchive serves the ZIP behind one submission. The public
+// archive endpoint answers for published versions only, so without this route a
+// reviewer could read a pending version's file tree and scan report but never the
+// package those describe.
+//
+// Only bytes this server stores are served: that is the artifact the scan report
+// describes. Relaying from GitHub here would hand out whatever upstream holds
+// now instead of what was inspected.
+func (s *Store) reviewSubmissionArchive(w http.ResponseWriter, r *http.Request, submissionID string) {
+	s.mu.RLock()
+	var sub Submission
+	found := false
+	for _, candidate := range s.Catalog.Submissions {
+		if candidate.ID == submissionID {
+			sub, found = candidate, true
+			break
+		}
+	}
+	version, _ := sub.reviewVersion(s.Catalog.Versions[sub.VersionID], nil)
+	var mod Mod
+	for _, item := range s.Catalog.Mods {
+		if item.ID == sub.ModID {
+			mod = item
+			break
+		}
+	}
+	s.mu.RUnlock()
+	if !found {
+		writeError(w, http.StatusNotFound, "not_found", "submission was not found")
+		return
+	}
+	served, platform := version, ""
+	// Same contract as the public archive endpoint: a per-platform version has no
+	// default build, while naming a platform for a single-archive version is a
+	// no-op. The reviewer's page names the platform whose report it is showing.
+	if err := version.platformQueryError(r.URL.Query().Get("platform")); err != nil {
+		writePlatformQueryError(w, err)
+		return
+	}
+	if len(version.PlatformAssets) > 0 {
+		file, _ := version.platformFileFor(r.URL.Query().Get("platform"))
+		platform = file.Platform
+		served.ArchivePath, served.SHA256, served.SizeBytes = file.ArchivePath, file.SHA256, file.SizeBytes
+	}
+	if served.ArchivePath == "" {
+		writeError(w, http.StatusNotFound, "archive_not_found", "this submission has no archive stored on this server")
+		return
+	}
+	file, err := os.Open(served.ArchivePath)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "archive_not_found", "this submission has no archive stored on this server")
+		return
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		writeError(w, http.StatusNotFound, "archive_not_found", "this submission has no archive stored on this server")
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	// A submission that is not published yet is private: nothing here may be
+	// reused from a shared browser cache.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", reviewArchiveName(mod.ID, served.Version, version.ID, platform)))
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	w.Header().Set("X-Archive-SHA256", served.SHA256)
+	w.Header().Set("X-Version-ID", version.ID)
+	if platform != "" {
+		w.Header().Set("X-Archive-Platform", platform)
+	}
+	_, _ = io.Copy(w, file)
+}
+
+// reviewArchiveName names the file a reviewer saves: mod, version and, for a
+// per-platform build, the platform whose bytes are inside. Everything outside
+// [A-Za-z0-9._-] becomes `_` so the name is safe inside a quoted header value.
+func reviewArchiveName(modID, version, versionID, platform string) string {
+	parts := []string{modID}
+	if version != "" {
+		parts = append(parts, version)
+	}
+	if platform != "" {
+		parts = append(parts, platform)
+	}
+	name := sanitizeArchiveName(strings.Join(parts, "_"))
+	if name == "" {
+		name = sanitizeArchiveName(versionID)
+	}
+	if name == "" {
+		name = "archive"
+	}
+	return name + ".zip"
+}
+
+func sanitizeArchiveName(name string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			return r
+		default:
+			return '_'
+		}
+	}, name)
 }
