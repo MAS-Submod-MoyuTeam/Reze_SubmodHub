@@ -187,7 +187,14 @@ test('reviewer opens each platform report of a per-platform submission', async (
 // Approving a package nobody opened is exactly what this workspace exists to
 // prevent, so the reviewer has to be able to read the ZIP the submission would
 // publish — and the server, not the page, decides whether those bytes exist.
-async function mountReviewArchive(availability: { shared: boolean; platforms: string[] }, versionExtra: Record<string, unknown> = {}) {
+async function mountReviewPage(options: {
+  availability?: { shared: boolean; platforms: string[] };
+  versionExtra?: Record<string, unknown>;
+  scanReport?: Record<string, unknown>;
+} = {}) {
+  const availability = options.availability ?? { shared: false, platforms: [] };
+  const versionExtra = options.versionExtra ?? {};
+  const scanReport = options.scanReport ?? { files: [] };
   const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost/' });
   const oldWindow = globalThis.window;
   const oldDocument = globalThis.document;
@@ -214,7 +221,7 @@ async function mountReviewArchive(availability: { shared: boolean; platforms: st
       return new Response(archive, { status: 200, headers: { 'Content-Type': 'application/zip', 'X-Archive-SHA256': digest, 'Content-Disposition': 'attachment; filename="m1_1.0.0.zip"' } });
     }
     if (url.pathname.endsWith('/s1')) {
-      return Response.json({ submission: row, mod: { summary: '待审说明' }, version: { id: 'v1', dependencies: [], size_bytes: archive.length, sha256: digest, ...versionExtra }, scan_report: { files: [] }, archive_availability: availability });
+      return Response.json({ submission: row, mod: { summary: '待审说明' }, version: { id: 'v1', dependencies: [], size_bytes: archive.length, sha256: digest, ...versionExtra }, scan_report: scanReport, archive_availability: availability });
     }
     throw Error('unexpected request ' + path);
   }) as typeof fetch;
@@ -246,7 +253,7 @@ async function mountReviewArchive(availability: { shared: boolean; platforms: st
 
 test('administrator downloads the pending archive with a verified hash', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const harness = await mountReviewArchive({ shared: true, platforms: [] });
+  const harness = await mountReviewPage({ availability: { shared: true, platforms: [] } });
   try {
     const button = harness.archiveButton();
     assert.ok(button, 'the review page offers the archive download');
@@ -262,7 +269,7 @@ test('administrator downloads the pending archive with a verified hash', async (
 });
 
 test('review page does not offer a download the server cannot serve', async () => {
-  const harness = await mountReviewArchive({ shared: false, platforms: [] });
+  const harness = await mountReviewPage({ availability: { shared: false, platforms: [] } });
   try {
     const button = harness.archiveButton() as HTMLButtonElement | undefined;
     assert.ok(button, 'the control is still shown so the state is explainable');
@@ -279,10 +286,10 @@ test('review page does not offer a download the server cannot serve', async () =
 
 test('downloads the build whose report is on screen', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const harness = await mountReviewArchive(
-    { shared: false, platforms: ['windows', 'android'] },
-    { platform_assets: [{ platform: 'windows', size_bytes: 2048, sha256: 'w' }, { platform: 'android', size_bytes: 4096, sha256: 'a' }] },
-  );
+  const harness = await mountReviewPage({
+    availability: { shared: false, platforms: ['windows', 'android'] },
+    versionExtra: { platform_assets: [{ platform: 'windows', size_bytes: 2048, sha256: 'w' }, { platform: 'android', size_bytes: 4096, sha256: 'a' }] },
+  });
   try {
     const windows = harness.archiveButton() as HTMLButtonElement;
     assert.match(windows.textContent!, /Windows/, 'the default download is the build whose report is shown');
@@ -294,6 +301,57 @@ test('downloads the build whose report is on screen', async (t) => {
     await harness.settle();
     assert.ok(harness.requests.includes('/api/v1/review/submissions/s1/archive?platform=android'), 'the chosen build is the one downloaded');
     assert.equal(harness.saved.length, 1);
+  } finally {
+    await harness.restore();
+  }
+});
+
+// The reviewer's job is a decision, not reading a file list: the per-file table is
+// reference material and starts folded. The summary has to keep saying what is
+// inside, otherwise folding would hide the only warning about native binaries.
+test('package file tree starts folded and its summary still says what is inside', async () => {
+  const harness = await mountReviewPage({
+    scanReport: {
+      files: [
+        { source: 'game/script.rpy', target: 'game/script.rpy', size: 2048, sha256: 'a'.repeat(64), class: 'script' },
+        { source: 'lib/native.dll', target: 'lib/native.dll', size: 4096, sha256: 'b'.repeat(64), class: 'binary' },
+      ],
+    },
+  });
+  try {
+    const tree = harness.container.querySelector('details');
+    assert.ok(tree, 'the file tree is a disclosure control');
+    assert.equal(tree.open, false, 'the per-file table is folded by default');
+    const summary = tree.querySelector('summary')!;
+    assert.match(summary.textContent!, /共 2 个目标映射文件/);
+    assert.match(summary.textContent!, /1 个原生二进制/);
+    assert.match(summary.textContent!, /展开逐文件哈希与诊断/);
+    // Folding the table must not fold the conclusion that a native binary is inside.
+    assert.match(harness.container.textContent!, /包含原生执行模块/);
+    assert.match(harness.container.textContent!, /Sprite 礼物名与注册冲突校验/);
+    assert.deepEqual(
+      Array.from(tree.querySelectorAll('th')).map((cell) => cell.textContent),
+      ['归档内路径 (Source Path)', '安装目标 (Target Path)', '类型', '大小', 'SHA-256', '静态诊断'],
+    );
+    assert.equal(tree.querySelector('td[title]')?.getAttribute('title'), 'a'.repeat(64), 'the full hash is one hover away');
+  } finally {
+    await harness.restore();
+  }
+});
+
+test('giftname card reports a conflict instead of claiming a clean scan', async () => {
+  const harness = await mountReviewPage({
+    scanReport: {
+      files: [{ source: 'game/script.rpy', target: 'game/script.rpy', size: 2048, sha256: 'a'.repeat(64), class: 'script' }],
+      derived: [{ target: 'gift_custom_outfit_daily' }],
+      conflicts: [{ kind: 'giftname', value: 'gift_custom_outfit_daily', first: 'mods/a/a.rpy', second: 'mods/b/b.rpy' }],
+    },
+  });
+  try {
+    assert.match(harness.container.textContent!, /检出高危阻断项/);
+    assert.match(harness.container.textContent!, /登记衍生礼物/);
+    assert.match(harness.container.textContent!, /检出 1 项注册\/覆盖冲突/);
+    assert.doesNotMatch(harness.container.textContent!, /未检测到重复注册冲突/);
   } finally {
     await harness.restore();
   }

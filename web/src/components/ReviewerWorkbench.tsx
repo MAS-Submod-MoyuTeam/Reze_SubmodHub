@@ -8,6 +8,7 @@ import { mapServerScanReport } from '../context/scanReport';
 import { assetPlatformLabel } from '../types/submodhub';
 import { formatVersionLabel } from './versionHistory';
 import { formatBytes } from './formatBytes';
+import { shortHash } from './clientDownload';
 import { reviewArchiveErrorText, triggerArchiveSave } from './reviewArchive';
 import { fetchReviewArchive, getReviewSubmission, listReviewSubmissions, listReviewAudit, platformScanReportId } from '../../../ui/submission-api';
 import {
@@ -25,6 +26,7 @@ import {
   Clock,
   Sparkles,
   Download,
+  ChevronDown,
 } from 'lucide-react';
 
 export const ReviewerWorkbench: React.FC = () => {
@@ -89,6 +91,11 @@ export const ReviewerWorkbench: React.FC = () => {
       : null),
     [reviewDetail, selectedServerReport, chosenPlatform, shippedPlatforms?.length],
   );
+  // The per-file table is reference material: these counts let the folded summary
+  // still say whether opening it is worth a reviewer's time.
+  const reportFiles = activeReport?.files ?? [];
+  const reportBinaryCount = reportFiles.filter((file) => file.kind === 'binary').length;
+  const reportConflictCount = activeReport?.blockers.length ?? 0;
   const [decisionModalMode, setDecisionModalMode] = useState<'approve' | 'reject' | null>(null);
   const [decisionReason, setDecisionReason] = useState('');
   const [decisionSubmissionId, setDecisionSubmissionId] = useState('');
@@ -573,29 +580,49 @@ export const ReviewerWorkbench: React.FC = () => {
                             <div className="font-mono text-[10px] text-neutral-800 bg-white p-1 rounded border border-neutral-200">
                               {activeReport.derived_gifts.join(', ')}
                             </div>
-                            <div className="text-emerald-700 text-[10px]">✓ 未检测到重复注册冲突</div>
+                            {/* A clean verdict here must come from the scan, not from
+                                reaching this branch: claiming "no conflict" while the
+                                blocker list above reports one would read as approval. */}
+                            {reportConflictCount > 0 ? (
+                              <div className="text-rose-700 text-[10px]">⚠️ 检出 {reportConflictCount} 项注册/覆盖冲突，见上方阻断项</div>
+                            ) : (
+                              <div className="text-emerald-700 text-[10px]">✓ 未检测到重复注册冲突</div>
+                            )}
                           </div>
                         ) : (
                           <div className="text-[11px] text-neutral-500">
-                            未登记Spritepack礼物，无覆盖冲突。
+                            {reportConflictCount > 0
+                              ? `未登记 Spritepack 礼物，但检出 ${reportConflictCount} 项路径/注册冲突，见上方阻断项。`
+                              : '未登记 Spritepack 礼物，无覆盖冲突。'}
                           </div>
                         )}
                       </div>
                     </div>
 
-                    {/* Package File Tree Inspector */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-semibold text-neutral-800 flex items-center gap-1.5">
+                    {/* Package File Tree Inspector: the per-file table is reference
+                        material, so it starts folded — the conclusion cards above say
+                        whether anything needs a human, and the summary keeps the counts
+                        that decide whether opening it is worth the reviewer's time. */}
+                    <details className="group rounded border border-neutral-200 bg-white overflow-hidden">
+                      <summary className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 cursor-pointer select-none list-none hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+                        <span className="text-xs font-semibold text-neutral-800 flex items-center gap-1.5">
                           <FolderTree className="w-4 h-4 text-neutral-600" />
                           完整包文件树与校验和 (Package File Tree)
-                        </h4>
-                        <span className="text-[11px] font-mono text-neutral-400">
-                          共 {activeReport.files.length} 个目标映射文件
                         </span>
-                      </div>
+                        <span className="text-[11px] text-neutral-500">
+                          共 {reportFiles.length} 个目标映射文件
+                          {reportBinaryCount > 0 && (
+                            <span className="text-rose-700 font-semibold"> · {reportBinaryCount} 个原生二进制</span>
+                          )}
+                        </span>
+                        <span className="ml-auto flex items-center gap-1 text-[11px] text-neutral-500">
+                          <span className="group-open:hidden">展开逐文件哈希与诊断</span>
+                          <span className="hidden group-open:inline">收起</span>
+                          <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
+                        </span>
+                      </summary>
 
-                      <div className="border border-neutral-200 rounded overflow-hidden">
+                      <div className="border-t border-neutral-200 overflow-x-auto">
                         <table className="w-full text-left text-xs border-collapse">
                           <thead className="bg-neutral-50 border-b border-neutral-200 text-neutral-500">
                             <tr>
@@ -603,11 +630,12 @@ export const ReviewerWorkbench: React.FC = () => {
                               <th className="py-2 px-3">安装目标 (Target Path)</th>
                               <th className="py-2 px-3">类型</th>
                               <th className="py-2 px-3">大小</th>
+                              <th className="py-2 px-3">SHA-256</th>
                               <th className="py-2 px-3">静态诊断</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-neutral-100">
-                            {activeReport.files.map((file, idx) => (
+                            {reportFiles.map((file, idx) => (
                               <tr key={idx} className="hover:bg-neutral-50">
                                 <td className="py-2 px-3 font-mono text-[11px] text-neutral-800">
                                   {file.source_path}
@@ -631,6 +659,9 @@ export const ReviewerWorkbench: React.FC = () => {
                                 <td className="py-2 px-3 font-mono tabular-nums text-neutral-600 text-[11px]">
                                   {(file.size_bytes / 1024).toFixed(1)} KB
                                 </td>
+                                <td className="py-2 px-3 font-mono text-[10px] text-neutral-500 whitespace-nowrap" title={file.sha256}>
+                                  {shortHash(file.sha256) || '—'}
+                                </td>
                                 <td className="py-2 px-3 text-[11px]">
                                   {file.warnings && file.warnings.length > 0 ? (
                                     <span className="text-rose-600 font-medium">
@@ -645,7 +676,7 @@ export const ReviewerWorkbench: React.FC = () => {
                           </tbody>
                         </table>
                       </div>
-                    </div>
+                    </details>
                   </div>
                 )}
               </>
