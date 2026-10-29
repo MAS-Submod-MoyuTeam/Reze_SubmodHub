@@ -67,7 +67,9 @@ export const VersionArchiveUploader: React.FC<VersionArchiveUploaderProps> = ({ 
           <Upload className="h-3.5 w-3.5 text-neutral-600" />
           重新上传 ZIP 归档（全平台共用）
         </button>
-        <p className="text-[11px] text-neutral-500">这个版本只有一个归档，Windows 与 Android 安装的是同一份字节。</p>
+        <p className="text-[11px] text-neutral-500">
+          这个版本只有一个归档，Windows 与 Android 安装的是同一份字节。要改成按平台分包，请删除这个草稿版本后重建：同一版本不能混用两种形状。
+        </p>
       </div>
     );
   }
