@@ -513,7 +513,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                           <span aria-hidden="true">/</span>
                           <span className="tabular-nums">{formatBytes(mod.size_bytes)}</span>
                           <span aria-hidden="true">/</span>
-                          <span className="tabular-nums">{mod.downloads_count} 次安装</span>
+                          <span className="tabular-nums inline-flex items-center gap-1" title="下载次数"><Download className="w-3 h-3" aria-hidden="true" /><span>{mod.downloads_count.toLocaleString()}</span></span>
                         </div>
 
                         {/* Tags row (Clean typographic tags with separators) */}

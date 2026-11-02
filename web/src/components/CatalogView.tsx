@@ -419,7 +419,10 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   <div className="pt-4 mt-4 border-t border-neutral-100 flex items-center justify-between text-xs">
                     <div className="text-[11px] text-neutral-500 flex items-center gap-1 font-mono">
                       {!isSpritepack && latestVer?.version && <><span>{formatVersionLabel(latestVer.version)}</span><span className="text-neutral-300">/</span></>}
-                      <span className="tabular-nums" title={`描述签发尝试：${mod.download_attempts || 0}；内置服务端传输：${mod.downloads_count}。客户端报告并非独立交付审计。`}>{isSpritepack ? `${mod.downloads_count.toLocaleString()} 次服务端传输` : `${(mod.client_reported_downloads || 0).toLocaleString()} 次客户端报告完成`}</span>
+                      <span className="tabular-nums inline-flex items-center gap-1" title="下载次数">
+                        <Download className="w-3 h-3" aria-hidden="true" />
+                        <span>{mod.downloads_count.toLocaleString()}</span>
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-2">
