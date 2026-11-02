@@ -16,6 +16,7 @@ import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthor
 import { mapServerScanReport } from './scanReport';
 import { refreshWindowText as formatRefreshWindow, type SourcePolicy } from '../components/sourceConfig';
 import { assetPlatformLabel } from '../types/submodhub';
+import { EMPTY_TAG_FILTER, toggleTagFilter, type TagFilterStates } from '../../../ui/tag-filter';
 
 export type NavTab =
   | 'catalog'
@@ -61,8 +62,13 @@ export interface AppContextType {
   setCategoryFilter: (c: string) => void;
   platformFilter: string;
   setPlatformFilter: (p: string) => void;
-  tagFilter: string;
-  setTagFilter: (t: string) => void;
+  /** 目录标签筛选：标签名 → 包含/排除。标签默认不选，包含之间是 AND。 */
+  tagFilter: TagFilterStates;
+  setTagFilter: (next: TagFilterStates) => void;
+  /** 点一次标签：未选 → 包含 → 排除 → 未选。 */
+  toggleTagFilter: (name: string) => void;
+  /** 清空全部标签筛选。 */
+  clearTagFilter: () => void;
 
   // Catalog Load State
   /** 目录是否正在拉取，且手上没有任何可留下的数据；页面据此显示骨架屏。 */
@@ -147,7 +153,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [platformFilter, setPlatformFilter] = useState('all');
-  const [tagFilter, setTagFilter] = useState('all');
+  const [tagFilter, setTagFilter] = useState<TagFilterStates>(EMPTY_TAG_FILTER);
+  const toggleTagFilterState = useCallback((name: string) => {
+    setTagFilter((prev) => toggleTagFilter(prev, name));
+  }, []);
+  const clearTagFilterState = useCallback(() => setTagFilter(EMPTY_TAG_FILTER), []);
 
   // Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -801,6 +811,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setPlatformFilter,
       tagFilter,
       setTagFilter,
+      toggleTagFilter: toggleTagFilterState,
+      clearTagFilter: clearTagFilterState,
       catalogLoading,
       catalogRefreshing,
       catalogError,
@@ -846,6 +858,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       categoryFilter,
       platformFilter,
       tagFilter,
+      toggleTagFilterState,
+      clearTagFilterState,
       catalogLoading,
       catalogRefreshing,
       catalogError,

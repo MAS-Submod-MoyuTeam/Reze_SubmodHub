@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -98,7 +99,7 @@ func TestTagCatalogDefaultsAndPublicEndpoint(t *testing.T) {
 
 	// Saving a hierarchical catalog persists and is visible to the public read.
 	res, decoded := patchAdminSettingsJSON(t, server.URL, adminCookie, adminCSRF,
-		`{"tag_catalog":[{"name":"工具","children":["绘图","脚本"]},{"name":"音乐"}],"revision":0}`)
+		`{"tag_catalog":[{"name":"工具","children":[{"name":"绘图"},{"name":"脚本"}]},{"name":"音乐"}],"revision":0}`)
 	if res.StatusCode != 200 {
 		t.Fatalf("save tag catalog = %d %+v", res.StatusCode, decoded)
 	}
@@ -151,10 +152,13 @@ func TestAdminTagCatalogValidation(t *testing.T) {
 		{"comma", `{"tag_catalog":[{"name":"工,具"}],"revision":0}`},
 		{"hash", `{"tag_catalog":[{"name":"#工具"}],"revision":0}`},
 		{"duplicate parent", `{"tag_catalog":[{"name":"工具"},{"name":"工具"}],"revision":0}`},
-		{"parent equals child", `{"tag_catalog":[{"name":"工具","children":["工具"]}],"revision":0}`},
-		{"child shared by two parents", `{"tag_catalog":[{"name":"工具","children":["绘图"]},{"name":"功能","children":["绘图"]}],"revision":0}`},
-		{"too many children", `{"tag_catalog":[{"name":"工具","children":["a","b","c","d","e","f","g"]}],"revision":0}`},
+		{"parent equals child", `{"tag_catalog":[{"name":"工具","children":[{"name":"工具"}]}],"revision":0}`},
+		{"child shared by two parents", `{"tag_catalog":[{"name":"工具","children":[{"name":"绘图"}]},{"name":"功能","children":[{"name":"绘图"}]}],"revision":0}`},
+		{"too many children", `{"tag_catalog":[{"name":"工具","children":[{"name":"a"},{"name":"b"},{"name":"c"},{"name":"d"},{"name":"e"},{"name":"f"},{"name":"g"}]}],"revision":0}`},
 		{"control char", `{"tag_catalog":[{"name":"工\t具"}],"revision":0}`},
+		{"description too long", `{"tag_catalog":[{"name":"工具","description":"` + strings.Repeat("描", 61) + `"}],"revision":0}`},
+		{"child description too long", `{"tag_catalog":[{"name":"工具","children":[{"name":"绘图","description":"` + strings.Repeat("描", 61) + `"}]}],"revision":0}`},
+		{"description control char", `{"tag_catalog":[{"name":"工具","description":"两\n行"}],"revision":0}`},
 	}
 	for _, tc := range cases {
 		res, decoded := patchAdminSettingsJSON(t, server.URL, adminCookie, adminCSRF, tc.body)
@@ -168,11 +172,11 @@ func TestAdminTagCatalogValidation(t *testing.T) {
 
 	// Duplicates and padding are normalized instead of rejected.
 	res, decoded := patchAdminSettingsJSON(t, server.URL, adminCookie, adminCSRF,
-		`{"tag_catalog":[{"name":" 工具 ","children":["绘图"," 绘图 "]}],"revision":0}`)
+		`{"tag_catalog":[{"name":" 工具 ","children":[{"name":"绘图"},{"name":" 绘图 "}]}],"revision":0}`)
 	if res.StatusCode != 200 {
 		t.Fatalf("normalizing save = %d %+v", res.StatusCode, decoded)
 	}
-	if group := store.Catalog.Settings.TagCatalog; len(group) != 1 || group[0].Name != "工具" || len(group[0].Children) != 1 || group[0].Children[0] != "绘图" {
+	if group := store.Catalog.Settings.TagCatalog; len(group) != 1 || group[0].Name != "工具" || len(group[0].Children) != 1 || group[0].Children[0].Name != "绘图" {
 		t.Fatalf("catalog was not normalized: %+v", group)
 	}
 
@@ -211,7 +215,7 @@ func authorModRequest(t *testing.T, method, url, cookie, body string) (*http.Res
 func TestModTagsValidationAndParentCompletion(t *testing.T) {
 	store, _, _, _, _ := createTestStoreWithAdmin(t)
 	store.Catalog.Settings.TagCatalog = []TagGroup{
-		{Name: "工具", Children: []string{"绘图", "脚本"}},
+		{Name: "工具", Children: []TagChild{{Name: "绘图"}, {Name: "脚本"}}},
 		{Name: "音乐"},
 	}
 	server := httptest.NewServer(NewStoreHandler(store))
@@ -277,8 +281,8 @@ func TestModTagsValidationAndParentCompletion(t *testing.T) {
 	// The cap counts parents that were completed from children.
 	store.mu.Lock()
 	store.Catalog.Settings.TagCatalog = []TagGroup{
-		{Name: "A", Children: []string{"a1", "a2", "a3", "a4", "a5"}},
-		{Name: "B", Children: []string{"b1", "b2", "b3", "b4", "b5"}},
+		{Name: "A", Children: []TagChild{{Name: "a1"}, {Name: "a2"}, {Name: "a3"}, {Name: "a4"}, {Name: "a5"}}},
+		{Name: "B", Children: []TagChild{{Name: "b1"}, {Name: "b2"}, {Name: "b3"}, {Name: "b4"}, {Name: "b5"}}},
 	}
 	store.mu.Unlock()
 	res, _ = authorModRequest(t, http.MethodPatch, server.URL+"/api/v1/author/mods/"+mod.ID, token,
@@ -301,7 +305,7 @@ func TestTagCatalogSavePrunesModTags(t *testing.T) {
 	defer server.Close()
 
 	res, decoded := patchAdminSettingsJSON(t, server.URL, adminCookie, adminCSRF,
-		`{"tag_catalog":[{"name":"工具","children":["绘图"]}],"revision":0}`)
+		`{"tag_catalog":[{"name":"工具","children":[{"name":"绘图"}]}],"revision":0}`)
 	if res.StatusCode != 200 {
 		t.Fatalf("save catalog = %d %+v", res.StatusCode, decoded)
 	}
@@ -319,4 +323,64 @@ func TestTagCatalogSavePrunesModTags(t *testing.T) {
 	if !audit.TagsChanged || audit.PrunedModTags != 2 {
 		t.Fatalf("audit = %+v, want TagsChanged with 2 pruned mods", audit)
 	}
+}
+
+// Descriptions are catalog data, not UI-only decoration: the admin writes them
+// once, the public catalog returns them, and an edit counts as a revision bump
+// so cached clients notice the sentence changed.
+func TestTagCatalogDescriptionsPersistAndArePublic(t *testing.T) {
+	store, adminCookie, adminCSRF, _, _ := createTestStoreWithAdmin(t)
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	res, decoded := patchAdminSettingsJSON(t, server.URL, adminCookie, adminCSRF,
+		`{"tag_catalog":[{"name":" 工具 ","description":" 自动修复与诊断类模组 ","children":[{"name":"绘图","description":"生成与编辑图片"}]},{"name":"音乐","description":""}],"revision":0}`)
+	if res.StatusCode != 200 {
+		t.Fatalf("save catalog with descriptions = %d %+v", res.StatusCode, decoded)
+	}
+
+	publicRes, err := http.Get(server.URL + "/api/v1/tags")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var public struct {
+		Groups   []TagGroup `json:"groups"`
+		Revision uint64     `json:"revision"`
+	}
+	if err := json.NewDecoder(publicRes.Body).Decode(&public); err != nil {
+		t.Fatal(err)
+	}
+	publicRes.Body.Close()
+
+	if len(public.Groups) != 2 {
+		t.Fatalf("groups = %+v", public.Groups)
+	}
+	// Trimmed on the way in, preserved on the way out.
+	if public.Groups[0].Description != "自动修复与诊断类模组" {
+		t.Fatalf("main description = %q", public.Groups[0].Description)
+	}
+	if len(public.Groups[0].Children) != 1 || public.Groups[0].Children[0].Description != "生成与编辑图片" {
+		t.Fatalf("child description = %+v", public.Groups[0].Children)
+	}
+	// An empty description is dropped rather than stored as "".
+	if public.Groups[1].Description != "" {
+		t.Fatalf("blank description should stay empty, got %q", public.Groups[1].Description)
+	}
+
+	// Editing only a description is still a catalog change: the audit trail has
+	// to say so, otherwise "who changed the wording" is unanswerable.
+	before := public.Revision
+	res, decoded = patchAdminSettingsJSON(t, server.URL, adminCookie, adminCSRF,
+		`{"tag_catalog":[{"name":"工具","description":"换了一句解释","children":[{"name":"绘图","description":"生成与编辑图片"}]},{"name":"音乐"}],"revision":`+strconv.FormatUint(before, 10)+`}`)
+	if res.StatusCode != 200 {
+		t.Fatalf("description-only edit = %d %+v", res.StatusCode, decoded)
+	}
+	audit := store.Catalog.SettingsAudit
+	if len(audit) == 0 || !audit[len(audit)-1].TagsChanged {
+		t.Fatalf("a description edit must be recorded as a tag change: %+v", audit)
+	}
+	if got := store.Catalog.Settings.TagCatalog[0].Description; got != "换了一句解释" {
+		t.Fatalf("stored description = %q", got)
+	}
+
 }

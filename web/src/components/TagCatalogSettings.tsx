@@ -1,15 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, RefreshCw, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, ChevronUp, RefreshCw, Trash2, X } from 'lucide-react';
 import { readSession } from '../../../ui/auth-api';
 import { updateSettings, type SiteSettings } from '../../../ui/settings-api';
-import type { TagGroup } from '../../../ui/tags-api';
+import { MAX_TAG_DESCRIPTION_LENGTH, type TagChild, type TagGroup } from '../../../ui/tags-api';
 
 export const MAX_TAG_GROUPS = 20;
 export const MAX_TAG_CHILDREN = 6;
 export const MAX_TAG_NAME_LENGTH = 24;
 
 function cloneGroups(groups: TagGroup[]): TagGroup[] {
-  return groups.map((group) => ({ name: group.name, children: group.children ? [...group.children] : undefined }));
+  return groups.map((group) => ({
+    name: group.name,
+    description: group.description,
+    children: group.children ? group.children.map((child) => ({ ...child })) : undefined,
+  }));
 }
 
 /** 与服务端一致的名称规则：trim 后非空、长度受限、不含逗号或井号。 */
@@ -21,11 +25,21 @@ export function validateTagName(raw: string): string | null {
   return null;
 }
 
+/** 与服务端一致的描述规则：单行、可留空、长度受限。 */
+export function validateTagDescription(raw: string): string | null {
+  const description = raw.trim();
+  if ([...description].length > MAX_TAG_DESCRIPTION_LENGTH) {
+    return `标签描述最多 ${MAX_TAG_DESCRIPTION_LENGTH} 个字符`;
+  }
+  if (/[\u0000-\u001f\u007f]/.test(description)) return '标签描述不能包含换行等控制字符';
+  return null;
+}
+
 function catalogNames(groups: TagGroup[]): Set<string> {
   const names = new Set<string>();
   for (const group of groups) {
     names.add(group.name);
-    for (const child of group.children ?? []) names.add(child);
+    for (const child of group.children ?? []) names.add(child.name);
   }
   return names;
 }
@@ -51,7 +65,7 @@ export function addChildTag(groups: TagGroup[], parent: string, raw: string): { 
   const children = groups[index].children ?? [];
   if (children.length >= MAX_TAG_CHILDREN) return { groups, error: `每个主标签最多 ${MAX_TAG_CHILDREN} 个子标签` };
   const next = cloneGroups(groups);
-  next[index].children = [...children, raw.trim()];
+  next[index].children = [...children, { name: raw.trim() }];
   return { groups: next, error: null };
 }
 
@@ -62,7 +76,29 @@ export function removeMainTag(groups: TagGroup[], parent: string): TagGroup[] {
 export function removeChildTag(groups: TagGroup[], parent: string, child: string): TagGroup[] {
   return cloneGroups(groups.map((group) => (
     group.name === parent
-      ? { name: group.name, children: (group.children ?? []).filter((name) => name !== child) }
+      ? { ...group, children: (group.children ?? []).filter((entry) => entry.name !== child) }
+      : group
+  )));
+}
+
+/** 改主标签的描述；空串表示不写描述，直接清掉字段。 */
+export function setMainDescription(groups: TagGroup[], parent: string, raw: string): TagGroup[] {
+  const description = raw.trim();
+  return cloneGroups(groups.map((group) => (
+    group.name === parent ? { ...group, description: description || undefined } : group
+  )));
+}
+
+export function setChildDescription(groups: TagGroup[], parent: string, child: string, raw: string): TagGroup[] {
+  const description = raw.trim();
+  return cloneGroups(groups.map((group) => (
+    group.name === parent
+      ? {
+        ...group,
+        children: (group.children ?? []).map((entry) => (
+          entry.name === child ? { ...entry, description: description || undefined } : entry
+        )),
+      }
       : group
   )));
 }
@@ -81,6 +117,9 @@ export function tagCatalogDirty(groups: TagGroup[], saved: TagGroup[]): boolean 
   return JSON.stringify(groups) !== JSON.stringify(saved);
 }
 
+/** 折叠状态：主标签名 → 是否展开。默认全部收起，与作者端、筛选抽屉一致。 */
+export type CatalogCollapse = Readonly<Record<string, boolean>>;
+
 interface Props {
   apiBase: string;
   groups: TagGroup[];
@@ -91,13 +130,17 @@ interface Props {
 }
 
 /**
- * 标签目录编辑卡片：主标签 + 子标签，只能在这里增删。
- * 保存后服务端会同步清理模组上已不存在的标签，所以这里明确提示该后果。
+ * 标签目录编辑卡片。
+ *
+ * 层级与作者端、筛选抽屉保持一致：主标签一行（名称 + 描述），子标签默认折叠，
+ * 没有子标签的主标签不出现折叠按钮。描述是这里唯一新增的编辑对象——它决定
+ * 作者和用户在别处看到的解释文字，所以必须和名称一样能就地改、能一次保存。
  */
 export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision, onSaved, onConflict, onToast }) => {
   const [draft, setDraft] = useState<TagGroup[]>(() => cloneGroups(groups));
   const [mainInput, setMainInput] = useState('');
   const [childInputs, setChildInputs] = useState<Record<string, string>>({});
+  const [expanded, setExpanded] = useState<CatalogCollapse>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -122,17 +165,28 @@ export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision,
     if (result.error) return;
     setDraft(result.groups);
     setChildInputs((current) => ({ ...current, [parent]: '' }));
+    // 刚加完子标签就把它露出来，否则用户会以为没加上。
+    setExpanded((current) => ({ ...current, [parent]: true }));
   };
 
   const save = async () => {
     if (saving || !dirty) return;
+    // 描述也要在保存前过一遍：服务端会拒绝超长描述，这里先给出同一条提示。
+    for (const group of draft) {
+      const problem = validateTagDescription(group.description ?? '')
+        ?? (group.children ?? []).map((child) => validateTagDescription(child.description ?? '')).find(Boolean);
+      if (problem) {
+        setError(problem);
+        return;
+      }
+    }
     setSaving(true);
     setError(null);
     try {
       const session = await readSession(apiBase);
       const updated = await updateSettings({ tag_catalog: draft }, revision, session.csrf_token, apiBase);
       onSaved(updated);
-      onToast('success', '标签目录已保存，作者端下次打开编辑弹窗即可看到。');
+      onToast('success', '标签目录已保存，作者端与筛选抽屉下次打开即可看到新的名称与描述。');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown_error';
       if (message.includes('conflict') || message.includes('409')) {
@@ -147,6 +201,23 @@ export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision,
     }
   };
 
+  const descriptionInput = (
+    value: string,
+    onChange: (next: string) => void,
+    label: string,
+    placeholder: string,
+  ) => (
+    <input
+      type="text"
+      value={value}
+      maxLength={MAX_TAG_DESCRIPTION_LENGTH}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      aria-label={label}
+      className="w-full text-[11px] px-2 py-0.5 rounded border border-neutral-200 text-neutral-600 placeholder:text-neutral-400 focus:outline-none focus:border-emerald-600"
+    />
+  );
+
   return (
     <section className="bg-white border border-neutral-200/90 rounded-xl shadow-xs hover:shadow-sm transition-shadow p-6 space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -154,6 +225,7 @@ export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision,
           <h2 className="text-sm font-semibold text-neutral-900">标签目录</h2>
           <p className="text-[11px] text-neutral-500 mt-1">
             作者只能从这里多选标签，不能自行创建。主标签可单独选中，选中子标签时会自动带上主标签。
+            描述会显示在作者的选择器和用户的筛选抽屉里，用来解释这个标签收什么模组。
           </p>
         </div>
         <span className="text-[11px] tabular-nums text-neutral-500">
@@ -193,74 +265,127 @@ export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision,
       <div className="space-y-2">
         {draft.length === 0 ? (
           <p className="text-[11px] text-neutral-500">目录为空。至少需要一个主标签才能保存。</p>
-        ) : draft.map((group, index) => (
-          <div key={group.name} className="rounded border border-neutral-200 p-2 space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-neutral-900">#{group.name}</span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  aria-label={`上移 ${group.name}`}
-                  disabled={index === 0}
-                  onClick={() => setDraft(moveMainTag(draft, index, -1))}
-                  className="p-1 rounded text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
-                >
-                  <ChevronUp className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`下移 ${group.name}`}
-                  disabled={index === draft.length - 1}
-                  onClick={() => setDraft(moveMainTag(draft, index, 1))}
-                  className="p-1 rounded text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
-                >
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`删除 ${group.name}`}
-                  onClick={() => setDraft(removeMainTag(draft, group.name))}
-                  className="p-1 rounded text-rose-600 hover:bg-rose-50"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+        ) : draft.map((group, index) => {
+          const children = group.children ?? [];
+          const isOpen = expanded[group.name] === true;
+          return (
+            <div key={group.name} className="rounded border border-neutral-200 p-2 space-y-1.5" data-testid={`tag-group-${group.name}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-1">
+                    {/* 没有子标签的主标签不出现折叠按钮：一个点了没反应的箭头比没有更糟。 */}
+                    {children.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setExpanded((current) => ({ ...current, [group.name]: !isOpen }))}
+                        aria-expanded={isOpen}
+                        aria-label={`${isOpen ? '收起' : '展开'} ${group.name} 的子标签（${children.length} 个）`}
+                        data-testid={`tag-group-toggle-${group.name}`}
+                        className="p-0.5 rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                      >
+                        {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                      </button>
+                    ) : (
+                      <span className="w-[1.125rem]" aria-hidden="true" />
+                    )}
+                    <span className="text-xs font-medium text-neutral-900">#{group.name}</span>
+                    {children.length > 0 ? (
+                      <span className="text-[10px] tabular-nums text-neutral-400">{children.length}</span>
+                    ) : null}
+                  </div>
+                  {descriptionInput(
+                    group.description ?? '',
+                    (next) => setDraft(setMainDescription(draft, group.name, next)),
+                    `描述 ${group.name}`,
+                    '描述这个标签收什么模组（可选）',
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    aria-label={`上移 ${group.name}`}
+                    disabled={index === 0}
+                    onClick={() => setDraft(moveMainTag(draft, index, -1))}
+                    className="p-1 rounded text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`下移 ${group.name}`}
+                    disabled={index === draft.length - 1}
+                    onClick={() => setDraft(moveMainTag(draft, index, 1))}
+                    className="p-1 rounded text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`删除 ${group.name}`}
+                    onClick={() => setDraft(removeMainTag(draft, group.name))}
+                    className="p-1 rounded text-rose-600 hover:bg-rose-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {children.length > 0 && isOpen ? (
+                <div className="pl-[1.375rem] space-y-1 border-l border-neutral-200 ml-1" data-testid={`tag-group-children-${group.name}`}>
+                  {children.map((child: TagChild) => (
+                    <div key={child.name} className="flex items-start gap-1.5">
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[11px] text-neutral-700">{child.name}</span>
+                          <button
+                            type="button"
+                            aria-label={`删除子标签 ${child.name}`}
+                            onClick={() => setDraft(removeChildTag(draft, group.name, child.name))}
+                            className="text-neutral-400 hover:text-rose-600"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                        {descriptionInput(
+                          child.description ?? '',
+                          (next) => setDraft(setChildDescription(draft, group.name, child.name, next)),
+                          `描述 ${child.name}`,
+                          '描述这个子标签（可选）',
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                {children.length < MAX_TAG_CHILDREN ? (
+                  <span className="inline-flex items-center gap-1">
+                    <input
+                      type="text"
+                      value={childInputs[group.name] ?? ''}
+                      onChange={(event) => setChildInputs((current) => ({ ...current, [group.name]: event.target.value }))}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          applyChildTag(group.name);
+                        }
+                      }}
+                      placeholder="添加子标签"
+                      aria-label={`为 ${group.name} 添加子标签`}
+                      className="w-28 text-[11px] px-2 py-0.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600"
+                    />
+                    <button type="button" onClick={() => applyChildTag(group.name)} className="text-[11px] text-emerald-700 hover:underline">
+                      添加
+                    </button>
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-neutral-400">子标签已达上限</span>
+                )}
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {(group.children ?? []).map((child) => (
-                <span key={child} className="inline-flex items-center gap-1 rounded-full border border-neutral-300 bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-700">
-                  {child}
-                  <button type="button" aria-label={`删除子标签 ${child}`} onClick={() => setDraft(removeChildTag(draft, group.name, child))} className="text-neutral-400 hover:text-rose-600">
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              ))}
-              {(group.children?.length ?? 0) < MAX_TAG_CHILDREN ? (
-                <span className="inline-flex items-center gap-1">
-                  <input
-                    type="text"
-                    value={childInputs[group.name] ?? ''}
-                    onChange={(event) => setChildInputs((current) => ({ ...current, [group.name]: event.target.value }))}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        applyChildTag(group.name);
-                      }
-                    }}
-                    placeholder="添加子标签"
-                    aria-label={`为 ${group.name} 添加子标签`}
-                    className="w-28 text-[11px] px-2 py-0.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600"
-                  />
-                  <button type="button" onClick={() => applyChildTag(group.name)} className="text-[11px] text-emerald-700 hover:underline">
-                    添加
-                  </button>
-                </span>
-              ) : (
-                <span className="text-[11px] text-neutral-400">子标签已达上限</span>
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <p className="text-[11px] text-neutral-500">

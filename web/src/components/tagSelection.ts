@@ -1,4 +1,5 @@
 import type { TagGroup } from '../../../ui/tags-api';
+import { tagChildNames } from '../../../ui/tags-api';
 
 /** 与服务端 maxModTags 保持一致：自动补入的主标签也占名额。 */
 export const MAX_MOD_TAGS = 8;
@@ -7,7 +8,7 @@ export const MAX_MOD_TAGS = 8;
 export function tagParentMap(groups: TagGroup[]): Map<string, string> {
   const parents = new Map<string, string>();
   for (const group of groups) {
-    for (const child of group.children ?? []) parents.set(child, group.name);
+    for (const child of tagChildNames(group)) parents.set(child, group.name);
   }
   return parents;
 }
@@ -15,7 +16,7 @@ export function tagParentMap(groups: TagGroup[]): Map<string, string> {
 function groupMembers(groups: TagGroup[], parent: string): string[] {
   const group = groups.find((entry) => entry.name === parent);
   if (!group) return [];
-  return [group.name, ...(group.children ?? [])];
+  return [group.name, ...tagChildNames(group)];
 }
 
 function addWithinCap(selected: string[], additions: string[], max: number): string[] {
@@ -50,7 +51,7 @@ export function orderByCatalog(groups: TagGroup[], selected: string[]): string[]
   const order = new Map<string, number>();
   groups.forEach((group, groupIndex) => {
     order.set(group.name, groupIndex * 100);
-    (group.children ?? []).forEach((child, childIndex) => order.set(child, groupIndex * 100 + childIndex + 1));
+    tagChildNames(group).forEach((child, childIndex) => order.set(child, groupIndex * 100 + childIndex + 1));
   });
   return selected
     .filter((name, index) => order.has(name) && selected.indexOf(name) === index)

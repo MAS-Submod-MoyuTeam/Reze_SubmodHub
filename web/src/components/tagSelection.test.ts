@@ -9,7 +9,7 @@ import {
 import type { TagGroup } from '../../../ui/tags-api';
 
 const groups: TagGroup[] = [
-  { name: '工具', children: ['绘图', '脚本'] },
+  { name: '工具', children: [{ name: '绘图' }, { name: '脚本' }] },
   { name: '音乐' },
 ];
 
@@ -35,7 +35,7 @@ test('clicking a main tag with nothing selected selects only the main tag', () =
 test('the cap counts the main tag added for a child', () => {
   const full = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
   assert.equal(MAX_MOD_TAGS, 8);
-  const wide: TagGroup[] = [{ name: 'x', children: ['x1'] }];
+  const wide: TagGroup[] = [{ name: 'x', children: [{ name: 'x1' }] }];
   // Two free slots are enough for the pair (parent + child).
   assert.deepEqual(toggleTagSelection(wide, ['a', 'b', 'c', 'd', 'e', 'f'], 'x1'), ['a', 'b', 'c', 'd', 'e', 'f', 'x', 'x1']);
   // One free slot is not: the pair would exceed the cap.

@@ -6,7 +6,9 @@ import { DeprecationNotice } from './DeprecationNotice';
 import { formatVersionLabel } from './versionHistory';
 import { useLoadMoreOnScroll } from './useLoadMoreOnScroll';
 import { fetchTagCatalog, type TagGroup } from '../../../ui/tags-api';
-import { buildTagFilterModel, childTagsFor } from './tagFilters';
+import { activeTagFilterCount, buildTagFilterRows, describeTagFilter, matchesTagFilter } from '../../../ui/tag-filter';
+import { TagFilterDrawer } from './TagFilterDrawer';
+import { CatalogFloatingControls } from './CatalogFloatingControls';
 import { CATALOG_PLATFORM_FILTERS } from './catalogPlatforms';
 import { pageScrollPane, usePaneScrolled } from './usePaneScrolled';
 import { scrollPaneToTop } from './scrollToTop';
@@ -14,10 +16,7 @@ import {
   Search,
   Download,
   Filter,
-  Layers,
-  Sparkles,
   AlertCircle,
-  ArrowUp,
   RefreshCw,
 } from 'lucide-react';
 
@@ -40,12 +39,16 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     platformFilter,
     setPlatformFilter,
     tagFilter,
-    setTagFilter,
+    toggleTagFilter,
+    clearTagFilter,
     catalogLoading,
     catalogRefreshing,
     catalogError,
     reloadCatalog,
   } = useApp();
+
+  /** 标签抽屉的开关是纯 UI 状态，不进全局上下文。 */
+  const [tagDrawerOpen, setTagDrawerOpen] = useState(false);
 
   const [cursorPage, setCursorPage] = useState(1);
   const pageSize = 6;
@@ -62,23 +65,34 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     return Array.from(set);
   }, [publishedMods]);
 
-  // 标签目录是筛选区的第一来源：顺序与主/子层级都由管理员维护。
+  // 标签目录是抽屉的第一来源：顺序与主/子层级都由管理员维护。
   // 读取失败时回退到上面的聚合结果，筛选功能不因此不可用。
   const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
+  const [tagCatalogLoading, setTagCatalogLoading] = useState(true);
+  const [tagCatalogError, setTagCatalogError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     const base = apiBase();
     fetchTagCatalog(base)
       .then((catalog) => {
-        if (!cancelled) setTagGroups(catalog.groups);
+        if (cancelled) return;
+        setTagGroups(catalog.groups);
+        setTagCatalogError(null);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (cancelled) return;
+        // 目录读不到不算致命：模组聚合出的标签仍可筛选，抽屉里如实说明。
+        setTagCatalogError('标签目录读取失败，已退回按模组聚合出的标签筛选');
+      })
+      .finally(() => {
+        if (!cancelled) setTagCatalogLoading(false);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
-  const tagFilterModel = useMemo(() => buildTagFilterModel(tagGroups, allTags), [tagGroups, allTags]);
-  const childTagOptions = useMemo(() => childTagsFor(tagFilterModel, tagFilter), [tagFilterModel, tagFilter]);
+  const tagFilterRows = useMemo(() => buildTagFilterRows(tagGroups, allTags), [tagGroups, allTags]);
+  const activeTagCount = activeTagFilterCount(tagFilter);
 
   // Filtered mods
   const filteredMods = useMemo(() => {
@@ -103,8 +117,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
         return false;
       }
 
-      // Tag filter
-      if (tagFilter !== 'all' && !mod.tags.includes(tagFilter)) {
+      // 标签筛选：每个包含标签都要在，任一排除标签在就不显示。
+      if (!matchesTagFilter(mod.tags, tagFilter)) {
         return false;
       }
 
@@ -145,7 +159,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     setSearchQuery('');
     setCategoryFilter('all');
     setPlatformFilter('all');
-    setTagFilter('all');
+    clearTagFilter();
     setCursorPage(1);
   };
 
@@ -235,78 +249,24 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             ))}
           </div>
 
-          {/* Tag Filter: 主标签一行；选中带子标签的主标签后再展开子标签行 */}
-          <div className="space-y-1 min-w-0">
-            <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
-              <span className="text-neutral-400 font-medium mr-1">标签:</span>
-              <button
-                onClick={() => {
-                  setTagFilter('all');
-                  setCursorPage(1);
-                }}
-                className={`px-2 py-0.5 rounded text-xs whitespace-nowrap ${
-                  tagFilter === 'all'
-                    ? 'bg-neutral-200 text-neutral-900 font-medium'
-                    : 'text-neutral-500 hover:text-neutral-800'
-                }`}
-              >
-                全部
-              </button>
-              {tagFilterModel.mains.map((tag) => (
-                <button
-                  key={tag}
-                  onClick={() => {
-                    setTagFilter(tag);
-                    setCursorPage(1);
-                  }}
-                  className={`px-2 py-0.5 rounded text-xs whitespace-nowrap ${
-                    tagFilter === tag
-                      ? 'bg-neutral-200 text-neutral-900 font-medium'
-                      : 'text-neutral-500 hover:text-neutral-800'
-                  }`}
-                >
-                  #{tag}
-                </button>
-              ))}
-              {tagFilterModel.stale.map((tag) => (
-                <button
-                  key={tag}
-                  onClick={() => {
-                    setTagFilter(tag);
-                    setCursorPage(1);
-                  }}
-                  title="该标签已不在标签目录中"
-                  className={`px-2 py-0.5 rounded text-xs whitespace-nowrap ${
-                    tagFilter === tag
-                      ? 'bg-neutral-200 text-neutral-900 font-medium'
-                      : 'text-neutral-400 hover:text-neutral-700'
-                  }`}
-                >
-                  #{tag}
-                </button>
-              ))}
-            </div>
-            {childTagOptions.length > 0 ? (
-              <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 pl-9">
-                <span className="text-neutral-400 text-xs">子标签:</span>
-                {childTagOptions.map((tag) => (
-                  <button
-                    key={tag}
-                    onClick={() => {
-                      setTagFilter(tag);
-                      setCursorPage(1);
-                    }}
-                    className={`px-2 py-0.5 rounded text-xs whitespace-nowrap ${
-                      tagFilter === tag
-                        ? 'bg-emerald-700 text-white font-medium'
-                        : 'text-neutral-500 hover:text-emerald-700'
-                    }`}
-                  >
-                    #{tag}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+          {/* 标签筛选入口移到右下角悬浮按钮组（与刷新同排），点开是右侧抽屉。
+              头部不再铺一行标签：目录标签一多就会把首屏挤掉。 */}
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+            <span className="text-neutral-400 font-medium mr-1">标签:</span>
+            <button
+              type="button"
+              onClick={() => setTagDrawerOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={tagDrawerOpen}
+              data-testid="catalog-tags-inline"
+              className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                activeTagCount > 0
+                  ? 'bg-emerald-700 text-white font-medium'
+                  : 'text-neutral-600 hover:bg-neutral-100'
+              }`}
+            >
+              {activeTagCount > 0 ? `已筛 ${activeTagCount} 个标签` : '选择标签'}
+            </button>
           </div>
         </div>
       </div>
@@ -360,10 +320,30 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               <p className="text-xs text-neutral-500 max-w-sm mx-auto">
                 没有符合当前关键词或分类条件的已发布模组。你可以尝试清空筛选条件或调整搜索词。
               </p>
-              <div className="pt-2">
+              {/* 标签筛选是收窄条件（包含之间是 AND），空结果很可能就是它造成的。
+                  此时必须说明是哪几个标签，并给出只清标签的入口，
+                  而不是只留一个连搜索/分类/平台一起清掉的按钮。 */}
+              {activeTagCount > 0 ? (
+                <p className="text-xs text-emerald-800" data-testid="catalog-tag-filter-reason">
+                  当前标签筛选：{describeTagFilter(tagFilter)}
+                </p>
+              ) : null}
+              <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
+                {activeTagCount > 0 ? (
+                  <button
+                    onClick={() => {
+                      clearTagFilter();
+                      setCursorPage(1);
+                    }}
+                    data-testid="catalog-clear-tags"
+                    className="px-3.5 py-1.5 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 transition-colors"
+                  >
+                    只清除标签筛选
+                  </button>
+                ) : null}
                 <button
                   onClick={handleResetFilters}
-                  className="px-3.5 py-1.5 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 transition-colors"
+                  className="px-3.5 py-1.5 text-xs font-medium text-neutral-700 bg-white hover:bg-neutral-50 rounded border border-neutral-300 transition-colors"
                 >
                   重置所有筛选条件
                 </button>
@@ -489,45 +469,39 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
       )}
 
       {/* 悬浮控件：整页滚动时 `fixed` 才是相对于视口定位；`pointer-events-none` 铺满
-          一层只为了让两个真正可点的按钮各自可点，不挡住下面的卡片。 */}
+          一层只为了让真正可点的按钮各自可点，不挡住下面的卡片。
+          标签按钮紧挨刷新按钮：两者都在这一组里，角标只报正在生效的标签数。 */}
       <div className="fixed inset-x-0 bottom-6 z-30 px-4 sm:px-6 max-w-7xl mx-auto pointer-events-none flex flex-col items-end gap-3">
-        {/* 返回顶部只在离开顶部后出现，滚回顶部自行收回；刷新常驻在它下方。 */}
-        {scrolled ? (
-          <button
-            type="button"
-            onClick={() => scrollPaneToTop(pagePane)}
-            aria-label="返回顶部"
-            title="返回顶部"
-            data-testid="catalog-back-to-top"
-            className="pointer-events-auto w-11 h-11 rounded-full flex items-center justify-center border border-neutral-200 bg-white/95 text-neutral-600 shadow-lg transition-colors cursor-pointer hover:border-emerald-300 hover:text-emerald-700"
-          >
-            <ArrowUp className="w-4 h-4" aria-hidden="true" />
-          </button>
-        ) : null}
-        {/* 刷新失败时隐藏：此时失败条里的「重新加载目录」就是同一个动作，
-            两个入口并排只会让人猜哪个才算数。 */}
-        {catalogError ? null : (
-          <button
-            type="button"
-            onClick={() => void handleReloadCatalog()}
-            disabled={catalogRefreshing}
-            aria-busy={catalogRefreshing}
-            aria-label="刷新模组目录"
-            title={catalogRefreshing ? '正在刷新模组目录…' : '刷新模组目录'}
-            data-testid="catalog-refresh"
-            className={`pointer-events-auto w-11 h-11 rounded-full flex items-center justify-center border shadow-lg transition-colors ${
-              catalogRefreshing
-                ? 'cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400'
-                : 'cursor-pointer border-neutral-200 bg-white/95 text-neutral-600 hover:border-emerald-300 hover:text-emerald-700'
-            }`}
-          >
-            <RefreshCw
-              className={`w-4 h-4 ${catalogRefreshing ? 'animate-spin' : ''}`}
-              aria-hidden="true"
-            />
-          </button>
-        )}
+        <div className="pointer-events-auto">
+          <CatalogFloatingControls
+            scrolled={scrolled}
+            onBackToTop={() => scrollPaneToTop(pagePane)}
+            activeTagCount={activeTagCount}
+            tagDrawerOpen={tagDrawerOpen}
+            onToggleTagDrawer={() => setTagDrawerOpen((prev) => !prev)}
+            catalogRefreshing={catalogRefreshing}
+            onReloadCatalog={() => void handleReloadCatalog()}
+            catalogFailed={Boolean(catalogError)}
+          />
+        </div>
       </div>
+
+      <TagFilterDrawer
+        open={tagDrawerOpen}
+        onClose={() => setTagDrawerOpen(false)}
+        rows={tagFilterRows}
+        states={tagFilter}
+        onToggle={(name) => {
+          toggleTagFilter(name);
+          setCursorPage(1);
+        }}
+        onClear={() => {
+          clearTagFilter();
+          setCursorPage(1);
+        }}
+        loading={tagCatalogLoading}
+        error={tagCatalogError}
+      />
     </div>
   );
 };

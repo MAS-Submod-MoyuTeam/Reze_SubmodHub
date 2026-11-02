@@ -170,3 +170,20 @@ POSTGRES_DSN=... SUBMODHUB_DATA_DIR=... go run ./cmd/backfill-mod-created-at
 - 只补 `created_at` 为空的模组：取该模组最早的版本或提交时间，无子记录时取回填时刻。
 - 重复执行不改变已有值，幂等；输出本次补齐的条数。
 - 回填与新 API 之间没有兼容层：不要在新版 API 上线前回填，旧进程下一次保存快照会把 `created_at` 覆盖掉。
+
+## 标签子项形状迁移（一次性）
+
+快照里的子标签从裸字符串（`"children": ["绘图"]`）改成了 `{name, description}` 对象。新版后端按对象解码整份目录，读到旧形状会直接拒绝启动，错误信息里带上下面这个命令名。
+
+```bash
+# 先看影响面，再改写；改写前会自动留一份原始文档
+POSTGRES_DSN=... go run ./cmd/migrate-tag-children -dry-run
+POSTGRES_DSN=... go run ./cmd/migrate-tag-children
+```
+
+- 只把字符串子标签转成 `{"name": <原字符串>}`，不编造描述；模组上的扁平 `tags` 与目录顺序都不动。
+- 幂等：已是新形状时报告 0 变更并保持文档逐字节原样，可以对所有部署无脑执行。
+- 改写前把原始文档写到 `-backup`（默认 `catalog-snapshot.backup.json`），`-backup=""` 关闭。
+- 没有 PostgreSQL 时用 `SUBMODHUB_DATA_DIR` 指向本地 `catalog.json`（同样先备份、写临时文件再 rename）。
+- 改写完成后重启后端：目录在内存里，不会自动重读；API 运行期间也不要另进程改写快照。
+- 没有兼容层：新版管理页发的是对象形状，旧的裸字符串请求体会在解码阶段被拒绝，管理页与后端一起更新。

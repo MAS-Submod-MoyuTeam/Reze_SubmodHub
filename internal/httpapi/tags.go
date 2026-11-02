@@ -15,9 +15,31 @@ import (
 // single source of truth for tags: authors pick from it and never invent names,
 // so a mod's flat Tags list is unambiguous as long as names are unique inside
 // the whole catalog (enforced by normalizeTagCatalog).
+//
+// Every tag carries its own Description: the admin writes it once and the same
+// sentence explains the tag in the author picker and in the catalog filter, so
+// a name like "杂项" is not the only thing a chooser has to go on.
 type TagGroup struct {
-	Name     string   `json:"name"`
-	Children []string `json:"children,omitempty"`
+	Name        string     `json:"name"`
+	Description string     `json:"description,omitempty"`
+	Children    []TagChild `json:"children,omitempty"`
+}
+
+// TagChild is a child tag. It is a full tag (name + description) rather than a
+// bare string so a sub-tag can explain itself exactly like its parent.
+type TagChild struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// Names returns the child tag names, which is what the flat mod storage and the
+// pruning pass actually need.
+func (g TagGroup) ChildNames() []string {
+	names := make([]string, len(g.Children))
+	for i, child := range g.Children {
+		names[i] = child.Name
+	}
+	return names
 }
 
 const (
@@ -30,7 +52,17 @@ const (
 	// maxTagNameRunes bounds one tag label; the display prefix "#" is added by
 	// the UI, so it stays out of the stored name.
 	maxTagNameRunes = 24
+	// maxTagDescriptionRunes bounds the one-line explanation. It is rendered as
+	// a secondary line under the tag name, so it has to stay readable at a
+	// glance instead of wrapping into a paragraph.
+	maxTagDescriptionRunes = 60
 )
+
+// tagCatalogMigrationHint is appended to a snapshot decode failure. A stored
+// catalog written before child tags became {name, description} objects cannot be
+// decoded any more, that is the only known cause, and the operator needs the
+// command that repairs the stored document instead of a bare json error.
+const tagCatalogMigrationHint = " (a stored catalog that still lists tag children as bare strings needs cmd/migrate-tag-children before this build can read it)"
 
 // defaultTagCatalog seeds a fresh deployment (and any snapshot written before
 // the catalog existed). Children are added by the admin page.
@@ -78,9 +110,9 @@ func writeTagError(w http.ResponseWriter, err error) {
 func cloneTagCatalog(groups []TagGroup) []TagGroup {
 	out := make([]TagGroup, len(groups))
 	for i, group := range groups {
-		out[i] = TagGroup{Name: group.Name}
+		out[i] = TagGroup{Name: group.Name, Description: group.Description}
 		if len(group.Children) > 0 {
-			out[i].Children = append([]string(nil), group.Children...)
+			out[i].Children = append([]TagChild(nil), group.Children...)
 		}
 	}
 	return out
@@ -113,8 +145,8 @@ func normalizeModTags(input []string, catalog []TagGroup) ([]string, error) {
 		parents[group.Name] = true
 		order[group.Name] = groupIndex * 100
 		for childIndex, child := range group.Children {
-			parentOf[child] = group.Name
-			order[child] = groupIndex*100 + childIndex + 1
+			parentOf[child.Name] = group.Name
+			order[child.Name] = groupIndex*100 + childIndex + 1
 		}
 	}
 
@@ -174,9 +206,25 @@ func normalizeTagName(raw string) (string, error) {
 	return name, nil
 }
 
+// normalizeTagDescription trims the explanation and enforces the one-line
+// budget. An empty description is allowed: tags whose name already says it all
+// do not need filler text.
+func normalizeTagDescription(raw string) (string, error) {
+	description := strings.TrimSpace(raw)
+	if utf8.RuneCountInString(description) > maxTagDescriptionRunes {
+		return "", violation("invalid_tag_catalog", "标签描述最多 %d 个字符", maxTagDescriptionRunes)
+	}
+	for _, r := range description {
+		if unicode.IsControl(r) {
+			return "", violation("invalid_tag_catalog", "标签描述不能包含换行等控制字符")
+		}
+	}
+	return description, nil
+}
+
 // normalizeTagCatalog validates an admin edit and returns the canonical form:
-// trimmed names, deduplicated children, and globally unique names across both
-// levels (flat mod storage depends on that).
+// trimmed names and descriptions, deduplicated children, and globally unique
+// names across both levels (flat mod storage depends on that).
 func normalizeTagCatalog(input []TagGroup) ([]TagGroup, error) {
 	if len(input) == 0 {
 		return nil, violation("invalid_tag_catalog", "标签目录至少需要一个主标签")
@@ -195,23 +243,31 @@ func normalizeTagCatalog(input []TagGroup) ([]TagGroup, error) {
 			return nil, violation("invalid_tag_catalog", "标签名 %q 重复", name)
 		}
 		seen[name] = true
+		description, err := normalizeTagDescription(group.Description)
+		if err != nil {
+			return nil, err
+		}
 		if len(group.Children) > maxTagChildren {
 			return nil, violation("invalid_tag_catalog", "主标签 %q 下的子标签最多 %d 个", name, maxTagChildren)
 		}
-		normalized := TagGroup{Name: name}
+		normalized := TagGroup{Name: name, Description: description}
 		for _, raw := range group.Children {
-			child, err := normalizeTagName(raw)
+			child, err := normalizeTagName(raw.Name)
 			if err != nil {
 				return nil, err
 			}
-			if slices.Contains(normalized.Children, child) {
+			childDescription, err := normalizeTagDescription(raw.Description)
+			if err != nil {
+				return nil, err
+			}
+			if slices.Contains(normalized.ChildNames(), child) {
 				continue
 			}
 			if seen[child] {
 				return nil, violation("invalid_tag_catalog", "标签名 %q 重复", child)
 			}
 			seen[child] = true
-			normalized.Children = append(normalized.Children, child)
+			normalized.Children = append(normalized.Children, TagChild{Name: child, Description: childDescription})
 		}
 		out = append(out, normalized)
 	}
@@ -225,7 +281,7 @@ func tagCatalogNames(catalog []TagGroup) map[string]bool {
 	for _, group := range catalog {
 		names[group.Name] = true
 		for _, child := range group.Children {
-			names[child] = true
+			names[child.Name] = true
 		}
 	}
 	return names
@@ -238,7 +294,12 @@ func tagCatalogEqual(a, b []TagGroup) bool {
 		return false
 	}
 	for i := range a {
-		if a[i].Name != b[i].Name || !slices.Equal(a[i].Children, b[i].Children) {
+		// Descriptions are part of the catalog: editing one changes what every
+		// chooser reads, so it has to count as a change.
+		if a[i].Name != b[i].Name || a[i].Description != b[i].Description {
+			return false
+		}
+		if !slices.Equal(a[i].Children, b[i].Children) {
 			return false
 		}
 	}

@@ -465,8 +465,8 @@ func newStore(dataDir string, initial Catalog, loadLocalCatalog bool) (*Store, e
 	s := &Store{Catalog: initial, DataDir: dataDir, GitHubSyncMaxAge: defaultGitHubSyncMaxAge, sessions: map[string]authSession{}, simultaneousSyncs: map[string]bool{}, downloadSem: make(chan struct{}, 2)}
 	if loadLocalCatalog {
 		if b, err := os.ReadFile(filepath.Join(dataDir, "catalog.json")); err == nil {
-			if json.Unmarshal(b, &s.Catalog) != nil {
-				return nil, errors.New("invalid catalog.json")
+			if decodeErr := json.Unmarshal(b, &s.Catalog); decodeErr != nil {
+				return nil, errors.New("invalid catalog.json: " + decodeErr.Error() + tagCatalogMigrationHint)
 			}
 		} else if !os.IsNotExist(err) {
 			return nil, err

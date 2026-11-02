@@ -43,9 +43,9 @@ func NewPostgresStore(ctx context.Context, dsn, dataDir string, initial Catalog)
 	var document []byte
 	err = db.QueryRowContext(ctx, "SELECT document FROM catalog_snapshot WHERE id = 1").Scan(&document)
 	if err == nil {
-		if err = json.Unmarshal(document, &s.Catalog); err != nil {
+		if decodeErr := json.Unmarshal(document, &s.Catalog); decodeErr != nil {
 			db.Close()
-			return nil, err
+			return nil, errors.New("invalid catalog snapshot: " + decodeErr.Error() + tagCatalogMigrationHint)
 		}
 		if s.Catalog.Versions == nil {
 			s.Catalog.Versions = map[string]Version{}

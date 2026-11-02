@@ -7,9 +7,21 @@ import {
   ArrowUp,
   RefreshCw,
   AlertCircle,
+  Tag,
 } from 'lucide-react';
 import { ModSummary, InstalledItem, Installation } from '../types/client';
 import type { DownloadProgress } from '../../../../ui/catalog-api';
+import { fetchTagCatalog, type TagGroup } from '../../../../ui/tags-api';
+import {
+  EMPTY_TAG_FILTER,
+  activeTagFilterCount,
+  buildTagFilterRows,
+  describeTagFilter,
+  matchesTagFilter,
+  toggleTagFilter,
+  type TagFilterStates,
+} from '../../../../ui/tag-filter';
+import { TagFilterDrawer } from './TagFilterDrawer';
 import { useLoadMoreOnScroll } from './useLoadMoreOnScroll';
 import { usePaneScrolled } from './usePaneScrolled';
 import { scrollPaneToTop } from './scrollToTop';
@@ -57,7 +69,15 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'submod' | 'spritepack'>('all');
   const [selectedPlatform, setSelectedPlatform] = useState<'all' | 'windows' | 'android'>(defaultPlatform);
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  /**
+   * 标签筛选：标签名 → 包含/排除。默认不选，点一次包含、再点一次排除。
+   * 与 Web 共用 `ui/tag-filter` 的语义，不在两端各写一份。
+   */
+  const [tagFilter, setTagFilter] = useState<TagFilterStates>(EMPTY_TAG_FILTER);
+  const [tagDrawerOpen, setTagDrawerOpen] = useState(false);
+  const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
+  const [tagCatalogLoading, setTagCatalogLoading] = useState(true);
+  const [tagCatalogError, setTagCatalogError] = useState<string | null>(null);
   /** 已加载页数：滚动到列表底部即 +1，目录分页与 Web 一致，不再用页码翻页。 */
   const [loadedPage, setLoadedPage] = useState(1);
   const pageSize = 6;
@@ -71,6 +91,31 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     return Array.from(tags);
   }, [mods]);
 
+  // 标签目录是抽屉的第一来源：顺序与主/子层级由管理员维护；读不到时退回模组聚合的标签。
+  useEffect(() => {
+    let cancelled = false;
+    // `import.meta.env` 在 Node 测试里不存在，读法必须能容忍它缺席（与 ModDetailModal 一致）。
+    const apiBase = `${(((import.meta as any).env?.VITE_API_BASE_URL as string | undefined) || '').replace(/\/$/, '')}/api/v1`;
+    fetchTagCatalog(apiBase)
+      .then((catalog) => {
+        if (cancelled) return;
+        setTagGroups(catalog.groups);
+        setTagCatalogError(null);
+      })
+      .catch(() => {
+        if (!cancelled) setTagCatalogError('标签目录读取失败，已退回按模组聚合出的标签筛选');
+      })
+      .finally(() => {
+        if (!cancelled) setTagCatalogLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const tagFilterRows = useMemo(() => buildTagFilterRows(tagGroups, allTags), [tagGroups, allTags]);
+  const activeTagCount = activeTagFilterCount(tagFilter);
+
   // Filtered mods
   const filteredMods = useMemo(() => {
     return mods.filter((mod) => {
@@ -82,8 +127,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
       if (selectedPlatform !== 'all' && !mod.supported_platforms.includes(selectedPlatform)) {
         return false;
       }
-      // Tag filter
-      if (selectedTag && !mod.tags.includes(selectedTag)) {
+      // 标签筛选：每个包含标签都要在，任一排除标签在就不显示。
+      if (!matchesTagFilter(mod.tags, tagFilter)) {
         return false;
       }
       // Search query
@@ -101,7 +146,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
       // 界面上的开关一直是禁用的。这里不写任何猜测性判断，也不留永远不会执行的死分支。
       return true;
     });
-  }, [mods, selectedCategory, selectedPlatform, selectedTag, searchQuery]);
+  }, [mods, selectedCategory, selectedPlatform, tagFilter, searchQuery]);
 
   // 页数每次渲染都按命中总数收敛：切回更宽的筛选时，页数会被夹到结果能覆盖的上限，
   // 不会把用户从没滚动加载过的条目一次塞回首屏。
@@ -277,36 +322,24 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             </label>
           </div>
 
-          {/* Tags quick filter */}
-          <div className="flex items-center gap-1.5 overflow-x-auto max-w-full no-scrollbar py-0.5">
-            <span className="text-neutral-400 shrink-0">标签:</span>
-            {selectedTag && (
-              <button
-                onClick={() => {
-                  setSelectedTag(null);
-                  resetPaging();
-                }}
-                className="text-[11px] text-emerald-400 hover:underline shrink-0 cursor-pointer"
-              >
-                清除 ({selectedTag})
-              </button>
-            )}
-            {allTags.slice(0, 7).map((tag) => (
-              <button
-                key={tag}
-                onClick={() => {
-                  setSelectedTag(selectedTag === tag ? null : tag);
-                  resetPaging();
-                }}
-                className={`text-[11px] px-2 py-0.5 rounded transition-colors shrink-0 cursor-pointer ${
-                  selectedTag === tag
-                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                    : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800'
-                }`}
-              >
-                {tag}
-              </button>
-            ))}
+          {/* 标签筛选入口：头部只留一个按钮，点开是右侧抽屉。
+              头部原先铺一行前 7 个标签，目录一多就只能截断，也把首屏挤掉。 */}
+          <div className="flex items-center gap-1.5 shrink-0 py-0.5">
+            <button
+              type="button"
+              onClick={() => setTagDrawerOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={tagDrawerOpen}
+              data-testid="catalog-tags-inline"
+              className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                activeTagCount > 0
+                  ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                  : 'text-neutral-400 border-neutral-700 hover:text-neutral-200 hover:bg-neutral-800'
+              }`}
+            >
+              <Tag className="w-3 h-3" aria-hidden="true" />
+              <span>{activeTagCount > 0 ? `已筛 ${activeTagCount} 个标签` : '标签筛选'}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -374,7 +407,27 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   ? '请尝试修改关键词，或清除平台与标签过滤条件。'
                   : `当前只显示 ${selectedPlatform === 'windows' ? 'Windows' : 'Android'} 平台的模组，另一个平台的模组不会出现在这里。`}
               </p>
-              <div className="mt-4 flex items-center gap-2">
+              {/* 标签筛选是收窄条件（包含之间是 AND），空结果很可能就是它造成的：
+                  说明是哪几个标签，并给出只清标签的入口，而不是只留一个连
+                  搜索/分类/平台一起清掉的按钮。 */}
+              {activeTagCount > 0 ? (
+                <p className="text-xs text-emerald-300 mt-2" data-testid="catalog-tag-filter-reason">
+                  当前标签筛选：{describeTagFilter(tagFilter)}
+                </p>
+              ) : null}
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                {activeTagCount > 0 && (
+                  <button
+                    onClick={() => {
+                      setTagFilter(EMPTY_TAG_FILTER);
+                      resetPaging();
+                    }}
+                    data-testid="catalog-clear-tags"
+                    className="px-3 py-1.5 text-xs font-medium text-emerald-100 bg-emerald-800 hover:bg-emerald-700 rounded-lg transition-colors"
+                  >
+                    只清除标签筛选
+                  </button>
+                )}
                 {selectedPlatform !== 'all' && (
                   <button
                     onClick={() => {
@@ -391,7 +444,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                     setSearchQuery('');
                     setSelectedCategory('all');
                     setSelectedPlatform('all');
-                    setSelectedTag(null);
+                    setTagFilter(EMPTY_TAG_FILTER);
                     resetPaging();
                   }}
                   className="px-3 py-1.5 text-xs font-medium text-neutral-200 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors"
@@ -538,10 +591,9 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           )}
         </div>
 
-        {/* 悬浮刷新：只在「模组大厅」出现；刷新期间置灰并持续旋转，直到重新拉取结束。
-            加载失败时隐藏，避免与空态里的「重新加载目录」按钮重复同一个入口。 */}
-        {/* 悬浮控件自下而上排：刷新在下，返回顶部叠在它上方，两者都是 `w-11 h-11`，
-            不会互相遮挡。返回顶部只在离开顶部后出现，滚到顶就自行收回。 */}
+        {/* 悬浮控件自下而上排：刷新在最下，标签按钮紧挨在它上方，返回顶部再叠一层。
+            三者都是 `w-11 h-11`，不会互相遮挡；刷新失败时隐藏，避免与空态里的
+            「重新加载目录」重复同一个入口。 */}
         {scrolled && (
           <button
             type="button"
@@ -549,11 +601,35 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             aria-label="返回顶部"
             title="返回顶部"
             data-testid="catalog-back-to-top"
-            className="absolute right-4 bottom-[4.5rem] z-10 w-11 h-11 rounded-full flex items-center justify-center border border-neutral-700 bg-neutral-800/95 text-neutral-300 shadow-lg transition-colors cursor-pointer hover:border-emerald-700/70 hover:bg-neutral-800 hover:text-emerald-300"
+            className="absolute right-4 bottom-[7.5rem] z-10 w-11 h-11 rounded-full flex items-center justify-center border border-neutral-700 bg-neutral-800/95 text-neutral-300 shadow-lg transition-colors cursor-pointer hover:border-emerald-700/70 hover:bg-neutral-800 hover:text-emerald-300"
           >
             <ArrowUp className="w-4 h-4" aria-hidden="true" />
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => setTagDrawerOpen((prev) => !prev)}
+          aria-expanded={tagDrawerOpen}
+          aria-haspopup="dialog"
+          aria-label={activeTagCount > 0 ? `标签筛选（已启用 ${activeTagCount} 个标签）` : '标签筛选'}
+          title={activeTagCount > 0 ? `标签筛选（已启用 ${activeTagCount} 个标签）` : '标签筛选'}
+          data-testid="catalog-tags"
+          className={`absolute right-4 bottom-[4.5rem] z-10 w-11 h-11 rounded-full flex items-center justify-center border shadow-lg transition-colors cursor-pointer ${
+            tagDrawerOpen || activeTagCount > 0
+              ? 'border-emerald-500 bg-emerald-600 text-white'
+              : 'border-neutral-700 bg-neutral-800/95 text-neutral-300 hover:border-emerald-700/70 hover:bg-neutral-800 hover:text-emerald-300'
+          }`}
+        >
+          <Tag className="w-4 h-4" aria-hidden="true" />
+          {activeTagCount > 0 ? (
+            <span
+              data-testid="catalog-tags-badge"
+              className="absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-emerald-500 text-neutral-950 text-[10px] font-semibold leading-[1.1rem] text-center tabular-nums"
+            >
+              {activeTagCount}
+            </span>
+          ) : null}
+        </button>
         {!catalogError && (
           <button
             type="button"
@@ -562,6 +638,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             aria-busy={isCatalogRefreshing || undefined}
             aria-label="刷新模组目录"
             title={isCatalogRefreshing ? '正在刷新模组目录…' : '刷新模组目录'}
+            data-testid="catalog-refresh"
             className={`absolute right-4 bottom-4 z-10 w-11 h-11 rounded-full flex items-center justify-center border shadow-lg transition-colors ${
               isCatalogRefreshing
                 ? 'cursor-not-allowed border-neutral-800 bg-neutral-900/80 text-neutral-600'
@@ -575,6 +652,23 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           </button>
         )}
       </div>
+
+      <TagFilterDrawer
+        open={tagDrawerOpen}
+        onClose={() => setTagDrawerOpen(false)}
+        rows={tagFilterRows}
+        states={tagFilter}
+        onToggle={(name) => {
+          setTagFilter((prev) => toggleTagFilter(prev, name));
+          resetPaging();
+        }}
+        onClear={() => {
+          setTagFilter(EMPTY_TAG_FILTER);
+          resetPaging();
+        }}
+        loading={tagCatalogLoading}
+        error={tagCatalogError}
+      />
 
       {/* 页脚：随下拉自动续页，不再翻页。全部条目早已在内存里，续页只是逐页渲染，
           所以这里只说「已渲染 / 共」，不谎报「正在加载」；失败与无匹配由列表区各自说明。 */}
