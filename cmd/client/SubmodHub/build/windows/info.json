@@ -1,10 +1,10 @@
 {
 	"fixed": {
-		"file_version": "0.9.21"
+		"file_version": "0.9.22"
 	},
 	"info": {
 		"0000": {
-			"ProductVersion": "0.9.21",
+			"ProductVersion": "0.9.22",
 			"CompanyName": "My Company",
 			"FileDescription": "MAS submod manager",
 			"LegalCopyright": "© 2026, My Company",
