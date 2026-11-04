@@ -153,6 +153,8 @@ export interface Plan {
   blockers?: string[];
   risks?: Array<{ type: string; path?: string; description: string }>;
   cleanup_paths?: string[];
+  /** 计划里刻意不登记进账本的引擎编译产物：它们的脚本已在同一计划中登记。 */
+  derived_paths?: string[];
   sprite_set_ids?: string[];
   sprite_selection_hash?: string;
   selected_sprite_set_count?: number;
@@ -250,6 +252,9 @@ export interface InstalledItem {
   installed_at: string;
   sha256: string;
   unmanaged_paths?: string[];
+  /** 未托管文件 → 编译它的脚本。有来源表示该文件是引擎生成的编译产物；
+   *  收养只把脚本写进账本，编译器产物由引擎下次启动重建。 */
+  derived_sources?: Record<string, string>;
   submod_dir_name?: string;
   /** 该目录已被这些托管安装占用；空表示整组文件都不在账本内。 */
   managed_owners?: Array<{ installation_id: string; mod_id?: string; title?: string }>;

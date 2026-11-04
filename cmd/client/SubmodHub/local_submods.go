@@ -60,6 +60,11 @@ type LocalSubmodFile struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
+	// DerivedFrom names the script this file was compiled from, when it is a
+	// generated compile cache rather than shipped content. Adoption leaves such a
+	// file untracked, so the wizard has to show it as out of scope instead of
+	// offering it as adoptable content and dropping it later at confirm time.
+	DerivedFrom string `json:"derived_from,omitempty"`
 }
 
 func canonicalizePathKey(rel string) string {
@@ -317,9 +322,13 @@ func scanLocalSubmodsCore(masRoot string, manifest *install.Manifest) ([]LocalSu
 
 		canonicalPath := filepath.ToSlash(filepath.Join("game", relToGame))
 		fileObj := &LocalSubmodFile{
-			Path:   canonicalPath,
-			SHA256: hex.EncodeToString(hasher.Sum(nil)),
-			Size:   fileBytes,
+			Path:        canonicalPath,
+			SHA256:      hex.EncodeToString(hasher.Sum(nil)),
+			Size:        fileBytes,
+			DerivedFrom: "",
+		}
+		if source := install.DerivedArtifactSource(masRoot, canonicalPath); source != "" {
+			fileObj.DerivedFrom = source
 		}
 
 		var regs []SubmodRegistration

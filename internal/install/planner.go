@@ -62,6 +62,10 @@ type Plan struct {
 	SelectedSpriteSetCount int          `json:"selected_sprite_set_count,omitempty"`
 	Actions                []PlanAction `json:"actions"`
 	CleanupPaths           []string     `json:"cleanup_paths,omitempty"`
+	// DerivedPaths lists discovered files whose bytes belong to another file in
+	// the same plan. They are deliberately left untracked: the ledger records the
+	// source, and the owner of the naming rule regenerates the derived file.
+	DerivedPaths []string `json:"derived_paths,omitempty"`
 	Blockers               []string     `json:"blockers"`
 	Risks                  []PlanRisk   `json:"risks"`
 	Summary                PlanSummary  `json:"summary"`

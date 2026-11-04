@@ -100,7 +100,13 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
 
   // Default to all files in the detected unmanaged item; candidate validation still blocks identity conflicts.
   const allPaths = item?.unmanaged_paths || [];
-  const defaultSelectedPaths = allPaths;
+  // Compile caches are generated from a script in the same directory, so the
+  // ledger records the script and lets Ren'Py rebuild the cache. They are shown
+  // separately instead of being offered as adoptable content.
+  const derivedSources = item?.derived_sources || {};
+  const adoptablePaths = allPaths.filter((p) => !derivedSources[p]);
+  const derivedPaths = allPaths.filter((p) => Boolean(derivedSources[p]));
+  const defaultSelectedPaths = adoptablePaths;
 
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(
     new Set(defaultSelectedPaths)
@@ -207,7 +213,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
     onConfirmAdopt(updated, chosen);
   };
 
-  const previewPaths = showAllFiles ? allPaths : allPaths.slice(0, 5);
+  const previewPaths = showAllFiles ? adoptablePaths : adoptablePaths.slice(0, 5);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs select-none">
@@ -386,14 +392,14 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
           {/* Scanned files summary with checklist */}
           <div className="p-3 bg-neutral-950 rounded-lg border border-neutral-800 space-y-2 font-mono text-[11px]">
             <div className="flex items-center justify-between text-neutral-400">
-              <span>纳入收养范围的文件清单 ({selectedPaths.size} / {allPaths.length}):</span>
-              {allPaths.length > 5 && (
+              <span>纳入收养范围的文件清单 ({selectedPaths.size} / {adoptablePaths.length}):</span>
+              {adoptablePaths.length > 5 && (
                 <button
                   type="button"
                   onClick={() => setShowAllFiles(!showAllFiles)}
                   className="text-emerald-400 hover:text-emerald-300 cursor-pointer font-sans text-[11px]"
                 >
-                  {showAllFiles ? '收起' : `展开全部 (${allPaths.length})`}
+                  {showAllFiles ? '收起' : `展开全部 (${adoptablePaths.length})`}
                 </button>
               )}
             </div>
@@ -417,6 +423,21 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
                 );
               })}
             </div>
+
+            {/* Generated compile caches stay with their script in the ledger. */}
+            {derivedPaths.length > 0 && (
+              <div className="pt-1.5 border-t border-neutral-800 space-y-1 text-neutral-500">
+                <div className="text-neutral-400">
+                  不纳入账本的引擎编译产物 ({derivedPaths.length} 个):
+                </div>
+                {derivedPaths.map((p) => (
+                  <div key={p} className="truncate">
+                    <span className="line-through decoration-neutral-700">{p}</span>
+                    <span className="text-neutral-600"> — 由 {derivedSources[p]} 编译生成，游戏启动时自动重建</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

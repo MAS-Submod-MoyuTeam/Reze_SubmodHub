@@ -383,19 +383,20 @@ func (s *DesktopService) PreviewAdopt(request AdoptRequest) (PlanResult, error) 
 	}
 
 	return PlanResult{
-		PlanID:      plan.PlanID,
-		OperationID: plan.OperationID,
-		Root:        plan.Root,
-		Generation:  plan.Generation,
-		Kind:        "adopt",
-		TargetID:    targetID,
-		ModTitle:    title,
-		Version:     effectiveVersion,
-		Priority:    request.Priority,
-		Actions:     actions,
+		PlanID:       plan.PlanID,
+		OperationID:  plan.OperationID,
+		Root:         plan.Root,
+		Generation:   plan.Generation,
+		Kind:         "adopt",
+		TargetID:     targetID,
+		ModTitle:     title,
+		Version:      effectiveVersion,
+		Priority:     request.Priority,
+		Actions:      actions,
 		CleanupPaths: plan.CleanupPaths,
-		Blockers:    plan.Blockers,
-		Risks:       []PlanPreviewRisk{},
+		DerivedPaths: plan.DerivedPaths,
+		Blockers:     plan.Blockers,
+		Risks:        []PlanPreviewRisk{},
 		Summary: PlanPreviewSummary{
 			MetadataOnly: plan.Summary.MetadataOnly,
 		},
@@ -408,10 +409,23 @@ func (s *DesktopService) projectedAdoptInstalledArchive(request AdoptRequest, pl
 		return nil, err
 	}
 
+	// The receipt describes what the ledger actually owns, so it counts the files
+	// the plan recorded. Selected files that were set aside as generated compile
+	// caches are not owned content and must not inflate the count or the size.
+	adopted := make(map[string]bool, len(plan.Actions))
+	for _, action := range plan.Actions {
+		adopted[canonicalizePathKey(action.Path)] = true
+	}
+
 	// Calculate total size and submod dirs
 	var totalSize int64
 	submodDirsMap := make(map[string]bool)
+	adoptedCount := 0
 	for _, f := range request.Files {
+		if !adopted[canonicalizePathKey(f)] {
+			continue
+		}
+		adoptedCount++
 		fullPath := filepath.Join(s.root, filepath.FromSlash(f))
 		if info, err := os.Stat(fullPath); err == nil {
 			totalSize += info.Size()
@@ -456,7 +470,7 @@ func (s *DesktopService) projectedAdoptInstalledArchive(request AdoptRequest, pl
 		Title:       title,
 		OperationID: plan.OperationID,
 		Priority:    request.Priority,
-		Files:       len(request.Files),
+		Files:       adoptedCount,
 		SizeBytes:   totalSize,
 		SHA256:      "", // Adopted from manual files, no single zip archive hash
 		InstalledAt: time.Now().UTC(),

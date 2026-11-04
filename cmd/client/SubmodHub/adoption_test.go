@@ -681,3 +681,124 @@ func TestDesktopServiceAdoptHTTPStoreCandidateModIDEmptyOrOmitted(t *testing.T) 
 	})
 }
 
+
+// End-to-end: adopting a folder that Ren'Py already compiled must record the
+// script, not the generated cache. A recorded cache would be reported as drift
+// the moment the engine recompiles, and repair cannot restore engine-owned bytes.
+func TestDesktopServiceAdoptSkipsGeneratedCompileCaches(t *testing.T) {
+	root := t.TempDir()
+	configDir := t.TempDir()
+
+	dir := filepath.Join(root, "game", "Submods", "CompiledMod")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.rpy"), []byte("init python:\n    Submod(name='Compiled', author='A', version='1.0')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.rpyc"), []byte("COMPILED-v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewDesktopService()
+	service.configPath = filepath.Join(configDir, "instances.json")
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	scan, err := service.ScanLocalSubmods()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scan) != 1 || len(scan[0].Files) != 2 {
+		t.Fatalf("expected the scan to report both files, got %+v", scan)
+	}
+	derivedByPath := make(map[string]string, len(scan[0].Files))
+	for _, f := range scan[0].Files {
+		derivedByPath[f.Path] = f.DerivedFrom
+	}
+	if source := derivedByPath["game/Submods/CompiledMod/main.rpyc"]; source != "game/Submods/CompiledMod/main.rpy" {
+		t.Fatalf("expected the scan to name the compile source, got %q (all: %+v)", source, derivedByPath)
+	}
+	if source, ok := derivedByPath["game/Submods/CompiledMod/main.rpy"]; !ok || source != "" {
+		t.Fatalf("a script must not be marked derived, got %q (all: %+v)", source, derivedByPath)
+	}
+
+	// The wizard only offers the script, but the backend must enforce the rule on
+	// its own: send the whole scan result and let the plan set the cache aside.
+	preview, err := service.PreviewAdopt(AdoptRequest{
+		ScanItemID: "CompiledMod",
+		ModID:      "compiled_mod",
+		Version:    "1.0",
+		Title:      "Compiled Mod",
+		Priority:   10,
+		Files: []string{
+			"game/Submods/CompiledMod/main.rpy",
+			"game/Submods/CompiledMod/main.rpyc",
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreviewAdopt failed: %v", err)
+	}
+	if len(preview.Blockers) > 0 {
+		t.Fatalf("unexpected blockers: %+v", preview.Blockers)
+	}
+	if len(preview.DerivedPaths) != 1 || preview.DerivedPaths[0] != "game/Submods/CompiledMod/main.rpyc" {
+		t.Fatalf("expected the compile cache to be set aside, got %+v", preview.DerivedPaths)
+	}
+	if len(preview.Actions) != 1 || preview.Actions[0].Path != "game/Submods/CompiledMod/main.rpy" {
+		t.Fatalf("expected only the script to be recorded, got %+v", preview.Actions)
+	}
+
+	if _, err := service.ExecutePlan(ExecutePlanRequest{PlanID: preview.PlanID, Confirmed: true}); err != nil {
+		t.Fatalf("ExecutePlan failed: %v", err)
+	}
+
+	receipts, err := service.ListInstalledArchives()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) != 1 || receipts[0].Files != 1 {
+		t.Fatalf("receipt must count only recorded files, got %+v", receipts)
+	}
+
+	// Ren'Py recompiles on the next launch: same script, different cache bytes.
+	if err := os.WriteFile(filepath.Join(dir, "main.rpyc"), []byte("COMPILED-v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files, err := service.ListInstalledModFiles("compiled_mod", "compiled_mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files.Summary.DriftedFiles != 0 {
+		t.Fatalf("recompiling a generated cache must not read as content drift, got %+v (%+v)", files.Summary, files.Files)
+	}
+
+	rescan, err := service.ScanLocalSubmods()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range rescan {
+		for _, f := range item.Files {
+			if f.Path == "game/Submods/CompiledMod/main.rpyc" {
+				t.Fatalf("recompiled cache of an adopted script must not resurface as unmanaged: %+v", rescan)
+			}
+		}
+	}
+
+	// Uninstalling restores the recorded script and still purges the cache: an
+	// orphan .rpyc keeps loading after its source is gone.
+	uninstallPreview, err := service.PreviewUninstall("compiled_mod")
+	if err != nil {
+		t.Fatalf("PreviewUninstall failed: %v", err)
+	}
+	if _, err := service.ExecutePlan(ExecutePlanRequest{PlanID: uninstallPreview.PlanID, Confirmed: true}); err != nil {
+		t.Fatalf("uninstall ExecutePlan failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "main.rpy")); err != nil {
+		t.Fatalf("uninstall must keep the adopted script on disk: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "main.rpyc")); !os.IsNotExist(err) {
+		t.Fatalf("uninstall must purge the generated cache of a removed source, err=%v", err)
+	}
+}

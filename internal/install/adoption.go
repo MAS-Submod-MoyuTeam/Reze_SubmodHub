@@ -114,6 +114,19 @@ func PlanAdoption(m *Manifest, root string, blobs *BlobStore, op AdoptOperation)
 			continue
 		}
 
+		// Adoption records whatever the user points at, but a compile cache file is
+		// generated data, not content: recording it would freeze one Ren'Py build's
+		// bytecode as a ledger layer that recompilation immediately reports as
+		// drift, and the repair flow cannot restore bytes the engine owns. An
+		// existing script proves its sibling artifact is regenerable, so adopting a
+		// selection and re-scanning it decide ownership by the same evidence — the
+		// source, never the folder or the extension alone. A compiled-only script
+		// has no source, so it stays adoptable as the sole copy.
+		if DerivedArtifactSource(root, displayPath) != "" {
+			plan.DerivedPaths = append(plan.DerivedPaths, displayPath)
+			continue
+		}
+
 		diskPath := filepath.Join(root, filepath.FromSlash(displayPath))
 
 		// Prevent symlink traversal out of root
@@ -199,6 +212,14 @@ func PlanAdoption(m *Manifest, root string, blobs *BlobStore, op AdoptOperation)
 			Mode:          mode,
 		})
 		plan.Summary.MetadataOnly++
+	}
+
+	// Every requested file was a compile cache of a script that already exists on
+	// disk, so the plan would record nothing at all. Say so instead of committing
+	// an installation with no owned paths.
+	if len(plan.Actions) == 0 && len(plan.DerivedPaths) > 0 {
+		plan.Blockers = append(plan.Blockers, fmt.Sprintf(
+			"nothing_to_adopt: all %d selected files are compile caches of an existing script; adopt the script instead", len(plan.DerivedPaths)))
 	}
 
 	projManifest.Installations[instID] = instRec

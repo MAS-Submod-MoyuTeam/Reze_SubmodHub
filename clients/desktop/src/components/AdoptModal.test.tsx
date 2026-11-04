@@ -529,3 +529,32 @@ test('AdoptModal: candidate validation rejects title-matching foreign registrati
   assert.ok(html.includes('所选文件中未包含候选模组的有效注册来源文件，归属不明确，禁止提交。'));
   assert.ok(html.includes('disabled=""'));
 });
+
+test('AdoptModal: engine-compiled caches are listed out of scope and never preselected', () => {
+  const item = makeMockUnmanagedItem({
+    registrations: [],
+    unmanaged_paths: [
+      'game/Submods/TestSubmod/main.rpy',
+      'game/Submods/TestSubmod/main.rpyc',
+      'game/Submods/TestSubmod/asset.png',
+    ],
+    derived_sources: {
+      'game/Submods/TestSubmod/main.rpyc': 'game/Submods/TestSubmod/main.rpy',
+    },
+  });
+
+  const html = renderToStaticMarkup(
+    <AdoptModal
+      item={item}
+      onClose={() => {}}
+      onConfirmAdopt={() => {}}
+    />
+  );
+
+  // Only the script and the asset are adoptable content.
+  assert.ok(html.includes('纳入收养范围的文件清单 (2 / 2)'));
+  assert.ok(html.includes('不纳入账本的引擎编译产物 (1 个)'));
+  assert.ok(html.includes('由 game/Submods/TestSubmod/main.rpy 编译生成'));
+  assert.ok(html.includes('确认收养并写入 Ledger (2 个文件)'));
+  assert.ok(!html.includes('纳入收养范围的文件清单 (3 / 3)'));
+});

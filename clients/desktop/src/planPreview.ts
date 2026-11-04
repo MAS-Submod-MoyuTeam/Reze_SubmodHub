@@ -24,6 +24,7 @@ export function mapPlanPreview(preview: Awaited<ReturnType<typeof PreviewArchive
     blockers: preview.blockers || [],
     risks: preview.risks || [],
     cleanup_paths: (preview as { cleanup_paths?: string[] }).cleanup_paths || [],
+    derived_paths: (preview as { derived_paths?: string[] }).derived_paths || [],
     summary: preview.summary,
     sprite_set_ids: (preview as { sprite_set_ids?: string[] }).sprite_set_ids || metadata.sprite_set_ids,
     sprite_selection_hash: (preview as { sprite_selection_hash?: string }).sprite_selection_hash || metadata.sprite_selection_hash,

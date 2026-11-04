@@ -16,18 +16,12 @@ import (
 // they outlive their source they can keep stale code loadable (an orphan .rpyc is
 // loaded by Ren'Py even when the corresponding .rpy is gone).
 func compiledArtifactCandidates(root, display string) []string {
-	lower := strings.ToLower(display)
-	var rels []string
-	switch {
-	case strings.HasSuffix(lower, ".rpy"):
-		rels = append(rels, display[:len(display)-len(".rpy")]+".rpyc")
-	case strings.HasSuffix(lower, ".rpym"):
-		rels = append(rels, display[:len(display)-len(".rpym")]+".rpymc")
-	case strings.HasSuffix(lower, ".py"):
-		base := display[:len(display)-len(".py")]
-		rels = append(rels, base+".pyc", base+".pyo")
+	rels := derivedArtifactNames(display)
+	if strings.HasSuffix(strings.ToLower(display), ".py") {
+		// __pycache__ entries can only be listed for a source that exists.
 		rels = append(rels, pycacheArtifacts(root, display)...)
-	default:
+	}
+	if len(rels) == 0 {
 		return nil
 	}
 
@@ -44,6 +38,55 @@ func compiledArtifactCandidates(root, display string) []string {
 		out = append(out, rel)
 	}
 	return out
+}
+
+// derivedArtifactNames returns the sibling cache file names a script path
+// produces, whether or not they exist on disk. It is the single place that owns
+// Ren'Py's compile-naming rule, for both directions of the lookup.
+func derivedArtifactNames(display string) []string {
+	lower := strings.ToLower(display)
+	switch {
+	case strings.HasSuffix(lower, ".rpy"):
+		return []string{display[:len(display)-len(".rpy")] + ".rpyc"}
+	case strings.HasSuffix(lower, ".rpym"):
+		return []string{display[:len(display)-len(".rpym")] + ".rpymc"}
+	case strings.HasSuffix(lower, ".py"):
+		base := display[:len(display)-len(".py")]
+		return []string{base + ".pyc", base + ".pyo"}
+	default:
+		return nil
+	}
+}
+
+// DerivedArtifactSource reports the script a compiled cache file was generated
+// from, or "" when the file is not derived data of an existing source.
+//
+// Ownership is normally resolved forwards (source → artifacts), which is what
+// DerivedArtifactKeys and the install-time cleanup do. Adoption runs the other
+// way: the user hands over a discovered path and the ledger has to decide whether
+// that path is generated data or shipped content. Ren'Py's rule is lossless for
+// .rpyc/.rpymc — the artifact sits beside its script and only .rpy/.rpym are
+// discovered as scripts — so an existing source proves the artifact is derived.
+//
+// Python bytecode is deliberately not resolved here: .pyc/.pyo and __pycache__
+// entries can come from a source this check cannot see (namespace packages,
+// extension modules, sources outside the scanned tree), and wrongly calling real
+// content "derived" would drop files the user asked to adopt.
+func DerivedArtifactSource(root, display string) string {
+	lower := strings.ToLower(display)
+	var source string
+	switch {
+	case strings.HasSuffix(lower, ".rpyc"):
+		source = display[:len(display)-len(".rpyc")] + ".rpy"
+	case strings.HasSuffix(lower, ".rpymc"):
+		source = display[:len(display)-len(".rpymc")] + ".rpym"
+	default:
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(source))); err != nil {
+		return ""
+	}
+	return source
 }
 
 // DerivedArtifactKeys returns the canonical keys of the compiled cache files

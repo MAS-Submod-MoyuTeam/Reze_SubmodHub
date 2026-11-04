@@ -483,6 +483,11 @@ export default function App() {
         size_bytes: (item.files || []).reduce((sum, file) => sum + file.size, 0),
         installed_at: new Date().toISOString(), sha256: item.files?.[0]?.sha256 || '',
         unmanaged_paths: (item.files || []).map((file) => file.path),
+        // 引擎编译产物由同目录脚本生成，收养时只登记脚本。
+        derived_sources: (item.files || []).reduce<Record<string, string>>((acc, file) => {
+          if (file.derived_from) acc[file.path] = file.derived_from;
+          return acc;
+        }, {}),
         submod_dir_name: item.directory,
         scan_item_id: item.id || item.directory,
         registrations: item.registrations || [],

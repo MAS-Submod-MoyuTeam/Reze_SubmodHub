@@ -424,6 +424,28 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
             </div>
           )}
 
+          {/* Generated compile caches kept out of the ledger */}
+          {plan.derived_paths && plan.derived_paths.length > 0 && (
+            <div className="p-3.5 rounded-lg bg-neutral-900/70 border border-neutral-700 flex items-start gap-3 text-xs">
+              <FileCheck className="w-5 h-5 text-neutral-400 shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-1.5">
+                <div className="font-semibold text-neutral-300">
+                  不登记进账本的引擎编译产物 ({plan.derived_paths.length} 个文件)
+                </div>
+                <p className="text-neutral-400 leading-relaxed">
+                  这些文件由 Ren&apos;Py 从本次收养的脚本编译生成，不是模组自带内容。
+                  账本只登记脚本，编译产物留给引擎在下次启动时重建，
+                  因此重编译不会被当成文件漂移。
+                </p>
+                <ul className="font-mono text-[11px] text-neutral-400 space-y-0.5 max-h-24 overflow-y-auto">
+                  {plan.derived_paths.map((path) => (
+                    <li key={path} className="break-all">• {path}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
           {/* Generated Ren'Py / Python Cache Cleanup */}
           {plan.cleanup_paths && plan.cleanup_paths.length > 0 && (
             <div className="p-3.5 rounded-lg bg-sky-950/40 border border-sky-800/80 flex items-start gap-3 text-xs">

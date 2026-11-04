@@ -113,9 +113,14 @@ type PlanResult struct {
 	SelectedSpriteSetCount int                 `json:"selected_sprite_set_count,omitempty"`
 	Actions                []PlanPreviewAction `json:"actions"`
 	CleanupPaths           []string            `json:"cleanup_paths,omitempty"`
-	Blockers               []string            `json:"blockers"`
-	Risks                  []PlanPreviewRisk   `json:"risks"`
-	Summary                PlanPreviewSummary  `json:"summary"`
+
+	// DerivedPaths lists selected files the ledger will not record because they
+	// are generated from another file in the same plan.
+	DerivedPaths []string `json:"derived_paths,omitempty"`
+
+	Blockers []string           `json:"blockers"`
+	Risks    []PlanPreviewRisk  `json:"risks"`
+	Summary  PlanPreviewSummary `json:"summary"`
 }
 
 type ExecutePlanRequest struct {
