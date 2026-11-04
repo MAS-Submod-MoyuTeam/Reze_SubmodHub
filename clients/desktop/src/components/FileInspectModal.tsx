@@ -60,7 +60,7 @@ export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClos
 
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 font-mono text-xs">
           <div className="text-neutral-400 font-sans text-xs mb-2">
-            {item.is_managed ? '当前 MAS 实例安装清单及记录哈希（状态已与磁盘核对）：' : '当前 MAS 实例磁盘扫描结果（未托管文件无安装基线）：'}
+            {item.is_managed ? '当前 MAS 实例安装清单及记录哈希（状态已与磁盘核对）：' : '当前 MAS 实例磁盘扫描结果：'}
           </div>
 
           {loading && <div role="status" className="text-neutral-400">正在读取真实文件清单…</div>}

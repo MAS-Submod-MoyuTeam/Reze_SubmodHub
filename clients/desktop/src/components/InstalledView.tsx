@@ -786,9 +786,10 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                     <span>RezeHub 契约保护机制：未托管内容保护原则</span>
                   </div>
                   <p className="text-neutral-300 leading-relaxed">
-                    依据 <code>2026-09-25-submodhub-design.md</code> 规范要求：
-                    未托管内容仅提供<strong>文件查看与显式收养（Adopt）</strong>流程，<strong>不提供直接删除/卸载操作</strong>。
-                    此举可绝对避免 RezeHub 客户端误删玩家手写未发布的原创代码、个人修改备份或未经登记的测试资产。
+                    未托管模组在托管前不支持直接删除。
+                  </p>
+                  <p className="text-neutral-300 leading-relaxed">
+                    这些可能是你在使用 RezeHub 之前安装的子模组。RezeHub 无法安全删除这些文件，你可以手动删除这些文件，或者确认这些文件安全以后手动收纳文件作为子模组使用。
                   </p>
                 </div>
 
@@ -856,7 +857,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             ))}
                             {(item.unmanaged_paths?.length || 0) > 3 && (
                               <div className="text-neutral-500 italic text-[10px]">
-                                ... 另有 {(item.unmanaged_paths?.length || 0) - 3} 个文件，可通过“检查散落散列”或点击上方查看完整清单
+                                ... 另有 {(item.unmanaged_paths?.length || 0) - 3} 个文件，可通过“查看所有文件”或点击上方查看完整清单
                               </div>
                             )}
                           </div>
@@ -869,7 +870,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700/80 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法检查散列' : '正在读取模组列表…') : undefined}
                           >
-                            检查散落散列
+                            查看所有文件
                           </button>
                           <button
                             disabled={isModsActionBlocked}
@@ -878,7 +879,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法收养' : '正在读取模组列表…') : undefined}
                           >
                             <ArrowUpRight className="w-3.5 h-3.5" />
-                            <span>显式收养为托管模组 (Adopt)</span>
+                            <span>收纳模组</span>
                           </button>
                         </div>
                       </div>

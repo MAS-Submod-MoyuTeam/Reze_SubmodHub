@@ -92,6 +92,42 @@ test('InstalledView: a directory without a managed owner makes no ownership clai
   assert.doesNotMatch(html, /该目录属于已托管模组/);
 });
 
+test('InstalledView: unmanaged banner explains deletion limits in plain words', () => {
+  const item = makeMockInstalledItem({
+    mod_id: 'local:LooseMod',
+    title: 'LooseMod',
+    is_managed: false,
+    files_count: 1,
+    unmanaged_paths: ['game/Submods/LooseMod/main.rpy'],
+    submod_dir_name: 'LooseMod',
+  });
+
+  const html = renderUnmanagedTab(item);
+  assert.match(html, /未托管模组在托管前不支持直接删除/);
+  assert.match(html, /这些可能是你在使用 RezeHub 之前安装的子模组/);
+  assert.match(html, /可以手动删除这些文件/);
+  assert.match(html, /确认这些文件安全以后手动收纳文件作为子模组使用/);
+  // Design-rule citations belong in the design doc, not in front of players.
+  assert.doesNotMatch(html, /2026-09-25-submodhub-design\.md/);
+});
+
+test('InstalledView: unmanaged actions speak of collecting files, not of stray hashes', () => {
+  const item = makeMockInstalledItem({
+    mod_id: 'local:LooseMod',
+    title: 'LooseMod',
+    is_managed: false,
+    files_count: 1,
+    unmanaged_paths: ['game/Submods/LooseMod/main.rpy'],
+    submod_dir_name: 'LooseMod',
+  });
+
+  const html = renderUnmanagedTab(item);
+  assert.match(html, /收纳模组/);
+  assert.match(html, /查看所有文件/);
+  assert.doesNotMatch(html, /收养/);
+  assert.doesNotMatch(html, /散列/);
+});
+
 test('InstalledView: repair button is rendered with real preview tooltip for drifted item', () => {
   const item = makeMockInstalledItem();
   const html = renderToStaticMarkup(
