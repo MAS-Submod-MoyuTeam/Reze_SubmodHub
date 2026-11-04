@@ -180,7 +180,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
               }`}
             >
               <PackageCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>已托管模组 ({renderBadgeCount('managed')})</span>
+              <span>已安装模组 ({renderBadgeCount('managed')})</span>
             </button>
             <button
               role="tab"
@@ -193,7 +193,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
               }`}
             >
               <FileQuestion className="w-3.5 h-3.5 text-amber-400" />
-              <span>未托管检测结果 ({renderBadgeCount('unmanaged')})</span>
+              <span>未收纳模组 ({renderBadgeCount('unmanaged')})</span>
             </button>
             <button
               role="tab"
@@ -833,7 +833,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           </p>
                           {item.managed_owners && item.managed_owners.length > 0 && (
                             <p className="text-xs text-sky-300/90 mt-1 leading-relaxed">
-                              该目录属于已托管模组「{managedOwnerLabels(item)}」，下列 {item.unmanaged_paths?.length || 0} 个文件不在安装账本内。收纳只新增这些文件的归属，不会改动已托管文件。
+                              该目录属于已安装模组「{managedOwnerLabels(item)}」，下列 {item.unmanaged_paths?.length || 0} 个文件不在安装账本内。收纳只新增这些文件的归属，不会改动已安装文件。
                             </p>
                           )}
 

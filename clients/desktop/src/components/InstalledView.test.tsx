@@ -73,7 +73,7 @@ test('InstalledView: leftovers inside a managed directory name their owner inste
 
   const html = renderUnmanagedTab(item);
   assert.match(html, /所在目录已托管/);
-  assert.match(html, /该目录属于已托管模组「Managed Title」/);
+  assert.match(html, /该目录属于已安装模组「Managed Title」/);
   assert.match(html, /收纳只新增这些文件的归属/);
 });
 
@@ -89,7 +89,7 @@ test('InstalledView: a directory without a managed owner makes no ownership clai
 
   const html = renderUnmanagedTab(item);
   assert.doesNotMatch(html, /所在目录已托管/);
-  assert.doesNotMatch(html, /该目录属于已托管模组/);
+  assert.doesNotMatch(html, /该目录属于已安装模组/);
 });
 
 test('InstalledView: unmanaged banner explains deletion limits in plain words', () => {
