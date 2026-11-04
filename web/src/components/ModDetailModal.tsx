@@ -444,7 +444,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                       className="px-3.5 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded flex items-center gap-1.5 transition-colors shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      {platformChoicePending ? '请先选择平台' : '获取下载描述符 (GET /download)'}
+                      {platformChoicePending ? '请先选择平台' : '下载'}
                     </button>
                   </div>
                 </div>

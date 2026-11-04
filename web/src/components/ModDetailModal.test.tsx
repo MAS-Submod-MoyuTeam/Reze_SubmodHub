@@ -954,7 +954,8 @@ test('a version without platform assets is offered as all-platform compatible', 
   );
 
   assert.match(markup, /全平台通用/);
-  assert.match(markup, /获取下载描述符/);
+  assert.match(markup, />下载<\/button>/);
+  assert.doesNotMatch(markup, /获取下载描述符/);
   assert.doesNotMatch(markup, /请先选择平台/);
 });
 
