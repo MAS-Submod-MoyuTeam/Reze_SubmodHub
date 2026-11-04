@@ -17,7 +17,7 @@
 | --- | --- |
 | 分享链接形式 | `https://rezehub.0721play.icu/mod/<mod_id>`（路径式） |
 | Android 调起 | 自定义 scheme `rezehub://mod/<mod_id>`，配合 https 链接做同源跳转 |
-| 剪贴板检查时机 | 启动时 + 窗口重新获得焦点时各查一次（不轮询） |
+| 剪贴板检查时机 | 启动时 + 窗口重新获得焦点时 + 应用回到前台时各查一次（不轮询） |
 | 分享粒度 | 仅 mod 详情（不含 version_id） |
 
 验收（可观察）：
@@ -28,7 +28,7 @@
 4. Windows 客户端安装/启动后注册 `rezehub` 协议；客户端已在运行时点链接，只唤起既有窗口并跳到该详情，不会开第二个进程。
 5. Android 客户端声明 `rezehub` 深链；冷启动与已运行（singleTask）都能落到该详情。
 6. 客户端详情页有「分享」，写入剪贴板的是可粘贴的站内链接。
-7. 客户端启动或从浏览器切回（窗口获得焦点）后，若剪贴板是站内 mod 链接，弹出提示可一键打开；同一条链接不重复打扰。
+7. 客户端启动、从浏览器切回（窗口获得焦点）、或 Android 从后台切回前台后，若剪贴板是站内 mod 链接，弹出提示可一键打开；同一条链接不重复打扰。
 
 ## 2. 现状基线
 
@@ -136,11 +136,11 @@ Go 侧 `cmd/client/SubmodHub/share_link.go` 复刻同一规则（`parseModLink`�
   - 深链三条来路收在一处：`TakeNativeDeepLinkURL()`（Android window 兜底）→ `TakePendingModLink()`（Go inbox）→ `Events.On(DeepLinkEventName)`（运行中被再次调起）；载荷可能是 `mod_id`（Go 已解析）或 `url`（Android 原始链接），后者用 `modIDFromLink` 解析。
   - 落地统一走 `applyDeepLinkModID`：目录里有 → 切到目录页并 `setSelectedModDetail`；目录已加载但没有 → toast 说明「已不在目录中（可能已下架）」；目录还没到 → 记 `pendingDeepLinkModID` 等目录到了再落地。**不伪造只有 id 的 `ModSummary`**：那个对象会一路流进安装链路，标题/版本/平台都是假的。
   - 复查修正（同日）：`catalogLoaded` 原本传的是 `catalogModsRef.current.length > 0`，于是「目录加载成功但恰好为空」会被当成「还没加载」，深链挂在 `pendingDeepLinkModID` 里永远没人解释；等待效应的 `catalogMods.length === 0` 早退让这个停摆无法自愈。现改为独立的 `catalogEverLoaded`（state + ref，在 `loadCatalog` 成功路径置位），空目录同样落到「已不在目录中」。并补了另一条：**目录一次都没加载成功就失败收场时不能静默挂着**，提示「目录没能加载出来」并保留该深链，刷新成功后自动打开（`deepLinkNoticeRef` 保证同一链接只提示一次）。
-  - 剪贴板检查：挂载后一次 + `window` `focus` 一次，调 `ClipboardModLink()`；`shouldPromptClipboardLink` 排除「同一条已提示过 / 正开着这个详情 / 上一个提示还挂着」。
+  - 剪贴板检查：挂载后一次 + `window` `focus` 一次 + `submodhub:app_foreground` 事件一次，调 `ClipboardModLink()`；`shouldPromptClipboardLink` 排除「同一条已提示过 / 正开着这个详情 / 上一个提示还挂着」。
   - 新增 `ShareLinkPrompt`（app 级、非模态）：不夺焦点、不拦其它操作，显示标题（查不到才退回 id）与「打开 / 忽略」。
 - `ModDetailModal.tsx`：头部加「分享」，调 `ModShareLink(id)` 拿链接再 `copyToClipboard`。链接由 Go 生成，前端不自己拼字符串，两端不会各写一种链接。
 - `clipboard.ts`（新增）：转出共享的 `ui/clipboard.ts`；`TransactionDetailModal` 原有的同功能函数改为引用它。
-- `wails.ts`：新增 `TakePendingModLink` / `ClipboardModLink` / `ModShareLink` / `DeepLinkEventName` / `TakeNativeDeepLinkURL` / `isBrowserMode`；`browser_server.go` 补三个 dispatch case（浏览器调试模式下深链恒空、不读宿主剪贴板）。
+- `wails.ts`：新增 `TakePendingModLink` / `ClipboardModLink` / `ModShareLink` / `DeepLinkEventName` / `AppForegroundEventName` / `TakeNativeDeepLinkURL` / `isBrowserMode`；`browser_server.go` 补三个 dispatch case（浏览器调试模式下深链恒空、不读宿主剪贴板）。
 
 ### 3.8 共享剪贴板（`ui/clipboard.ts`，新增）
 
@@ -197,4 +197,12 @@ Web 站点、Wails 桌面端、Android WebView 三处都要写剪贴板，都统
 - Android 清单与 `build/windows/nsis/wails_tools.nsh` 是 Wails 生成的模板产物：`wails3 task common:update:build-assets` 会覆盖它们，重跑生成后必须把 `launchMode` + intent-filter 与 `CUSTOM_PROTOCOL_ASSOCIATE/UNASSOCIATE` 宏体补回来。两处文件里都留了注释提醒。
 - Windows 自定义协议在 Chrome/Edge 会弹一次确认框；未安装客户端时 `location.href` 静默失败，只能靠「超时 + 页面仍可见」兜底，这是浏览器能力边界而非取舍。
 - Android 10+ 只有前台应用才能读剪贴板，因此提示只在「启动 + 回到前台」发生，这是系统约束。
+
+### 复查修正（同日）：Android 切回前台查不到剪贴板
+
+真机路径上「在浏览器复制链接 → 切回客户端」是手机端最主流的用法，但原来两个触发点都不够可靠：WebView 被切到后台再切回来时，`focus` 与 `visibilitychange` 是否触发取决于 WebView 有没有被 pause、焦点有没有真的交给别的窗口，不同 ROM/WebView 版本表现不一致，不能当作确定的触发点。这一次与其猜 JS 事件会不会来，不如由原生层直接告知。
+
+- Android `MainActivity` 在 `onResume` 调 `notifyAppForeground()`，发 `submodhub:app_foreground`；只在 `pageLoaded` 之后发（更早没有接收方，首屏本来就会查一次，不必缓存）。
+- 前端在同一个 effect 里订阅该事件，与 `focus` 并存：桌面端收不到这个事件，监听挂着无害，不需要按平台分支。
+- 事件名是跨语言字符串契约，拼错不会有任何编译或测试报错，只会安静失效。为此新增 `deepLinkEvents.test.ts`，直接读 Go 与 Java 源码比对 `DeepLinkEventName` / `AppForegroundEventName`，并断言 `onResume` 里确实调了发送方法（只定义常量不发也没用）。已用「改坏一个字母」的方式确认该测试会失败。
 - 自定义 scheme 落地跨平台差异（Windows argv、macOS AppleEvent、Android intent）由 wails 单实例机制与各自壳层分别覆盖；本轮只保证 Windows 与 Android。macOS/Linux 未声明 scheme，`registerModProtocol` 在那两个平台是 no-op。

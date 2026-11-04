@@ -627,6 +627,26 @@ public class MainActivity extends AppCompatActivity {
     private static final String DEEP_LINK_SCHEME = "rezehub";
     private static final String DEEP_LINK_EVENT = "submodhub:deep_link";
 
+    /**
+     * 「回到前台」事件，必须与前端 `AppForegroundEventName` 一字不差。
+     *
+     * 切到后台再切回来时，`focus` / `visibilitychange` 会不会触发取决于 WebView
+     * 自己有没有被 pause、焦点有没有真的交给别的窗口，不同版本表现不一致，不能
+     * 当作可靠触发点。剪贴板又只有前台应用能读（Android 10+），所以这一次在这里
+     * 显式补上，不依赖 JS 侧推测。
+     */
+    private static final String APP_FOREGROUND_EVENT = "submodhub:app_foreground";
+
+    /**
+     * 告诉前端「应用已经回到前台，可以再查一次剪贴板了」。
+     *
+     * 只在页面就绪后发：更早发没有接收方，而首屏本来就会查一次，没必要缓存。
+     */
+    private void notifyAppForeground() {
+        if (!pageLoaded || bridge == null) return;
+        bridge.emitEvent(APP_FOREGROUND_EVENT, "{}");
+    }
+
     /** 收下一条深链原始链接，等页面就绪后再发。 */
     private void captureDeepLink(Intent intent) {
         if (intent == null) return;
@@ -904,6 +924,7 @@ public class MainActivity extends AppCompatActivity {
         }
         SubmodHubAppUpdate.onResume();
         SubmodHubStorageAccess.onResume(this);
+        notifyAppForeground();
     }
 
     @Override

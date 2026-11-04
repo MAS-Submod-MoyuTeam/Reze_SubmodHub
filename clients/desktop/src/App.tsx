@@ -35,7 +35,7 @@ import {
   type InstanceSyncReason,
 } from './storagePermissionSync';
 import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
-import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewAdopt, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, ListInstalledModFiles, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive, GetAndroidStorageAccess, RequestAndroidStorageAccess, ConfirmAppUpdateStartup, CheckForAppUpdate, DownloadAppUpdate, CancelAppUpdate, GetAppUpdateStatus, InstallAppUpdate, OpenAppUpdateSettings, isAndroid, isBrowserMode, TakePendingModLink, ClipboardModLink, DeepLinkEventName, TakeNativeDeepLinkURL } from './wails';
+import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewAdopt, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, ListInstalledModFiles, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive, GetAndroidStorageAccess, RequestAndroidStorageAccess, ConfirmAppUpdateStartup, CheckForAppUpdate, DownloadAppUpdate, CancelAppUpdate, GetAppUpdateStatus, InstallAppUpdate, OpenAppUpdateSettings, isAndroid, isBrowserMode, TakePendingModLink, ClipboardModLink, DeepLinkEventName, AppForegroundEventName, TakeNativeDeepLinkURL } from './wails';
 import { createInstalledLoadCoordinator, LoadingStatus } from './installedLoading';
 import { getPlanActionText, resolveModInstallationId, describeExecutionError } from './planExecution';
 import {
@@ -883,10 +883,14 @@ export default function App() {
   }, [catalogEverLoaded, isRefreshing, catalogError, pendingDeepLinkModID, applyDeepLinkModID]);
 
   /**
-   * 剪贴板检查：只在「启动后」和「窗口重新获得焦点」各查一次。
+   * 剪贴板检查：只在「启动后」「窗口重新获得焦点」「应用回到前台」各查一次。
    *
-   * 用户的心智是「在浏览器复制链接，切回客户端」，这两个时刻正好覆盖它；
+   * 用户的心智是「在浏览器复制链接，切回客户端」，这几个时刻正好覆盖它；
    * 轮询没有意义——Android 10+ 也只有前台应用能读剪贴板。
+   *
+   * 手机上前两个时刻都不一定成立：切到后台再切回来时，`focus` 与
+   * `visibilitychange` 是否触发取决于 WebView 有没有被 pause，不可依赖，
+   * 所以由原生层的事件兜住这一次。
    */
   const checkClipboardForModLink = useCallback(() => {
     if (isBrowserMode()) return;
@@ -911,7 +915,14 @@ export default function App() {
     checkClipboardForModLink();
     const onFocus = () => checkClipboardForModLink();
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    // Android 从后台切回前台：`focus` / `visibilitychange` 是否触发取决于 WebView
+    // 有没有被 pause、焦点有没有真的交出去，不可依赖；由原生层在 onResume 显式
+    // 发事件补这一次。桌面端没有这个事件，监听挂着也无害。
+    const offForeground = Events.On(AppForegroundEventName, () => checkClipboardForModLink());
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      offForeground();
+    };
   }, [checkClipboardForModLink]);
 
   const activeInstallation = installations.find((i) => i.id === activeInstallationId) || {

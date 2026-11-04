@@ -144,6 +144,17 @@ export const TakePendingModLink = () =>
 export const DeepLinkEventName = 'submodhub:deep_link';
 
 /**
+ * 「应用回到前台」事件的名称，必须与 Android 侧 `APP_FOREGROUND_EVENT` 一字不差。
+ *
+ * 为什么不能只靠 window 的 `focus`：WebView 被切到后台再切回来时，`focus` 与
+ * `visibilitychange` 是否触发取决于 WebView 自己有没有被 pause、焦点有没有真的
+ * 交给别的窗口——实测/不同版本并不一致，不能当作可靠的触发点。剪贴板又只有前台
+ * 应用能读（Android 10+），所以「切回来」这一刻由原生层在 onResume 显式告诉我们，
+ * 才是确定的。桌面端收不到这个事件，监听挂着无害。
+ */
+export const AppForegroundEventName = 'submodhub:app_foreground';
+
+/**
  * 领走 Android 侧留在 window 上的深链（读走即清空）。
  *
  * Android 的原生层在 onPageFinished 时就把链接交出来，而那一刻 React 可能还没
