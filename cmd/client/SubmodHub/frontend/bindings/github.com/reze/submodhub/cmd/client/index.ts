@@ -17,6 +17,7 @@ export type {
     InstalledArchive,
     LocalSubmod,
     LocalSubmodFile,
+    LocalSubmodOwner,
     MASInstance,
     MASInstancesState,
     MASStatus,

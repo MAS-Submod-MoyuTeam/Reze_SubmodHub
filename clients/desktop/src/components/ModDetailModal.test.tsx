@@ -409,3 +409,36 @@ test('ModDetailModal DOM: dedicated "卸载模组" button directly invokes onSta
     globalThis.fetch = originalFetch;
   }
 });
+
+test('ModDetailModal DOM: 详情页头部有分享按钮，列表项没有', async () => {
+  // 分享只属于详情页：列表卡片不该出现这个入口（用户明确要求）。
+  const mod = makeMockMod('mod_share', 'submod');
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => ({ ok: false, status: 500, json: async () => ({ code: 'server_error' }) })) as any;
+  try {
+    await act(async () => {
+      reactRoot.render(
+        <ModDetailModal
+          mod={mod}
+          catalogMods={[mod]}
+          onSelectMod={() => {}}
+          onClose={() => {}}
+          onStartInstallPlan={() => {}}
+          onStartUninstallPlan={() => {}}
+          onDownloadArchive={() => {}}
+          isDownloadingArchive={false}
+          isInstalling={false}
+          archiveProgress={null}
+          isInstalled={false}
+          installedLoadingStatus="success"
+        />
+      );
+    });
+
+    const shareButton = rootContainer.querySelector('button[aria-label="复制分享链接"]');
+    assert.ok(shareButton, '详情页必须提供分享入口');
+    assert.match(shareButton!.textContent || '', /分享/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

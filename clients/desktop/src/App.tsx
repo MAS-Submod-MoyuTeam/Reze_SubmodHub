@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Events } from '@wailsio/runtime';
 import { mapPlanPreview } from './planPreview';
 import { loadInstalledFiles } from './installedFiles';
 import { resolveHasUpdate, summarizeIntegrity } from './modHealth';
@@ -24,6 +25,9 @@ import { describeLaunchFailure, hasInProgressTransaction, isTransactionInProgres
 import { describeScanFailure } from './scanErrors';
 import { StorageAccessBanner } from './components/StorageAccessBanner';
 import { MobileNavBar } from './components/MobileNavBar';
+import { ShareLinkPrompt } from './components/ShareLinkPrompt';
+import { describeLinkedMod, resolveDeepLinkMod, shouldPromptClipboardLink } from './modLink';
+import { modIDFromLink } from '../../../ui/mod-link';
 import {
   isInstanceAuthorized,
   reconcileInstanceState,
@@ -31,7 +35,7 @@ import {
   type InstanceSyncReason,
 } from './storagePermissionSync';
 import { fetchPublishedCatalog, fetchVerifiedArchive, type DownloadProgress } from '../../../ui/catalog-api';
-import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewAdopt, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, ListInstalledModFiles, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive, GetAndroidStorageAccess, RequestAndroidStorageAccess, ConfirmAppUpdateStartup, CheckForAppUpdate, DownloadAppUpdate, CancelAppUpdate, GetAppUpdateStatus, InstallAppUpdate, OpenAppUpdateSettings, isAndroid } from './wails';
+import { AddMASInstance, StageArchive, GetStageProgress, CancelStage, ReleaseArchive, PreviewArchive, PreviewAdopt, PreviewUninstall, ExecutePlan, BrowseMASDirectory, ListMASInstances, ListInstalledArchives, ListInstalledModFiles, RemoveMASInstance, LaunchMASInstance, ScanLocalSubmods, ScanInstalledSpritepacks, CreateSpriteGift, DeleteSpritepack, SelectMASInstance, SetMASRoot, ListOperations, GetOperation, RollbackOperation, normalizeSpriteSetIDs, LocalSubmod, MASInstancesState, Spritepack, InstalledArchive, GetAndroidStorageAccess, RequestAndroidStorageAccess, ConfirmAppUpdateStartup, CheckForAppUpdate, DownloadAppUpdate, CancelAppUpdate, GetAppUpdateStatus, InstallAppUpdate, OpenAppUpdateSettings, isAndroid, isBrowserMode, TakePendingModLink, ClipboardModLink, DeepLinkEventName, TakeNativeDeepLinkURL } from './wails';
 import { createInstalledLoadCoordinator, LoadingStatus } from './installedLoading';
 import { getPlanActionText, resolveModInstallationId, describeExecutionError } from './planExecution';
 import {
@@ -374,6 +378,11 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(true);
   // 目录失败必须可见：没有离线快照，失败要显示页面级失败态，不能退化成「空目录」。
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  // 「目录到手过」是独立于「目录里有几条」的事实：一个真的空目录也算加载完成。
+  // 缺了它，深链就只能靠「条数不为零」猜加载状态，空目录时永远猜不出结论。
+  // state 负责让等待中的深链重跑，ref 供回调当场读到最新值。
+  const [catalogEverLoaded, setCatalogEverLoaded] = useState<boolean>(false);
+  const catalogEverLoadedRef = useRef<boolean>(false);
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
   const [isDownloadingArchive, setIsDownloadingArchive] = useState(false);
   const [archiveProgress, setArchiveProgress] = useState<DownloadProgress | null>(null);
@@ -422,6 +431,8 @@ export default function App() {
       }));
       catalogModsRef.current = mapped;
       setCatalogMods(mapped);
+      catalogEverLoadedRef.current = true;
+      setCatalogEverLoaded(true);
       return mapped;
     } catch (error) {
       // 保留上一次成功的数据，同时把失败暴露出来（页面级失败态 + 提示）。
@@ -783,6 +794,125 @@ export default function App() {
       return changed ? next : prev;
     });
   }, [catalogMods]);
+
+  // ---- 深链与分享链接 ------------------------------------------------
+  // 详情需要完整 ModSummary：只有一个 id 的对象会一路流进安装链路，标题、版本、
+  // 平台全是假的。所以深链先只记 id，等目录到手再解析成真实对象。
+  const [pendingDeepLinkModID, setPendingDeepLinkModID] = useState<string | null>(null);
+  const [clipboardPrompt, setClipboardPrompt] = useState<{ modID: string } | null>(null);
+  const lastPromptedClipboardRef = useRef<string | null>(null);
+  const clipboardPromptRef = useRef<{ modID: string } | null>(null);
+  clipboardPromptRef.current = clipboardPrompt;
+  const openDetailModIDRef = useRef<string | null>(null);
+  openDetailModIDRef.current = selectedModDetail?.id ?? null;
+  // 已经对哪条深链解释过「目录没加载出来」：刷新仍失败会让上面的 effect 重跑，
+  // 不该每跑一次就再弹一条同样的提示。
+  const deepLinkNoticeRef = useRef<string | null>(null);
+
+  /** 深链落地：目录里有就打开详情，没有就说清楚，绝不假装打开。 */
+  const applyDeepLinkModID = useCallback((modID: string) => {
+    const resolution = resolveDeepLinkMod(modID, catalogModsRef.current, {
+      catalogLoaded: catalogEverLoadedRef.current,
+    });
+    if (resolution.kind === 'open') {
+      deepLinkNoticeRef.current = null;
+      setActiveTab('catalog');
+      setSelectedModDetail(resolution.mod);
+      return;
+    }
+    if (resolution.kind === 'missing') {
+      deepLinkNoticeRef.current = null;
+      showToast(`链接指向的模组「${modID}」已不在当前目录中（可能已下架）。`, 'warn');
+      return;
+    }
+    // 目录还没到：记住它，等目录到手再落地（冷启动时深链先到是常态）。
+    setPendingDeepLinkModID(modID);
+  }, []);
+  /**
+   * 深链有三条来路，都在这里收：
+   * - 冷启动的启动参数：Go 把它存进 inbox，我们领一次（`TakePendingModLink`）；
+   * - 运行中再点一次链接：Go 单实例把它转成事件（`DeepLinkEventName`）；
+   * - Android 原生层：它在页面加载完成时交出链接，那时前端可能还没挂载，
+   *   所以除了发事件还写进 `window.__submodhubDeepLink`，这里读走即清。
+   *
+   * 三种都只给出「原始链接或 mod id」，落地统一走 applyDeepLinkModID。
+   */
+  useEffect(() => {
+    if (isBrowserMode()) return;
+    const open = (modID: string | null) => { if (modID) applyDeepLinkModID(modID); };
+
+    const off = Events.On(DeepLinkEventName, (event: { data?: { mod_id?: string; url?: string } }) => {
+      const payload = event?.data;
+      open(payload?.mod_id ?? modIDFromLink(payload?.url));
+    });
+
+    // 先读 window 上的兜底，再问 Go 的 inbox：前者是「刚刚发生过的那次点击」，
+    // 后者可能包含更早的一次，但两者都只消费一次。
+    open(modIDFromLink(TakeNativeDeepLinkURL()));
+
+    let active = true;
+    void TakePendingModLink()
+      .then((modID) => { if (active) open(modID || null); })
+      .catch(() => {
+        // 拿不到待领取深链不是用户可见的失败：他只是启动了一次客户端。
+      });
+
+    return () => { active = false; off(); };
+  }, [applyDeepLinkModID]);
+
+  // 目录到手就重跑一次等着落地的深链。这里守的是「目录到手过」，不是「目录非空」：
+  // 空目录同样是结论，深链该被判成「已不在目录中」，而不是无限等待。
+  useEffect(() => {
+    if (!pendingDeepLinkModID) return;
+    if (catalogEverLoaded) {
+      const modID = pendingDeepLinkModID;
+      deepLinkNoticeRef.current = null;
+      setPendingDeepLinkModID(null);
+      applyDeepLinkModID(modID);
+      return;
+    }
+    // 目录一次都没成功加载过，而这次请求已经失败收场：不能让用户对着「什么都没发生」
+    // 干等。说清这不是链接坏了，同时留着这个 id——刷新目录成功后会自动落地。
+    if (!isRefreshing && catalogError && deepLinkNoticeRef.current !== pendingDeepLinkModID) {
+      deepLinkNoticeRef.current = pendingDeepLinkModID;
+      showToast(
+        `目录没能加载出来（${catalogError}），暂时无法打开这个链接；刷新目录后会打开「${pendingDeepLinkModID}」。`,
+        'warn',
+      );
+    }
+  }, [catalogEverLoaded, isRefreshing, catalogError, pendingDeepLinkModID, applyDeepLinkModID]);
+
+  /**
+   * 剪贴板检查：只在「启动后」和「窗口重新获得焦点」各查一次。
+   *
+   * 用户的心智是「在浏览器复制链接，切回客户端」，这两个时刻正好覆盖它；
+   * 轮询没有意义——Android 10+ 也只有前台应用能读剪贴板。
+   */
+  const checkClipboardForModLink = useCallback(() => {
+    if (isBrowserMode()) return;
+    void ClipboardModLink()
+      .then((modID) => {
+        if (!modID) return;
+        const shouldPrompt = shouldPromptClipboardLink(modID, {
+          lastPromptedModID: lastPromptedClipboardRef.current,
+          openModID: openDetailModIDRef.current,
+          promptOpen: clipboardPromptRef.current !== null,
+        });
+        if (!shouldPrompt) return;
+        lastPromptedClipboardRef.current = modID;
+        setClipboardPrompt({ modID });
+      })
+      .catch(() => {
+        // 剪贴板读不到（系统限制、没有剪贴板后端）是常态，不打扰用户。
+      });
+  }, []);
+
+  useEffect(() => {
+    checkClipboardForModLink();
+    const onFocus = () => checkClipboardForModLink();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [checkClipboardForModLink]);
 
   const activeInstallation = installations.find((i) => i.id === activeInstallationId) || {
     ...UNVERIFIED_INSTALLATION,
@@ -1682,6 +1812,20 @@ export default function App() {
             operations.filter((o) => o.state === 'planned' || o.state === 'recoverable').length
           }
         />
+
+        {/* 剪贴板里发现站内链接时的提示：用户没主动发起，所以是非模态条，
+            不夺焦点、不拦其它操作，忽略后同一条链接不再打扰。 */}
+        {clipboardPrompt && (
+          <ShareLinkPrompt
+            label={describeLinkedMod(clipboardPrompt.modID, catalogMods)}
+            onOpen={() => {
+              const modID = clipboardPrompt.modID;
+              setClipboardPrompt(null);
+              applyDeepLinkModID(modID);
+            }}
+            onDismiss={() => setClipboardPrompt(null)}
+          />
+        )}
 
         {/* 4. Mod Detail Modal */}
         {selectedModDetail && (

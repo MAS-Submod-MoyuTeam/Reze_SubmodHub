@@ -4,6 +4,9 @@ import type { Operation } from './types/client';
 
 const browserMode = Boolean(import.meta.env?.VITE_BROWSER_MODE === '1');
 
+/** 浏览器调试模式（没有 Wails 运行时，也没有系统调起/剪贴板能力）。 */
+export const isBrowserMode = (): boolean => browserMode;
+
 async function invoke<T>(method: string, callNative: () => Promise<T>, args: unknown[] = []): Promise<T> {
   if (!browserMode) return callNative();
   const response = await fetch(`/local/${method}`, {
@@ -125,6 +128,43 @@ export const InstallAppUpdate = () =>
 
 export const OpenAppUpdateSettings = () =>
   invoke<boolean>('OpenAppUpdateSettings', () => Call.ByName('main.DesktopService.OpenAppUpdateSettings'));
+
+// ---- 分享链接与深链 ----------------------------------------------------
+// 链接规则本身在 ui/mod-link.ts，这里只负责过桥：分享链接由 Go 生成（与 web 端
+// 同一套规则），深链与剪贴板检查由 Go 侧的系统能力提供。
+
+/** 领走页面加载完成前到达的深链（冷启动时点链接就属于这种）。 */
+export const TakePendingModLink = () =>
+  invoke<string>('TakePendingModLink', () => Call.ByName('main.DesktopService.TakePendingModLink'));
+
+/**
+ * 深链事件的名称，必须与 Go 侧 `DeepLinkEventName` 一字不差：
+ * 客户端已在运行时点链接，Go 单实例把 argv 转成这个事件送进前端。
+ */
+export const DeepLinkEventName = 'submodhub:deep_link';
+
+/**
+ * 领走 Android 侧留在 window 上的深链（读走即清空）。
+ *
+ * Android 的原生层在 onPageFinished 时就把链接交出来，而那一刻 React 可能还没
+ * 挂载、事件监听还没注册。所以它同时把链接写进这个 window 变量，前端挂载后领一次，
+ * 冷启动的那一次点击就不会丢。桌面端没有这个变量，返回空串。
+ */
+export const TakeNativeDeepLinkURL = (): string => {
+  const holder = window as unknown as { __submodhubDeepLink?: string | null };
+  const raw = holder.__submodhubDeepLink;
+  if (!raw) return '';
+  holder.__submodhubDeepLink = null;
+  return raw;
+};
+
+/** 剪贴板里若是一条站内 mod 链接，返回它的 mod id；否则空串。 */
+export const ClipboardModLink = () =>
+  invoke<string>('ClipboardModLink', () => Call.ByName('main.DesktopService.ClipboardModLink'));
+
+/** 生成可以被浏览器粘贴打开的分享链接。 */
+export const ModShareLink = (modID: string) =>
+  invoke<string>('ModShareLink', () => Call.ByName('main.DesktopService.ModShareLink', modID), [modID]);
 
 export const isAndroid = (): boolean => {
   if (typeof window !== 'undefined') {

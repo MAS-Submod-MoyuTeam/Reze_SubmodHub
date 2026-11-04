@@ -982,3 +982,65 @@ test('a version with two platform builds waits for the reader to pick one', () =
   assert.doesNotMatch(markup, /全平台通用/);
 });
 
+
+test('详情页头部提供分享与「在客户端打开」两个入口', () => {
+  const ctx = createMockContext({ mods: [sampleMod], versions: [sampleVersion] });
+
+  const markup = renderToStaticMarkup(
+    <AppContext.Provider value={ctx}>
+      <ModDetailModal modId={sampleMod.id} downloadVersionId={null} onClose={() => {}} />
+    </AppContext.Provider>
+  );
+
+  // 用户要求：分享只在详情页出现，且产物是可直接粘贴到浏览器的链接。
+  assert.match(markup, /分享/);
+  assert.match(markup, /在客户端打开/);
+});
+
+test('目录加载完仍找不到该 mod 时说明原因，而不是给一个空白弹窗', () => {
+  const ctx = createMockContext({ mods: [], versions: [], catalogLoading: false });
+
+  const markup = renderToStaticMarkup(
+    <AppContext.Provider value={ctx}>
+      <ModDetailModal modId="mod_missing" downloadVersionId={null} onClose={() => {}} />
+    </AppContext.Provider>
+  );
+
+  assert.match(markup, /这个模组不在当前目录里/);
+  assert.match(markup, /mod_missing/);
+  assert.match(markup, /返回目录/);
+});
+
+test('目录还在加载时不提前宣告「不在目录里」', () => {
+  const ctx = createMockContext({ mods: [], versions: [], catalogLoading: true });
+
+  const markup = renderToStaticMarkup(
+    <AppContext.Provider value={ctx}>
+      <ModDetailModal modId="mod_pending" downloadVersionId={null} onClose={() => {}} />
+    </AppContext.Provider>
+  );
+
+  assert.doesNotMatch(markup, /这个模组不在当前目录里/);
+});
+
+test('目录加载失败时说的是「没查到」，不能说成「这个模组已下架」', () => {
+  // 请求失败是我们没拿到目录，不是这个 mod 不在了。混为一谈等于把自己的故障
+  // 栽给模组，用户还会以为自己手上的链接坏了。
+  const ctx = createMockContext({
+    mods: [],
+    versions: [],
+    catalogLoading: false,
+    catalogError: 'network error',
+  });
+
+  const markup = renderToStaticMarkup(
+    <AppContext.Provider value={ctx}>
+      <ModDetailModal modId="mod_unreachable" downloadVersionId={null} onClose={() => {}} />
+    </AppContext.Provider>
+  );
+
+  assert.match(markup, /目录没能加载出来/);
+  assert.match(markup, /network error/);
+  assert.doesNotMatch(markup, /已下架或已被删除/);
+  assert.doesNotMatch(markup, /不在当前目录里/);
+});

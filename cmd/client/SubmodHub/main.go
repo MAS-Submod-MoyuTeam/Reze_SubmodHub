@@ -20,6 +20,7 @@ import (
 	"github.com/reze/submodhub/internal/updater"
 	"github.com/reze/submodhub/internal/version"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed all:frontend/dist
@@ -126,10 +127,31 @@ func main() {
 		log.Fatal(err)
 	}
 	setGlobalAssetHandler(handler)
+	// Windows 上把 `rezehub://` 指向当前 exe（HKCU，免管理员、幂等）。
+	// 失败不影响启动：表现为「点链接没反应」，而不是程序起不来。
+	registerModProtocol()
+	// 链接就是本次启动参数时（客户端没在运行），系统不会再有别的通知渠道，
+	// 这里先把它收进 inbox，前端挂载后通过 TakePendingModLink 领取。
+	if modID, ok := findModLinkInArgs(os.Args[1:]); ok {
+		pendingModLinks.put(modID)
+	}
 	app := application.New(application.Options{
 		Name: "RezeHub", Description: "MAS submod manager",
 		Services: []application.Service{application.NewService(service)},
 		Assets:   application.AssetOptions{Handler: handler},
+		// 客户端已在运行时再点一次分享链接，系统会再起一个进程；单实例把它的
+		// argv 交回正在运行的这个进程，于是「再点链接」只是让窗口跳到详情。
+		// Android 走 intent（singleTask + onNewIntent），不会经过这里。
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: singleInstanceID,
+			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
+				for _, arg := range data.Args {
+					if deliverModLink(arg) != "" {
+						return
+					}
+				}
+			},
+		},
 	})
 	// The desktop client renders its own title bar in the web UI
 	// (clients/desktop/src/components/TitleBar.tsx). Keep the native window
@@ -143,6 +165,10 @@ func main() {
 		URL:              "/",
 		Frameless:        !isAndroidPlatform,
 	})
+	// 冷启动时链接随 argv 进来；系统也可能通过「应用被 URL 打开」事件再交付一次。
+	// 两条路径都进同一个 inbox，前端只领取一次，不会重复打开。
+	app.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl,
+		func(e *application.ApplicationEvent) { deliverModLink(e.Context().URL()) })
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}

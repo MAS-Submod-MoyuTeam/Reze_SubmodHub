@@ -43,3 +43,4 @@ Local reference projects used during design:
 | 2026-10-27 | work | docs/aegis/work/2026-10-27-app-asset-retention/90-evidence.md | 节点只保留软件本体最新版 evidence（全量 go test / vet、连跑与 GOTMPDIR 环境坑） |
 | 2026-10-27 | work | docs/aegis/work/2026-10-27-app-asset-retention/91-review-fixes.md | 评审修复：目录清单取全、安装包形状判定、保留集合非空校验、单轮预算与节流清理；桌面端账本读取收敛与归属回退语义 |
 | 2026-10-29 | work | docs/aegis/work/2026-10-27-app-asset-retention/92-review-fixes.md | 第二轮评审修复：派生字节码大小写、平台声明服务端校验、approve/publish 复核平台覆盖、manifest_corrupt 文案、回收日志错误码 |
+| 2026-11-04 | plan | docs/aegis/plans/2026-11-04-mod-deeplink-and-share.md | Mod 详情可寻址 + 深链调起 + 分享链接 + 剪贴板提示；两端规则层单测、类型、构建与真实浏览器验收通过，Windows 安装包与 Android 真机验收待补 |

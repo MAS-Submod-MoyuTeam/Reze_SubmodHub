@@ -27,10 +27,24 @@
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!--
+              `rezehub://mod/<mod_id>`：web 端「在客户端打开」与分享链接调起本应用的入口。
+              singleTask 保证应用已运行时走 onNewIntent（复用同一个 WebView），
+              而不是再叠一个 Activity。
+              注意：本文件是 wails3 的生成资产，`wails3 task common:update:build-assets`
+              会覆盖它；重跑生成后必须把这段 intent-filter 与 launchMode 补回来。
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="rezehub" android:host="mod" />
             </intent-filter>
         </activity>
 

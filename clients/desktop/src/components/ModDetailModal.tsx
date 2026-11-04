@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Check, Copy, Download, RefreshCw, X } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Download, RefreshCw, Share2, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { fetchModImages, fetchModVersion, fetchPublishedVersions, fetchSpriteManifest, fetchVerifiedSpriteSelection, type CatalogVersion, type DownloadProgress, type SpriteSet } from '../../../../ui/catalog-api';
@@ -14,6 +14,8 @@ import { SpritepackSelection } from './SpritepackSelection';
 import { createModDetailTracker, executeDetailLoad, type LoadReason } from '../modDetailTracker';
 import type { LoadingStatus } from '../installedLoading';
 import { sortVersionHistory } from '../versionHistory';
+import { copyToClipboard } from '../clipboard';
+import { ModShareLink } from '../wails';
 
 interface Props {
   mod: ModSummary | null;
@@ -69,6 +71,8 @@ export const ModDetailModal: React.FC<Props> = ({
   const [manifestError, setManifestError] = useState('');
   const [downloadError, setDownloadError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [shareError, setShareError] = useState('');
   const [legacyRiskConfirmed, setLegacyRiskConfirmed] = useState(false);
   const [isDraftInitialized, setIsDraftInitialized] = useState(false);
 
@@ -197,6 +201,29 @@ export const ModDetailModal: React.FC<Props> = ({
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
   };
+  /**
+   * 分享：把「这个详情」变成一条能直接粘到浏览器的链接。
+   *
+   * 链接由 Go 侧生成（`ModShareLink`），规则与 web 端 modShareURL 是同一套；
+   * 前端不自己拼字符串，否则两端迟早各写一种。写剪贴板走统一入口，兼顾
+   * WebView2 / Android WebView 可能没有异步剪贴板 API 的情况。
+   */
+  const shareModLink = async () => {
+    setShareError('');
+    try {
+      const link = await ModShareLink(mod.id);
+      const ok = await copyToClipboard(link);
+      if (!ok) {
+        // 链接生成成功但写不进剪贴板：把链接本身显示出来，用户还能手动复制。
+        setShareError(`无法写入剪贴板，请手动复制：${link}`);
+        return;
+      }
+      setShareCopied(true);
+      window.setTimeout(() => setShareCopied(false), 2000);
+    } catch (error) {
+      setShareError(`分享失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
   const downloadSets = async (ids: string[]) => {
     if (!ids.length || downloadingSprite || !isSpriteSelectionValid(ids, spriteSets, loading, manifestError)) return;
     const downloadModId = mod.id;
@@ -243,9 +270,23 @@ export const ModDetailModal: React.FC<Props> = ({
     <section role="dialog" aria-modal="true" aria-label={`${mod.title} 详情`} className="flex max-h-[92dvh] sm:max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-2xl">
       <header className="flex shrink-0 items-start justify-between gap-3 border-b border-neutral-800 px-4 sm:px-5 py-3 sm:py-4">
         <div className="min-w-0 flex-1"><div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-neutral-400"><span className="font-semibold text-emerald-400">{mod.category === 'spritepack' ? 'Spritepack 服饰配件' : 'Submod 功能模组'}</span><span>·</span><span className="truncate max-w-[160px]">作者: {mod.author.display_name}</span>{mod.mas_version_range && <><span>·</span><span>兼容 MAS {mod.mas_version_range}</span></>}</div><h2 className="text-sm sm:text-base font-bold break-words">{mod.title}</h2></div>
-        <button onClick={onClose} title="关闭详情" aria-label="关闭详情" className="shrink-0 rounded-lg p-2 text-neutral-400 hover:bg-neutral-800 hover:text-white min-w-[40px] min-h-[40px] flex items-center justify-center"><X className="h-5 w-5" /></button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {/* 分享只在详情页：列表项没有稳定上下文，也不值得为它做分享。 */}
+          <button onClick={() => void shareModLink()} title="复制分享链接，可直接粘贴到浏览器" aria-label="复制分享链接" className="rounded-lg px-2.5 py-2 text-neutral-400 hover:bg-neutral-800 hover:text-white min-h-[40px] flex items-center gap-1.5 text-xs">
+            {shareCopied ? <Check className="h-4 w-4 text-emerald-400" /> : <Share2 className="h-4 w-4" />}
+            <span className="hidden sm:inline">{shareCopied ? '已复制' : '分享'}</span>
+          </button>
+          <button onClick={onClose} title="关闭详情" aria-label="关闭详情" className="shrink-0 rounded-lg p-2 text-neutral-400 hover:bg-neutral-800 hover:text-white min-w-[40px] min-h-[40px] flex items-center justify-center"><X className="h-5 w-5" /></button>
+        </div>
       </header>
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-3.5 sm:p-5 text-xs leading-relaxed">
+        {shareError && (
+          // 分享失败与下载失败是两件事：这里不摆「重试下载」，只把链接交出来让用户手动复制。
+          <div role="alert" className="flex items-start gap-2 rounded border border-amber-800 bg-amber-950/40 p-3 text-amber-200">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+            <span className="min-w-0 break-all">{shareError}</span>
+          </div>
+        )}
         <section className="space-y-2"><h3 className="font-semibold text-neutral-100">详细简介</h3><div className="rounded border border-neutral-800 bg-neutral-950 p-3 text-neutral-300"><Markdown value={mod.description || mod.summary || '暂无简介'} /></div></section>
         {images.length > 0 && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{images.map((url, index) => <img key={url} src={url} alt={`${mod.title} 详情图 ${index + 1}`} loading="lazy" className="max-h-80 w-full rounded border border-neutral-800 bg-neutral-950 object-contain" />)}</div>}
         {loading && <p className="text-neutral-400">正在读取详情...</p>}

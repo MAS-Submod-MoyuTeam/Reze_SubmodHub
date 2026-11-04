@@ -10,33 +10,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { Operation } from '../types/client';
-
-/** Copies text to the clipboard, falling back to a hidden textarea when the
- *  async Clipboard API is unavailable (older WebView2 / non-secure origins). */
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // fall through to the legacy path
-  }
-  try {
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.setAttribute('readonly', '');
-    area.style.position = 'fixed';
-    area.style.opacity = '0';
-    document.body.appendChild(area);
-    area.select();
-    const copied = document.execCommand('copy');
-    document.body.removeChild(area);
-    return copied;
-  } catch {
-    return false;
-  }
-}
+import { copyToClipboard } from '../clipboard';
 
 /** Single payload for both the copy button and the JSON disclosure, so the two
  *  can never drift apart. */

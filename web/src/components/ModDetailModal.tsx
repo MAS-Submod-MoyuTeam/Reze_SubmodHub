@@ -9,6 +9,9 @@ import { DeprecationNotice } from './DeprecationNotice';
 import { SpritepackSets } from './SpritepackSets';
 import { formatVersionLabel, sortVersionHistory } from './versionHistory';
 import { formatBytes } from './formatBytes';
+import { modShareURL } from '../../../ui/mod-link';
+import { copyToClipboard } from '../../../ui/clipboard';
+import { openInClient } from '../clientDeepLink';
 import {
   X,
   Download,
@@ -24,20 +27,27 @@ import {
   Copy,
   Check,
   EyeOff,
+  Share2,
+  MonitorSmartphone,
 } from 'lucide-react';
 
 interface ModDetailModalProps {
   modId: string | null;
   downloadVersionId: string | null;
   onClose: () => void;
+  /** 「未检测到客户端」时把用户送到下载入口；没有这个回调就只提示。 */
+  onOpenClientDownload?: () => void;
+  onNotify?: (message: string) => void;
 }
 
 export const ModDetailModal: React.FC<ModDetailModalProps> = ({
   modId,
   downloadVersionId,
   onClose,
+  onOpenClientDownload,
+  onNotify,
 }) => {
-  const { mods, versions, scanReports, getDownloadDescriptor, showToast, currentUser, unpublishVersion, markVersionDeprecated, clearVersionDeprecation, deleteVersion, setDetailModalModId, unpublishMod } = useApp();
+  const { mods, versions, scanReports, getDownloadDescriptor, showToast, currentUser, unpublishVersion, markVersionDeprecated, clearVersionDeprecation, deleteVersion, setDetailModalModId, unpublishMod, catalogLoading, catalogError } = useApp();
 
   // If modId provided, or derived from downloadVersionId
   const effectiveModId =
@@ -141,8 +151,45 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
   }, [canPrefetchDescriptor, downloadVersionId, getDownloadDescriptor, showToast]);
 
   const [copiedHash, setCopiedHash] = useState(false);
+  const [shareState, setShareState] = useState<'idle' | 'copied'>('idle');
 
-  if (!currentMod) return null;
+  // 分享链接可能指向一个已下架或根本不存在的 mod：目录到手后仍然查不到，就得
+  // 说出来，而不是让用户对着一个空白弹窗猜。加载中不报结论。
+  //
+  // 「目录没加载出来」和「目录里没有它」必须分开说：前者是我们没查到，后者才是
+  // 它不在了。把请求失败说成「已下架」，是把我们自己的故障栽给这个模组。
+  if (!currentMod) {
+    if (catalogLoading) return null;
+    const catalogFailed = Boolean(catalogError);
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs">
+        <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-md w-full p-6 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="text-base font-bold text-neutral-900">
+              {catalogFailed ? '目录没能加载出来' : '这个模组不在当前目录里'}
+            </h2>
+            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 p-1.5 rounded transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <p className="text-xs text-neutral-600 leading-relaxed">
+            {catalogFailed
+              ? `无法从服务器读取已发布目录（${catalogError}），所以现在还判断不了这个模组在不在。请检查网络后刷新目录再试。`
+              : '链接指向的模组可能已下架或已被删除。请回到目录看看还有哪些模组可用。'}
+          </p>
+          {effectiveModId && (
+            <p className="font-mono text-[11px] text-neutral-500 break-all">ID: {effectiveModId}</p>
+          )}
+          <button
+            onClick={onClose}
+            className="w-full text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded px-3 py-2 transition-colors"
+          >
+            返回目录
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const currentVersion =
     modVersions.find((v) => v.id === selectedVersionId) || modVersions[0];
@@ -212,6 +259,26 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
     setTimeout(() => setCopiedHash(false), 2000);
   };
 
+  /**
+   * 分享：把「这个详情」变成一条可以直接粘贴到浏览器的链接。
+   *
+   * 用当前站点的 origin 而不是写死的正式域名——测试/自建实例分享出去的链接
+   * 必须指回它自己，否则对方点开看到的是另一个站点。
+   */
+  const handleShare = async () => {
+    const link = modShareURL(currentMod.id, window.location.origin);
+    const copied = await copyToClipboard(link);
+    if (!copied) {
+      // 剪贴板被拒绝（文档没有焦点、权限策略）时别只说「失败」：
+      // 把链接本身交给用户，他还能手动复制。
+      showToast('warning', `无法写入剪贴板，请手动复制：${link}`);
+      return;
+    }
+    setShareState('copied');
+    showToast('success', `分享链接已复制：${link}`);
+    setTimeout(() => setShareState('idle'), 2000);
+  };
+
   return (
     <div ref={handleModalRootRef} className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs">
       <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
@@ -229,12 +296,39 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
             </div>
             <h2 className="text-base font-bold text-neutral-900">{currentMod.title}</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="text-neutral-400 hover:text-neutral-700 p-1.5 rounded transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* 分享与「在客户端打开」只属于详情页：列表里既没有稳定上下文，
+                也没有分享的必要。 */}
+            <button
+              type="button"
+              onClick={handleShare}
+              title="复制分享链接，可直接粘贴到浏览器"
+              className="inline-flex items-center gap-1.5 text-xs text-neutral-600 hover:text-neutral-900 border border-neutral-200 hover:border-neutral-300 rounded px-2.5 py-1.5 transition-colors"
+            >
+              {shareState === 'copied' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Share2 className="w-3.5 h-3.5" />}
+              {shareState === 'copied' ? '已复制' : '分享'}
+            </button>
+            <button
+              type="button"
+              onClick={() => openInClient(currentMod.id, {
+                onNoClient: () => {
+                  onNotify?.('未检测到已安装的客户端，可以先去下载。');
+                  onOpenClientDownload?.();
+                },
+              })}
+              title="用已安装的桌面/Android 客户端打开这个模组"
+              className="inline-flex items-center gap-1.5 text-xs text-neutral-600 hover:text-neutral-900 border border-neutral-200 hover:border-neutral-300 rounded px-2.5 py-1.5 transition-colors"
+            >
+              <MonitorSmartphone className="w-3.5 h-3.5" />
+              在客户端打开
+            </button>
+            <button
+              onClick={onClose}
+              className="text-neutral-400 hover:text-neutral-700 p-1.5 rounded transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}

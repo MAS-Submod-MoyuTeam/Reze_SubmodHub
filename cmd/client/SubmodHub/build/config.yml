@@ -82,6 +82,16 @@ fileAssociations:
 #    role: Editor
 #    mimeType: image/jpeg  # (optional)
 
+# Custom URL protocols.
+# `rezehub://mod/<mod_id>` 是 web 端「在客户端打开」与分享链接调起本程序的入口。
+# 声明在这里，NSIS 安装包会写 HKCU\Software\Classes\rezehub 并在卸载时清掉；
+# 免安装/绿色版由程序启动时自写同一个键（cmd/client/SubmodHub/protocol_windows.go）。
+# 注意：运行 `wails3 task common:update:build-assets` 会重新生成 build/ 下的模板资产，
+# 改完本文件后要重新执行一次，让 nsis/wails_tools.nsh 里的协议宏带上这一项。
+protocols:
+  - scheme: rezehub
+    description: RezeHub mod link
+
 # Other data
 other:
   - name: My Other Data

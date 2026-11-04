@@ -93,18 +93,6 @@ export interface InstalledArchive {
 }
 
 /**
- * LocalSubmodOwner names a managed installation that already owns files inside a
- * discovered directory. A directory can hold files outside the ledger, so the
- * client must be able to say "this folder belongs to a managed mod" instead of
- * presenting the leftovers as an unrelated unmanaged submod.
- */
-export interface LocalSubmodOwner {
-    "installation_id": string;
-    "mod_id"?: string;
-    "title"?: string;
-}
-
-/**
  * LocalSubmod represents an unmanaged submod directory or root-scattered group.
  */
 export interface LocalSubmod {
@@ -124,6 +112,26 @@ export interface LocalSubmodFile {
     "path": string;
     "sha256": string;
     "size": number;
+
+    /**
+     * DerivedFrom names the script this file was compiled from, when it is a
+     * generated compile cache rather than shipped content. Adoption leaves such a
+     * file untracked, so the wizard has to show it as out of scope instead of
+     * offering it as adoptable content and dropping it later at confirm time.
+     */
+    "derived_from"?: string;
+}
+
+/**
+ * LocalSubmodOwner names a managed installation that already owns files inside a
+ * discovered directory. A directory can hold files outside the ledger, so the
+ * client must be able to say "this folder belongs to a managed mod" instead of
+ * presenting the leftovers as an unrelated unmanaged submod.
+ */
+export interface LocalSubmodOwner {
+    "installation_id": string;
+    "mod_id"?: string;
+    "title"?: string;
 }
 
 export interface MASInstance {
@@ -247,6 +255,12 @@ export interface PlanResult {
     "selected_sprite_set_count"?: number;
     "actions": PlanPreviewAction[] | null;
     "cleanup_paths"?: string[] | null;
+
+    /**
+     * DerivedPaths lists selected files the ledger will not record because they
+     * are generated from another file in the same plan.
+     */
+    "derived_paths"?: string[] | null;
     "blockers": string[] | null;
     "risks": PlanPreviewRisk[] | null;
     "summary": PlanPreviewSummary;

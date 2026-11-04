@@ -80,6 +80,12 @@ public class MainActivity extends AppCompatActivity {
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
 
+    // 深链（rezehub://mod/<id>）：页面就绪前收到的链接先存在这里，onPageFinished
+    // 后再交给前端。冷启动时 onNewIntent 不会被调用，链接来自 onCreate 的 intent。
+    private String pendingDeepLinkUrl;
+    // 页面加载完成前发事件没有接收方，会被静默丢掉，所以用这个标志挡住。
+    private boolean pageLoaded;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -94,8 +100,21 @@ public class MainActivity extends AppCompatActivity {
         // Set up WebView
         setupWebView();
 
+        // 冷启动的深链要在 loadApplication 之前收下：onPageFinished 可能很快就
+        // 回来，晚一步就会漏发。
+        captureDeepLink(getIntent());
+
         // Load the application
         loadApplication();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // singleTask：应用已运行时点链接走这里，同一个 WebView 复用，页面多半已就绪。
+        setIntent(intent);
+        captureDeepLink(intent);
+        flushPendingDeepLink();
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -231,6 +250,10 @@ public class MainActivity extends AppCompatActivity {
                 // Now that JS listeners are mounted, push a snapshot of the
                 // current battery / network / theme so the UI starts populated.
                 emitSystemSnapshot();
+                // 冷启动时收到的深链要等到这里才能交给前端：事件通道在页面加载
+                // 完成前没有接收方。
+                pageLoaded = true;
+                flushPendingDeepLink();
             }
         });
 
@@ -592,6 +615,52 @@ public class MainActivity extends AppCompatActivity {
             if (webView != null) {
                 webView.evaluateJavascript(js, null);
             }
+        });
+    }
+
+    // ---- Deep links ------------------------------------------------------
+    // `rezehub://mod/<id>` 是 web 端「在客户端打开」与分享链接调起本应用的入口。
+    // Java 只负责把原始链接搬进页面，**不解析 mod id**：解析规则唯一来源是
+    // ui/mod-link.ts（前端）与 share_link.go（Go 侧剪贴板/启动参数），在这里再来
+    // 一套第三份实现只会漂移。
+
+    private static final String DEEP_LINK_SCHEME = "rezehub";
+    private static final String DEEP_LINK_EVENT = "submodhub:deep_link";
+
+    /** 收下一条深链原始链接，等页面就绪后再发。 */
+    private void captureDeepLink(Intent intent) {
+        if (intent == null) return;
+        Uri data = intent.getData();
+        if (data == null) return;
+        if (!DEEP_LINK_SCHEME.equalsIgnoreCase(data.getScheme())) return;
+        pendingDeepLinkUrl = data.toString();
+        if (DEBUG) Log.d(TAG, "Captured deep link: " + pendingDeepLinkUrl);
+    }
+
+    /** 页面就绪且手上有待发的深链时才发事件，发完即清。 */
+    private void flushPendingDeepLink() {
+        if (!pageLoaded || pendingDeepLinkUrl == null || bridge == null) return;
+        String url = pendingDeepLinkUrl;
+        pendingDeepLinkUrl = null;
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("url", url);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to build deep link payload", e);
+            return;
+        }
+        // 两条通道一起走，因为这里无法知道前端此刻是否已经订阅：
+        // 1. window 变量是「留给还没挂载的前端」的兜底，前端读走并清空；
+        // 2. 事件是「前端已经在跑」时的实时通道。
+        // 只发事件会在冷启动时静默丢掉一次点击（onPageFinished 可能早于 React 挂载）。
+        if (webView != null) {
+            webView.evaluateJavascript(
+                "window.__submodhubDeepLink = " + JSONObject.quote(url) + ";", null);
+        }
+        bridge.emitEvent(DEEP_LINK_EVENT, payload.toString());
+        // 用户点链接的意图就是「看这个详情」，把 WebView 带回前台焦点。
+        runOnUiThread(() -> {
+            if (webView != null) webView.requestFocus();
         });
     }
 

@@ -8,6 +8,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as install$0 from "../../internal/install/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as updater$0 from "../../internal/updater/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -29,8 +32,41 @@ export function BrowseMASDirectory(): $CancellablePromise<string> {
     return $Call.ByID(1762336089);
 }
 
+/**
+ * CancelAppUpdate cancels in-flight download.
+ */
+export function CancelAppUpdate(): $CancellablePromise<updater$0.State> {
+    return $Call.ByID(511347751);
+}
+
 export function CancelStage(operationID: string): $CancellablePromise<void> {
     return $Call.ByID(4041293975, operationID);
+}
+
+/**
+ * CheckForAppUpdate asks the API which release is current (GitHub is the
+ * fallback) and records the returned delivery plan for the later download.
+ */
+export function CheckForAppUpdate(): $CancellablePromise<updater$0.State> {
+    return $Call.ByID(1787650064);
+}
+
+/**
+ * ClipboardModLink 报告剪贴板里是否是一条站内 mod 链接，命中则返回 mod id。
+ * 前端只在「启动后」与「窗口重新获得焦点」这两个时刻调用它：Android 10+ 只有
+ * 前台应用能读剪贴板，定时轮询既拿不到数据，也违背系统对剪贴板的限制。
+ */
+export function ClipboardModLink(): $CancellablePromise<string> {
+    return $Call.ByID(2074092755);
+}
+
+/**
+ * ConfirmAppUpdateStartup is invoked by the rendered frontend after its initial
+ * instance configuration has loaded. A pending update must reach this normal
+ * startup path before its updater can discard the previous executable.
+ */
+export function ConfirmAppUpdateStartup(): $CancellablePromise<void> {
+    return $Call.ByID(542637444);
 }
 
 export function CreateSpriteGift(file: string): $CancellablePromise<string> {
@@ -39,6 +75,13 @@ export function CreateSpriteGift(file: string): $CancellablePromise<string> {
 
 export function DeleteSpritepack(file: string): $CancellablePromise<$models.SpritepackDeleteResult> {
     return $Call.ByID(856149942, file);
+}
+
+/**
+ * DownloadAppUpdate starts downloading the asset discovered in CheckForAppUpdate.
+ */
+export function DownloadAppUpdate(): $CancellablePromise<updater$0.State> {
+    return $Call.ByID(2735393737);
 }
 
 export function ExecutePlan(request: $models.ExecutePlanRequest): $CancellablePromise<$models.ArchiveInstallResult> {
@@ -51,6 +94,13 @@ export function GetAPIURL(): $CancellablePromise<string> {
 
 export function GetAndroidStorageAccess(): $CancellablePromise<$models.AndroidStorageAccessStatus> {
     return $Call.ByID(3169108985);
+}
+
+/**
+ * GetAppUpdateStatus returns the current status and progress.
+ */
+export function GetAppUpdateStatus(): $CancellablePromise<updater$0.State> {
+    return $Call.ByID(725612925);
 }
 
 export function GetMASStatus(): $CancellablePromise<$models.MASStatus> {
@@ -67,6 +117,13 @@ export function GetPriorityOverview(): $CancellablePromise<install$0.PriorityOve
 
 export function GetStageProgress(operationID: string): $CancellablePromise<$models.StageProgress> {
     return $Call.ByID(546730124, operationID);
+}
+
+/**
+ * InstallAppUpdate executes the platform update (independent updater on Windows, PackageInstaller on Android).
+ */
+export function InstallAppUpdate(): $CancellablePromise<updater$0.State> {
+    return $Call.ByID(3104827530);
 }
 
 export function LaunchMASInstance(id: string): $CancellablePromise<void> {
@@ -91,6 +148,21 @@ export function ListOperations(): $CancellablePromise<$models.OperationDetail[] 
 
 export function MatchRegistrations(names: string[] | null): $CancellablePromise<string> {
     return $Call.ByID(3843471556, names);
+}
+
+/**
+ * ModShareLink 产出写进剪贴板的分享链接：可以直接粘到浏览器，也会被本客户端
+ * 自己识别成站内链接。规则与 web 端 modShareURL 一致，两端不各写一种链接。
+ */
+export function ModShareLink(modID: string): $CancellablePromise<string> {
+    return $Call.ByID(2573342354, modID);
+}
+
+/**
+ * OpenAppUpdateSettings opens settings screen for unknown apps install on Android.
+ */
+export function OpenAppUpdateSettings(): $CancellablePromise<boolean> {
+    return $Call.ByID(4153239172);
 }
 
 export function PreviewAdopt(request: $models.AdoptRequest): $CancellablePromise<$models.PlanResult> {
@@ -167,6 +239,13 @@ export function SetStorageAccessProvider(provider: $models.StorageAccessProvider
 
 export function StageArchive(request: $models.StageArchiveRequest): $CancellablePromise<$models.StagedArchiveInfo> {
     return $Call.ByID(1671860989, request);
+}
+
+/**
+ * TakePendingModLink 由前端在挂载后调用：领走页面就绪前到达的深链。
+ */
+export function TakePendingModLink(): $CancellablePromise<string> {
+    return $Call.ByID(3988957291);
 }
 
 export function Uninstall(operationID: string, uninstallOperationID: string): $CancellablePromise<string> {

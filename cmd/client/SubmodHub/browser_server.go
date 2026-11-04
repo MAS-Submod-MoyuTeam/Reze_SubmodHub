@@ -47,6 +47,18 @@ func browserServiceHandler(service *DesktopService) http.Handler {
 			result, err = service.GetMASStatus()
 		case "GetPriorityOverview":
 			result, err = service.GetPriorityOverview()
+		case "TakePendingModLink":
+			// 浏览器调试模式没有系统调起这条链路，深链恒为空：返回空串而不是
+			// 报错，前端就不用为「调试模式」写分支。
+			result = pendingModLinks.take()
+		case "ClipboardModLink":
+			// 调试模式不读真实剪贴板：读到的是宿主浏览器的，与客户端无关。
+			result = ""
+		case "ModShareLink":
+			var modID string
+			if err = arg(0, &modID); err == nil {
+				result, err = service.ModShareLink(modID)
+			}
 		case "ListInstalledModFiles":
 			var installationID, modID string
 			if err = arg(0, &installationID); err == nil {
