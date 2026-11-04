@@ -382,7 +382,7 @@ func (s *DesktopService) GetMASStatus() (MASStatus, error) {
 // ErrManifestCorrupt 表示账本（`.submodhub/state/manifest.json`）读不出来，复用
 // internal/install 与 docs/frontend-contract.md 错误码表里的稳定错误码。账本是
 // 「哪些文件属于 RezeHub」的唯一记录，因此任何要按账本分类文件或读取逐安装状态的
-// 调用都必须失败，不能靠猜：读不出来的账本会把每个托管文件都退化成「未托管」，
+// 调用都必须失败，不能靠猜：读不出来的账本会把每个已安装文件都退化成「未收纳」，
 // 或静默丢掉优先级等账本字段。
 //
 // 返回的就是裸码：客户端把这个字符串当作提示文案展示，不解析错误文本，所以把底层
@@ -1211,10 +1211,10 @@ func (s *DesktopService) PreviewRepair(targetID string) (PlanResult, error) {
 	actions := make([]PlanPreviewAction, 0, len(plan.Actions))
 	for _, action := range plan.Actions {
 		kind := "METADATA_ONLY"
-		reason := "仅确认托管层记录；无需写入磁盘"
+		reason := "仅确认安装层记录；无需写入磁盘"
 		if action.Action == core.ActionWrite {
 			kind = "CREATE"
-			reason = "恢复当前活动托管层；保留现有文件备份"
+			reason = "恢复当前活动安装层；保留现有文件备份"
 			if action.CurrentExists {
 				kind = "OVERWRITE"
 			}

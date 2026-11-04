@@ -21,7 +21,7 @@ function makeMockUnmanagedItem(override?: Partial<InstalledItem>): InstalledItem
     sha256: 'hash123',
     installed_version: '1.2.0',
     installed_version_id: '',
-    latest_version: '未托管',
+    latest_version: '未收纳',
     latest_version_id: '',
     has_update: false,
     priority: 0,

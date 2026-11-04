@@ -200,7 +200,7 @@ export type LocalSubmod = {
     dependencies_unknown?: boolean;
   }>;
   files: Array<{ path: string; sha256: string; size: number; derived_from?: string }>;
-  /** 已托管安装中，实际拥有该目录内文件的项目；为空表示这是纯未托管目录。 */
+  /** 已安装项目中，实际拥有该目录内文件的项目；为空表示这是纯未收纳目录。 */
   managed_owners?: Array<{ installation_id: string; mod_id?: string; title?: string }>;
   warnings?: string[];
   incomplete?: boolean;

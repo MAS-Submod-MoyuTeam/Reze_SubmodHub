@@ -46,7 +46,7 @@ export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClos
               <FileCode2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <h3 className="font-bold text-neutral-100 text-sm truncate">{item.title}</h3>
               <span className="text-xs font-mono text-neutral-400 shrink-0">
-                ({item.is_managed ? '已托管' : '未托管'})
+                ({item.is_managed ? '已安装' : '未收纳'})
               </span>
             </div>
             <div className="text-xs text-neutral-400 mt-0.5 font-mono truncate">
@@ -97,7 +97,7 @@ export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClos
                         </span>
                       ) : (
                         <span className="text-amber-400 text-[11px] flex items-center gap-1 font-sans">
-                          <span>{f.status === 'overridden' ? '被覆盖' : f.status === 'unmanaged' ? '未托管' : '已修改或缺失'}</span>
+                          <span>{f.status === 'overridden' ? '被覆盖' : f.status === 'unmanaged' ? '未收纳' : '已修改或缺失'}</span>
                         </span>
                       )}
                     </td>

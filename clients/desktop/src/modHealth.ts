@@ -15,7 +15,7 @@ export interface UpdateComparisonInput {
   latestVersion?: string;
 }
 
-const PLACEHOLDER_VERSIONS = new Set(['', '未托管', '未声明', 'unknown', 'n/a', 'null']);
+const PLACEHOLDER_VERSIONS = new Set(['', '未收纳', '未声明', 'unknown', 'n/a', 'null']);
 
 function isPlaceholderVersion(value: string): boolean {
   return PLACEHOLDER_VERSIONS.has(value.trim().toLowerCase());
@@ -59,7 +59,7 @@ export function resolveHasUpdate(input: UpdateComparisonInput): boolean {
   if (isPlaceholderVersion(latestVersion)) return false;
   // 同一版本标识：就是当前版本，不存在更新。
   if (installedId && latestId && installedId === latestId) return false;
-  // 本地版本未知（未托管、散落项、旧账本缺字段）时不臆断。
+  // 本地版本未知（未收纳、散落项、旧账本缺字段）时不臆断。
   if (isPlaceholderVersion(installedVersion)) return false;
 
   const comparison = compareVersions(installedVersion, latestVersion);
@@ -69,11 +69,11 @@ export function resolveHasUpdate(input: UpdateComparisonInput): boolean {
 }
 
 export interface IntegrityTotals {
-  /** 参与校验的已安装模组数（含未托管散落项）。 */
+  /** 参与校验的已安装模组数（含未收纳散落项）。 */
   modCount: number;
-  /** 有账本可比对的托管文件数（intact + modified）。 */
+  /** 有账本可比对的已安装文件数（intact + modified）。 */
   checkedFiles: number;
-  /** 与账本哈希不一致的托管文件数。 */
+  /** 与账本哈希不一致的已安装文件数。 */
   driftedFiles: number;
   /** 被其他模组覆盖的非活动文件数：是分层结果，不是漂移。 */
   overriddenFiles: number;
@@ -97,11 +97,11 @@ export function summarizeIntegrity(totals: IntegrityTotals): IntegritySummary {
   if (totals.checkedFiles > 0) {
     details.push(
       totals.driftedFiles > 0
-        ? `托管文件 ${totals.checkedFiles} 个，其中 ${totals.driftedFiles} 个哈希与账本不一致`
-        : `托管文件 ${totals.checkedFiles} 个，全部与账本一致`
+        ? `已安装文件 ${totals.checkedFiles} 个，其中 ${totals.driftedFiles} 个哈希与账本不一致`
+        : `已安装文件 ${totals.checkedFiles} 个，全部与账本一致`
     );
   } else {
-    details.push('没有任何托管文件可供比对');
+    details.push('没有任何已安装文件可供比对');
   }
   if (totals.overriddenFiles > 0) {
     details.push(`${totals.overriddenFiles} 个文件被其他模组覆盖（分层结果，非漂移）`);

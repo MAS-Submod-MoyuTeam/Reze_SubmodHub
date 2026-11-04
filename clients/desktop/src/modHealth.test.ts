@@ -29,8 +29,8 @@ test('resolveHasUpdate stays false when there is nothing provable', () => {
   // 目录里没有这个模组 / 没有可发布的版本。
   assert.equal(resolveHasUpdate({ ...installed }), false);
   assert.equal(resolveHasUpdate({ ...installed, latestVersionId: 'ver_2', latestVersion: '' }), false);
-  // 本地版本未知：未托管、散落项。
-  assert.equal(resolveHasUpdate({ installedVersionId: '', installedVersion: '未托管', latestVersionId: 'ver_2', latestVersion: '1.3.0' }), false);
+  // 本地版本未知：未收纳、散落项。
+  assert.equal(resolveHasUpdate({ installedVersionId: '', installedVersion: '未收纳', latestVersionId: 'ver_2', latestVersion: '1.3.0' }), false);
   assert.equal(resolveHasUpdate({ installedVersionId: '', installedVersion: '', latestVersionId: 'ver_2', latestVersion: '1.3.0' }), false);
   // 版本号都不可解析时，只能靠标识是否相同下结论。
   assert.equal(resolveHasUpdate({ installedVersionId: 'a', installedVersion: 'nightly', latestVersionId: 'b', latestVersion: 'canary' }), true);
@@ -52,13 +52,13 @@ function totals(overrides: Partial<IntegrityTotals> = {}): IntegrityTotals {
 test('summarizeIntegrity reports a clean ledger without inventing numbers', () => {
   const summary = summarizeIntegrity(totals());
   assert.equal(summary.tone, 'info');
-  assert.match(summary.text, /托管文件 12 个，全部与账本一致/);
+  assert.match(summary.text, /已安装文件 12 个，全部与账本一致/);
 });
 
 test('summarizeIntegrity separates drift, layered overrides, and files without a ledger', () => {
   const summary = summarizeIntegrity(totals({ driftedFiles: 3, overriddenFiles: 2, unmanagedFiles: 7 }));
   assert.equal(summary.tone, 'warn');
-  assert.match(summary.text, /托管文件 12 个，其中 3 个哈希与账本不一致/);
+  assert.match(summary.text, /已安装文件 12 个，其中 3 个哈希与账本不一致/);
   assert.match(summary.text, /2 个文件被其他模组覆盖（分层结果，非漂移）/);
   // 没有账本的散落文件不能被算进「与账本一致」。
   assert.match(summary.text, /7 个散落文件没有安装账本，未参与比对/);
@@ -72,7 +72,7 @@ test('summarizeIntegrity refuses to claim an all-clear when nothing was checked'
 
   const noLedger = summarizeIntegrity(totals({ checkedFiles: 0, unmanagedFiles: 4 }));
   assert.equal(noLedger.tone, 'warn');
-  assert.match(noLedger.text, /没有任何托管文件可供比对/);
+  assert.match(noLedger.text, /没有任何已安装文件可供比对/);
 
   const unreadable = summarizeIntegrity(totals({ unreadableMods: ['A', 'B'] }));
   assert.equal(unreadable.tone, 'warn');

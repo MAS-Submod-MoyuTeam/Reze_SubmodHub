@@ -78,7 +78,7 @@ const MAS_GAME_PROCESS_DETECTED = false;
 const INSTANCE_SWITCH_DETAIL = '正在读取该实例的模组、精灵包与事务记录，请稍候。';
 
 /**
- * 冻结上限：实例级读取正常都在几百毫秒内结束。这个上限只在原生调用或未托管模组的
+ * 冻结上限：实例级读取正常都在几百毫秒内结束。这个上限只在原生调用或未收纳模组的
  * 商店匹配请求卡死时兜底，让窗口退回各视图自己的加载/错误状态，而不是被永久冻结。
  */
 const INSTANCE_SWITCH_DEADLINE_MS = 15000;
@@ -489,7 +489,7 @@ export default function App() {
         summary: '检测到 MAS 本地子模组，尚未与 RezeHub 安装记录关联。',
         author_name: item.author || '未知作者 (本地检测)', category: 'submod',
         installed_version: item.version || '未声明', installed_version_id: '',
-        latest_version: '未托管', latest_version_id: '', has_update: false,
+        latest_version: '未收纳', latest_version_id: '', has_update: false,
         priority: 0, is_managed: false, files_count: (item.files || []).length,
         size_bytes: (item.files || []).reduce((sum, file) => sum + file.size, 0),
         installed_at: new Date().toISOString(), sha256: item.files?.[0]?.sha256 || '',
@@ -989,7 +989,7 @@ export default function App() {
         showToast(summarizeIntegrity(totals).text, 'warn');
         return;
       }
-      // 未托管项的清单来自本地扫描：整轮校验只扫一次，所有散落项共用，避免 N 次全盘扫描。
+      // 未收纳项的清单来自本地扫描：整轮校验只扫一次，所有散落项共用，避免 N 次全盘扫描。
       let scanOnce: ReturnType<typeof ScanLocalSubmods> | null = null;
       const scan = () => (scanOnce ??= ScanLocalSubmods());
 
@@ -997,7 +997,7 @@ export default function App() {
         try {
           const files = await loadInstalledFiles(item, { list: ListInstalledModFiles, scan });
           if (item.is_managed) {
-            // 只有托管文件有账本可比对；非活动文件是被覆盖，不是漂移。
+            // 只有已安装文件有账本可比对；非活动文件是被覆盖，不是漂移。
             totals.checkedFiles += files.filter((file) => file.status === 'intact' || file.status === 'modified').length;
             totals.driftedFiles += files.filter((file) => file.status === 'modified').length;
             totals.overriddenFiles += files.filter((file) => file.status === 'overridden').length;
@@ -1235,7 +1235,7 @@ export default function App() {
     }
     const targetInstallationId = resolveModInstallationId(item);
     if (!item.is_managed || !targetInstallationId) {
-      showToast('缺少托管安装记录，无法自动修复。请重新扫描或人工处理。');
+      showToast('缺少安装记录，无法自动修复。请重新扫描或人工处理。');
       return;
     }
     if (installingRef.current) return;

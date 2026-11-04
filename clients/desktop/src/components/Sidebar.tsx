@@ -49,9 +49,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'installed' as ActiveTab,
       label: '已安装模组',
       icon: PackageCheck,
-      hint: '托管版本与未托管检测',
+      hint: '已安装版本与未收纳检测',
       badge: installedCount,
-      unmanagedBadge: unmanagedCount > 0 ? `${unmanagedCount} 项未托管` : null,
+      unmanagedBadge: unmanagedCount > 0 ? `${unmanagedCount} 项未收纳` : null,
     },
     {
       id: 'priority' as ActiveTab,

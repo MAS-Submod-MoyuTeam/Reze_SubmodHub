@@ -51,7 +51,7 @@ interface InstalledViewProps {
 }
 
 /**
- * 已托管目录的展示名：优先标题，其次商店 ID，最后内部安装 ID。
+ * 已安装目录的展示名：优先标题，其次商店 ID，最后内部安装 ID。
  * 同一目录可能被多个安装占用（层叠覆盖），去重后按后端顺序展示。
  */
 function managedOwnerLabels(item: InstalledItem): string {
@@ -536,7 +536,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 {managedMods.length === 0 ? (
                   <div className="p-8 text-center text-neutral-400">
                     <PackageCheck className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
-                    <p>当前 MAS 实例尚未安装任何托管模组。</p>
+                    <p>当前 MAS 实例尚未安装任何模组。</p>
                   </div>
                 ) : (
                   <>
@@ -595,7 +595,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
 
                               {/* File counts and size */}
                               <td className="py-3 px-3 font-mono text-neutral-400 text-[11px]">
-                                <div>{item.files_count} 个托管文件</div>
+                                <div>{item.files_count} 个已安装文件</div>
                                 <div className="text-neutral-400 tabular-nums">{formatBytes(item.size_bytes)}</div>
                               </td>
 
@@ -634,7 +634,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                     disabled={isModsActionBlocked}
                                     onClick={() => onInspectFiles(item)}
                                     className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法查看文件' : '正在读取模组列表…') : '查看该模组托管的所有本地文件路径及哈希'}
+                                    title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法查看文件' : '正在读取模组列表…') : '查看该模组已安装文件的本地路径及哈希'}
                                   >
                                     文件清单
                                   </button>
@@ -643,7 +643,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                     disabled={isModsActionBlocked}
                                     onClick={() => onStartRepairPlan(item)}
                                     className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法修复' : '正在读取模组列表…') : '预览从已校验的托管材料恢复文件；覆盖前备份，缺少材料时失败'}
+                                    title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法修复' : '正在读取模组列表…') : '预览从已校验的安装材料恢复文件；覆盖前备份，缺少材料时失败'}
                                   >
                                     修复
                                   </button>
@@ -745,7 +745,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                               disabled={isModsActionBlocked}
                               onClick={() => onInspectFiles(item)}
                               className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                              title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法查看文件' : '正在读取模组列表…') : '查看该模组托管的所有本地文件路径及哈希'}
+                              title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法查看文件' : '正在读取模组列表…') : '查看该模组已安装文件的本地路径及哈希'}
                             >
                               文件清单
                             </button>
@@ -754,7 +754,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                               disabled={isModsActionBlocked}
                               onClick={() => onStartRepairPlan(item)}
                               className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                              title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法修复' : '正在读取模组列表…') : '预览从已校验的托管材料恢复文件；覆盖前备份，缺少材料时失败'}
+                              title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法修复' : '正在读取模组列表…') : '预览从已校验的安装材料恢复文件；覆盖前备份，缺少材料时失败'}
                             >
                               修复
                             </button>
@@ -783,10 +783,10 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800 text-xs space-y-2">
                   <div className="flex items-center gap-2 text-amber-400 font-semibold">
                     <Info className="w-4 h-4 shrink-0" />
-                    <span>RezeHub 契约保护机制：未托管内容保护原则</span>
+                    <span>RezeHub 契约保护机制：未收纳内容保护原则</span>
                   </div>
                   <p className="text-neutral-300 leading-relaxed">
-                    未托管模组在托管前不支持直接删除。
+                    未收纳模组在收纳前不支持直接删除。
                   </p>
                   <p className="text-neutral-300 leading-relaxed">
                     这些可能是你在使用 RezeHub 之前安装的子模组。RezeHub 无法安全删除这些文件，你可以手动删除这些文件，或者确认这些文件安全以后手动收纳文件作为子模组使用。
@@ -797,7 +797,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 {unmanagedMods.length === 0 ? (
                   <div className="p-8 text-center text-neutral-400">
                     <FileQuestion className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
-                    <p>当前 MAS 实例未检测到未托管的本地子模组。</p>
+                    <p>当前 MAS 实例未检测到未收纳的本地子模组。</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -809,11 +809,11 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="px-2 py-0.5 text-[10px] rounded bg-amber-950 text-amber-300 border border-amber-800 font-mono">
-                              未托管发现项
+                              未收纳项
                             </span>
                             {item.managed_owners && item.managed_owners.length > 0 && (
                               <span className="px-2 py-0.5 text-[10px] rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono">
-                                所在目录已托管
+                                所在目录已安装
                               </span>
                             )}
                             {item.match_status === 'matched' && (

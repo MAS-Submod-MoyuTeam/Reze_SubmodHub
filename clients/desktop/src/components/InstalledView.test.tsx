@@ -72,7 +72,7 @@ test('InstalledView: leftovers inside a managed directory name their owner inste
   });
 
   const html = renderUnmanagedTab(item);
-  assert.match(html, /所在目录已托管/);
+  assert.match(html, /所在目录已安装/);
   assert.match(html, /该目录属于已安装模组「Managed Title」/);
   assert.match(html, /收纳只新增这些文件的归属/);
 });
@@ -88,7 +88,7 @@ test('InstalledView: a directory without a managed owner makes no ownership clai
   });
 
   const html = renderUnmanagedTab(item);
-  assert.doesNotMatch(html, /所在目录已托管/);
+  assert.doesNotMatch(html, /所在目录已安装/);
   assert.doesNotMatch(html, /该目录属于已安装模组/);
 });
 
@@ -103,7 +103,7 @@ test('InstalledView: unmanaged banner explains deletion limits in plain words', 
   });
 
   const html = renderUnmanagedTab(item);
-  assert.match(html, /未托管模组在托管前不支持直接删除/);
+  assert.match(html, /未收纳模组在收纳前不支持直接删除/);
   assert.match(html, /这些可能是你在使用 RezeHub 之前安装的子模组/);
   assert.match(html, /可以手动删除这些文件/);
   assert.match(html, /确认这些文件安全以后手动收纳文件作为子模组使用/);
@@ -159,7 +159,7 @@ test('InstalledView: repair button is rendered with real preview tooltip for dri
   );
 
   assert.match(html, /修复/);
-  assert.match(html, /预览从已校验的托管材料恢复文件/);
+  assert.match(html, /预览从已校验的安装材料恢复文件/);
   assert.match(html, /覆盖前备份，缺少材料时失败/);
 });
 
