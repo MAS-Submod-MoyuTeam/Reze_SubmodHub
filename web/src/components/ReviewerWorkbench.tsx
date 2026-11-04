@@ -13,7 +13,6 @@ import { reviewArchiveErrorText, triggerArchiveSave } from './reviewArchive';
 import { fetchReviewArchive, getReviewSubmission, listReviewSubmissions, listReviewAudit, platformScanReportId } from '../../../ui/submission-api';
 import {
   ShieldAlert,
-  ShieldCheck,
   CheckCircle2,
   XCircle,
   FileCode,
@@ -488,15 +487,15 @@ export const ReviewerWorkbench: React.FC = () => {
                         <Download className="w-3.5 h-3.5" />
                         {archiveDownloading
                           ? '正在下载并校验…'
-                          : `下载${archivePlatform ? ` ${assetPlatformLabel(archivePlatform)} ` : ''}归档核对`}
+                          : `下载${archivePlatform ? ` ${assetPlatformLabel(archivePlatform)} ` : ''}mod文件`}
                       </button>
-                      <span className="text-[11px] text-neutral-500">
-                        {archiveReady
-                          ? '保存前按服务端记录核对大小与 SHA-256。'
-                          : archivePlatform
+                      {!archiveReady && (
+                        <span className="text-[11px] text-neutral-500">
+                          {archivePlatform
                             ? '服务端没有保留所选平台的归档字节，无法下载核对。'
                             : '服务端没有保留这个版本的归档字节，无法下载核对。'}
-                      </span>
+                        </span>
+                      )}
                     </div>
                     {selectedServerReport && (
                       <div><span className="font-semibold">{shippedPlatforms?.length ? `${assetPlatformLabel(chosenPlatform)} 报告变化：` : '文件变化：'}</span>{selectedServerReport.files?.length || 0} 个文件；不支持路径 {selectedServerReport.unsupported?.length || 0} 个；冲突 {selectedServerReport.conflicts?.length || 0} 个</div>
@@ -509,17 +508,6 @@ export const ReviewerWorkbench: React.FC = () => {
                     )}
                   </div>
                 )}
-
-                <div className="p-3 bg-neutral-50 rounded border border-neutral-200 text-xs text-neutral-600 leading-relaxed space-y-1">
-                  <div className="font-semibold text-neutral-900 flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                    契约审查准则：
-                  </div>
-                  <p>
-                    1. 审核批准后立即发布，并记录审核人与决策理由。<br />
-                    2. 公开版本一旦发布即具有 SHA-256 不可变性约束，只能下架，不能修改归档字节。
-                  </p>
-                </div>
 
                 {/* Static Check Results & Warnings Highlights */}
                 {activeReport && (
@@ -568,35 +556,42 @@ export const ReviewerWorkbench: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Registrations & Giftname Conflict Check */}
-                      <div className="p-3 rounded border border-neutral-200 bg-neutral-50/50 space-y-1.5">
-                        <div className="font-semibold text-neutral-900 flex items-center gap-1.5">
-                          <Sparkles className="w-4 h-4 text-neutral-600" />
-                          Sprite 礼物名与注册冲突校验
-                        </div>
-                        {activeReport.derived_gifts.length > 0 ? (
-                          <div className="text-[11px] text-neutral-600 space-y-0.5">
-                            <div>登记衍生礼物:</div>
-                            <div className="font-mono text-[10px] text-neutral-800 bg-white p-1 rounded border border-neutral-200">
-                              {activeReport.derived_gifts.join(', ')}
+                      {/* Registrations & Giftname Conflict Check: the verdict stays in the
+                          summary because folding it would hide whether a human is needed. */}
+                      <details className="group rounded border border-neutral-200 bg-neutral-50/50">
+                        <summary className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 cursor-pointer select-none list-none hover:bg-neutral-100/60 rounded [&::-webkit-details-marker]:hidden">
+                          <span className="font-semibold text-neutral-900 flex items-center gap-1.5">
+                            <Sparkles className="w-4 h-4 text-neutral-600" />
+                            Sprite 礼物名与注册冲突校验
+                          </span>
+                          {reportConflictCount > 0 ? (
+                            <span className="text-[10px] text-rose-700 font-semibold">⚠️ 检出 {reportConflictCount} 项注册/覆盖冲突，见上方阻断项</span>
+                          ) : (
+                            <span className="text-[10px] text-emerald-700">✓ 未检测到重复注册冲突</span>
+                          )}
+                          <span className="ml-auto flex items-center gap-1 text-[11px] text-neutral-500">
+                            <span className="group-open:hidden">展开</span>
+                            <span className="hidden group-open:inline">收起</span>
+                            <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
+                          </span>
+                        </summary>
+                        <div className="px-3 pb-3 space-y-1.5 border-t border-neutral-200/70 pt-2">
+                          {activeReport.derived_gifts.length > 0 ? (
+                            <div className="text-[11px] text-neutral-600 space-y-0.5">
+                              <div>登记衍生礼物:</div>
+                              <div className="font-mono text-[10px] text-neutral-800 bg-white p-1 rounded border border-neutral-200">
+                                {activeReport.derived_gifts.join(', ')}
+                              </div>
                             </div>
-                            {/* A clean verdict here must come from the scan, not from
-                                reaching this branch: claiming "no conflict" while the
-                                blocker list above reports one would read as approval. */}
-                            {reportConflictCount > 0 ? (
-                              <div className="text-rose-700 text-[10px]">⚠️ 检出 {reportConflictCount} 项注册/覆盖冲突，见上方阻断项</div>
-                            ) : (
-                              <div className="text-emerald-700 text-[10px]">✓ 未检测到重复注册冲突</div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="text-[11px] text-neutral-500">
-                            {reportConflictCount > 0
-                              ? `未登记 Spritepack 礼物，但检出 ${reportConflictCount} 项路径/注册冲突，见上方阻断项。`
-                              : '未登记 Spritepack 礼物，无覆盖冲突。'}
-                          </div>
-                        )}
-                      </div>
+                          ) : (
+                            <div className="text-[11px] text-neutral-500">
+                              {reportConflictCount > 0
+                                ? `未登记 Spritepack 礼物，但检出 ${reportConflictCount} 项路径/注册冲突，见上方阻断项。`
+                                : '未登记 Spritepack 礼物，无覆盖冲突。'}
+                            </div>
+                          )}
+                        </div>
+                      </details>
                     </div>
 
                     {/* Package File Tree Inspector: the per-file table is reference

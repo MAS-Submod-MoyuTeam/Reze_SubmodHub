@@ -173,7 +173,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               Monika After Story 模组与服饰目录
             </h1>
             <p className="text-xs text-neutral-500 mt-1">
-              汇集经过静态安全扫描与规范审核的 MAS Submod 与 Spritepack 资源
+              在下面挑选你想装的东西吧~
             </p>
           </div>
 

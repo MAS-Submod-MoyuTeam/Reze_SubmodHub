@@ -238,7 +238,7 @@ async function mountReviewPage(options: {
     requests,
     saved,
     settle,
-    archiveButton: () => Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.includes('归档核对')),
+    archiveButton: () => Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.includes('mod文件')),
     platformTab: (label: string) => Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.trim() === label),
     restore: async () => {
       await act(async () => { root.unmount(); });
@@ -258,7 +258,8 @@ test('administrator downloads the pending archive with a verified hash', async (
     const button = harness.archiveButton();
     assert.ok(button, 'the review page offers the archive download');
     assert.equal((button as HTMLButtonElement).disabled, false);
-    assert.match(harness.container.textContent!, /保存前按服务端记录核对大小与 SHA-256/);
+    assert.match((button as HTMLButtonElement).textContent!, /下载.*mod文件/);
+    assert.doesNotMatch(harness.container.textContent!, /保存前按服务端记录核对大小与 SHA-256/);
     await act(async () => { (button as HTMLButtonElement).click(); });
     await harness.settle();
     assert.ok(harness.requests.includes('/api/v1/review/submissions/s1/archive'), 'the reviewed submission is downloaded');
@@ -319,7 +320,9 @@ test('package file tree starts folded and its summary still says what is inside'
     },
   });
   try {
-    const tree = harness.container.querySelector('details');
+    const tree = Array.from(harness.container.querySelectorAll('details')).find((item) =>
+      item.querySelector('summary')?.textContent?.includes('Package File Tree'),
+    );
     assert.ok(tree, 'the file tree is a disclosure control');
     assert.equal(tree.open, false, 'the per-file table is folded by default');
     const summary = tree.querySelector('summary')!;
@@ -334,6 +337,28 @@ test('package file tree starts folded and its summary still says what is inside'
       ['归档内路径 (Source Path)', '安装目标 (Target Path)', '类型', '大小', 'SHA-256', '静态诊断'],
     );
     assert.equal(tree.querySelector('td[title]')?.getAttribute('title'), 'a'.repeat(64), 'the full hash is one hover away');
+  } finally {
+    await harness.restore();
+  }
+});
+
+// The giftname verdict is the reviewer's decision input, so folding must keep it
+// in the summary; only the registration list is hidden behind the disclosure.
+test('giftname conflict check starts folded but keeps its verdict in the summary', async () => {
+  const harness = await mountReviewPage({
+    scanReport: {
+      derived: [{ target: 'gift_custom_outfit_daily' }],
+      conflicts: [{ kind: 'giftname', value: 'gift_custom_outfit_daily', first: 'mods/a/a.rpy', second: 'mods/b/b.rpy' }],
+    },
+  });
+  try {
+    const card = Array.from(harness.container.querySelectorAll('details')).find((item) =>
+      item.querySelector('summary')?.textContent?.includes('Sprite 礼物名与注册冲突校验'),
+    );
+    assert.ok(card, 'the conflict check is a disclosure control');
+    assert.equal(card.open, false, 'the conflict check is folded by default');
+    assert.match(card.querySelector('summary')!.textContent!, /检出 1 项注册\/覆盖冲突/);
+    assert.doesNotMatch(card.querySelector('summary')!.textContent!, /未检测到重复注册冲突/);
   } finally {
     await harness.restore();
   }

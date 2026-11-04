@@ -78,7 +78,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
             /* Not logged in: Flarum credentials only (Section 1) */
             <div className="space-y-4">
               <p className="text-xs text-neutral-600 leading-relaxed">
-                访客无需登录即可自由浏览目录与下载模组。作者、审核员和管理员请通过 Flarum 论坛凭据登录。
+                访客无需登录即可自由浏览目录与下载模组。作者、审核员和管理员请通过 DCC论坛凭据登录。
               </p>
 
               {/* Flarum Proxy Form */}
@@ -98,7 +98,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-neutral-700 mb-1">
-                    密码 (密码仅由服务端代验，不回显)
+                    密码
                   </label>
                   <input
                     type="password"
@@ -114,7 +114,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                   disabled={isSubmitting}
                   className="w-full py-2 px-3 rounded bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-medium transition-colors"
                 >
-                  {isSubmitting ? '正在验证凭据...' : 'Flarum 服务端安全登录'}
+                  {isSubmitting ? '正在验证凭据...' : '登录'}
                 </button>
               </form>
 

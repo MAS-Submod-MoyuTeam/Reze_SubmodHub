@@ -1287,13 +1287,10 @@ export const AuthorWorkbench: React.FC = () => {
                   <h4 className="font-bold text-neutral-900 uppercase tracking-wider text-xs">
                     静态 Submod 注册标识 (Registrations)
                   </h4>
-                  <span className="text-[11px] text-rose-700 font-medium">
-                    * 契约规范：未知静态解析结果不得显示成“安全”
-                  </span>
                 </div>
                 <div className="border border-neutral-200 rounded divide-y divide-neutral-100">
                   {inspectingReport.registrations.length === 0 ? (
-                    <div className="p-3 text-neutral-500">未检测到可识别的 `Submod(...)` 注册声明。请确认 ZIP 已包含 `.rpy` 注册代码；这不代表代码安全或无注册。</div>
+                    <div className="p-3 text-neutral-500">未检测到Submod注册声明。</div>
                   ) : inspectingReport.registrations.map((reg) => (
                     <div
                       key={reg.submod_id}
@@ -1322,39 +1319,52 @@ export const AuthorWorkbench: React.FC = () => {
 
               {/* Sprite Identities & Derived Gifts */}
               {inspectingReport.sprite_identities.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="font-bold text-neutral-900 uppercase tracking-wider text-xs">
-                    Spritepack 衍生礼物登记 (.gift 解析)
-                  </h4>
-                  <div className="border border-neutral-200 rounded divide-y divide-neutral-100">
+                <details className="group rounded border border-neutral-200 bg-white overflow-hidden">
+                  <summary className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 cursor-pointer select-none list-none hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+                    <span className="text-xs font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <ChevronRight className="w-3.5 h-3.5 text-neutral-500 group-open:hidden" />
+                      <ChevronDown className="w-3.5 h-3.5 text-neutral-500 hidden group-open:block" />
+                      Spritepack 衍生礼物登记 (.gift 解析)
+                    </span>
+                    <span className="text-[11px] text-neutral-500">共 {inspectingReport.sprite_identities.length} 项</span>
+                    <span className="ml-auto text-[11px] text-neutral-500">
+                      <span className="group-open:hidden">展开</span>
+                      <span className="hidden group-open:inline">收起</span>
+                    </span>
+                  </summary>
+                  <div className="border-t border-neutral-200 divide-y divide-neutral-100">
                     {inspectingReport.sprite_identities.map((item, idx) => (
                       <div
                         key={idx}
-                        className="p-3 flex items-center justify-between bg-white text-xs"
+                        className="p-3 bg-white text-xs"
                       >
-                        <div>
-                          <div className="font-semibold text-neutral-900 font-mono">
-                            {item.giftname}.gift
-                          </div>
-                          <div className="text-[11px] text-neutral-500">
-                            类别: {item.category} · 包含姿态: {item.poses.join(', ')}
-                          </div>
+                        <div className="font-semibold text-neutral-900 font-mono">
+                          {item.giftname}.gift
                         </div>
-                        <span className="text-[11px] font-mono text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          礼物名已锚定
-                        </span>
+                        <div className="text-[11px] text-neutral-500">
+                          类别: {item.category}
+                        </div>
                       </div>
                     ))}
                   </div>
-                </div>
+                </details>
               )}
 
               {/* Package Files Tree / Detailed Table */}
-              <div className="space-y-2">
-                <h4 className="font-bold text-neutral-900 uppercase tracking-wider text-xs">
-                  逐文件清单与校验和 (Files Tree)
-                </h4>
-                <div className="border border-neutral-200 rounded overflow-x-auto">
+              <details className="group rounded border border-neutral-200 bg-white overflow-hidden">
+                <summary className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 cursor-pointer select-none list-none hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+                  <span className="text-xs font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <ChevronRight className="w-3.5 h-3.5 text-neutral-500 group-open:hidden" />
+                    <ChevronDown className="w-3.5 h-3.5 text-neutral-500 hidden group-open:block" />
+                    逐文件清单与校验和 (Files Tree)
+                  </span>
+                  <span className="text-[11px] text-neutral-500">共 {inspectingReport.files.length} 个文件</span>
+                  <span className="ml-auto text-[11px] text-neutral-500">
+                    <span className="group-open:hidden">展开</span>
+                    <span className="hidden group-open:inline">收起</span>
+                  </span>
+                </summary>
+                <div className="border-t border-neutral-200 overflow-x-auto">
                   <table className="w-full min-w-[680px] text-left text-xs border-collapse">
                     <thead className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-medium">
                       <tr>
@@ -1395,7 +1405,7 @@ export const AuthorWorkbench: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </details>
             </div>
 
             <div className="px-6 py-3 border-t border-neutral-200 bg-neutral-50/50 flex justify-end">

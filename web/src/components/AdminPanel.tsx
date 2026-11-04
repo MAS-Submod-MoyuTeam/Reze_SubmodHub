@@ -831,7 +831,7 @@ export const AdminPanel: React.FC = () => {
 
             <div className="space-y-3">
               <label className="block space-y-1.5">
-                <span className="text-xs font-semibold text-neutral-800">Flarum 论坛用户 ID</span>
+                <span className="text-xs font-semibold text-neutral-800">DCC论坛用户 ID</span>
                 <div className="flex gap-2">
                   <input
                     value={userID}

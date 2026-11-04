@@ -27,7 +27,10 @@ function renderLoginModal(overrides: Partial<AppContextType> = {}): string {
 test('logged-out login modal offers Flarum credentials only', () => {
   const markup = renderLoginModal();
 
-  assert.match(markup, /Flarum 服务端安全登录/);
+  assert.match(markup, />登录<\/button>/);
+  assert.match(markup, /DCC论坛凭据登录/);
+  assert.match(markup, /<label[^>]*>密码<\/label>/);
+  assert.doesNotMatch(markup, /密码仅由服务端代验/);
   assert.doesNotMatch(markup, /GitHub/i);
   assert.doesNotMatch(markup, /OAuth/i);
 });
