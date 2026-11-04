@@ -185,7 +185,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
         new Set(selectedRegistrations.filter((r) => !r.unknown && r.name).map((r) => r.name.trim()))
       );
       if (distinctNames.length > 1) {
-        return `检测到多个不同的子模组注册标识 (${distinctNames.join(', ')})，禁止合并为单个模组收养。请单独收养对应模组。`;
+        return `检测到多个不同的子模组注册标识 (${distinctNames.join(', ')})，禁止合并为单个模组收纳。请单独收纳对应模组。`;
       }
     }
 
@@ -223,7 +223,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
           <div className="flex items-center gap-2 min-w-0">
             <FolderGit2 className="w-4 h-4 text-emerald-400 shrink-0" />
             <h3 className="font-bold text-neutral-100 text-sm truncate">
-              显式收养为托管模组向导 (Adopt Unmanaged Mod)
+              收纳模组向导 (Adopt Unmanaged Mod)
             </h3>
           </div>
           <button onClick={onClose} className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors shrink-0 cursor-pointer">
@@ -234,7 +234,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
         {/* Content */}
         <div className="p-3 sm:p-4 space-y-4 text-xs overflow-y-auto grow">
           <div className="p-3 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-300 leading-relaxed">
-            将当前散落于 MAS 目录内的未托管脚本/素材纳入 RezeHub 的持久化 Ledger。收养后该模组将受版本控制、支持冲突计算与模组优先级调节。卸载收养模组时将安全保留原始文件。
+            将当前散落于 MAS 目录内的未托管脚本/素材纳入 RezeHub 的持久化 Ledger。收纳后该模组将受版本控制、支持冲突计算与模组优先级调节。卸载收纳模组时将安全保留原始文件。
           </div>
 
           {/* Warning banner for multi-registrations, unknowns, or incomplete scan */}
@@ -251,7 +251,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                当前目录可能包含多个模组或未知脚本。文件默认全部勾选，请核对文件与模组归属；身份冲突时无法作为单个商店模组收养。
+                当前目录可能包含多个模组或未知脚本。文件默认全部勾选，请核对文件与模组归属；身份冲突时无法作为单个商店模组收纳。
               </p>
             </div>
           )}
@@ -392,7 +392,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
           {/* Scanned files summary with checklist */}
           <div className="p-3 bg-neutral-950 rounded-lg border border-neutral-800 space-y-2 font-mono text-[11px]">
             <div className="flex items-center justify-between text-neutral-400">
-              <span>纳入收养范围的文件清单 ({selectedPaths.size} / {adoptablePaths.length}):</span>
+              <span>纳入收纳范围的文件清单 ({selectedPaths.size} / {adoptablePaths.length}):</span>
               {adoptablePaths.length > 5 && (
                 <button
                   type="button"
@@ -455,7 +455,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
             className="min-h-[40px] sm:min-h-0 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-xs flex items-center justify-center gap-1.5 cursor-pointer text-center"
           >
             <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">确认收养并写入 Ledger ({selectedPaths.size} 个文件)</span>
+            <span className="truncate">确认收纳并写入 Ledger ({selectedPaths.size} 个文件)</span>
           </button>
         </div>
       </div>

@@ -833,7 +833,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           </p>
                           {item.managed_owners && item.managed_owners.length > 0 && (
                             <p className="text-xs text-sky-300/90 mt-1 leading-relaxed">
-                              该目录属于已托管模组「{managedOwnerLabels(item)}」，下列 {item.unmanaged_paths?.length || 0} 个文件不在安装账本内。收养只新增这些文件的归属，不会改动已托管文件。
+                              该目录属于已托管模组「{managedOwnerLabels(item)}」，下列 {item.unmanaged_paths?.length || 0} 个文件不在安装账本内。收纳只新增这些文件的归属，不会改动已托管文件。
                             </p>
                           )}
 
@@ -876,7 +876,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             disabled={isModsActionBlocked}
                             onClick={() => onOpenAdoptModal(item)}
                             className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法收养' : '正在读取模组列表…') : undefined}
+                            title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法收纳' : '正在读取模组列表…') : undefined}
                           >
                             <ArrowUpRight className="w-3.5 h-3.5" />
                             <span>收纳模组</span>

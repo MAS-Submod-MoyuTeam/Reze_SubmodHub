@@ -201,7 +201,7 @@ test('PlanPreviewModal: adopt plan displays adopt header badge and metadata acti
       {
         target_path: 'game/Submods/AdoptA/main.rpy',
         action: 'METADATA_ONLY',
-        reason: '将现有本地文件收养并纳入 RezeHub Ledger 持久化管理',
+        reason: '将现有本地文件收纳并纳入 RezeHub Ledger 持久化管理',
         backup_required: false,
       },
     ],
@@ -218,7 +218,7 @@ test('PlanPreviewModal: adopt plan displays adopt header badge and metadata acti
     />
   );
 
-  assert.ok(html.includes('收养计划预览'));
+  assert.ok(html.includes('收纳计划预览'));
   assert.ok(html.includes('散落模组A'));
   assert.ok(html.includes('仅移归属 (METADATA)'));
   assert.ok(html.includes('game/Submods/AdoptA/main.rpy'));

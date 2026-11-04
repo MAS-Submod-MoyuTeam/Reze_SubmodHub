@@ -74,7 +74,7 @@ test('InstalledView: leftovers inside a managed directory name their owner inste
   const html = renderUnmanagedTab(item);
   assert.match(html, /所在目录已托管/);
   assert.match(html, /该目录属于已托管模组「Managed Title」/);
-  assert.match(html, /收养只新增这些文件的归属/);
+  assert.match(html, /收纳只新增这些文件的归属/);
 });
 
 test('InstalledView: a directory without a managed owner makes no ownership claim', () => {

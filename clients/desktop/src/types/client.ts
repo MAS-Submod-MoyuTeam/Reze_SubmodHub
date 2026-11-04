@@ -253,7 +253,7 @@ export interface InstalledItem {
   sha256: string;
   unmanaged_paths?: string[];
   /** 未托管文件 → 编译它的脚本。有来源表示该文件是引擎生成的编译产物；
-   *  收养只把脚本写进账本，编译器产物由引擎下次启动重建。 */
+   *  收纳只把脚本写进账本，编译器产物由引擎下次启动重建。 */
   derived_sources?: Record<string, string>;
   submod_dir_name?: string;
   /** 该目录已被这些托管安装占用；空表示整组文件都不在账本内。 */

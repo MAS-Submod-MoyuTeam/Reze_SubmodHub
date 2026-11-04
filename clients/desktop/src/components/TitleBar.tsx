@@ -24,7 +24,7 @@ interface TitleBarProps {
   onOpenInstancesView: () => void;
   onLaunchGame: () => Promise<void>;
   isLaunchingGame: boolean;
-  /** 当前实例仍有未完成的事务（安装/更新/卸载/修复/收养/回滚）时为 true。 */
+  /** 当前实例仍有未完成的事务（安装/更新/卸载/修复/收纳/回滚）时为 true。 */
   isTransactionActive: boolean;
   isAndroid?: boolean;
   onOpenAppUpdate?: () => void;

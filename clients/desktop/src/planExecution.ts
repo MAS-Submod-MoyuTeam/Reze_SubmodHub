@@ -11,7 +11,7 @@ export function getPlanActionText(kind: PlanKind): string {
     case 'install':
       return '安装';
     case 'adopt':
-      return '收养';
+      return '收纳';
     default:
       return '操作';
   }

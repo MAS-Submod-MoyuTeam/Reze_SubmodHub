@@ -131,7 +131,7 @@ test('AdoptModal: renders store match candidate and file checklist', () => {
   assert.ok(html.includes('商店已匹配候选模组'));
   assert.ok(html.includes('⭐ 唯一注册头优先匹配'));
   // Checks file checklist summary - only proven registration source (1 of 5) is selected by default
-  assert.ok(html.includes('纳入收养范围的文件清单 (5 / 5)'));
+  assert.ok(html.includes('纳入收纳范围的文件清单 (5 / 5)'));
 });
 
 test('AdoptModal: unverified attribution defaults to all detected files selected', () => {
@@ -152,7 +152,7 @@ test('AdoptModal: unverified attribution defaults to all detected files selected
     />
   );
 
-  assert.ok(html.includes('纳入收养范围的文件清单 (3 / 3)'));
+  assert.ok(html.includes('纳入收纳范围的文件清单 (3 / 3)'));
 });
 
 test('AdoptModal: item with only assets defaults to all detected files selected', () => {
@@ -173,7 +173,7 @@ test('AdoptModal: item with only assets defaults to all detected files selected'
     />
   );
 
-  assert.ok(html.includes('纳入收养范围的文件清单 (3 / 3)'));
+  assert.ok(html.includes('纳入收纳范围的文件清单 (3 / 3)'));
 });
 
 test('AdoptModal: path normalization matches registrations with or without game/ prefix', () => {
@@ -197,7 +197,7 @@ test('AdoptModal: path normalization matches registrations with or without game/
     />
   );
 
-  assert.ok(html.includes('纳入收养范围的文件清单 (3 / 3)'));
+  assert.ok(html.includes('纳入收纳范围的文件清单 (3 / 3)'));
 });
 
 test('AdoptModal: ambiguous match candidate does NOT auto-bind mod_id or title', () => {
@@ -266,7 +266,7 @@ test('AdoptModal: multi-registration or unknown does NOT select all files by def
 
   // Multi-registration warning banner is displayed
   assert.ok(html.includes('检测到多个子模组注册头'));
-  assert.ok(html.includes('纳入收养范围的文件清单 (4 / 4)'));
+  assert.ok(html.includes('纳入收纳范围的文件清单 (4 / 4)'));
 });
 
 test('scanLocalSubmods logic: co-existence of managed and unmanaged files in same directory', () => {
@@ -411,7 +411,7 @@ test('AdoptModal: multi-registration ambiguous candidates select all detected fi
   );
 
   // All files are selected, and candidate validation still blocks conflicts.
-  assert.ok(html.includes('纳入收养范围的文件清单 (3 / 3)'));
+  assert.ok(html.includes('纳入收纳范围的文件清单 (3 / 3)'));
   assert.ok(html.includes('存在歧义候选模组'));
 });
 
@@ -449,7 +449,7 @@ test('AdoptModal: single matched candidate defaults only to that candidate regis
   );
 
   // All detected files are selected by default; foreign registration remains a conflict.
-  assert.ok(html.includes('纳入收养范围的文件清单 (3 / 3)'));
+  assert.ok(html.includes('纳入收纳范围的文件清单 (3 / 3)'));
   assert.ok(html.includes('模组身份与文件归属冲突'));
 });
 
@@ -552,9 +552,9 @@ test('AdoptModal: engine-compiled caches are listed out of scope and never prese
   );
 
   // Only the script and the asset are adoptable content.
-  assert.ok(html.includes('纳入收养范围的文件清单 (2 / 2)'));
+  assert.ok(html.includes('纳入收纳范围的文件清单 (2 / 2)'));
   assert.ok(html.includes('不纳入账本的引擎编译产物 (1 个)'));
   assert.ok(html.includes('由 game/Submods/TestSubmod/main.rpy 编译生成'));
-  assert.ok(html.includes('确认收养并写入 Ledger (2 个文件)'));
-  assert.ok(!html.includes('纳入收养范围的文件清单 (3 / 3)'));
+  assert.ok(html.includes('确认收纳并写入 Ledger (2 个文件)'));
+  assert.ok(!html.includes('纳入收纳范围的文件清单 (3 / 3)'));
 });

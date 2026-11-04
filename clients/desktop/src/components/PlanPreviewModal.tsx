@@ -139,7 +139,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                   : plan.kind === 'uninstall'
                   ? '卸载计划预览'
                   : plan.kind === 'adopt'
-                  ? '收养计划预览'
+                  ? '收纳计划预览'
                   : '修复计划预览'}
               </span>
               <h2 className="text-sm sm:text-base font-bold text-neutral-100 break-words">
@@ -433,7 +433,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                   不登记进账本的引擎编译产物 ({plan.derived_paths.length} 个文件)
                 </div>
                 <p className="text-neutral-400 leading-relaxed">
-                  这些文件由 Ren&apos;Py 从本次收养的脚本编译生成，不是模组自带内容。
+                  这些文件由 Ren&apos;Py 从本次收纳的脚本编译生成，不是模组自带内容。
                   账本只登记脚本，编译产物留给引擎在下次启动时重建，
                   因此重编译不会被当成文件漂移。
                 </p>

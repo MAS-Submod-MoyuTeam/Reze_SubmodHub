@@ -494,7 +494,7 @@ export default function App() {
         size_bytes: (item.files || []).reduce((sum, file) => sum + file.size, 0),
         installed_at: new Date().toISOString(), sha256: item.files?.[0]?.sha256 || '',
         unmanaged_paths: (item.files || []).map((file) => file.path),
-        // 引擎编译产物由同目录脚本生成，收养时只登记脚本。
+        // 引擎编译产物由同目录脚本生成，收纳时只登记脚本。
         derived_sources: (item.files || []).reduce<Record<string, string>>((acc, file) => {
           if (file.derived_from) acc[file.path] = file.derived_from;
           return acc;
@@ -1381,7 +1381,7 @@ export default function App() {
           // For adoption, immediately read back from persisted ledger state rather than optimistic assumption.
           // Version is kept unverified if no store evidence, and integrity is unknown.
           void scanLocalSubmods(targetInstId, { forced: true });
-          showToast(`已成功收养 ${result.files} 个文件并纳入 Ledger。`);
+          showToast(`已成功收纳 ${result.files} 个文件并纳入 Ledger。`);
           return;
         }
         setInstalledMods((prev) => {
@@ -1470,7 +1470,7 @@ export default function App() {
     if (!currentInstId || currentInstId === 'unverified') return;
     setAdoptTarget(null);
     try {
-      showToast(`正在生成收养计划: "${adopted.title}"...`);
+      showToast(`正在生成收纳计划: "${adopted.title}"...`);
       const filesToAdopt = chosenFiles && chosenFiles.length > 0 ? chosenFiles : (adopted.unmanaged_paths || []);
       const scanItemId = adopted.scan_item_id || adopted.submod_dir_name || (adopted.mod_id.startsWith('local:') ? adopted.mod_id.replace(/^local:/, '') : adopted.mod_id);
       const preview = await PreviewAdopt({
@@ -1487,7 +1487,7 @@ export default function App() {
       });
 
       if (preview.blockers && preview.blockers.length > 0) {
-        showToast(`收养受阻：${preview.blockers.join('; ')}`);
+        showToast(`收纳受阻：${preview.blockers.join('; ')}`);
         return;
       }
 
@@ -1514,7 +1514,7 @@ export default function App() {
           next_owner: a.target_source || preview.target_id || adopted.mod_id,
           previous_hash: a.current_hash,
           next_hash: a.current_hash,
-          reason: '将现有本地文件收养并纳入 RezeHub Ledger 持久化管理',
+          reason: '将现有本地文件收纳并纳入 RezeHub Ledger 持久化管理',
           backup_required: false,
         })),
         backups_required: 0,
@@ -1524,7 +1524,7 @@ export default function App() {
 
       setCurrentPlan(mappedPlan);
     } catch (err: any) {
-      showToast(`收养计划生成失败：${err.message || String(err)}`);
+      showToast(`收纳计划生成失败：${err.message || String(err)}`);
     }
   };
 
