@@ -2135,6 +2135,13 @@ func (s *Store) persistArchiveAs(versionID, base string, src io.Reader, isSprite
 		_ = os.Remove(tmp)
 		return "", 0, "", packagezip.Report{}, fmt.Errorf("%w: %v", errArchiveRejected, err)
 	}
+	// A ZIP that maps nothing is not a package, it is a source tree or a
+	// mislabelled download. Storing it would publish a version whose install
+	// plan is empty, so the client would "succeed" while writing no file.
+	if err := requireInstallableFiles(report); err != nil {
+		_ = os.Remove(tmp)
+		return "", 0, "", packagezip.Report{}, err
+	}
 	token, err := randomToken()
 	if err != nil {
 		_ = os.Remove(tmp)
@@ -2156,6 +2163,28 @@ func scanArchiveBytes(data []byte, isSpritepack bool) (packagezip.Report, error)
 		return packagezip.ScanSpriteArchive(bytes.NewReader(data), int64(len(data)), packagezip.Limits{})
 	}
 	return packagezip.Scan(bytes.NewReader(data), int64(len(data)), packagezip.Limits{})
+}
+
+// requireInstallableFiles rejects an archive whose scan found no installable
+// MAS path at all. The scan reports such entries as Unsupported, and every one of
+// them is a real MAS-visible path the scanner refused to map, so a report with
+// zero files and at least one unsupported entry is a source tree (the GitHub
+// zipball fallback ships `mod/*.rpy`), not a submod package. Letting it through
+// produces a catalog version that installs zero files while every status code
+// says success, which is indistinguishable from a working install for the client.
+func requireInstallableFiles(report packagezip.Report) error {
+	if len(report.Files) > 0 {
+		return nil
+	}
+	if len(report.Unsupported) == 0 {
+		return fmt.Errorf("%w: archive contains no files", errArchiveRejected)
+	}
+	preview := strings.Join(report.Unsupported[:min(len(report.Unsupported), 3)], ", ")
+	if len(report.Unsupported) > 3 {
+		preview += fmt.Sprintf(", … (%d entries)", len(report.Unsupported))
+	}
+	return fmt.Errorf("%w: archive has no installable MAS path; %d unsupported entries: %s",
+		errArchiveRejected, len(report.Unsupported), preview)
 }
 
 // archiveFileBase names one archived ZIP of a version. The platform suffix only

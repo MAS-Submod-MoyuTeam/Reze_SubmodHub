@@ -195,6 +195,7 @@ journal 事务阶段为 `planned -> prepared -> applying -> committing -> commit
 | `dependency_missing`, `version_incompatible`, `semantic_conflict` | 阻断安装，展示受影响模组/文件 |
 | `sprite_version_changed` | 精灵包已发布版本变更或下架，阻断旧集合选择并引导重新加载集合清单 |
 | `invalid_selection` | 精灵包集合选择无效（空选择、重复或未知集合 ID），要求重新选择 |
+| `archive_not_installable` | 归档里没有任何可安装的 MAS 路径：不是子模组包（常见于 GitHub 源码包 zipball 的 `mod/` 布局）。不得提示重试，应说明「这份归档不含可安装内容」，并让用户换版本或联系作者重新发版 |
 | `permission_lost`, `invalid_mas_root` | Android 前者打开系统“所有文件访问权限”页并在返回后刷新，后者报告固定 MAS 根目录无效；Windows 可重新选择目录 |
 | `not_found`, `manifest_corrupt` | 提示模组未安装或 manifest 损坏，不伪装成空文件；已安装视图的托管列表与未托管扫描共用该码，不得只让其中一半降级显示。`manifest_corrupt` 是**不可自愈**态：刷新与重新扫描都会再次失败，因此文案必须给出账本路径（`.submodhub/state/manifest.json`）并说明只能人工修复或重建账本，不得只写「请重新扫描」 |
 | `game_running`, `insufficient_space` | 停止写入，说明可恢复条件 |
@@ -263,11 +264,19 @@ journal 事务阶段为 `planned -> prepared -> applying -> committing -> commit
 - 不带 `platform` 时行为不变（单一归档覆盖全平台）。
 - 目标版本已经是另一形状时返回 409 `archive_shape_conflict`；未知平台返回 400 `unsupported_platform`。
 - 文件名里出现的平台标记必须与 `platform` 一致（`-`/`_`/`.`/空格/`/`/`\\` 视为分隔符，`.apk`/`.exe` 也参与推断），否则返回 400 `platform_mismatch`。
+- 归档一个可安装文件都扫不出来时上传直接失败（400 `invalid_archive`，原因含 `no installable MAS path`），字节不落盘、不写报告；详见下文「归档可安装性」。前端应把这条当作「这份 ZIP 不是子模组包」处理，而不是提示重试。
 - 响应额外返回 `platform` 与该版本当前完整的 `platform_assets`；扫描报告按平台区分（`scan_<version>-<platform>`，单一归档的版本仍是 `scan_<version>`）。服务端在每次上传后**只写本次上传平台自己的报告键**，版本摘要的 `scan_report_id` 因此固定指向「版本实际拥有的、按 `windows`→`android` 顺序排在最前的那个平台」，与最后一次上传的是哪个平台无关；重传 android 不会改动 windows 的报告。删除版本或退役版本会同时清掉该版本名下的**全部**平台报告键。
 - `POST /api/v1/author/versions/{id}/submit` 要求每个已声明的平台都有归档**且都有各自的扫描报告**；归档缺失返回 409 `archive_required`，扫描报告缺失返回 409 `scan_required`，两者都在消息里列出缺失平台。
 - 审核页按平台逐个展示报告：`GET /review/submissions/{id}` 额外返回 `scan_reports`（该版本名下的**全部**报告，键与上传时一致：`scan_<version>` 或 `scan_<version>-<platform>`），审核台据此为每个平台渲染一份，默认落在版本摘要平台；`scan_report` 仍保留为摘要平台那一份。缺少某平台报告时审核台显式提示「无法核对这个平台的文件变化」，而不是显示成 0 个文件。
 - `GET /author/mods/{id}/versions` 的 `scan_reports` 同样包含当前页每个版本的**全部**平台报告。
 - 残余限制：已发布版本被新的分平台版本替换时（spritepack 替换路径），旧版本连同它名下的全部报告一起删除，`scan_report_snapshot` 只保留摘要平台那一份，其余平台只剩 `version_snapshot.platform_assets` 里的哈希与大小。驳回不会删报告，被驳回版本的各平台报告仍可从 `scan_reports` 查阅。
+
+### 归档可安装性（服务端与客户端共同的底线）
+- 扫描出的**可安装文件数为 0** 的归档不是子模组包，而是源码树或下错的包（GitHub 源码包 `zipball` 的 `mod/`、`doc/` 布局就属于这一类）。这类归档在 `POST /author/versions/{id}/archive` 与 GitHub 同步导入时都会被拒绝：前者返回 400 `invalid_archive`，原因里带 `no installable MAS path` 与最多三条未识别条目；后者在同步结果里记为 `failed`，**不创建版本**（`AutoPublish` 也不放行，因为放行的结果是一个安装 0 个文件的已发布版本）。字节不会落盘。
+- 判定只看「有没有可安装文件」，不看「有没有未识别条目」：带真实 `game/Submods/...` 文件、同时又夹带 `docs/` 之类多余目录的归档照常通过，多余条目只进 `unsupported`。
+- 客户端对应底线：`PreviewArchive` 遇到可安装文件为 0 的归档直接返回 `archive_not_installable`，不产出 0 条 action 的空计划（空计划会「成功」提交且不写任何文件）；有可安装文件但存在被丢弃条目的，把未识别路径作为 `package_unsupported` 风险返回，计划确认前必须显式勾选知晓。
+- 反向的一条同等重要的底线：扫描器只按**布局**判包，不按打包工具判包。Windows 打的 ZIP 会把分隔符写成 `\`（`game\Submods\x.rpy`），也会带 `game\Submods\` 这样的纯目录条目；这类包是完全合法的发布包（真实案例：mas-outfit 的 `outfit-selector-*.zip`），必须照常安装，目录条目不算「未识别文件」。实现上扫描期统一把分隔符归一成 `/` 再校验与映射（穿越、绝对路径、设备名仍然照旧被拒），而 `File.source` 保留归档里的原始拼写，因为客户端要按原始条目名开流。曾被判成 `invalid ZIP path "game\\Submods\\"` 而整包拒收的版本，修好后需要重跑一次同步才会重新导入。
+- 另有两种**必须照常接受**的合法形状，判包逻辑不得把它们当畸形包：（a）整个 ZIP 只包一层文件夹、脚本直接在文件夹顶层（`AI_submod/monikai_actions.rpy`），相当于「把该文件夹丢进 `game/Submods/`」，映射成 `Submods/AI_submod/…`；GitHub 源码包的包装目录（`repo-bfbe30c/`、`repo-master/`）不算这一类。（b）归档里同时带 `game/Submods/...` 与非 MAS 杂项（`docs/`、`.gitignore`），照常安装、杂项只进 `unsupported`。
 
 ### 下载与描述符
 `GET /api/v1/versions/{id}/download` 与 `GET /api/v1/archives/{id}` 都接受 `?platform=windows|android`。同一个查询参数在两种版本形状下语义不同，客户端必须按此实现：

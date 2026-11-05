@@ -567,22 +567,26 @@ func (s *Store) followGitHubLatest(modID string, releaseID int64) {
 	}
 }
 
+// allowSourceRootReadme drops the repository README of a source archive from the
+// unsupported list. Sources keep the archive's own spelling (a Windows-built ZIP
+// writes `\`), so both sides are normalized before they are compared.
 func allowSourceRootReadme(report *packagezip.Report) {
 	if len(report.Files) == 0 {
 		return
 	}
-	root, _, ok := strings.Cut(report.Files[0].Source, "/")
+	normalize := func(name string) string { return strings.ReplaceAll(name, `\`, "/") }
+	root, _, ok := strings.Cut(normalize(report.Files[0].Source), "/")
 	if !ok || root == "" {
 		return
 	}
 	for _, file := range report.Files[1:] {
-		if !strings.HasPrefix(file.Source, root+"/") {
+		if !strings.HasPrefix(normalize(file.Source), root+"/") {
 			return
 		}
 	}
 	kept := report.Unsupported[:0]
 	for _, name := range report.Unsupported {
-		if strings.EqualFold(name, root+"/README.md") {
+		if strings.EqualFold(normalize(name), root+"/README.md") {
 			report.Warnings = append(report.Warnings, "source archive documentation not installed: "+name)
 			continue
 		}
