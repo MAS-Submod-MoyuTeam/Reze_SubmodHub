@@ -823,6 +823,15 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 	if err != nil {
 		return PlanResult{}, err
 	}
+	// An archive that maps nothing would produce an empty plan, and an empty plan
+	// executes successfully while writing no file. That "success" is
+	// indistinguishable from a real install in the UI and in the receipt, so the
+	// only honest answer is to refuse the preview and say what was in the ZIP.
+	if len(plannedFiles) == 0 {
+		return PlanResult{}, &core.Error{Code: "archive_not_installable", Err: fmt.Errorf(
+			"archive contains no installable MAS path (%d unsupported entries); it is probably a source tree rather than a submod package",
+			len(report.Unsupported))}
+	}
 
 	manifest, err := s.loadLedger()
 	if err != nil {
@@ -933,6 +942,17 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 			Type:        "package_warning",
 			Description: w,
 		})
+	}
+
+	// Files the scanner could not map are dropped from the install, so the preview
+	// has to say so instead of letting the archive look complete.
+	if len(report.Unsupported) > 0 {
+		shown := report.Unsupported[:min(len(report.Unsupported), 5)]
+		description := fmt.Sprintf("%d 个路径未被识别为 MAS 安装路径，已跳过：%s", len(report.Unsupported), strings.Join(shown, "、"))
+		if len(report.Unsupported) > len(shown) {
+			description += " 等"
+		}
+		risks = append(risks, PlanPreviewRisk{Type: "package_unsupported", Description: description})
 	}
 
 	priorityVal := request.Priority

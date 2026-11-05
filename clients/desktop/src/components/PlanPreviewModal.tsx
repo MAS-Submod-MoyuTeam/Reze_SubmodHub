@@ -32,11 +32,13 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
   const [timeLeft, setTimeLeft] = useState(300); // 5 minutes validity countdown
   const [overwriteConfirmed, setOverwriteConfirmed] = useState(false);
   const [uninstallConfirmed, setUninstallConfirmed] = useState(false);
+  const [unsupportedConfirmed, setUnsupportedConfirmed] = useState(false);
 
   useEffect(() => {
     if (!plan) return;
     setOverwriteConfirmed(false);
     setUninstallConfirmed(false);
+    setUnsupportedConfirmed(false);
     const timer = setInterval(() => {
       setTimeLeft((prev) => Math.max(0, prev - 1));
     }, 1000);
@@ -62,6 +64,10 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
   const isInsufficientSpace = activeInstallation.disk_available_bytes != null && plan.bytes_required > activeInstallation.disk_available_bytes;
   const isExpired = timeLeft <= 0;
   const hasOverwrites = plan.changes.some((c) => c.action === 'OVERWRITE') || Boolean(plan.risks?.some((r) => r.type === 'overwriting_external_file'));
+  // 归档里有路径没被识别成 MAS 安装路径时，后端根本不写它们。这里如实列出，
+  // 否则用户看到的是“安装成功”，磁盘上却少了一部分文件。
+  const unsupportedRisks = (plan.risks || []).filter((r) => r.type === 'package_unsupported');
+  const hasUnsupported = unsupportedRisks.length > 0;
 
   const canConfirm =
     !hasDependencyBlockers &&
@@ -72,6 +78,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
     !isInsufficientSpace &&
     !isExpired &&
     (!hasOverwrites || overwriteConfirmed) &&
+    (!hasUnsupported || unsupportedConfirmed) &&
     (!hasUninstallRemovals || uninstallConfirmed);
 
   const formatBytes = (bytes: number) => {
@@ -416,6 +423,39 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
             </div>
           )}
 
+          {/* Unsupported archive entries: the scanner drops them, so the user has
+              to see that the package is not fully understood before confirming. */}
+          {hasUnsupported && (
+            <div className="p-3.5 rounded-lg bg-amber-950/60 border border-amber-800/80 flex flex-col gap-2.5 text-xs text-amber-200">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-semibold text-amber-300">
+                    归档中有路径未被识别为 MAS 安装路径 [package_unsupported]
+                  </div>
+                  <div className="font-mono text-amber-200/90 space-y-1">
+                    {unsupportedRisks.map((r, idx) => <div key={idx}>• {r.description}</div>)}
+                  </div>
+                  <p className="text-amber-200/80 leading-relaxed">
+                    这些条目不会被写入游戏目录。若它们看起来是模组本体（例如整包只有
+                    <code className="mx-1">mod/</code>、
+                    <code className="mx-1">src/</code>
+                    这类目录），说明这份归档不是可安装的子模组包，请联系作者重新发版。
+                  </p>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer font-medium select-none text-amber-300 bg-amber-900/40 px-2.5 py-1.5 rounded border border-amber-700/60 hover:bg-amber-900/60 transition-colors self-start">
+                <input
+                  type="checkbox"
+                  checked={unsupportedConfirmed}
+                  onChange={(e) => setUnsupportedConfirmed(e.target.checked)}
+                  className="rounded text-amber-500 focus:ring-amber-500 bg-neutral-900 border-neutral-700"
+                />
+                <span>我已了解这些路径不会被安装</span>
+              </label>
+            </div>
+          )}
+
           {/* Safe confirmation notice if ready */}
           {canConfirm && (
             <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/60 flex items-center gap-2.5 text-xs text-emerald-300">
@@ -539,6 +579,8 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                   ? '计划已过期，请关闭重新预览'
                   : hasOverwrites && !overwriteConfirmed
                   ? '写入受阻：请勾选确认覆盖已有文件'
+                  : hasUnsupported && !unsupportedConfirmed
+                  ? '写入受阻：请勾选确认未识别路径不会被安装'
                   : hasUninstallRemovals && !uninstallConfirmed
                   ? (plan.kind === 'uninstall'
                       ? '写入受阻：请勾选确认卸载已安装套装'

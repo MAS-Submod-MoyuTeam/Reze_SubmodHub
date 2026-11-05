@@ -1136,6 +1136,9 @@ export default function App() {
         if (errorMsg.includes('sprite_version_changed')) {
           showToast('精灵包版本已更新，已刷新模组目录，请重新选择套装。');
           void loadCatalog();
+        } else if (errorMsg.includes('archive_not_installable')) {
+          // 归档里没有任何可安装路径：不是网络问题，重试也没用，必须说清原因。
+          showToast('安装失败：这份归档不含可安装的模组内容（可能是作者仓库的源码包，而不是发布包）。请换一个版本或联系作者重新发版。', 'warn');
         } else {
           showToast(`安装失败：${errorMsg}`);
         }
