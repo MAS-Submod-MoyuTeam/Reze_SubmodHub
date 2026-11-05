@@ -14,7 +14,7 @@
     !define INFO_PRODUCTNAME "RezeHub"
 !endif
 !ifndef INFO_PRODUCTVERSION
-    !define INFO_PRODUCTVERSION "0.9.22"
+    !define INFO_PRODUCTVERSION "0.9.24"
 !endif
 !ifndef INFO_COPYRIGHT
     !define INFO_COPYRIGHT "© 2026, My Company"
