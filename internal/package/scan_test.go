@@ -244,3 +244,96 @@ Single quote docstring Submod(name="SingleTriple", version="8.8.8")
 		t.Fatalf("expected unknown registration for oversized file, got %+v", hugeRegs)
 	}
 }
+
+// A ZIP built on Windows stores `game\Submods\x.rpy`. The MAS layout is the same
+// archive as far as the user is concerned, so the scanner reads it instead of
+// rejecting the whole package on a separator. The real outfit-selector release
+// also carries the bare directory entry `game\Submods\`, whose trailing
+// separator must not reach validation (it rejects empty segments).
+func TestScanNormalizesWindowsSeparators(t *testing.T) {
+	b := archive(t, map[string]string{
+		`game\Submods\Outfit Selector\kventis_outfits.rpy`: "init python:\n    pass\n",
+		`game\Submods\`: "",
+	})
+	r, err := Scan(bytes.NewReader(b), int64(len(b)), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Files) != 1 || r.Files[0].Target != "Submods/Outfit Selector/kventis_outfits.rpy" {
+		t.Fatalf("report: %+v", r)
+	}
+	// The source keeps the archive's own spelling: clients open the entry by it.
+	if r.Files[0].Source != `game\Submods\Outfit Selector\kventis_outfits.rpy` {
+		t.Fatalf("source = %q, want the original entry name", r.Files[0].Source)
+	}
+	// The directory entry is layout, not content: it must not be reported as an
+	// unsupported file the user has to acknowledge.
+	if len(r.Unsupported) != 0 {
+		t.Fatalf("unsupported = %v", r.Unsupported)
+	}
+}
+
+// Normalizing separators must not open the door to traversal: the Windows
+// spelling of `..` resolves to the same escape and is still refused.
+func TestScanRejectsWindowsStyleTraversal(t *testing.T) {
+	for _, name := range []string{`..\evil.rpy`, `game\..\..\evil.rpy`, `C:\evil.rpy`} {
+		b := archive(t, map[string]string{name: "x"})
+		if _, err := Scan(bytes.NewReader(b), int64(len(b)), Limits{}); err == nil {
+			t.Fatalf("accepted %q", name)
+		}
+	}
+}
+
+// The other shape a published submod takes: one folder of scripts the user is told
+// to drop into `game/Submods/` (real case: MonikA.I's `AI_submod.zip`). No MAS root
+// is spelled anywhere inside, so the folder itself supplies the submod directory.
+func TestScanAcceptsDropInSubmodFolder(t *testing.T) {
+	b := archive(t, map[string]string{
+		"AI_submod/monikai_actions.rpy":     "init python:\n    pass\n",
+		"AI_submod/audio/test.ogg":          "ogg",
+		"AI_submod/tl/spanish/dialogue.rpy": "translate spanish strings:\n    pass\n",
+	})
+	r, err := Scan(bytes.NewReader(b), int64(len(b)), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Unsupported) != 0 {
+		t.Fatalf("unsupported = %v", r.Unsupported)
+	}
+	want := map[string]string{
+		"Submods/AI_submod/monikai_actions.rpy":     "init python:\n    pass\n",
+		"Submods/AI_submod/audio/test.ogg":          "ogg",
+		"Submods/AI_submod/tl/spanish/dialogue.rpy": "translate spanish strings:\n    pass\n",
+	}
+	if len(r.Files) != len(want) {
+		t.Fatalf("files = %+v", r.Files)
+	}
+	for _, f := range r.Files {
+		if _, ok := want[f.Target]; !ok {
+			t.Fatalf("unexpected target %q (all: %+v)", f.Target, r.Files)
+		}
+	}
+}
+
+// The drop-in rule must not swallow a GitHub source archive: its wrapper folder
+// carries the commit or branch in the name, and its top level holds the repository
+// (README, mod/, docs/), not the scripts of one submod.
+func TestScanDoesNotTreatArchiveRootAsSubmodFolder(t *testing.T) {
+	for _, root := range []string{"mas-logscreen-bfbe30c", "some-repo-master"} {
+		files := map[string]string{
+			root + "/header.rpy":     "init python:\n    pass\n",
+			root + "/README.md":      "readme",
+			root + "/mod/config.rpy": "init python:\n    pass\n",
+		}
+		b := archive(t, files)
+		r, err := Scan(bytes.NewReader(b), int64(len(b)), Limits{})
+		if err != nil {
+			t.Fatalf("%s: %v", root, err)
+		}
+		for _, f := range r.Files {
+			if strings.HasPrefix(f.Target, "Submods/"+root) {
+				t.Fatalf("%s: archive root treated as a submod folder: %+v", root, r.Files)
+			}
+		}
+	}
+}

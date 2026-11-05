@@ -34,7 +34,12 @@ type SpriteSet struct {
 	Files []SpriteSetFile `json:"files"`
 }
 
+// spriteSetPrefix and spriteTarget both accept an entry name that still uses the
+// Windows separator: the source spelling is what clients open the entry by, so it
+// is kept on SpriteSetFile.Source, while the layout has to be read on the
+// normalized form or a Windows-built archive would look like it holds no sets.
 func spriteSetPrefix(name string) (string, bool) {
+	name = entryPath(name)
 	parts := strings.Split(name, "/")
 	for i := 0; i+2 < len(parts); i++ {
 		if parts[i] == "mod_assets" && parts[i+1] == "monika" && parts[i+2] == "j" && strings.HasSuffix(strings.ToLower(name), ".json") {
@@ -48,7 +53,7 @@ func spriteSetPrefix(name string) (string, bool) {
 }
 
 func spriteTarget(source, prefix string) (string, bool) {
-	rel := strings.TrimPrefix(source, prefix)
+	rel := strings.TrimPrefix(entryPath(source), prefix)
 	rel = strings.TrimPrefix(rel, "/")
 	switch {
 	case strings.HasPrefix(rel, "game/mod_assets/"):
@@ -121,7 +126,7 @@ func ScanSpriteArchive(reader io.ReaderAt, size int64, limits Limits) (Report, e
 	files := map[string]*zip.File{}
 	prefixes := map[string]bool{}
 	for _, f := range z.File {
-		name := strings.TrimSuffix(f.Name, "/")
+		name := entryPath(f.Name)
 		_, key, err := maspath.Validate(name)
 		if err != nil {
 			return result, err
@@ -133,7 +138,7 @@ func ScanSpriteArchive(reader io.ReaderAt, size int64, limits Limits) (Report, e
 		if f.Mode()&0o170000 == 0o120000 {
 			return result, fmt.Errorf("symlink entry %q", name)
 		}
-		if f.FileInfo().IsDir() {
+		if dirEntry(f) {
 			continue
 		}
 		if f.UncompressedSize64 > limits.MaxUncompressedBytes-total {
@@ -162,7 +167,10 @@ func ScanSpriteArchive(reader io.ReaderAt, size int64, limits Limits) (Report, e
 			set.Name = "精灵包"
 		}
 		for source := range files {
-			if prefix != "" && !strings.HasPrefix(source, prefix+"/") {
+			// Membership is a layout question, so it is asked of the normalized
+			// path; the source spelling is only kept for reopening the entry.
+			normalized := entryPath(source)
+			if prefix != "" && !strings.HasPrefix(normalized, prefix+"/") {
 				continue
 			}
 			if prefix == "" && len(keys) > 1 {
