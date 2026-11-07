@@ -82,8 +82,75 @@ func TestScanSpriteArchiveGroupsJSONByContainingSet(t *testing.T) {
 	for _, f := range z.File {
 		found[f.Name] = true
 	}
-	if !found["game/mod_assets/monika/j/coat.json"] || !found["game/mod_assets/monika/j/pin.json"] || !found["characters/coat.gift"] {
+	if !found["game/mod_assets/monika/j/coat.json"] || !found["game/mod_assets/monika/j/pin.json"] {
 		t.Fatalf("missing selected files: %v", found)
+	}
+	// The gift token is deliberately dropped: installing it would unlock the item
+	// for every player.
+	if found["characters/coat.gift"] {
+		t.Fatalf("gift token leaked into the selection: %v", found)
+	}
+	if len(report.SkippedGifts) != 1 || report.SkippedGifts[0] != "characters/coat.gift" {
+		t.Fatalf("skipped gifts: %+v", report.SkippedGifts)
+	}
+}
+
+func TestScanSpriteArchiveSkipsCharactersGifts(t *testing.T) {
+	b := archive(t, map[string]string{
+		"game/mod_assets/monika/j/coat.json": `{"name":"coat","select_info":{"display_name":"和服"}}`,
+		"characters/coat.gift":               "",
+		"gifts/other.gift":                   "",
+		"characters/notes.txt":               "kept",
+		"game/mod_assets/monika/j/pin.json":  `{"name":"pin","select_info":{"display_name":"发簪"}}`,
+	})
+	report, err := ScanSpriteArchive(bytes.NewReader(b), int64(len(b)), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both source layouts that land in `characters/` are skipped; the neighbouring
+	// non-gift file is kept so the rule stays scoped to gift tokens.
+	want := "characters/coat.gift,gifts/other.gift"
+	if strings.Join(report.SkippedGifts, ",") != want {
+		t.Fatalf("skipped gifts = %v, want %s", report.SkippedGifts, want)
+	}
+	for _, set := range report.SpriteSets {
+		for _, member := range set.Files {
+			if strings.HasSuffix(member.Target, ".gift") {
+				t.Fatalf("gift token joined a set: %+v", member)
+			}
+		}
+	}
+	ids := make([]string, 0, len(report.SpriteSets))
+	for _, set := range report.SpriteSets {
+		ids = append(ids, set.ID)
+	}
+	selected, err := BuildSpriteSelection(bytes.NewReader(b), int64(len(b)), report, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	z, err := zip.NewReader(bytes.NewReader(selected), int64(len(selected)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range z.File {
+		if strings.HasSuffix(f.Name, ".gift") {
+			t.Fatalf("gift token leaked into the selection: %s", f.Name)
+		}
+	}
+}
+
+// A `.gift` outside `characters/` is not a sprite unlock marker, so it keeps
+// whatever mapping it would otherwise get.
+func TestScanSpriteArchiveKeepsGiftsOutsideCharacters(t *testing.T) {
+	for _, target := range []string{"gift", "characters", "characters2/x.gift", "game/characters/x.gift", "mod_assets/x.gift", "gifts/x.gift"} {
+		if spritepackSkipsGift(target) {
+			t.Fatalf("%q should not be skipped", target)
+		}
+	}
+	for _, target := range []string{"characters/x.gift", "characters/x.GIFT"} {
+		if !spritepackSkipsGift(target) {
+			t.Fatalf("%q should be skipped", target)
+		}
 	}
 }
 

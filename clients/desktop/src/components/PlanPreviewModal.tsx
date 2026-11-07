@@ -68,6 +68,10 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
   // 否则用户看到的是“安装成功”，磁盘上却少了一部分文件。
   const unsupportedRisks = (plan.risks || []).filter((r) => r.type === 'package_unsupported');
   const hasUnsupported = unsupportedRisks.length > 0;
+  // 精灵包里 characters/*.gift 是“已解锁”标记，后端一律不安装。这里只做告知，
+  // 不需要用户确认：忽略它们是设计行为，不是需要担责的选择。
+  const ignoredGiftRisks = (plan.risks || []).filter((r) => r.type === 'package_ignored_gifts');
+  const hasIgnoredGifts = ignoredGiftRisks.length > 0;
 
   const canConfirm =
     !hasDependencyBlockers &&
@@ -453,6 +457,26 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                 />
                 <span>我已了解这些路径不会被安装</span>
               </label>
+            </div>
+          )}
+
+          {/* Ignored spritepack gift tokens: informational only, nothing to
+              confirm — the installer never writes these paths. */}
+          {hasIgnoredGifts && (
+            <div className="p-3.5 rounded-lg bg-neutral-900/70 border border-neutral-700 flex items-start gap-3 text-xs">
+              <AlertTriangle className="w-5 h-5 text-neutral-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="font-semibold text-neutral-200">
+                  精灵包内的 .gift 解锁文件已忽略 [package_ignored_gifts]
+                </div>
+                <div className="font-mono text-neutral-400 space-y-1">
+                  {ignoredGiftRisks.map((r, idx) => <div key={idx}>• {r.description}</div>)}
+                </div>
+                <p className="text-neutral-400 leading-relaxed">
+                  这些文件是精灵的“已拥有”标记，安装它们会让所有玩家的物品被预先解锁，
+                  因此不会写入游戏目录。需要时请在游戏内通过精灵自己的赠礼流程取得。
+                </p>
+              </div>
             </div>
           )}
 

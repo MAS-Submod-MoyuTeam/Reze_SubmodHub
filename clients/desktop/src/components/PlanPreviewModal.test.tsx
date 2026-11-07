@@ -247,3 +247,30 @@ test('PlanPreviewModal: uninstall shows generated Ren\'Py cache cleanup list', (
   assert.ok(html.includes('game/Submods/Demo/main.rpyc'));
   assert.ok(html.includes('demo_lib.cpython-311.pyc'));
 });
+
+test('PlanPreviewModal: ignored gift tokens are reported without blocking execution', () => {
+  const plan = makeMockPlan({
+    risks: [
+      {
+        type: 'package_ignored_gifts',
+        description: '2 个 characters 目录下的 .gift 解锁文件已忽略：characters/coat.gift、gifts/other.gift',
+      },
+    ],
+  });
+
+  const html = renderToStaticMarkup(
+    <PlanPreviewModal
+      plan={plan}
+      activeInstallation={makeMockInstallation()}
+      isGameRunning={false}
+      onClose={() => {}}
+      onApplyPlan={() => {}}
+    />
+  );
+
+  assert.match(html, /characters 目录下的 \.gift 解锁文件已忽略/);
+  assert.match(html, /characters\/coat\.gift/);
+  // Informational only: execution stays available and no extra checkbox appears.
+  assert.match(html, /确认执行写入/);
+  assert.doesNotMatch(html, /我已了解这些路径不会被安装/);
+});

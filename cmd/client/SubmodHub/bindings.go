@@ -659,6 +659,7 @@ func (s *DesktopService) Recover(operationID string) error {
 func parseArchiveFiles(data []byte, category string, isSelectedSpritepack bool, spriteSetIDs []string) ([]core.PlannedFile, []string, packagezip.Report, error) {
 	archiveData := data
 	var spriteWarnings []string
+	var skippedGifts []string
 	if category == "spritepack" {
 		if !isSelectedSpritepack {
 			spriteReport, scanErr := packagezip.ScanSpriteArchive(bytes.NewReader(data), int64(len(data)), packagezip.Limits{})
@@ -678,6 +679,10 @@ func parseArchiveFiles(data []byte, category string, isSelectedSpritepack bool, 
 				return nil, nil, packagezip.Report{}, err
 			}
 			spriteWarnings = spriteReport.Warnings
+			// The report returned below describes the rebuilt selection, which by
+			// construction no longer contains the dropped gifts. Keeping the list
+			// from the source scan is what lets the preview say they were ignored.
+			skippedGifts = spriteReport.SkippedGifts
 		}
 	}
 	report, err := packagezip.Scan(bytes.NewReader(archiveData), int64(len(archiveData)), packagezip.Limits{})
@@ -685,6 +690,7 @@ func parseArchiveFiles(data []byte, category string, isSelectedSpritepack bool, 
 		return nil, nil, packagezip.Report{}, err
 	}
 	report.Warnings = append(report.Warnings, spriteWarnings...)
+	report.SkippedGifts = append(report.SkippedGifts, skippedGifts...)
 	z, err := zip.NewReader(bytes.NewReader(archiveData), int64(len(archiveData)))
 	if err != nil {
 		return nil, nil, packagezip.Report{}, err
@@ -953,6 +959,17 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 			description += " 等"
 		}
 		risks = append(risks, PlanPreviewRisk{Type: "package_unsupported", Description: description})
+	}
+
+	// Spritepack gift tokens are dropped by the scanner on purpose, so the preview
+	// says so: the user should not read their absence from the plan as a fault.
+	if len(report.SkippedGifts) > 0 {
+		shown := report.SkippedGifts[:min(len(report.SkippedGifts), 5)]
+		description := fmt.Sprintf("%d 个 characters 目录下的 .gift 解锁文件已忽略：%s", len(report.SkippedGifts), strings.Join(shown, "、"))
+		if len(report.SkippedGifts) > len(shown) {
+			description += " 等"
+		}
+		risks = append(risks, PlanPreviewRisk{Type: "package_ignored_gifts", Description: description})
 	}
 
 	priorityVal := request.Priority

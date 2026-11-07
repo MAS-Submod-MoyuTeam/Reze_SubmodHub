@@ -127,3 +127,57 @@ func TestPreviewArchiveSurfacesUnsupportedEntries(t *testing.T) {
 		t.Fatalf("unsupported entry is not reported in the preview risks: %+v", preview.Risks)
 	}
 }
+
+// A spritepack that ships gift tokens still previews normally; the dropped
+// tokens have to be reported so the user does not read their absence as a fault.
+func TestPreviewArchiveReportsIgnoredSpritepackGifts(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	for name, content := range map[string]string{
+		"game/mod_assets/monika/j/coat.json": `{"name":"coat","select_info":{"display_name":"和服"}}`,
+		"characters/coat.gift":               "",
+		"gifts/other.gift":                   "",
+	} {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "game"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	service := NewDesktopService()
+	if _, err := service.SetMASRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	request := previewRequestFor(t, root, archive.Bytes())
+	request.OperationID = "op_sprite_gift"
+	request.Category = "spritepack"
+	preview, err := service.PreviewArchive(request)
+	if err != nil {
+		t.Fatalf("preview failed: %v", err)
+	}
+	var reported string
+	for _, risk := range preview.Risks {
+		if risk.Type == "package_ignored_gifts" {
+			reported = risk.Description
+		}
+	}
+	if !strings.Contains(reported, "characters/coat.gift") || !strings.Contains(reported, "gifts/other.gift") {
+		t.Fatalf("ignored gifts are not reported in the preview risks: %+v", preview.Risks)
+	}
+	for _, action := range preview.Actions {
+		if strings.HasSuffix(action.Path, ".gift") {
+			t.Fatalf("gift token reached the install plan: %s", action.Path)
+		}
+	}
+}

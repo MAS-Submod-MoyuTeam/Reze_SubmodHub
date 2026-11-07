@@ -41,6 +41,9 @@ func TestDesktopServiceInstallsMultiRootSpritepack(t *testing.T) {
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}
+	// The two `gifts/*.gift` members map into `characters/` and are ignored by a
+	// spritepack install, so they never reach the plan.
+	const installableFiles = 4
 	for _, category := range []string{"spritepack", "submod", ""} {
 		t.Run(category, func(t *testing.T) {
 			root := t.TempDir()
@@ -70,7 +73,7 @@ func TestDesktopServiceInstallsMultiRootSpritepack(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.State != "committed" || result.Files != len(files) {
+			if result.State != "committed" || result.Files != installableFiles {
 				t.Fatalf("result=%+v", result)
 			}
 			for name, want := range files {
@@ -80,12 +83,21 @@ func TestDesktopServiceInstallsMultiRootSpritepack(t *testing.T) {
 					target = "characters/" + strings.TrimPrefix(rel, "gifts/")
 				}
 				got, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(target)))
+				// Gift tokens are ignored by spritepack installs on purpose, so the
+				// assertion is inverted for them rather than dropped: the file must
+				// not appear.
+				if strings.HasSuffix(target, ".gift") {
+					if !os.IsNotExist(err) {
+						t.Fatalf("%s should be skipped, got=%q err=%v", target, got, err)
+					}
+					continue
+				}
 				if err != nil || string(got) != want {
 					t.Fatalf("%s: got=%q err=%v", target, got, err)
 				}
 			}
 			receipts, err := service.ListInstalledArchives()
-			if err != nil || len(receipts) != 1 || receipts[0].SHA256 != request.ExpectedSHA || receipts[0].SizeBytes != int64(archive.Len()) || receipts[0].Files != len(files) {
+			if err != nil || len(receipts) != 1 || receipts[0].SHA256 != request.ExpectedSHA || receipts[0].SizeBytes != int64(archive.Len()) || receipts[0].Files != installableFiles {
 				t.Fatalf("receipts=%+v err=%v", receipts, err)
 			}
 			if _, err := service.Uninstall(request.OperationID, "sprite-uninstall"); err != nil {
@@ -182,8 +194,8 @@ func TestDesktopServicePartialSpritepackInstallAndUpdate(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "necklace.json")); err != nil {
 		t.Fatalf("necklace.json should exist: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "characters", "necklace.gift")); err != nil {
-		t.Fatalf("necklace.gift should exist: %v", err)
+	if _, err := os.Stat(filepath.Join(root, "characters", "necklace.gift")); !os.IsNotExist(err) {
+		t.Fatalf("necklace.gift is a gift token and must not be installed: %v", err)
 	}
 
 	// Verify Set B files DO NOT exist on disk
@@ -279,8 +291,8 @@ func TestDesktopServicePartialSpritepackInstallAndUpdate(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "game", "mod_assets", "monika", "j", "ribbon.json")); err != nil {
 		t.Fatalf("ribbon.json should exist after update: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "characters", "ribbon.gift")); err != nil {
-		t.Fatalf("ribbon.gift should exist after update: %v", err)
+	if _, err := os.Stat(filepath.Join(root, "characters", "ribbon.gift")); !os.IsNotExist(err) {
+		t.Fatalf("ribbon.gift is a gift token and must not be installed: %v", err)
 	}
 
 	// 4. External change protection: modify ribbon.json manually on disk

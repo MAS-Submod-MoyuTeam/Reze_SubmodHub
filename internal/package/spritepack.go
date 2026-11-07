@@ -52,6 +52,29 @@ func spriteSetPrefix(name string) (string, bool) {
 	return "", false
 }
 
+// spritepackSkipsGift reports whether a member installs into `characters/` as a
+// gift token, i.e. whether a spritepack must ignore it entirely.
+// `characters/<name>.gift` is how MAS ships the "unlocked" marker of a sprite
+// item, and a spritepack author who drops one into the archive is certifying that
+// every recipient already owns the item — which would silently hand out the
+// unlock. The token is therefore neither installed nor recorded in the receipt,
+// so no uninstall can be asked to remove a file this mod never wrote; the player
+// creates it themselves from the sprite's own gift flow.
+//
+// Only `characters/` is in scope. A `.gift` anywhere else keeps the mapping it
+// would otherwise get.
+//
+// The test runs on the mapped target rather than the entry name because the same
+// token reaches `characters/` through two source layouts: `characters/x.gift` and
+// the legacy `gifts/x.gift`, which spriteTarget rewrites into the former.
+func spritepackSkipsGift(target string) bool {
+	if !strings.HasSuffix(strings.ToLower(target), ".gift") {
+		return false
+	}
+	dir, _ := path.Split(target)
+	return dir == "characters/"
+}
+
 func spriteTarget(source, prefix string) (string, bool) {
 	rel := strings.TrimPrefix(entryPath(source), prefix)
 	rel = strings.TrimPrefix(rel, "/")
@@ -178,6 +201,12 @@ func ScanSpriteArchive(reader io.ReaderAt, size int64, limits Limits) (Report, e
 			}
 			target, ok := spriteTarget(source, prefix)
 			if ok {
+				// Gift tokens never join a set, so no selection — not even the
+				// "all sets" default — can install one.
+				if spritepackSkipsGift(target) {
+					result.SkippedGifts = append(result.SkippedGifts, source)
+					continue
+				}
 				set.Files = append(set.Files, SpriteSetFile{Source: source, Target: target})
 			}
 		}
@@ -274,6 +303,7 @@ func ScanSpriteArchive(reader io.ReaderAt, size int64, limits Limits) (Report, e
 			}{member.Source, f.CRC32, f.UncompressedSize64}
 		}
 	}
+	sort.Strings(result.SkippedGifts)
 	return result, nil
 }
 

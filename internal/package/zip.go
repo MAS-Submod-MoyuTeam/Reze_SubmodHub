@@ -57,6 +57,10 @@ type Report struct {
 	Sprites            []Sprite       `json:"sprites"`
 	Derived            []Derived      `json:"derived"`
 	Conflicts          []Conflict     `json:"conflicts"`
+	// SkippedGifts names the `characters/*.gift` entries a spritepack scan dropped
+	// instead of installing; see ScanSpriteArchive. The plain Scan never skips
+	// anything, so it stays empty there.
+	SkippedGifts []string `json:"skipped_gifts,omitempty"`
 }
 
 func (l Limits) defaults() Limits {
