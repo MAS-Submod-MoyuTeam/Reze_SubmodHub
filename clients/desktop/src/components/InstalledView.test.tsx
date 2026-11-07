@@ -153,11 +153,13 @@ test('InstalledView: repair button is rendered with real preview tooltip for dri
       onStartUpdatePlan={() => {}}
       onOpenAdoptModal={() => {}}
       onInspectFiles={() => {}}
+      onOpenDetail={() => {}}
       onCheckAllUpdates={() => {}}
       onVerifyIntegrity={() => {}}
     />
   );
 
+  assert.match(html, /详情/);
   assert.match(html, /修复/);
   assert.match(html, /预览从已校验的安装材料恢复文件/);
   assert.match(html, /覆盖前备份，缺少材料时失败/);

@@ -307,3 +307,22 @@ test('没有子标签的主标签在抽屉里没有折叠按钮', async () => {
     await view.close();
   }
 });
+
+test('抽屉给 Android 状态栏与手势条留出安全区，关闭键不会被顶栏盖住', async () => {
+  const view = mountDrawerOnly();
+  try {
+    const panel = view.ctx.document.querySelector('[data-testid="tag-filter-panel"]') as HTMLElement | null;
+    assert.ok(panel, '抽屉必须渲染出面板本身');
+    const className = panel!.className;
+    assert.match(className, /env\(safe-area-inset-top/, '顶部必须让开状态栏，否则关闭键被状态栏挡住');
+    assert.match(className, /env\(safe-area-inset-bottom/, '底部必须让开手势条');
+    assert.match(className, /env\(safe-area-inset-right/, '横屏刘海在右侧时关闭键同样不能贴边');
+
+    // 关闭键要在面板里面，跟着面板一起让开，而不是挂在整个视口上。
+    const close = view.ctx.document.querySelector('button[aria-label="关闭标签筛选"]:not([tabindex="-1"])');
+    assert.ok(close, '抽屉必须有关闭键');
+    assert.ok(panel!.contains(close), '关闭键属于面板内容');
+  } finally {
+    await view.close();
+  }
+});

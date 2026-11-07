@@ -1153,6 +1153,20 @@ export default function App() {
     }
   };
 
+  const handleOpenInstalledDetail = (modId: string, title: string) => {
+    const target = catalogMods.find((mod) => mod.id === modId);
+    if (!target) {
+      showToast(
+        catalogError
+          ? `目录未加载（${catalogError}），暂时无法打开「${title}」的详情。`
+          : `「${title}」已不在当前目录中（可能已下架），无法打开详情。`,
+        'warn'
+      );
+      return;
+    }
+    setSelectedModDetail(target);
+  };
+
   // 「规划更新」来自已安装列表，只有 mod_id 与标题；真实 ModSummary 从目录里取。
   // 目录里找不到就直说，不再临时拼一个字段造假的 ModSummary 塞给安装链路。
   const handleStartUpdatePlanFromInstalled = (modId: string, title: string) => {
@@ -1761,6 +1775,7 @@ export default function App() {
                 onStartRepairPlan={handleStartRepairPlan}
                 onOpenAdoptModal={(item) => setAdoptTarget(item)}
                 onInspectFiles={(item) => setInspectTarget(item)}
+                onOpenDetail={handleOpenInstalledDetail}
                 onCheckAllUpdates={handleCheckAllUpdates}
                 onVerifyIntegrity={handleVerifyIntegrity}
                 isVerifying={isVerifying}

@@ -557,9 +557,20 @@ export const AdminPanel: React.FC = () => {
             ) : (
               <div className="space-y-4 pt-1">
                 <div className="space-y-1.5">
-                  <label htmlFor="github-token-input" className="text-xs font-semibold text-neutral-800">
-                    {tokenConfigured ? '替换令牌（留空则不修改）' : 'Personal Access Token'}
-                  </label>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label htmlFor="github-token-input" className="text-xs font-semibold text-neutral-800">
+                      {tokenConfigured ? '替换令牌（留空则不修改）' : 'Personal Access Token'}
+                    </label>
+                    <a
+                      href="https://github.com/settings/tokens"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 hover:text-emerald-800 hover:underline"
+                    >
+                      去 GitHub 创建令牌
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
                   <input
                     id="github-token-input"
                     type="password"
@@ -572,11 +583,27 @@ export const AdminPanel: React.FC = () => {
                   />
                   <div className="space-y-1 text-[11px] text-neutral-400 leading-normal">
                     <div>
-                      <span className="font-medium text-neutral-500">Fine-grained</span>：Repository access 选{' '}
+                      <a
+                        href="https://github.com/settings/personal-access-tokens/new"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-medium text-emerald-700 hover:underline"
+                      >
+                        Fine-grained
+                      </a>
+                      ：Repository access 选{' '}
                       <code>Public repositories (read-only)</code>，Permissions 可全部留空（公开仓库只读能力已内置）。
                     </div>
                     <div>
-                      <span className="font-medium text-neutral-500">Classic</span>：<strong>不勾任何 scope</strong>——空 scope 同样享有 5000 次/小时，且能读所有公开仓库。
+                      <a
+                        href="https://github.com/settings/tokens/new"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-medium text-emerald-700 hover:underline"
+                      >
+                        Classic
+                      </a>
+                      ：<strong>不勾任何 scope</strong>——空 scope 同样享有 5000 次/小时，且能读所有公开仓库。
                     </div>
                     <div>仅当仓库是私有的，才需要额外给 <code>Contents: read</code>。令牌不会回显，保存后仅显示末四位，保存或清除后立即生效。</div>
                   </div>

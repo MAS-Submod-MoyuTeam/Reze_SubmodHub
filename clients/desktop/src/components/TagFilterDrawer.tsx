@@ -128,7 +128,14 @@ export const TagFilterDrawer: React.FC<Props> = ({
         onClick={onClose}
         className="absolute inset-0 bg-black/60 cursor-default"
       />
-      <aside className="relative h-full w-full max-w-sm sm:max-w-md border-l border-neutral-800 bg-neutral-900 text-neutral-200 shadow-2xl flex flex-col">
+      {/*
+        抽屉铺满整个视口，而 Android 是边到边渲染：状态栏、刘海和底部手势条都盖在
+        页面之上。这里按安全区让开，否则右上角的关闭键正好落在状态栏下面，点不到。
+      */}
+      <aside
+        data-testid="tag-filter-panel"
+        className="relative h-full w-full max-w-sm sm:max-w-md border-l border-neutral-800 bg-neutral-900 text-neutral-200 shadow-2xl flex flex-col pt-[env(safe-area-inset-top,0px)] pr-[env(safe-area-inset-right,0px)] pb-[env(safe-area-inset-bottom,0px)]"
+      >
         <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-neutral-800">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-neutral-100">标签筛选</h2>

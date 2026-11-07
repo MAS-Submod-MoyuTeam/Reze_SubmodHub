@@ -45,6 +45,7 @@ interface InstalledViewProps {
   onStartRepairPlan: (installedItem: InstalledItem) => void;
   onOpenAdoptModal: (unmanagedItem: InstalledItem) => void;
   onInspectFiles: (item: InstalledItem) => void;
+  onOpenDetail?: (modId: string, title: string) => void;
   onCheckAllUpdates: () => void;
   onVerifyIntegrity: () => void;
   isVerifying: boolean;
@@ -80,6 +81,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
   onStartRepairPlan,
   onOpenAdoptModal,
   onInspectFiles,
+  onOpenDetail,
   onCheckAllUpdates,
   onVerifyIntegrity,
   isVerifying,
@@ -630,6 +632,16 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                     </button>
                                   )}
 
+                                  {onOpenDetail && (
+                                    <button
+                                      onClick={() => onOpenDetail(item.mod_id, item.title)}
+                                      className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer"
+                                      title={`打开「${item.title}」详情`}
+                                    >
+                                      详情
+                                    </button>
+                                  )}
+
                                   <button
                                     disabled={isModsActionBlocked}
                                     onClick={() => onInspectFiles(item)}
@@ -738,6 +750,16 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                 title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法规划更新' : '正在读取模组列表…') : undefined}
                               >
                                 规划更新
+                              </button>
+                            )}
+
+                            {onOpenDetail && (
+                              <button
+                                onClick={() => onOpenDetail(item.mod_id, item.title)}
+                                className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer"
+                                title={`打开「${item.title}」详情`}
+                              >
+                                详情
                               </button>
                             )}
 
