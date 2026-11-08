@@ -206,7 +206,7 @@ export type LocalSubmod = {
   incomplete?: boolean;
 };
 export type MASInstancesState = { instances: Array<{ id: string; label: string; root: string; status: { valid: boolean; game_exists: boolean; submods: number; mas_version?: string; available_bytes?: number; total_bytes?: number; diagnostic?: string; diagnostic_detail?: string } }>; active_id: string };
-export type Spritepack = { file: string; name: string; author: string; kind: string; group: string; giftname: string; complete: boolean; missing: string[]; preview: string };
+export type Spritepack = { file: string; name: string; author: string; kind: string; group: string; giftname: string; gift_unlocked?: boolean; complete: boolean; missing: string[]; preview: string };
 export type InstalledArchive = {
   mod_id: string;
   version_id: string;

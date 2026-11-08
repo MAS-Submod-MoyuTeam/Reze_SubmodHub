@@ -9,6 +9,7 @@ import (
 
 func TestSpritepackScanAndGift(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("APPDATA", filepath.Join(root, "no-renpy-save"))
 	game := filepath.Join(root, "game")
 	for _, dir := range []string{"mod_assets/monika/j", "mod_assets/monika/c/shirt", "mod_assets/thumbs"} {
 		if err := os.MkdirAll(filepath.Join(game, filepath.FromSlash(dir)), 0755); err != nil {
@@ -28,6 +29,9 @@ func TestSpritepackScanAndGift(t *testing.T) {
 	items, err := service.ScanInstalledSpritepacks()
 	if err != nil || len(items) != 1 || !items[0].Complete || items[0].Preview == "" || items[0].Group != "casual" {
 		t.Fatalf("scan: %+v, %v", items, err)
+	}
+	if items[0].GiftUnlocked != nil {
+		t.Fatalf("missing save should omit gift status, got %t", *items[0].GiftUnlocked)
 	}
 	if _, err := service.CreateSpriteGift("shirt.json"); err != nil {
 		t.Fatal(err)
@@ -152,5 +156,83 @@ func TestDeleteSpritepackPreservesMASWhitelistFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(base, "c/bath_towel_white/custom.png")); !os.IsNotExist(err) {
 		t.Fatal("custom file remains")
+	}
+}
+
+func TestSpritepackGiftStatusMapping(t *testing.T) {
+	root := t.TempDir()
+	base := filepath.Join(root, "game", "mod_assets")
+	for _, dir := range []string{"monika/j", "monika/c/shirt", "thumbs"} {
+		if err := os.MkdirAll(filepath.Join(base, filepath.FromSlash(dir)), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(base, "monika/j/shirt.json"), []byte(`{"type":2,"name":"shirt_id","img_sit":"shirt","giftname":"shirtgift"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "monika/c/shirt/body-def-0.png"), []byte("image"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	service := &DesktopService{root: root}
+	state := masPersistentSpriteState{
+		Unlocked: map[spriteIdentity]string{{Type: 2, ID: "shirt_id"}: "shirtgift"},
+		Pending:  map[spriteIdentity]string{},
+	}
+	item, err := service.spritepackWithGiftState("shirt.json", &state)
+	if err != nil || item.GiftUnlocked == nil || !*item.GiftUnlocked {
+		t.Fatalf("unlocked status = %+v, err = %v", item.GiftUnlocked, err)
+	}
+	state.Unlocked = map[spriteIdentity]string{}
+	state.Pending = map[spriteIdentity]string{{Type: 2, ID: "shirt_id"}: "shirtgift"}
+	item, err = service.spritepackWithGiftState("shirt.json", &state)
+	if err != nil || item.GiftUnlocked == nil || *item.GiftUnlocked {
+		t.Fatalf("pending status = %+v, err = %v", item.GiftUnlocked, err)
+	}
+	state.Unlocked = map[spriteIdentity]string{{Type: 2, ID: "shirt_id"}: "shirtgift"}
+	if spriteGiftStatus(state, spriteIdentity{Type: 2, ID: "shirt_id"}, "shirtgift") != nil {
+		t.Fatal("identity present in both maps should have no status")
+	}
+	state.Unlocked = map[spriteIdentity]string{{Type: 2, ID: "shirt_id"}: "other-gift"}
+	if spriteGiftStatus(state, spriteIdentity{Type: 2, ID: "shirt_id"}, "shirtgift") != nil {
+		t.Fatal("conflicting gift name should have no status")
+	}
+	if spriteGiftStatus(masPersistentSpriteState{}, spriteIdentity{Type: 2, ID: "shirt_id"}, "shirtgift") != nil {
+		t.Fatal("missing save status should be omitted")
+	}
+}
+
+func TestScanInstalledSpritepacksGiftStateFromPersistent(t *testing.T) {
+	root := t.TempDir()
+	appData := filepath.Join(root, "roaming")
+	t.Setenv("APPDATA", appData)
+	saveDir := filepath.Join(appData, "RenPy", "Monika After Story")
+	if err := os.MkdirAll(saveDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(saveDir, "persistent"), persistentFixture(t, true, true), 0644); err != nil {
+		t.Fatal(err)
+	}
+	jsonDir := filepath.Join(root, "game", "mod_assets", "monika", "j")
+	if err := os.MkdirAll(jsonDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jsonDir, "shirt.json"), []byte(`{"type":2,"name":"shirt_id","img_sit":"shirt","giftname":"shirtgift"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	items, err := (&DesktopService{root: root}).ScanInstalledSpritepacks()
+	if err != nil || len(items) != 1 || items[0].GiftUnlocked == nil || !*items[0].GiftUnlocked {
+		t.Fatalf("scan result = %+v, err = %v", items, err)
+	}
+}
+
+func TestSpriteSavePathUsesPlatformLocations(t *testing.T) {
+	t.Setenv("APPDATA", `C:\\Users\\tester\\AppData\\Roaming`)
+	windows := (&DesktopService{}).spriteSavePath()
+	if filepath.Base(windows) != "persistent" || !strings.Contains(filepath.ToSlash(windows), "RenPy/Monika After Story/persistent") {
+		t.Fatalf("unexpected Windows save path: %s", windows)
+	}
+	android := (&DesktopService{root: "/storage/emulated/0/MAS", isAndroidOverride: true}).spriteSavePath()
+	if android != filepath.Join("/storage/emulated/0/MAS", "saves", "persistent") {
+		t.Fatalf("unexpected Android save path: %s", android)
 	}
 }

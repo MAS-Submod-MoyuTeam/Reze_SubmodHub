@@ -14,15 +14,16 @@ import (
 )
 
 type Spritepack struct {
-	File     string   `json:"file"`
-	Name     string   `json:"name"`
-	Author   string   `json:"author"`
-	Kind     string   `json:"kind"`
-	Group    string   `json:"group"`
-	GiftName string   `json:"giftname"`
-	Complete bool     `json:"complete"`
-	Missing  []string `json:"missing"`
-	Preview  string   `json:"preview"`
+	File         string   `json:"file"`
+	Name         string   `json:"name"`
+	Author       string   `json:"author"`
+	Kind         string   `json:"kind"`
+	Group        string   `json:"group"`
+	GiftName     string   `json:"giftname"`
+	GiftUnlocked *bool    `json:"gift_unlocked,omitempty"`
+	Complete     bool     `json:"complete"`
+	Missing      []string `json:"missing"`
+	Preview      string   `json:"preview"`
 }
 
 type spriteJSON struct {
@@ -58,6 +59,10 @@ func isMASWhitelisted(root, path string) bool {
 }
 
 func (s *DesktopService) spritepack(file string) (Spritepack, error) {
+	return s.spritepackWithGiftState(file, nil)
+}
+
+func (s *DesktopService) spritepackWithGiftState(file string, giftState *masPersistentSpriteState) (Spritepack, error) {
 	if file != filepath.Base(file) || !strings.EqualFold(filepath.Ext(file), ".json") {
 		return Spritepack{}, errors.New("invalid_spritepack_file")
 	}
@@ -88,6 +93,9 @@ func (s *DesktopService) spritepack(file string) (Spritepack, error) {
 	if !spriteName.MatchString(spec.Name) || !spriteName.MatchString(spec.Image) {
 		item.Missing = append(item.Missing, "无效名称或图片代码")
 		return item, nil
+	}
+	if giftState != nil && spriteName.MatchString(spec.GiftName) {
+		item.GiftUnlocked = spriteGiftStatus(*giftState, spriteIdentity{Type: spec.Type, ID: spec.Name}, spec.GiftName)
 	}
 	base := filepath.Join(s.root, "game", "mod_assets")
 	assetDir := filepath.Join(base, "monika", dir)
@@ -143,11 +151,15 @@ func (s *DesktopService) ScanInstalledSpritepacks() ([]Spritepack, error) {
 		return nil, err
 	}
 	items := make([]Spritepack, 0)
+	var giftState *masPersistentSpriteState
+	if parsed, saveErr := readMASPersistent(s.spriteSavePath()); saveErr == nil {
+		giftState = &parsed
+	}
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".json") {
 			continue
 		}
-		item, scanErr := s.spritepack(entry.Name())
+		item, scanErr := s.spritepackWithGiftState(entry.Name(), giftState)
 		if scanErr != nil {
 			items = append(items, Spritepack{File: entry.Name(), Name: entry.Name(), Missing: []string{"JSON 无法读取或解析"}})
 			continue

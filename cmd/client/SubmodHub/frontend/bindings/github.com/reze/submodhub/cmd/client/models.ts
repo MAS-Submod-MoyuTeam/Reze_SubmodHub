@@ -273,6 +273,7 @@ export interface Spritepack {
     "kind": string;
     "group": string;
     "giftname": string;
+    "gift_unlocked"?: boolean | null;
     "complete": boolean;
     "missing": string[] | null;
     "preview": string;

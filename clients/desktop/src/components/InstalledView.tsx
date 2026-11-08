@@ -89,6 +89,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
 }) => {
   const [subTab, setSubTab] = useState<'managed' | 'unmanaged' | 'spritepacks'>(initialSubTab);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
+  const [spritepackToDelete, setSpritepackToDelete] = useState<Spritepack | null>(null);
   const [creatingGiftFile, setCreatingGiftFile] = useState<string | null>(null);
   const [giftMessages, setGiftMessages] = useState<Record<string, string>>({});
   const [spriteSearch, setSpriteSearch] = useState('');
@@ -119,10 +120,16 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
     } finally { setCreatingGiftFile(null); }
   };
 
-  const confirmDeleteSpritepack = async (item: Spritepack) => {
-    if (!window.confirm(`确定删除「${item.name}」吗？其 JSON 和未被其他精灵包引用的图片将从游戏中移走，并保存备份。礼物文件会保留。`)) return;
+  const confirmDeleteSpritepack = async () => {
+    if (!spritepackToDelete || deletingFile) return;
+    const item = spritepackToDelete;
     setDeletingFile(item.file);
-    try { await onDeleteSpritepack(item.file); } finally { setDeletingFile(null); }
+    try {
+      await onDeleteSpritepack(item.file);
+      setSpritepackToDelete(null);
+    } finally {
+      setDeletingFile(null);
+    }
   };
 
   const managedMods = installedMods.filter((m) => m.is_managed);
@@ -498,6 +505,18 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                               </span>
                             )}
                           </div>
+                          {item.gift_unlocked === true && (
+                            <span role="status" className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-300">
+                              <CheckCircle2 className="w-3 h-3 shrink-0" />
+                              已赠送（已解锁）
+                            </span>
+                          )}
+                          {item.gift_unlocked === false && (
+                            <span role="status" className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-300">
+                              <Gift className="w-3 h-3 shrink-0" />
+                              未赠送
+                            </span>
+                          )}
                         </div>
                         <div className="mt-2.5 pt-2 flex items-center justify-between gap-2 border-t border-neutral-800/60">
                           <button
@@ -511,7 +530,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           </button>
                           <button
                             disabled={isSpritepacksActionBlocked || deletingFile !== null || creatingGiftFile !== null}
-                            onClick={() => { void confirmDeleteSpritepack(item); }}
+                            onClick={() => setSpritepackToDelete(item)}
                             className="p-1.5 rounded-md text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                             title={isSpritepacksActionBlocked ? (spritepacksStatus === 'error' ? '精灵包扫描失败，暂无法删除' : '正在读取精灵包…') : '删除精灵包并保留备份'}
                             aria-label={`删除 ${item.name}`}
@@ -913,6 +932,42 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
           </>
         )}
       </div>
+      {spritepackToDelete && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="spritepack-delete-title"
+            aria-describedby="spritepack-delete-description"
+            className="w-full max-w-md rounded-lg border border-neutral-700 bg-neutral-900 p-5 shadow-2xl"
+          >
+            <h2 id="spritepack-delete-title" className="text-base font-semibold text-neutral-100">
+              删除精灵包「{spritepackToDelete.name}」？
+            </h2>
+            <p id="spritepack-delete-description" className="mt-2 text-sm leading-6 text-neutral-300">
+              该精灵包的 JSON 和未被其他精灵包引用的图片将从游戏中移走，并保存备份。礼物文件会保留。
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deletingFile !== null}
+                onClick={() => setSpritepackToDelete(null)}
+                className="rounded-md border border-neutral-700 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={deletingFile !== null}
+                onClick={() => { void confirmDeleteSpritepack(); }}
+                className="rounded-md bg-rose-700 px-3 py-2 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-60"
+              >
+                {deletingFile === spritepackToDelete.file ? '删除中…' : '确认删除'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 };
