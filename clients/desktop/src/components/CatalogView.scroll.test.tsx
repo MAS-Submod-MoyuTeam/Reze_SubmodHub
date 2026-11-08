@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CatalogView } from './CatalogView';
 import type { Installation, ModSummary } from '../types/client';
-import { FakeIntersectionObserver, mountTestDom } from './testDom';
+import { FakeIntersectionObserver, mountTestDom, typeIntoInput } from './testDom';
 
 /**
  * 目录续页必须与 Web 版语义一致：滚动到列表底部自动加载下一页，页脚用「已渲染 xx / 共 yy」收尾。
@@ -213,11 +213,14 @@ test('筛选后按新的命中总数收敛已渲染条数，不保留看不见�
     await act(async () => FakeIntersectionObserver.instances[0].emit(true));
     assert.equal(view.cardTitles().length, 12, 'two pages are loaded before filtering');
 
-    // 只剩 7 条匹配（其中 2 条是外观礼包）：页数收敛到能覆盖 7 条的两页，而不是残留 12 条。
+    // 只剩 7 条匹配（其中 2 条是外观礼包）：页数收敛到能覆盖这 7 条，而不是残留 12 条。
     const mixed = [...mods(5), makeMod(101, { category: 'spritepack' }), makeMod(102, { category: 'spritepack' })];
     await view.render(mixed);
     assert.equal(view.cardTitles().length, 7, 'no stale rows survive the filter');
-    assert.match(view.text(), /已渲染\s*7\s*\/\s*共\s*7\s*个子模组/);
+    // 7 条已全部渲染，没有可续的内容，页脚只报总数——不会出现「已渲染 7 / 共 7」这种
+    // 声称还有下一页的写法。
+    assert.match(view.text(), /共\s*7\s*个子模组/);
+    assert.doesNotMatch(view.text(), /已渲染/);
   } finally {
     await view.close();
   }
@@ -234,9 +237,7 @@ test('筛选放宽时页数保持收敛，不会把没滚动加载过的条目�
     const input = view.ctx.document.querySelector('input[type="text"]') as HTMLInputElement;
     assert.ok(input, 'the catalog renders a search box');
     await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(view.ctx.window.HTMLInputElement.prototype, 'value')!.set!;
-      setter.call(input, 'Submod 1');
-      input.dispatchEvent(new view.ctx.window.Event('input', { bubbles: true }));
+      typeIntoInput(input, 'Submod 1');
     });
     assert.equal(view.cardTitles().length, 6, 'a narrowed result set keeps only the first page');
     assert.match(view.text(), /共\s*6\s*个子模组/, 'the search really narrowed the result set');

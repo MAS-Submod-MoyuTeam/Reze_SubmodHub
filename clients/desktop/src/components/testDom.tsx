@@ -27,6 +27,25 @@ export interface TestDom {
  */
 const KEYS = ['window', 'document', 'HTMLElement', 'IntersectionObserver', 'IS_REACT_ACT_ENVIRONMENT'] as const;
 
+/**
+ * 像用户那样往受控输入框里打字。
+ *
+ * React 19 的受控 input 在 jsdom 下不认手工派发的 `input` 事件：事件确实冒泡到了 document，
+ * 但它的 change 模拟没把它当成本次输入，`onChange` 不会执行。直接赋 `input.value` 也不行——
+ * React 装的那层 setter 会把 value tracker 一并同步成新值，于是被判成「没有变化」。
+ *
+ * 因此这里直接调用 React 挂在该节点上的 `onChange`，参数形状与它收到合成事件时一致。
+ * 语义仍然是「用户把值改成了 value」，只是绕开了 jsdom 不可靠的事件模拟。
+ */
+export function typeIntoInput(input: HTMLInputElement, value: string): void {
+  const key = Object.keys(input).find((name) => name.startsWith('__reactProps'));
+  const props = key ? (input as unknown as Record<string, { onChange?: (e: unknown) => void }>)[key] : undefined;
+  if (!props?.onChange) {
+    throw new Error('typeIntoInput: the input is not React-controlled (no onChange handler found)');
+  }
+  props.onChange({ target: { value } });
+}
+
 export function mountTestDom(body: string): TestDom {
   const dom = new JSDOM(body, { url: 'http://localhost/' });
   const globals = globalThis as unknown as Record<string, unknown>;
