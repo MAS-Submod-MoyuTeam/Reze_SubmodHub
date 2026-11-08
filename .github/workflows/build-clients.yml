@@ -1,5 +1,6 @@
 name: Build clients
 
+# Bump to re-register the workflow definition with GitHub's scheduler.
 on:
   push:
     branches: [main]
