@@ -28,6 +28,10 @@ func persistentFixture(t *testing.T, includeUnlocked, includePending bool) []byt
 	pickle.Write([]byte{0x80, 2, 'c'})
 	pickle.WriteString("renpy.persistent\nPersistent\n")
 	pickle.Write([]byte{')', 0x81, 'q', 0, '}', '('})
+	// A real MAS save always carries non-sprite state alongside the two gift
+	// maps. Leaving it out is what let the parser look healthy in tests while
+	// rejecting every save on disk.
+	appendRevertableSet(&pickle, "_seen_images")
 	if includeUnlocked {
 		appendUnicode(&pickle, "_mas_sprites_json_gifted_sprites")
 		pickle.Write([]byte{'c'})
@@ -54,6 +58,18 @@ func persistentFixture(t *testing.T, includeUnlocked, includePending bool) []byt
 		t.Fatal(err)
 	}
 	return compressed.Bytes()
+}
+
+// appendRevertableSet writes an empty value whose class is RevertableSet. Real
+// MAS saves carry sets (unlocked topics, seen images) next to the two gift maps,
+// and an allowlist that rejected the class failed the whole file — every badge
+// disappeared even though both maps were perfectly readable. Only the class name
+// reaches the parser, so the contents do not matter here.
+func appendRevertableSet(out *bytes.Buffer, name string) {
+	appendUnicode(out, name)
+	out.WriteByte('c')
+	out.WriteString("renpy.python\nRevertableSet\n")
+	out.Write([]byte{')', 0x81, '}', 'b'}) // NEWOBJ, empty state, BUILD
 }
 
 func TestParseMASPersistentExtractsGiftState(t *testing.T) {

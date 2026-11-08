@@ -189,12 +189,24 @@ func TestSpritepackGiftStatusMapping(t *testing.T) {
 		t.Fatalf("pending status = %+v, err = %v", item.GiftUnlocked, err)
 	}
 	state.Unlocked = map[spriteIdentity]string{{Type: 2, ID: "shirt_id"}: "shirtgift"}
-	if spriteGiftStatus(state, spriteIdentity{Type: 2, ID: "shirt_id"}, "shirtgift") != nil {
-		t.Fatal("identity present in both maps should have no status")
+	// Being unlocked does not remove the item from the pending registry: a real
+	// save has 12 of its 14 unlocked items in both maps under the same gift
+	// name. That overlap is agreement, not a contradiction, and it must keep
+	// reporting unlocked — otherwise gifted items lose their badge.
+	if status := spriteGiftStatus(state, spriteIdentity{Type: 2, ID: "shirt_id"}, "shirtgift"); status == nil || !*status {
+		t.Fatalf("identity in both maps with the same gift should report unlocked, got %+v", status)
 	}
 	state.Unlocked = map[spriteIdentity]string{{Type: 2, ID: "shirt_id"}: "other-gift"}
 	if spriteGiftStatus(state, spriteIdentity{Type: 2, ID: "shirt_id"}, "shirtgift") != nil {
 		t.Fatal("conflicting gift name should have no status")
+	}
+	// The pending map naming a different gift is just as ambiguous.
+	state = masPersistentSpriteState{
+		Unlocked: map[spriteIdentity]string{{Type: 2, ID: "shirt_id"}: "shirtgift"},
+		Pending:  map[spriteIdentity]string{{Type: 2, ID: "shirt_id"}: "other-gift"},
+	}
+	if spriteGiftStatus(state, spriteIdentity{Type: 2, ID: "shirt_id"}, "shirtgift") != nil {
+		t.Fatal("a pending entry naming another gift should have no status")
 	}
 	if spriteGiftStatus(masPersistentSpriteState{}, spriteIdentity{Type: 2, ID: "shirt_id"}, "shirtgift") != nil {
 		t.Fatal("missing save status should be omitted")

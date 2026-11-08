@@ -70,6 +70,13 @@ func (o *persistentPassiveObject) PySetState(value interface{}) error {
 	if o.class == "renpy.python.RevertableList" {
 		return nil
 	}
+	// RevertableSet has no state worth reading: every gift map is a
+	// RevertableDict. Real saves do carry sets (unlocked topics, seen images),
+	// which arrive as REDUCE/NEWOBJ then PySetState; rejecting them used to fail
+	// the whole parse and hide every badge, so an empty state is accepted.
+	if o.class == "renpy.python.RevertableSet" {
+		return nil
+	}
 	state, ok := value.(*types.Dict)
 	if !ok {
 		return errors.New("persistent object state is not a dictionary")
@@ -129,7 +136,12 @@ func parseMASPersistent(compressed []byte) (result masPersistentSpriteState, par
 	unpickler.FindClass = func(module, name string) (interface{}, error) {
 		switch module + "." + name {
 		case "renpy.persistent.Persistent", "renpy.preferences.Preferences",
-			"renpy.python.RevertableDict", "renpy.python.RevertableList":
+			// RevertableSet is allowlisted purely so a save that contains one
+			// still parses. Before this entry existed, the allowlist rejected it
+			// and the whole file failed with "unsupported persistent global",
+			// which the caller turns into "no badges at all" — the sprite maps
+			// were perfectly readable behind it. It carries no gift data.
+			"renpy.python.RevertableDict", "renpy.python.RevertableList", "renpy.python.RevertableSet":
 			return &persistentPassiveObject{class: module + "." + name}, nil
 		case "__builtin__.bool", "__builtin__.float", "__builtin__.long", "__builtin__.set",
 			"collections.defaultdict", "collections.deque", "datetime.date", "datetime.datetime", "datetime.timedelta":
@@ -260,11 +272,18 @@ func readMASPersistent(path string) (masPersistentSpriteState, error) {
 }
 
 // spriteGiftStatus answers "does this sprite item already exist in the player's
-// game?" for the given gift name. MAS keeps two maps that partition the answer:
-// unlocked sprites carry the gift name that unlocked them, and pending ones are
-// the gifts that are registered but not yet received. Whenever the two maps
-// disagree, or the recorded gift name is not the one this JSON declares, the
-// answer is unknown — a wrong badge is worse than none.
+// game?" for the given gift name. Unlocked carries the gift that unlocked the
+// item; Pending is the registry of gifts not yet received.
+//
+// The two maps are NOT disjoint. In a real save, 12 of 14 unlocked items also
+// still sit in the pending registry under the same gift name — being unlocked
+// does not remove the registration. Treating that overlap as a contradiction
+// hid the badge for almost every gifted item, so `unlocked` wins whenever it
+// agrees on the gift name.
+//
+// Unknown is reserved for genuine disagreement: either map naming a different
+// gift than this JSON declares. A wrong badge is worse than none, but a badge
+// withheld from a definite answer is just a bug.
 //
 // Gift names are compared case-insensitively: MAS stores the name verbatim from
 // the sprite JSON, but the same token also travels as a filename, so an author
@@ -272,14 +291,17 @@ func readMASPersistent(path string) (masPersistentSpriteState, error) {
 func spriteGiftStatus(state masPersistentSpriteState, identity spriteIdentity, gift string) *bool {
 	unlockedGift, unlocked := state.Unlocked[identity]
 	pendingGift, pending := state.Pending[identity]
-	if unlocked && (!strings.EqualFold(unlockedGift, gift) || pending) {
+	if unlocked && !strings.EqualFold(unlockedGift, gift) {
+		return nil
+	}
+	if pending && !strings.EqualFold(pendingGift, gift) {
 		return nil
 	}
 	if unlocked {
 		value := true
 		return &value
 	}
-	if pending && strings.EqualFold(pendingGift, gift) {
+	if pending {
 		value := false
 		return &value
 	}
