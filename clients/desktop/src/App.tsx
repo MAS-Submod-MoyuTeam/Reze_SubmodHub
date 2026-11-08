@@ -1765,8 +1765,10 @@ export default function App() {
                     void refreshSpritepacks(targetInstId, { forced: true });
                     showToast(`已移出 ${result.files} 项，备份位于 ${result.backup}`);
                   } catch (error) {
+                    // 继续向上抛：失败原因由 InstalledView 的删除对话框就地显示，
+                    // 收在这里会让对话框以为成功而关闭，只留一条被遮住的 toast。
                     if (activeInstallationIdRef.current === targetInstId) {
-                      showToast(`删除精灵包失败：${String(error)}`);
+                      throw error;
                     }
                   }
                 }}

@@ -963,9 +963,13 @@ func (s *DesktopService) PreviewArchive(request ArchiveInstallRequest) (PlanResu
 
 	// Spritepack gift tokens are dropped by the scanner on purpose, so the preview
 	// says so: the user should not read their absence from the plan as a fault.
+	//
+	// The list is the archive path the author wrote, which is not always a
+	// `characters/` path — `gifts/x.gift` is the legacy spelling of the same token.
+	// The wording therefore names what the file *is*, not where it happened to sit.
 	if len(report.SkippedGifts) > 0 {
 		shown := report.SkippedGifts[:min(len(report.SkippedGifts), 5)]
-		description := fmt.Sprintf("%d 个 characters 目录下的 .gift 解锁文件已忽略：%s", len(report.SkippedGifts), strings.Join(shown, "、"))
+		description := fmt.Sprintf("%d 个 .gift 礼物解锁文件已忽略：%s", len(report.SkippedGifts), strings.Join(shown, "、"))
 		if len(report.SkippedGifts) > len(shown) {
 			description += " 等"
 		}

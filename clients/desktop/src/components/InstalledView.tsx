@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   PackageCheck,
   FileQuestion,
@@ -90,6 +90,9 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
   const [subTab, setSubTab] = useState<'managed' | 'unmanaged' | 'spritepacks'>(initialSubTab);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [spritepackToDelete, setSpritepackToDelete] = useState<Spritepack | null>(null);
+  const [deleteSpritepackError, setDeleteSpritepackError] = useState<string | null>(null);
+  const deleteDialogRef = useRef<HTMLElement | null>(null);
+  const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
   const [creatingGiftFile, setCreatingGiftFile] = useState<string | null>(null);
   const [giftMessages, setGiftMessages] = useState<Record<string, string>>({});
   const [spriteSearch, setSpriteSearch] = useState('');
@@ -124,13 +127,43 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
     if (!spritepackToDelete || deletingFile) return;
     const item = spritepackToDelete;
     setDeletingFile(item.file);
+    setDeleteSpritepackError(null);
     try {
       await onDeleteSpritepack(item.file);
       setSpritepackToDelete(null);
+    } catch (error) {
+      // 删除失败时留着对话框并把原因写在这里：失败提示原本是应用底部的 toast，
+      // 而对话框的层级比它高，用户只会看到按钮从「删除中…」变回「确认删除」。
+      setDeleteSpritepackError(`删除失败：${String(error)}`);
     } finally {
       setDeletingFile(null);
     }
   };
+
+  const closeDeleteSpritepack = () => {
+    if (deletingFile) return;
+    setSpritepackToDelete(null);
+    setDeleteSpritepackError(null);
+  };
+
+  // Esc 关闭：自绘对话框必须能用键盘退出，这是 window.confirm 原本自带的能力。
+  useEffect(() => {
+    if (!spritepackToDelete) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (deletingFile) return;
+      setSpritepackToDelete(null);
+      setDeleteSpritepackError(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [spritepackToDelete, deletingFile]);
+
+  // 打开时把焦点交给「取消」，Tab 不会跑到后面的列表上。
+  useEffect(() => {
+    if (!spritepackToDelete) return;
+    deleteCancelRef.current?.focus?.();
+  }, [spritepackToDelete]);
 
   const managedMods = installedMods.filter((m) => m.is_managed);
   const unmanagedMods = installedMods.filter((m) => !m.is_managed);
@@ -933,8 +966,12 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
         )}
       </div>
       {spritepackToDelete && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
+          onMouseDown={(event) => { if (event.target === event.currentTarget) closeDeleteSpritepack(); }}
+        >
           <section
+            ref={deleteDialogRef}
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="spritepack-delete-title"
@@ -947,11 +984,17 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
             <p id="spritepack-delete-description" className="mt-2 text-sm leading-6 text-neutral-300">
               该精灵包的 JSON 和未被其他精灵包引用的图片将从游戏中移走，并保存备份。礼物文件会保留。
             </p>
+            {deleteSpritepackError && (
+              <p role="alert" className="mt-3 rounded-md border border-rose-700/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200">
+                {deleteSpritepackError}
+              </p>
+            )}
             <div className="mt-5 flex justify-end gap-2">
               <button
+                ref={deleteCancelRef}
                 type="button"
                 disabled={deletingFile !== null}
-                onClick={() => setSpritepackToDelete(null)}
+                onClick={closeDeleteSpritepack}
                 className="rounded-md border border-neutral-700 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
               >
                 取消

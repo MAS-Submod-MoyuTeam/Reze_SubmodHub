@@ -139,10 +139,67 @@ func TestScanSpriteArchiveSkipsCharactersGifts(t *testing.T) {
 	}
 }
 
+// The gift skip changed what a scan answers for the same archive, so the index
+// carries a version: servers cache reports, and an older cache entry must be
+// recognised as stale rather than served with tokens inside.
+func TestScanSpriteArchiveStampsCurrentIndexVersion(t *testing.T) {
+	b := archive(t, map[string]string{
+		"game/mod_assets/monika/j/coat.json": `{"name":"coat","select_info":{"display_name":"和服"}}`,
+	})
+	report, err := ScanSpriteArchive(bytes.NewReader(b), int64(len(b)), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.SpriteIndexVersion != SpriteIndexVersion {
+		t.Fatalf("sprite index version = %d, want %d", report.SpriteIndexVersion, SpriteIndexVersion)
+	}
+	if SpriteIndexVersion < 3 {
+		t.Fatalf("SpriteIndexVersion must stay >= 3 or cached reports with gift tokens are served again")
+	}
+}
+
+// A report cached before the gift skip still lists the token in its sets, and
+// nothing re-derives membership from the archive downstream. The selection has
+// to drop it on its own.
+func TestBuildSpriteSelectionDropsGiftTokensFromStaleReport(t *testing.T) {
+	b := archive(t, map[string]string{
+		"Set A/mod_assets/monika/j/coat.json": `{"name":"coat","select_info":{"display_name":"和服"}}`,
+		"Set A/gifts/coat.gift":               "unlock",
+	})
+	var legacy Report
+	legacy.SpriteIndexVersion = 2
+	legacy.SpriteSets = []SpriteSet{{
+		ID:   "stale",
+		Name: "Set A",
+		Files: []SpriteSetFile{
+			{Source: "Set A/mod_assets/monika/j/coat.json", Target: "game/mod_assets/monika/j/coat.json"},
+			{Source: "Set A/gifts/coat.gift", Target: "characters/coat.gift"},
+		},
+	}}
+
+	selected, err := BuildSpriteSelection(bytes.NewReader(b), int64(len(b)), legacy, []string{"stale"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	z, err := zip.NewReader(bytes.NewReader(selected), int64(len(selected)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept []string
+	for _, f := range z.File {
+		if strings.HasSuffix(strings.ToLower(f.Name), ".gift") {
+			t.Fatalf("gift token from a stale report leaked into the selection: %s", f.Name)
+		}
+		kept = append(kept, f.Name)
+	}
+	if len(kept) == 0 {
+		t.Fatal("selection dropped every member; the sprite JSON should survive")
+	}
+}
+
 // A `.gift` outside `characters/` is not a sprite unlock marker, so it keeps
 // whatever mapping it would otherwise get.
-func TestScanSpriteArchiveKeepsGiftsOutsideCharacters(t *testing.T) {
-	for _, target := range []string{"gift", "characters", "characters2/x.gift", "game/characters/x.gift", "mod_assets/x.gift", "gifts/x.gift"} {
+func TestScanSpriteArchiveKeepsGiftsOutsideCharacters(t *testing.T) {	for _, target := range []string{"gift", "characters", "characters2/x.gift", "game/characters/x.gift", "mod_assets/x.gift", "gifts/x.gift"} {
 		if spritepackSkipsGift(target) {
 			t.Fatalf("%q should not be skipped", target)
 		}

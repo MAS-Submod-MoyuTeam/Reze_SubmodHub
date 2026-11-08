@@ -90,3 +90,49 @@ test('InstalledView delete dialog can cancel or confirm the operation', async ()
     await dom.close();
   }
 });
+
+test('InstalledView delete dialog closes on Escape without deleting', async () => {
+  const dom = mountTestDom('<div id="root"></div>');
+  const removed: string[] = [];
+  try {
+    await dom.paint(view([basePack], async (file) => { removed.push(file); }));
+    const removeButton = dom.document.querySelector<HTMLButtonElement>('button[aria-label="删除 Test Pack"]');
+    assert.ok(removeButton);
+    await act(async () => removeButton.click());
+    assert.ok(dom.document.querySelector('[role="alertdialog"]'));
+
+    await act(async () => {
+      dom.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    assert.equal(dom.document.querySelector('[role="alertdialog"]'), null, 'Escape should close the dialog');
+    assert.deepEqual(removed, [], 'Escape must not delete anything');
+  } finally {
+    await dom.close();
+  }
+});
+
+// The failure toast lives under the dialog's z-index, so a failure that only
+// reports itself through the toast is invisible. The dialog stays open and says
+// why.
+test('InstalledView delete dialog keeps the reason when deletion fails', async () => {
+  const dom = mountTestDom('<div id="root"></div>');
+  try {
+    await dom.paint(view([basePack], async () => { throw new Error('access denied'); }));
+    const removeButton = dom.document.querySelector<HTMLButtonElement>('button[aria-label="删除 Test Pack"]');
+    assert.ok(removeButton);
+    await act(async () => removeButton.click());
+    const confirm = [...dom.document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((button) => button.textContent?.trim() === '确认删除');
+    assert.ok(confirm);
+    await act(async () => confirm.click());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const dialog = dom.document.querySelector('[role="alertdialog"]');
+    assert.ok(dialog, 'a failed delete must not close the dialog');
+    const alert = dialog.querySelector('[role="alert"]');
+    assert.ok(alert, 'the failure reason should be rendered inside the dialog');
+    assert.match(alert.textContent || '', /access denied/);
+  } finally {
+    await dom.close();
+  }
+});

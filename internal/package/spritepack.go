@@ -135,7 +135,7 @@ func spriteItem(file *zip.File, members []SpriteSetFile) SpriteSetItem {
 // ScanSpriteArchive partitions a legacy spritepack ZIP by the directory enclosing
 // each mod_assets tree. Multiple JSON files inside that directory form one set.
 func ScanSpriteArchive(reader io.ReaderAt, size int64, limits Limits) (Report, error) {
-	result := Report{SpriteIndexVersion: 2}
+	result := Report{SpriteIndexVersion: SpriteIndexVersion}
 	limits = limits.defaults()
 	z, err := zip.NewReader(reader, size)
 	if err != nil {
@@ -350,6 +350,13 @@ func BuildSpriteSelection(reader io.ReaderAt, size int64, report Report, ids []s
 			continue
 		}
 		for _, member := range set.Files {
+			// A report cached by a server that predates the gift skip still
+			// lists gift tokens here, and nothing downstream re-derives the
+			// set membership from the archive. The selection is the last place
+			// that can drop them, so it does — the token must never reach disk.
+			if spritepackSkipsGift(member.Target) {
+				continue
+			}
 			if seen[member.Target] {
 				continue
 			}

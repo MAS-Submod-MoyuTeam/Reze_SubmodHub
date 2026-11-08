@@ -58,7 +58,7 @@ func (s *Store) spritepackResource(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "sprite_version_changed", "spritepack version has changed")
 		return
 	}
-	if report.SpriteIndexVersion < 2 {
+	if report.SpriteIndexVersion < packagezip.SpriteIndexVersion {
 		file, err := os.Open(v.ArchivePath)
 		if err != nil {
 			writeError(w, 404, "not_found", "archive was not found")

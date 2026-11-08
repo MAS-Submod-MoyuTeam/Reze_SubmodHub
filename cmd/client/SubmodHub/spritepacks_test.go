@@ -199,6 +199,21 @@ func TestSpritepackGiftStatusMapping(t *testing.T) {
 	if spriteGiftStatus(masPersistentSpriteState{}, spriteIdentity{Type: 2, ID: "shirt_id"}, "shirtgift") != nil {
 		t.Fatal("missing save status should be omitted")
 	}
+	// The same token travels both as a JSON field and as a filename, so a release
+	// that only changes the casing must not lose the badge.
+	state = masPersistentSpriteState{Unlocked: map[spriteIdentity]string{{Type: 2, ID: "shirt_id"}: "ShirtGift"}}
+	if status := spriteGiftStatus(state, spriteIdentity{Type: 2, ID: "shirt_id"}, "shirtgift"); status == nil || !*status {
+		t.Fatalf("case-insensitive unlocked match should still report unlocked, got %+v", status)
+	}
+	state = masPersistentSpriteState{Pending: map[spriteIdentity]string{{Type: 2, ID: "shirt_id"}: "SHIRTGIFT"}}
+	if status := spriteGiftStatus(state, spriteIdentity{Type: 2, ID: "shirt_id"}, "shirtgift"); status == nil || *status {
+		t.Fatalf("case-insensitive pending match should still report not-gifted, got %+v", status)
+	}
+	// Casing is folded, but a different gift name is still a different gift.
+	state = masPersistentSpriteState{Unlocked: map[spriteIdentity]string{{Type: 2, ID: "shirt_id"}: "other-gift"}}
+	if status := spriteGiftStatus(state, spriteIdentity{Type: 2, ID: "shirt_id"}, "shirtgift"); status != nil {
+		t.Fatalf("a genuinely different gift name must not borrow a status, got %+v", status)
+	}
 }
 
 func TestScanInstalledSpritepacksGiftStateFromPersistent(t *testing.T) {

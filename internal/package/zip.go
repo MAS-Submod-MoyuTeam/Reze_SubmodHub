@@ -47,6 +47,14 @@ type Sprite struct {
 }
 type Derived struct{ Source, Target string }
 type Conflict struct{ Kind, Value, First, Second string }
+// SpriteIndexVersion is the layout version of the sprite index that
+// ScanSpriteArchive produces. Bump it whenever a scan would now answer a
+// question differently for the same archive, so that reports cached by older
+// servers are rescanned instead of being served as-is.
+//
+//	3: gift tokens (`characters/*.gift`) are excluded from sprite sets.
+const SpriteIndexVersion = 3
+
 type Report struct {
 	Files              []File         `json:"files"`
 	SpriteIndexVersion int            `json:"sprite_index_version,omitempty"`

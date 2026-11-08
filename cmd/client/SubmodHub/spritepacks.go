@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -152,8 +153,13 @@ func (s *DesktopService) ScanInstalledSpritepacks() ([]Spritepack, error) {
 	}
 	items := make([]Spritepack, 0)
 	var giftState *masPersistentSpriteState
+	// A missing or unreadable save is not an error for the scan: the list simply
+	// carries no gift state. It is still worth naming the reason in the log,
+	// otherwise "为什么没有徽章" has no answer short of attaching a debugger.
 	if parsed, saveErr := readMASPersistent(s.spriteSavePath()); saveErr == nil {
 		giftState = &parsed
+	} else {
+		log.Printf("Sprite gift state: %v", saveErr)
 	}
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".json") {

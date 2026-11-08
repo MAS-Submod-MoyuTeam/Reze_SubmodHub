@@ -259,17 +259,27 @@ func readMASPersistent(path string) (masPersistentSpriteState, error) {
 	return parseMASPersistent(compressed)
 }
 
+// spriteGiftStatus answers "does this sprite item already exist in the player's
+// game?" for the given gift name. MAS keeps two maps that partition the answer:
+// unlocked sprites carry the gift name that unlocked them, and pending ones are
+// the gifts that are registered but not yet received. Whenever the two maps
+// disagree, or the recorded gift name is not the one this JSON declares, the
+// answer is unknown — a wrong badge is worse than none.
+//
+// Gift names are compared case-insensitively: MAS stores the name verbatim from
+// the sprite JSON, but the same token also travels as a filename, so an author
+// who changes the casing between releases would otherwise lose the badge.
 func spriteGiftStatus(state masPersistentSpriteState, identity spriteIdentity, gift string) *bool {
 	unlockedGift, unlocked := state.Unlocked[identity]
 	pendingGift, pending := state.Pending[identity]
-	if unlocked && (unlockedGift != gift || pending) {
+	if unlocked && (!strings.EqualFold(unlockedGift, gift) || pending) {
 		return nil
 	}
 	if unlocked {
 		value := true
 		return &value
 	}
-	if pending && pendingGift == gift {
+	if pending && strings.EqualFold(pendingGift, gift) {
 		value := false
 		return &value
 	}

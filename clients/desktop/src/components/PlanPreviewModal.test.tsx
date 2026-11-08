@@ -253,7 +253,7 @@ test('PlanPreviewModal: ignored gift tokens are reported without blocking execut
     risks: [
       {
         type: 'package_ignored_gifts',
-        description: '2 个 characters 目录下的 .gift 解锁文件已忽略：characters/coat.gift、gifts/other.gift',
+        description: '2 个 .gift 礼物解锁文件已忽略：characters/coat.gift、gifts/other.gift',
       },
     ],
   });
@@ -268,7 +268,7 @@ test('PlanPreviewModal: ignored gift tokens are reported without blocking execut
     />
   );
 
-  assert.match(html, /characters 目录下的 \.gift 解锁文件已忽略/);
+  assert.match(html, /\.gift 礼物解锁文件已忽略/);
   assert.match(html, /characters\/coat\.gift/);
   // Informational only: execution stays available and no extra checkbox appears.
   assert.match(html, /确认执行写入/);

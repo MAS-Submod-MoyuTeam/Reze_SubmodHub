@@ -41,3 +41,25 @@
 - 平台边界：Android 路径逻辑由测试覆盖，但 Android 真机读文件权限与 MAS 实际目录尚未验收。
 
 **Risks / Stop:** Ren'Py pickle opcode 或对象状态变化时安全失败并隐藏徽标，不降级执行存档代码；多实例共用系统 Ren'Py 用户存档属于当前 MAS 常见布局，Android 只读固定 MAS saves 路径。不得将解析失败映射为“未赠送”。
+
+## 复审后续修复（2026-11-08）
+
+1. **礼物解锁文件：缓存报告仍会下发**
+   - `SpriteIndexVersion` 提为 3（`packagezip.SpriteIndexVersion`），扫描与刷新守卫共用同一常量，旧缓存报告会被重扫而不是原样下发。
+   - `BuildSpriteSelection` 自身再过滤一次 `characters/*.gift`：选定套装下载路径不会重扫，这是 token 到达磁盘前的最后一道拦截。
+   - 回归：`TestScanSpriteArchiveStampsCurrentIndexVersion`、`TestBuildSpriteSelectionDropsGiftTokensFromStaleReport`。
+
+2. **礼物名比较改为大小写不敏感**
+   - 同一个 token 既出现在 JSON 字段里，也以文件名形式出现；作者只改大小写时不应丢徽标。真正不同的礼物名仍然不借状态。
+   - 回归：`TestSpriteGiftStatus` 增加大小写与“不同礼物名”两组断言。
+
+3. **删除确认对话框的键盘与失败反馈**
+   - Esc 关闭、打开时聚焦“取消”、点遮罩关闭；删除进行中不允许关闭。
+   - `onDeleteSpritepack` 不再吞掉错误而是向上抛，失败时对话框保持打开并就地显示原因——失败 toast 的层级在对话框之下，用户看不见。
+   - 回归：InstalledView 的 Esc 关闭与失败保留原因两条 TSX 用例。
+
+4. **可诊断性**
+   - `readMASPersistent` 失败原因写入日志，而不是完全静默；界面仍然不显示徽标。
+   - 预览里被忽略礼物的文案改为“N 个 .gift 礼物解锁文件已忽略”：列出的是归档路径，`gifts/x.gift` 是同一 token 的旧写法，原文案“characters 目录下的”与实际列出的路径不符。
+
+**平台边界：** `spriteSavePath()` 只覆盖 Windows `%APPDATA%\RenPy\Monika After Story\persistent` 与 Android `saves/persistent`；其余平台返回空路径，表现为不出徽标。
