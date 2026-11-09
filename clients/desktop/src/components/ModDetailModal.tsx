@@ -16,6 +16,8 @@ import type { LoadingStatus } from '../installedLoading';
 import { sortVersionHistory } from '../versionHistory';
 import { copyToClipboard } from '../clipboard';
 import { ModShareLink } from '../wails';
+import { m } from './Motion';
+import { overlayVariants } from '../../../../ui/motion-presets';
 
 interface Props {
   mod: ModSummary | null;
@@ -266,7 +268,7 @@ export const ModDetailModal: React.FC<Props> = ({
     (installationSnapshot?.versionId && manifestVersionId && installationSnapshot.versionId !== manifestVersionId)
   );
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-2 sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+  return <m.div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-2 sm:p-4" variants={overlayVariants} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section role="dialog" aria-modal="true" aria-label={`${mod.title} 详情`} className="flex max-h-[92dvh] sm:max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-2xl">
       <header className="flex shrink-0 items-start justify-between gap-3 border-b border-neutral-800 px-4 sm:px-5 py-3 sm:py-4">
         <div className="min-w-0 flex-1"><div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-neutral-400"><span className="font-semibold text-emerald-400">{mod.category === 'spritepack' ? 'Spritepack 服饰配件' : 'Submod 功能模组'}</span><span>·</span><span className="truncate max-w-[160px]">作者: {mod.author.display_name}</span>{mod.mas_version_range && <><span>·</span><span>兼容 MAS {mod.mas_version_range}</span></>}</div><h2 className="text-sm sm:text-base font-bold break-words">{mod.title}</h2></div>
@@ -558,5 +560,5 @@ export const ModDetailModal: React.FC<Props> = ({
         )
       )}
     </section>
-  </div>;
+  </m.div>;
 };

@@ -39,13 +39,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal, onOpenClientDo
     : '普通用户';
 
   return (
-    <header className="sticky top-0 z-40 bg-white border-b border-neutral-200">
+    <header className="sticky top-0 z-40 bg-white border-b border-neutral-200 pt-[env(safe-area-inset-top,0px)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
         {/* Zone 1: Single text element wordmark */}
         <div className="flex items-baseline gap-2 shrink-0">
           <button
             onClick={() => setActiveTab('catalog')}
-            className="text-lg font-semibold tracking-tight text-neutral-950 hover:text-emerald-700 transition-colors shrink-0"
+            className="text-lg font-semibold tracking-tight text-neutral-950 hover:text-emerald-700 active:text-emerald-800 transition-colors shrink-0 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             RezeHub
           </button>
@@ -65,10 +65,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal, onOpenClientDo
               <button
                 key={link.id}
                 onClick={() => setActiveTab(link.id)}
-                className={`relative py-1 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
+                aria-current={isActive ? 'page' : undefined}
+                className={`relative py-1 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${
                   isActive
                     ? 'text-neutral-900 font-semibold'
-                    : 'text-neutral-600 hover:text-neutral-900'
+                    : 'text-neutral-600 hover:text-neutral-900 active:text-neutral-950'
                 }`}
               >
                 {link.label}
@@ -91,7 +92,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal, onOpenClientDo
             onClick={onOpenClientDownload}
             aria-label="下载客户端"
             title="下载 Windows / Android 客户端"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-800 bg-white border border-neutral-200 hover:bg-neutral-50 rounded transition-colors whitespace-nowrap"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-800 bg-white border border-neutral-200 hover:bg-neutral-50 hover:border-neutral-300 active:bg-neutral-100 rounded transition-colors whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <Download className="w-3.5 h-3.5 text-neutral-500" />
             {/* 窄屏用短标签，避免只剩一个无人认识的图标 */}
@@ -103,7 +104,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal, onOpenClientDo
           {currentUser ? (
             <button
               onClick={onOpenLoginModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-800 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded transition-colors whitespace-nowrap"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-800 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 hover:border-neutral-300 active:bg-neutral-200 rounded transition-colors whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
             >
               <UserIcon className="w-3.5 h-3.5 text-neutral-500" />
               <span className="truncate max-w-[90px]">{currentUser.username}</span>
@@ -111,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal, onOpenClientDo
           ) : (
             <button
               onClick={onOpenLoginModal}
-              className="px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded transition-colors whitespace-nowrap"
+              className="px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 active:bg-neutral-950 rounded transition-colors whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
             >
               登录
             </button>
@@ -125,10 +126,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal, onOpenClientDo
           <button
             key={link.id}
             onClick={() => setActiveTab(link.id)}
-            className={`px-2.5 py-1 rounded whitespace-nowrap ${
+            aria-current={activeTab === link.id ? 'page' : undefined}
+            className={`px-2.5 py-1 rounded whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${
               activeTab === link.id
                 ? 'bg-neutral-900 text-white font-medium'
-                : 'text-neutral-600 hover:bg-neutral-100'
+                : 'text-neutral-600 hover:bg-neutral-100 active:bg-neutral-200'
             }`}
           >
             {link.label}

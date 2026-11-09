@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { X, Lock, Shield, LogOut } from 'lucide-react';
+import { AnimatePresence, m } from './Motion';
+import { overlayVariants, panelVariants } from '../../../ui/motion-presets';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -13,9 +15,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
   const [flarumUsername, setFlarumUsername] = useState('');
   const [flarumPassword, setFlarumPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  if (!isOpen) return null;
-
   const handleFlarumLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!flarumUsername.trim()) return;
@@ -26,8 +25,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-      <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95">
+    <AnimatePresence>
+      {isOpen && (
+        <m.div
+          variants={overlayVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+        >
+          <m.div
+            variants={panelVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-md w-full overflow-hidden"
+          >
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -38,7 +51,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
           </div>
           <button
             onClick={onClose}
-            className="text-neutral-400 hover:text-neutral-600 p-1 rounded"
+            className="text-neutral-400 hover:text-neutral-600 p-1 rounded active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <X className="w-4 h-4" />
           </button>
@@ -67,7 +80,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                     logout();
                     onClose();
                   }}
-                  className="px-3 py-1.5 text-xs text-rose-700 hover:bg-rose-50 rounded border border-rose-200 flex items-center gap-1.5"
+                  className="px-3 py-1.5 text-xs text-rose-700 hover:bg-rose-50 rounded border border-rose-200 flex items-center gap-1.5 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   退出当前会话
@@ -112,7 +125,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full py-2 px-3 rounded bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-medium transition-colors"
+                  className="w-full py-2 px-3 rounded bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-medium transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   {isSubmitting ? '正在验证凭据...' : '登录'}
                 </button>
@@ -127,7 +140,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
             </div>
           )}
         </div>
-      </div>
-    </div>
+          </m.div>
+        </m.div>
+      )}
+    </AnimatePresence>
   );
 };

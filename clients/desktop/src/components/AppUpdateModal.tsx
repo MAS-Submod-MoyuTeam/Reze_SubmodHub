@@ -10,6 +10,8 @@ import {
   X,
 } from 'lucide-react';
 import { AppUpdateState } from '../types/client';
+import { m } from './Motion';
+import { overlayVariants } from '../../../../ui/motion-presets';
 
 interface AppUpdateModalProps {
   isOpen: boolean;
@@ -56,7 +58,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
         : undefined;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <m.div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4" variants={overlayVariants}>
       <div className="bg-neutral-900 border border-neutral-800 rounded-xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/40">
@@ -237,6 +239,6 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </m.div>
   );
 };

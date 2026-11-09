@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, m } from './Motion';
+import { drawerVariants, overlayVariants } from '../../../ui/motion-presets';
 import { Check, ChevronDown, ChevronRight, Minus, X } from 'lucide-react';
 import {
   activeTagFilterCount,
@@ -63,8 +65,6 @@ export const TagFilterDrawer: React.FC<Props> = ({
     closeRef.current?.focus?.();
   }, [open]);
 
-  if (!open) return null;
-
   const tagButton = (entry: TagFilterEntry, main: boolean, stale: boolean) => {
     const state = states[entry.name];
     const stateText = state === 'include' ? '包含' : state === 'exclude' ? '排除' : '';
@@ -116,22 +116,38 @@ export const TagFilterDrawer: React.FC<Props> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end"
-      role="dialog"
-      aria-modal="true"
-      aria-label="标签筛选"
-      data-testid="tag-filter-drawer"
-    >
+    <AnimatePresence>
+      {open && (
+        <m.div
+          className="fixed inset-0 z-50 flex justify-end"
+          role="dialog"
+          aria-modal="true"
+          aria-label="标签筛选"
+          data-testid="tag-filter-drawer"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 1 }}
+        >
       {/* 遮罩本身可点关闭；用 button 而不是 div，键盘用户也有明确的退出动作。 */}
-      <button
-        type="button"
-        aria-label="关闭标签筛选"
-        tabIndex={-1}
-        onClick={onClose}
-        className="absolute inset-0 bg-black/40 cursor-default"
-      />
-      <aside className="relative h-full w-full max-w-sm sm:max-w-md border-l border-neutral-200 bg-white shadow-xl flex flex-col">
+          {/* 遮罩本身可点关闭；用 button 而不是 div，键盘用户也有明确的退出动作。 */}
+          <m.button
+            type="button"
+            aria-label="关闭标签筛选"
+            tabIndex={-1}
+            onClick={onClose}
+            variants={overlayVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="absolute inset-0 bg-black/40 cursor-default active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+          />
+          <m.aside
+            variants={drawerVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="relative h-full w-full max-w-sm sm:max-w-md border-l border-neutral-200 bg-white shadow-xl flex flex-col pt-[env(safe-area-inset-top,0px)] pr-[env(safe-area-inset-right,0px)] pb-[env(safe-area-inset-bottom,0px)]"
+          >
         <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-neutral-200">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-neutral-900">标签筛选</h2>
@@ -144,13 +160,13 @@ export const TagFilterDrawer: React.FC<Props> = ({
             type="button"
             onClick={onClose}
             aria-label="关闭标签筛选"
-            className="shrink-0 w-7 h-7 rounded-md flex items-center justify-center text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 transition-colors"
+            className="shrink-0 w-7 h-7 rounded-md flex items-center justify-center text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          <div className="flex-1 overflow-y-auto overscroll-y-contain px-4 py-3 space-y-3">
           {active > 0 ? (
             <p className="text-[11px] text-neutral-500" data-testid="tag-filter-summary">
               {describeTagFilter(states)}
@@ -185,7 +201,7 @@ export const TagFilterDrawer: React.FC<Props> = ({
                       aria-expanded={expanded}
                       aria-label={`${expanded ? '收起' : '展开'} ${row.main.name} 的子标签（${row.children.length} 个）`}
                       data-testid={`tag-filter-toggle-${row.main.name}`}
-                      className="mt-1 p-0.5 rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 cursor-pointer"
+                      className="mt-1 p-0.5 rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                     >
                       {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                     </button>
@@ -226,12 +242,14 @@ export const TagFilterDrawer: React.FC<Props> = ({
             type="button"
             onClick={onClear}
             disabled={active === 0}
-            className="px-2.5 py-1 text-[11px] font-medium rounded border border-neutral-300 text-neutral-600 hover:text-neutral-900 hover:border-neutral-400 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+            className="px-2.5 py-1 text-[11px] font-medium rounded border border-neutral-300 text-neutral-600 hover:text-neutral-900 hover:border-neutral-400 transition-colors disabled:cursor-not-allowed disabled:opacity-40 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             清除全部
           </button>
         </div>
-      </aside>
-    </div>
+          </m.aside>
+        </m.div>
+      )}
+    </AnimatePresence>
   );
 };

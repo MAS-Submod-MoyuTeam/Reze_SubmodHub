@@ -152,7 +152,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
           {onViewInOperations && (
             <button
               onClick={onViewInOperations}
-              className="text-neutral-400 hover:text-neutral-200 transition-colors flex items-center gap-1 font-sans text-xs underline underline-offset-2"
+              className="text-neutral-400 hover:text-neutral-200 transition-colors flex items-center gap-1 font-sans text-xs underline underline-offset-2 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               title="前往本地操作日志查看详情与快照"
             >
               <span>查看日志</span>
@@ -164,7 +164,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
           {isNeedsManual && onRecover && op.can_rollback && (
             <button
               onClick={() => onRecover(session.operation_id)}
-              className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 font-sans font-semibold transition-colors flex items-center gap-1 text-[11px]"
+              className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 font-sans font-semibold transition-colors flex items-center gap-1 text-[11px] active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               title="重新校验并安全回滚"
             >
               <RotateCcw className="w-3 h-3" />
@@ -176,7 +176,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
           {isFinished && onDismiss && (
             <button
               onClick={onDismiss}
-              className="text-neutral-500 hover:text-neutral-300 transition-colors p-0.5 rounded"
+              className="text-neutral-500 hover:text-neutral-300 transition-colors p-0.5 rounded active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               title="关闭进度横条"
             >
               <X className="w-3.5 h-3.5" />

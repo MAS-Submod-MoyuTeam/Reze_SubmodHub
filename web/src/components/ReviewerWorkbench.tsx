@@ -11,6 +11,8 @@ import { formatBytes } from './formatBytes';
 import { shortHash } from './clientDownload';
 import { reviewArchiveErrorText, triggerArchiveSave } from './reviewArchive';
 import { fetchReviewArchive, getReviewSubmission, listReviewSubmissions, listReviewAudit, platformScanReportId } from '../../../ui/submission-api';
+import { AnimatePresence, m } from './Motion';
+import { overlayVariants, panelVariants } from '../../../ui/motion-presets';
 import {
   ShieldAlert,
   CheckCircle2,
@@ -201,16 +203,20 @@ export const ReviewerWorkbench: React.FC = () => {
           <button
             onClick={() => setActiveReviewTab('queue')}
             className={`px-3 py-1.5 rounded transition-colors ${
-              activeReviewTab === 'queue' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
-            }`}
+              activeReviewTab === 'queue'
+                ? 'bg-white text-neutral-900 shadow-xs'
+                : 'text-neutral-600 hover:bg-white/60 hover:text-neutral-900'
+            } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
           >
             待审队列 ({queue?.pending_count ?? '…'})
           </button>
           <button
             onClick={() => setActiveReviewTab('audit')}
             className={`px-3 py-1.5 rounded transition-colors ${
-              activeReviewTab === 'audit' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
-            }`}
+              activeReviewTab === 'audit'
+                ? 'bg-white text-neutral-900 shadow-xs'
+                : 'text-neutral-600 hover:bg-white/60 hover:text-neutral-900'
+            } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
           >
             审核与下架审计流水{audit ? ` (${audit.total})` : ''}
           </button>
@@ -235,7 +241,7 @@ export const ReviewerWorkbench: React.FC = () => {
           </div>
 
           {auditRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">正在加载审计流水…</p>}
-          {auditRequest.error && <p role="alert" className="text-xs text-rose-700">审计流水加载失败：{auditRequest.error} <button type="button" onClick={auditRequest.reload} className="underline">重试</button></p>}
+          {auditRequest.error && <p role="alert" className="text-xs text-rose-700">审计流水加载失败：{auditRequest.error} <button type="button" onClick={auditRequest.reload} className="rounded px-1 py-0.5 transition-colors underline hover:bg-neutral-100 active:bg-neutral-200 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">重试</button></p>}
           <div className="divide-y divide-neutral-100">
             {audit?.items.map((log) => {
               const actionColors: Record<string, string> = {
@@ -308,7 +314,7 @@ export const ReviewerWorkbench: React.FC = () => {
                     statusFilter === tab.id
                       ? 'bg-neutral-900 text-white font-medium'
                       : 'text-neutral-500 hover:bg-neutral-100'
-                  }`}
+                  } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
                 >
                   {tab.label}
                 </button>
@@ -316,7 +322,7 @@ export const ReviewerWorkbench: React.FC = () => {
             </div>
 
             {queueRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">正在加载提交队列…</p>}
-            {queueRequest.error && <p role="alert" className="text-xs text-rose-700">提交队列加载失败：{queueRequest.error} <button type="button" onClick={queueRequest.reload} className="underline">重试</button></p>}
+            {queueRequest.error && <p role="alert" className="text-xs text-rose-700">提交队列加载失败：{queueRequest.error} <button type="button" onClick={queueRequest.reload} className="rounded px-1 py-0.5 transition-colors underline hover:bg-neutral-100 active:bg-neutral-200 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">重试</button></p>}
             {/* Submissions items */}
             <div className="space-y-2">
               {queue?.items.map((sub) => {
@@ -330,7 +336,7 @@ export const ReviewerWorkbench: React.FC = () => {
                       isSelected
                         ? 'border-neutral-900 bg-neutral-50/80 font-medium'
                         : 'border-neutral-200 hover:border-neutral-300 bg-white'
-                    }`}
+                    } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-neutral-900 truncate max-w-[160px]">
@@ -408,14 +414,14 @@ export const ReviewerWorkbench: React.FC = () => {
                       <>
                         <button
                           onClick={() => handleOpenDecisionModal('reject')}
-                          className="px-3 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 flex items-center gap-1.5 transition-colors"
+                          className="px-3 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 flex items-center gap-1.5 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                         >
                           <XCircle className="w-3.5 h-3.5" />
                           驳回申请 (Reject)
                         </button>
                         <button
                           onClick={() => handleOpenDecisionModal('approve')}
-                          className="px-3.5 py-1.5 text-xs font-medium text-white bg-sky-700 hover:bg-sky-800 rounded flex items-center gap-1.5 transition-colors shadow-xs"
+                          className="px-3.5 py-1.5 text-xs font-medium text-white bg-sky-700 hover:bg-sky-800 rounded flex items-center gap-1.5 transition-colors shadow-xs active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           批准并发布
@@ -426,14 +432,14 @@ export const ReviewerWorkbench: React.FC = () => {
                     {/* Legacy approvals created before automatic publication can still be released. */}
                     {activeSubmission.state === 'approved' && reviewDetail && (
                       <div className="flex items-center gap-2">
-                        <button onClick={handleConfirmPublish} disabled={actionPending} className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded flex items-center gap-1.5 transition-colors shadow-xs"><Sparkles className="w-3.5 h-3.5" />发布不可变版本</button>
+                        <button onClick={handleConfirmPublish} disabled={actionPending} className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded flex items-center gap-1.5 transition-colors shadow-xs active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"><Sparkles className="w-3.5 h-3.5" />发布不可变版本</button>
                       </div>
                     )}
                   </div>
                 </div>
 
                 {detailRequest.loading && <p role="status" className="text-xs text-neutral-500">正在加载提交详情…</p>}
-                {detailRequest.error && <p role="alert" className="text-xs text-rose-700">提交详情加载失败：{detailRequest.error} <button type="button" onClick={detailRequest.reload} className="underline">重试</button></p>}
+                {detailRequest.error && <p role="alert" className="text-xs text-rose-700">提交详情加载失败：{detailRequest.error} <button type="button" onClick={detailRequest.reload} className="rounded px-1 py-0.5 transition-colors underline hover:bg-neutral-100 active:bg-neutral-200 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">重试</button></p>}
                 {/* Independent Audit & Immutable Note Banner */}
                 {reviewDetail && (
                   <div className="border border-sky-200 bg-sky-50/50 rounded-lg p-4 space-y-3 text-xs">
@@ -451,7 +457,7 @@ export const ReviewerWorkbench: React.FC = () => {
                               type="button"
                               aria-pressed={chosenPlatform === asset.platform}
                               onClick={() => setReportPlatform(asset.platform)}
-                              className={`px-2 py-1 rounded border text-[11px] font-medium transition-colors ${chosenPlatform === asset.platform ? 'bg-sky-900 text-white border-sky-900' : 'bg-white text-sky-900 border-sky-200 hover:border-sky-400'}`}
+                              className={`px-2 py-1 rounded border text-[11px] font-medium transition-colors ${chosenPlatform === asset.platform ? 'bg-sky-900 text-white border-sky-900' : 'bg-white text-sky-900 border-sky-200 hover:border-sky-400'} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
                             >
                               {assetPlatformLabel(asset.platform)}
                             </button>
@@ -482,7 +488,7 @@ export const ReviewerWorkbench: React.FC = () => {
                         type="button"
                         onClick={handleDownloadArchive}
                         disabled={!archiveReady || archiveDownloading}
-                        className="px-2.5 py-1 rounded border border-sky-300 bg-white text-sky-900 text-[11px] font-medium hover:border-sky-500 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-400 flex items-center gap-1.5 transition-colors"
+                        className="px-2.5 py-1 rounded border border-sky-300 bg-white text-sky-900 text-[11px] font-medium hover:border-sky-500 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-400 flex items-center gap-1.5 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                       >
                         <Download className="w-3.5 h-3.5" />
                         {archiveDownloading
@@ -559,7 +565,7 @@ export const ReviewerWorkbench: React.FC = () => {
                       {/* Registrations & Giftname Conflict Check: the verdict stays in the
                           summary because folding it would hide whether a human is needed. */}
                       <details className="group rounded border border-neutral-200 bg-neutral-50/50">
-                        <summary className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 cursor-pointer select-none list-none hover:bg-neutral-100/60 rounded [&::-webkit-details-marker]:hidden">
+                        <summary className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 cursor-pointer select-none list-none hover:bg-neutral-100/60 rounded [&::-webkit-details-marker]:hidden active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">
                           <span className="font-semibold text-neutral-900 flex items-center gap-1.5">
                             <Sparkles className="w-4 h-4 text-neutral-600" />
                             Sprite 礼物名与注册冲突校验
@@ -599,7 +605,7 @@ export const ReviewerWorkbench: React.FC = () => {
                         whether anything needs a human, and the summary keeps the counts
                         that decide whether opening it is worth the reviewer's time. */}
                     <details className="group rounded border border-neutral-200 bg-white overflow-hidden">
-                      <summary className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 cursor-pointer select-none list-none hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+                      <summary className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 cursor-pointer select-none list-none hover:bg-neutral-50 [&::-webkit-details-marker]:hidden active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">
                         <span className="text-xs font-semibold text-neutral-800 flex items-center gap-1.5">
                           <FolderTree className="w-4 h-4 text-neutral-600" />
                           完整包文件树与校验和 (Package File Tree)
@@ -685,16 +691,30 @@ export const ReviewerWorkbench: React.FC = () => {
       )}
 
       {/* Decision Input Modal (Approve or Reject) */}
-      {decisionModalMode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-          <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95">
+      <AnimatePresence>
+        {decisionModalMode && (
+          <m.div
+            variants={overlayVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+          >
+            <m.div
+                variants={panelVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-md w-full overflow-hidden"
+              >
+
             <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-neutral-900">
                 {decisionModalMode === 'approve' ? '确认通过审核 (Approve)' : '驳回模组版本申请 (Reject)'}
               </h3>
               <button
                 disabled={actionPending} onClick={() => setDecisionModalMode(null)}
-                className="text-neutral-400 hover:text-neutral-600 text-xs"
+                className="text-neutral-400 hover:text-neutral-600 text-xs active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
                 取消
               </button>
@@ -729,7 +749,7 @@ export const ReviewerWorkbench: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setDecisionModalMode(null)}
-                  className="px-3 py-1.5 text-neutral-600 hover:text-neutral-900"
+                  className="px-3 py-1.5 text-neutral-600 hover:text-neutral-900 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   取消
                 </button>
@@ -739,15 +759,16 @@ export const ReviewerWorkbench: React.FC = () => {
                     decisionModalMode === 'approve'
                       ? 'bg-sky-700 hover:bg-sky-800'
                       : 'bg-rose-700 hover:bg-rose-800'
-                  }`}
+                  } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
                 >
                   确认{decisionModalMode === 'approve' ? '批准' : '驳回并留痕'}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+          </m.div>
+          </m.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

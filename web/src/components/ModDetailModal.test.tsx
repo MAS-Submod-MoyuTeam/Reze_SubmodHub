@@ -9,6 +9,13 @@ import { ModDetailModal } from './ModDetailModal';
 import { CatalogView } from './CatalogView';
 import { ModSummary } from '../types/submodhub';
 import { createMockContext, sampleMod, sampleVersion } from '../test/appContextMock';
+import { MotionGlobalConfig } from 'motion/react';
+
+// 这些用例跑在手写的 MockElement 假 DOM 上，没有 `Element.animate`。
+// motion 会在 effect 里调用 WAAPI，抛错会打断 React 的更新，
+// 让「请求失败后按钮恢复可用」这类断言看到过期状态。
+// 关掉动画后 motion 只做状态管理，测的仍是原本要测的业务行为。
+MotionGlobalConfig.skipAnimations = true;
 
 // ---------------- DOM Helper for interactive tests ----------------
 function setupMockDom() {

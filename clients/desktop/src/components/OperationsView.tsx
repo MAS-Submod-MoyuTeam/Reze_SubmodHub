@@ -128,7 +128,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                             {op.can_rollback ? (
                               <button
                                 onClick={() => onRecoverOperation(op.operation_id)}
-                                className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
+                                className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                                 title="重新校验磁盘冲突；若人工处理已恢复则安全回滚，未解决则由后端防护阻断"
                               >
                                 <RotateCcw className="w-3 h-3" />
@@ -147,7 +147,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                           (op.can_rollback || op.state === 'recoverable') && (
                             <button
                               onClick={() => onRecoverOperation(op.operation_id)}
-                              className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
+                              className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                               title="安全回滚未完成事务到操作前状态"
                             >
                               <RotateCcw className="w-3 h-3" />
@@ -158,7 +158,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
 
                         <button
                           onClick={() => setLogModalOp(op)}
-                          className="px-2 py-1 text-xs text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded transition-colors cursor-pointer"
+                          className="px-2 py-1 text-xs text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                         >
                           详情
                         </button>
@@ -227,7 +227,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                       {op.can_rollback ? (
                         <button
                           onClick={() => onRecoverOperation(op.operation_id)}
-                          className="px-3 py-1.5 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
+                          className="px-3 py-1.5 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                           title="重新校验磁盘冲突；若人工处理已恢复则安全回滚，未解决则由后端防护阻断"
                         >
                           <RotateCcw className="w-3 h-3" />
@@ -246,7 +246,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                     (op.can_rollback || op.state === 'recoverable') && (
                       <button
                         onClick={() => onRecoverOperation(op.operation_id)}
-                        className="px-3 py-1.5 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
+                        className="px-3 py-1.5 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                         title="安全回滚未完成事务到操作前状态"
                       >
                         <RotateCcw className="w-3 h-3" />
@@ -257,7 +257,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
 
                   <button
                     onClick={() => setLogModalOp(op)}
-                    className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer"
+                    className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                   >
                     详情
                   </button>

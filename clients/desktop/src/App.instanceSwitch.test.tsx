@@ -27,7 +27,12 @@ const bundle = await build({
     builder.onResolve({ filter: /\/components\/InstanceSwitchOverlay$/ }, () => ({
       path: path.join(desktop, 'src', 'components', 'InstanceSwitchOverlay.tsx'),
     }));
-    builder.onResolve({ filter: /\/components\// }, (args) => ({ path: args.path, namespace: 'views' }));
+    // Motion.tsx 不能被替身掉：App 的 toast 用它做退场动画，替身会让
+    // `AnimatePresence` / `m` 变成未导出符号，整个 bundle 编译失败。
+    // 其余视图组件仍然换成只记录 props 的空实现。
+    builder.onResolve({ filter: /\/components\// }, (args) =>
+      // Go 正则不支持负向先行断言，这里用回调放行 Motion.tsx。
+      /\/Motion$/.test(args.path) ? undefined : { path: args.path, namespace: 'views' });
     builder.onResolve({ filter: /catalog-api$/ }, () => ({ path: 'catalog', namespace: 'fixture' }));
     builder.onLoad({ filter: /.*/, namespace: 'fixture' }, (args) => ({ contents: args.path === 'native'
       ? nativeNames.map((name) => `export const ${name} = (...args) => globalThis.__switchTest.native('${name}', ...args);`).join('\n')

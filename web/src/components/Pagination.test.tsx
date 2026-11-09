@@ -15,3 +15,14 @@ test('controls expose current page, bounded page buttons and disabled boundaries
   assert.equal((last.match(/aria-label="第 \d+ 页"/g) || []).length, 5);
   assert.equal((last.match(/disabled=""/g) || []).length, 2);
 });
+
+test('分页按钮在指针设备上有 hover、按下与键盘焦点反馈', () => {
+  const markup = renderToStaticMarkup(
+    <Pagination label="提交队列" total={230} page={3} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+  );
+  // 每个按钮都从同一个常量取样式，所以只要断言一次出现即可；
+  // 这三个前缀分别对应「鼠标悬停 / 触摸按下 / 键盘 Tab」三种输入方式。
+  assert.match(markup, /hover:bg-neutral-100/);
+  assert.match(markup, /active:bg-neutral-200/);
+  assert.match(markup, /focus-visible:outline-2/);
+});

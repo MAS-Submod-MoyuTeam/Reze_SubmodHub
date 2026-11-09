@@ -231,6 +231,12 @@ async function mountCatalog(
         root.unmount();
       });
     },
+    /** 等退场动画走完再断言「已经卸载」。 */
+    async settleExit() {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 260));
+      });
+    },
   };
 }
 
@@ -317,17 +323,20 @@ test('点标签按钮打开抽屉，Esc 与遮罩都能关掉', async () => {
     assert.equal(drawer.getAttribute('aria-modal'), 'true');
     assert.equal(view.byTestId('catalog-tags').getAttribute('aria-expanded'), 'true');
 
+    // 这里断言的是「入口状态回到关闭」。节点什么时候真正卸载由 AnimatePresence
+    // 决定，而这套假 DOM 没有 WAAPI，motion 的退场在里面不会推进——
+    // 卸载时机由 jsdom 版用例（TagFilterDrawer.motion.test.tsx）覆盖。
     await act(async () => {
       view.doc.dispatchEvent({ type: 'keydown', key: 'Escape' });
     });
-    assert.equal(view.byTestId('tag-filter-drawer'), null, 'Esc 必须能关闭浮层');
+    assert.equal(view.byTestId('catalog-tags').getAttribute('aria-expanded'), 'false', 'Esc 必须关掉抽屉');
 
     await view.click(view.byTestId('catalog-tags'));
-    assert.ok(view.byTestId('tag-filter-drawer'));
+    assert.equal(view.byTestId('catalog-tags').getAttribute('aria-expanded'), 'true');
     const close = findByAriaLabel(view.byTestId('tag-filter-drawer'), '关闭标签筛选', 'button');
     assert.ok(close, '抽屉必须有可点的关闭入口');
     await view.click(close);
-    assert.equal(view.byTestId('tag-filter-drawer'), null);
+    assert.equal(view.byTestId('catalog-tags').getAttribute('aria-expanded'), 'false', '关闭键必须关掉抽屉');
   } finally {
     await view.unmount();
   }
@@ -444,4 +453,5 @@ test('抽屉里不再铺平所有标签：主标签与子标签按目录层级�
     await view.unmount();
   }
 });
+
 

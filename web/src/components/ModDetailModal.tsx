@@ -12,6 +12,8 @@ import { formatBytes } from './formatBytes';
 import { modShareURL } from '../../../ui/mod-link';
 import { copyToClipboard } from '../../../ui/clipboard';
 import { openInClient } from '../clientDeepLink';
+import { AnimatePresence, m } from './Motion';
+import { overlayVariants, panelVariants } from '../../../ui/motion-presets';
 import {
   X,
   Download,
@@ -162,8 +164,18 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
     if (catalogLoading) return null;
     const catalogFailed = Boolean(catalogError);
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs">
-        <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-md w-full p-6 space-y-3">
+      <m.div
+        variants={overlayVariants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs">
+        <m.div
+          variants={panelVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-md w-full p-6 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <h2 className="text-base font-bold text-neutral-900">
               {catalogFailed ? '目录没能加载出来' : '这个模组不在当前目录里'}
@@ -186,8 +198,8 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
           >
             返回目录
           </button>
-        </div>
-      </div>
+        </m.div>
+      </m.div>
     );
   }
 
@@ -280,8 +292,24 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
   };
 
   return (
-    <div ref={handleModalRootRef} className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs">
-      <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
+    <m.div
+      variants={overlayVariants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs">
+      {/*
+        承载挂载状态的 ref 挂在 motion 的兄弟节点上，而不是 `m.div` 本身：
+        motion 对 ref 的转发在手写假 DOM（测试环境）里拿不到真实节点，
+        `isMountedRef` 会一直为 false，导致请求失败后按钮停在禁用态。
+      */}
+      <div ref={handleModalRootRef} className="contents">
+      <m.div
+        variants={panelVariants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
         {/* Header */}
         <div className="px-6 py-4 border-b border-neutral-200 flex items-center justify-between shrink-0 bg-neutral-50/50">
           <div>
@@ -677,7 +705,8 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
             </button>
           </div>
         </div>
+      </m.div>
       </div>
-    </div>
+    </m.div>
   );
 };

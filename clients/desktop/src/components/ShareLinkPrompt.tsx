@@ -1,6 +1,8 @@
 import React from 'react';
 import { Link2, X } from 'lucide-react';
 
+import { m } from './Motion';
+import { toastVariants } from '../../../../ui/motion-presets';
 interface ShareLinkPromptProps {
   /** 提示里显示的名称（通常是模组标题，查不到才是 mod id）。 */
   label: string;
@@ -16,9 +18,13 @@ interface ShareLinkPromptProps {
  * 与 toast 同一水平区域，但左对齐以免和 toast 抢位置。
  */
 export const ShareLinkPrompt: React.FC<ShareLinkPromptProps> = ({ label, onOpen, onDismiss }) => (
-  <div
+  <m.div
     role="status"
-    className="absolute bottom-4 left-4 right-4 sm:right-auto sm:max-w-md z-50 px-4 py-3 rounded-lg bg-neutral-900 border border-sky-500/60 shadow-xl text-xs text-neutral-100 flex items-start gap-2.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
+    variants={toastVariants}
+    initial="initial"
+    animate="animate"
+    exit="exit"
+    className="absolute bottom-4 left-4 right-4 sm:right-auto sm:max-w-md z-50 px-4 py-3 rounded-lg bg-neutral-900 border border-sky-500/60 shadow-xl text-xs text-neutral-100 flex items-start gap-2.5"
   >
     <Link2 className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
     <div className="min-w-0 flex-1 space-y-2">
@@ -29,14 +35,14 @@ export const ShareLinkPrompt: React.FC<ShareLinkPromptProps> = ({ label, onOpen,
         <button
           type="button"
           onClick={onOpen}
-          className="px-3 py-1.5 rounded bg-sky-500 hover:bg-sky-400 text-neutral-950 font-medium transition-colors"
+          className="px-3 py-1.5 rounded bg-sky-500 hover:bg-sky-400 text-neutral-950 font-medium transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
         >
           打开
         </button>
         <button
           type="button"
           onClick={onDismiss}
-          className="px-3 py-1.5 rounded border border-neutral-700 hover:border-neutral-500 text-neutral-300 transition-colors"
+          className="px-3 py-1.5 rounded border border-neutral-700 hover:border-neutral-500 text-neutral-300 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
         >
           忽略
         </button>
@@ -46,9 +52,9 @@ export const ShareLinkPrompt: React.FC<ShareLinkPromptProps> = ({ label, onOpen,
       type="button"
       onClick={onDismiss}
       aria-label="忽略这条提示"
-      className="text-neutral-500 hover:text-neutral-300 p-0.5 shrink-0"
+      className="text-neutral-500 hover:text-neutral-300 p-0.5 shrink-0 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
     >
       <X className="w-3.5 h-3.5" />
     </button>
-  </div>
+  </m.div>
 );

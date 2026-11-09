@@ -19,7 +19,7 @@ export interface WindowPagerProps {
 export function WindowPager({ label, total, start, shown, pageSize, onPrevious, onNext, onPageSizeChange }: WindowPagerProps) {
   const hasPrevious = start > 0;
   const hasNext = start + shown < total;
-  const buttonClass = 'min-w-8 min-h-8 px-2 rounded border border-neutral-200 text-neutral-600 hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600';
+  const buttonClass = 'min-w-8 min-h-8 px-2 rounded border border-neutral-200 text-neutral-600 transition-colors hover:bg-neutral-100 hover:border-neutral-300 active:bg-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600';
 
   return (
     <nav aria-label={`${label}窗口翻页`} className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-3 text-xs">

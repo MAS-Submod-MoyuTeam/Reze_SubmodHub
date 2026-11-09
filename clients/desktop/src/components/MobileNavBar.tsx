@@ -55,9 +55,10 @@ export const MobileNavBar: React.FC<MobileNavBarProps> = ({
               key={tab.id}
               type="button"
               onClick={() => onTabChange(tab.id)}
+              aria-current={isActive ? 'page' : undefined}
               className={`flex flex-col items-center justify-center gap-1 relative transition-colors ${
-                isActive ? 'text-primary font-medium' : 'text-zinc-400 hover:text-zinc-200'
-              }`}
+                isActive ? 'text-primary font-medium' : 'text-zinc-400 hover:text-zinc-200 active:text-zinc-100 active:bg-neutral-800/40'
+              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
               <div className="relative">
                 {tab.icon}

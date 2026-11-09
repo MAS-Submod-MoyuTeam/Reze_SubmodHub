@@ -14,6 +14,8 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { Installation } from '../types/client';
+import { m } from './Motion';
+import { overlayVariants } from '../../../../ui/motion-presets';
 
 export interface AndroidDiagnosticInfo {
   summary: string;
@@ -304,7 +306,7 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
 
       {/* Add Custom Instance Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs select-none">
+        <m.div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs select-none" variants={overlayVariants}>
           <div className="bg-neutral-900 border border-neutral-700 rounded-xl w-full max-w-lg max-h-[92dvh] sm:max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
             <div className="p-3 sm:p-4 border-b border-neutral-800 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-neutral-100 text-sm">手选并验证 MAS 游戏目录</h3>
@@ -379,7 +381,7 @@ export const InstancesView: React.FC<InstancesViewProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </m.div>
       )}
     </div>
   );

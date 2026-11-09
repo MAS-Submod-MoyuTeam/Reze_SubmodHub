@@ -227,7 +227,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   setSearchQuery('');
                   resetPaging();
                 }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-neutral-400 hover:text-neutral-200"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-neutral-400 hover:text-neutral-200 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               >
                 ✕
               </button>
@@ -245,7 +245,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 selectedCategory === 'all'
                   ? 'bg-neutral-800 text-white shadow-xs'
                   : 'text-neutral-400 hover:text-neutral-200'
-              }`}
+              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
               全部类型
             </button>
@@ -258,7 +258,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 selectedCategory === 'submod'
                   ? 'bg-neutral-800 text-white shadow-xs'
                   : 'text-neutral-400 hover:text-neutral-200'
-              }`}
+              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
               功能模组 (submod)
             </button>
@@ -271,7 +271,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 selectedCategory === 'spritepack'
                   ? 'bg-neutral-800 text-white shadow-xs'
                   : 'text-neutral-400 hover:text-neutral-200'
-              }`}
+              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
               服装与外观 (spritepack)
             </button>
@@ -296,7 +296,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                       selectedPlatform === p
                         ? 'bg-neutral-800 text-white border border-neutral-700'
                         : 'text-neutral-400 hover:text-neutral-200'
-                    }`}
+                    } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
                   >
                     {p === 'all' ? '全部' : p === 'windows' ? 'Windows' : 'Android'}
                   </button>
@@ -335,7 +335,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 activeTagCount > 0
                   ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
                   : 'text-neutral-400 border-neutral-700 hover:text-neutral-200 hover:bg-neutral-800'
-              }`}
+              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
               <Tag className="w-3 h-3" aria-hidden="true" />
               <span>{activeTagCount > 0 ? `已筛 ${activeTagCount} 个标签` : '标签筛选'}</span>
@@ -362,7 +362,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               <button
                 onClick={onReloadCatalog}
                 disabled={isCatalogRefreshing}
-                className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-200 bg-amber-950/70 border border-amber-800/80 hover:bg-amber-900/60 rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-200 bg-amber-950/70 border border-amber-800/80 hover:bg-amber-900/60 rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 <span>{isCatalogRefreshing ? '重新加载中…' : '重新加载目录'}</span>
@@ -423,7 +423,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                       resetPaging();
                     }}
                     data-testid="catalog-clear-tags"
-                    className="px-3 py-1.5 text-xs font-medium text-emerald-100 bg-emerald-800 hover:bg-emerald-700 rounded-lg transition-colors"
+                    className="px-3 py-1.5 text-xs font-medium text-emerald-100 bg-emerald-800 hover:bg-emerald-700 rounded-lg transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                   >
                     只清除标签筛选
                   </button>
@@ -434,7 +434,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                       setSelectedPlatform('all');
                       resetPaging();
                     }}
-                    className="px-3 py-1.5 text-xs font-medium text-emerald-100 bg-emerald-800 hover:bg-emerald-700 rounded-lg transition-colors"
+                    className="px-3 py-1.5 text-xs font-medium text-emerald-100 bg-emerald-800 hover:bg-emerald-700 rounded-lg transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                   >
                     显示全部平台
                   </button>
@@ -447,7 +447,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                     setTagFilter(EMPTY_TAG_FILTER);
                     resetPaging();
                   }}
-                  className="px-3 py-1.5 text-xs font-medium text-neutral-200 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors"
+                  className="px-3 py-1.5 text-xs font-medium text-neutral-200 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                 >
                   重置所有筛选
                 </button>
@@ -535,7 +535,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                       <div className="pt-3 border-t border-neutral-800/80 flex items-center justify-between gap-2">
                         <button
                           onClick={() => onOpenDetail(mod)}
-                          className="px-2.5 py-1.5 text-xs text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 rounded-md transition-colors"
+                          className="px-2.5 py-1.5 text-xs text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 rounded-md transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                         >
                           查看详情
                         </button>
@@ -544,7 +544,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                           hasUpdate ? (
                             <button
                               onClick={() => onStartUpdatePlan(mod)}
-                              className="px-3 py-1.5 text-xs font-semibold text-neutral-900 bg-amber-400 hover:bg-amber-300 rounded-md transition-colors flex items-center gap-1.5 shadow-xs"
+                              className="px-3 py-1.5 text-xs font-semibold text-neutral-900 bg-amber-400 hover:bg-amber-300 rounded-md transition-colors flex items-center gap-1.5 shadow-xs active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                             >
                               <RefreshCw className="w-3.5 h-3.5" />
                               <span>更新至 {mod.latest_version}</span>
@@ -552,7 +552,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                           ) : (
                             <button
                               onClick={() => onOpenDetail(mod)}
-                              className="px-3 py-1.5 text-xs font-medium text-neutral-300 bg-neutral-800 hover:bg-neutral-700/80 rounded-md transition-colors"
+                              className="px-3 py-1.5 text-xs font-medium text-neutral-300 bg-neutral-800 hover:bg-neutral-700/80 rounded-md transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                             >
                               已是最新
                             </button>
@@ -567,7 +567,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                                 }
                               }}
                               disabled={installingModId !== null}
-                            className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-md transition-colors flex items-center gap-1.5 shadow-xs"
+                            className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-md transition-colors flex items-center gap-1.5 shadow-xs active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                           >
                             <Download className="w-3.5 h-3.5" />
                             <span>{installingModId === mod.id ? installProgress?.stage === 'downloading' ? `下载 ${Math.round(installProgress.received / installProgress.total * 100)}%` : installProgress?.stage === 'verifying' ? '校验中…' : '安装中…' : '安装'}</span>
@@ -601,7 +601,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             aria-label="返回顶部"
             title="返回顶部"
             data-testid="catalog-back-to-top"
-            className="absolute right-4 bottom-[7.5rem] z-10 w-11 h-11 rounded-full flex items-center justify-center border border-neutral-700 bg-neutral-800/95 text-neutral-300 shadow-lg transition-colors cursor-pointer hover:border-emerald-700/70 hover:bg-neutral-800 hover:text-emerald-300"
+            className="absolute right-4 bottom-[7.5rem] z-10 w-11 h-11 rounded-full flex items-center justify-center border border-neutral-700 bg-neutral-800/95 text-neutral-300 shadow-lg transition-colors cursor-pointer hover:border-emerald-700/70 hover:bg-neutral-800 hover:text-emerald-300 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
           >
             <ArrowUp className="w-4 h-4" aria-hidden="true" />
           </button>
@@ -618,7 +618,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             tagDrawerOpen || activeTagCount > 0
               ? 'border-emerald-500 bg-emerald-600 text-white'
               : 'border-neutral-700 bg-neutral-800/95 text-neutral-300 hover:border-emerald-700/70 hover:bg-neutral-800 hover:text-emerald-300'
-          }`}
+          } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
         >
           <Tag className="w-4 h-4" aria-hidden="true" />
           {activeTagCount > 0 ? (
@@ -643,7 +643,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               isCatalogRefreshing
                 ? 'cursor-not-allowed border-neutral-800 bg-neutral-900/80 text-neutral-600'
                 : 'cursor-pointer border-neutral-700 bg-neutral-800/95 text-neutral-300 hover:border-emerald-700/70 hover:bg-neutral-800 hover:text-emerald-300'
-            }`}
+            } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
           >
             <RefreshCw
               className={`w-4 h-4 ${isCatalogRefreshing ? 'animate-spin' : ''}`}
@@ -683,7 +683,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             <button
               type="button"
               onClick={loadMore}
-              className="px-2.5 py-1 rounded bg-neutral-800 text-neutral-200 hover:bg-neutral-700 transition-colors cursor-pointer"
+              className="px-2.5 py-1 rounded bg-neutral-800 text-neutral-200 hover:bg-neutral-700 transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
             >
               加载更多
             </button>

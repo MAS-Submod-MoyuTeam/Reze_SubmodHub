@@ -6,7 +6,7 @@ const plugins = [remarkGfm];
 const components: Components = {
   pre: ({ children }) => <pre className="max-w-full overflow-x-auto whitespace-pre rounded border border-neutral-200 bg-neutral-100 p-3 text-xs leading-relaxed [&>code]:bg-transparent [&>code]:p-0">{children}</pre>,
   code: ({ children, className }) => <code className={`rounded bg-neutral-200 px-1 py-0.5 font-mono text-[0.9em] ${className || ''}`}>{children}</code>,
-  a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-sky-700 underline break-words">{children}</a>,
+  a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-sky-700 underline break-words transition-colors rounded hover:text-sky-800 hover:bg-sky-50 active:bg-sky-100 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{children}</a>,
   table: ({ children }) => <div className="max-w-full overflow-x-auto"><table className="w-full border-collapse text-left [&_th]:border [&_th]:border-neutral-300 [&_th]:bg-neutral-100 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-neutral-300 [&_td]:px-2 [&_td]:py-1">{children}</table></div>,
   img: ({ src, alt }) => <img src={src} alt={alt || ''} loading="lazy" className="max-w-full rounded" />,
 };

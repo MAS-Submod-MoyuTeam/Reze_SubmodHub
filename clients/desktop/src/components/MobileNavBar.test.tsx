@@ -35,3 +35,15 @@ test('MobileNavBar: highlights priority tab when active', () => {
   assert.match(html, /优先级/);
   assert.match(html, /text-primary/);
 });
+
+test('MobileNavBar: 每个页签都有悬停、按下与键盘焦点反馈', () => {
+  const html = renderToStaticMarkup(
+    <MobileNavBar activeTab="catalog" onTabChange={() => {}} updatesCount={0} activeOperationsCount={0} />
+  );
+  // 底部导航在 Android 上没有鼠标，`active:` 是唯一的即时反馈；
+  // `hover:` 只在真指针设备生效（Tailwind 用 @media (hover:hover) 包住）。
+  assert.match(html, /hover:/);
+  assert.match(html, /active:brightness-95/);
+  assert.match(html, /focus-visible:outline-2/);
+  assert.match(html, /aria-current="page"/);
+});

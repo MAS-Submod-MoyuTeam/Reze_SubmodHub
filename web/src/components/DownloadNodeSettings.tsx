@@ -23,6 +23,8 @@ import {
   Info,
 } from 'lucide-react';
 import { readSession } from '../../../ui/auth-api';
+import { AnimatePresence, m } from './Motion';
+import { panelVariants } from '../../../ui/motion-presets';
 import {
   fetchDownloadNodes,
   saveDownloadNode,
@@ -214,7 +216,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
             type="button"
             disabled={busy || loading}
             onClick={() => void load()}
-            className="px-3.5 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+            className="px-3.5 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-emerald-600' : 'text-neutral-500'}`} />
             刷新列表
@@ -228,7 +230,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
               setOpen(true);
               setError('');
             }}
-            className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+            className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <Plus className="w-3.5 h-3.5" />
             添加交付节点
@@ -428,7 +430,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                           type="button"
                           disabled={busy}
                           onClick={() => void test(node)}
-                          className="px-3 py-1.5 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                         >
                           {isTesting ? (
                             <RefreshCw className="w-3.5 h-3.5 animate-spin text-neutral-500" />
@@ -443,7 +445,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                             type="button"
                             disabled={busy}
                             onClick={() => void retry(node)}
-                            className="px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-50/70 hover:bg-amber-100 disabled:opacity-40 text-amber-900 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                            className="px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-50/70 hover:bg-amber-100 disabled:opacity-40 text-amber-900 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                           >
                             {isRetrying ? (
                               <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-700" />
@@ -458,7 +460,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                           type="button"
                           disabled={busy}
                           onClick={() => edit(node)}
-                          className="px-3 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 hover:border-neutral-300 disabled:opacity-40 text-neutral-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 hover:border-neutral-300 disabled:opacity-40 text-neutral-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                         >
                           <Edit3 className="w-3.5 h-3.5 text-neutral-500" />
                           编辑
@@ -469,7 +471,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                           type="button"
                           disabled={busy}
                           onClick={() => setDeleteID(node.id)}
-                          className="px-3 py-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 disabled:opacity-40 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 disabled:opacity-40 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                         >
                           <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                           删除
@@ -504,7 +506,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                 type="button"
                 disabled={busy}
                 onClick={() => void remove()}
-                className="px-4 py-2 rounded-lg bg-rose-700 hover:bg-rose-800 disabled:opacity-40 text-white font-semibold transition-colors shadow-2xs cursor-pointer"
+                className="px-4 py-2 rounded-lg bg-rose-700 hover:bg-rose-800 disabled:opacity-40 text-white font-semibold transition-colors shadow-2xs cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
                 {busy ? '正在删除...' : '确认永久删除'}
               </button>
@@ -512,7 +514,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                 type="button"
                 disabled={busy}
                 onClick={() => setDeleteID('')}
-                className="px-4 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-700 font-medium transition-colors cursor-pointer"
+                className="px-4 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-700 font-medium transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
                 取消
               </button>
@@ -521,10 +523,15 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
         )}
 
         {/* Form: Add or Edit Node */}
+        <AnimatePresence initial={false}>
         {open && (
-          <form
+          <m.form
             onSubmit={save}
-            className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-6 space-y-6 shadow-xs animate-in fade-in"
+            variants={panelVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-6 space-y-6 shadow-xs"
           >
             <div className="flex items-center justify-between border-b border-neutral-200/80 pb-4">
               <div className="flex items-center gap-2.5">
@@ -546,7 +553,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                   setInput(blank());
                   setOpen(false);
                 }}
-                className="text-xs text-neutral-400 hover:text-neutral-700 p-1 cursor-pointer"
+                className="text-xs text-neutral-400 hover:text-neutral-700 p-1 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
                 关闭
               </button>
@@ -732,22 +739,23 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                     setInput(blank());
                     setOpen(false);
                   }}
-                  className="px-4 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-700 text-xs font-medium transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-700 text-xs font-medium transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   取消
                 </button>
                 <button
                   type="submit"
                   disabled={busy || (!settings?.master_key_configured && (!editing || input.password !== ''))}
-                  className="px-5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  className="px-5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   {busy ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
                   {busy ? '正在处理...' : editing ? '保存修改' : '确认添加'}
                 </button>
               </div>
             </div>
-          </form>
+          </m.form>
         )}
+          </AnimatePresence>
       </div>
     </section>
   );

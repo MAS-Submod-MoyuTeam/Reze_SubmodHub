@@ -454,7 +454,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
             onClick={() => loadOverview(currentInstanceId)}
             disabled={loadingOverview || isApplying}
             title="重新获取当前 MAS 实例的优先级数据"
-            className="p-2 sm:p-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white disabled:opacity-40 transition-colors cursor-pointer min-h-[36px] sm:min-h-0 flex items-center justify-center"
+            className="p-2 sm:p-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white disabled:opacity-40 transition-colors cursor-pointer min-h-[36px] sm:min-h-0 flex items-center justify-center active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loadingOverview ? 'animate-spin' : ''}`} />
           </button>
@@ -462,7 +462,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
           <button
             onClick={handleReset}
             disabled={(!hasChanges && !hasInputErrors) || isApplying}
-            className="px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5 cursor-pointer min-h-[36px] sm:min-h-0"
+            className="px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5 cursor-pointer min-h-[36px] sm:min-h-0 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>撤销重置</span>
@@ -471,7 +471,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
           <button
             onClick={handlePreview}
             disabled={!hasChanges || hasInputErrors || previewLoading || isApplying}
-            className="px-3.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5 font-medium cursor-pointer min-h-[36px] sm:min-h-0"
+            className="px-3.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5 font-medium cursor-pointer min-h-[36px] sm:min-h-0 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
           >
             {previewLoading ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
@@ -485,7 +485,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
             onClick={handleApply}
             disabled={!applyCheck.canApply}
             title={applyCheck.reason || '应用新优先级并写入 MAS 磁盘'}
-            className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold disabled:opacity-40 transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer min-h-[36px] sm:min-h-0"
+            className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold disabled:opacity-40 transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer min-h-[36px] sm:min-h-0 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
           >
             {isApplying ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -534,7 +534,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                 <p>{overviewError}</p>
                 <button
                   onClick={() => loadOverview(currentInstanceId)}
-                  className="px-3 py-1 rounded bg-rose-900/60 hover:bg-rose-800 text-white font-medium text-[11px] transition-colors"
+                  className="px-3 py-1 rounded bg-rose-900/60 hover:bg-rose-800 text-white font-medium text-[11px] transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                 >
                   重试
                 </button>
@@ -628,14 +628,14 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                         <button
                           onClick={() => handleStepDelta(item.mod_id, 10)}
                           title="提高优先级 (+10)"
-                          className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer"
+                          className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                         >
                           <ArrowUp className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleStepDelta(item.mod_id, -10)}
                           title="降低优先级 (-10)"
-                          className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer"
+                          className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                         >
                           <ArrowDown className="w-3.5 h-3.5" />
                         </button>
@@ -666,7 +666,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                   rightTab === 'preview'
                     ? 'bg-neutral-800 text-neutral-100 shadow-xs'
                     : 'text-neutral-400 hover:text-neutral-200'
-                }`}
+                } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
               >
                 <Eye className="w-3 h-3 text-emerald-400" />
                 <span>变更计划预览</span>
@@ -683,7 +683,7 @@ export const PriorityLayersView: React.FC<PriorityLayersViewProps> = ({
                   rightTab === 'conflicts'
                     ? 'bg-neutral-800 text-neutral-100 shadow-xs'
                     : 'text-neutral-400 hover:text-neutral-200'
-                }`}
+                } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
               >
                 <FileText className="w-3 h-3 text-sky-400" />
                 <span>共享与冲突路径</span>

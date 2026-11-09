@@ -3,6 +3,8 @@ import { apiBase } from '../apiBase';
 import { useApp } from '../context/AppContext';
 import { fetchAppRelease, type AppRelease, type AppReleaseAsset } from '../../../ui/app-release-api';
 import { formatBytes } from './formatBytes';
+import { AnimatePresence, m } from './Motion';
+import { overlayVariants, panelVariants } from '../../../ui/motion-presets';
 import {
   deliveryLabel,
   detectDevicePlatform,
@@ -99,7 +101,7 @@ const AssetCard: React.FC<{
       <div className="flex flex-wrap items-center gap-2 pt-0.5">
         <button
           onClick={() => onDownload(asset)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
         >
           <Download className="w-3.5 h-3.5" />
           {hosted ? '从本站下载' : '从 GitHub 下载'}
@@ -108,7 +110,7 @@ const AssetCard: React.FC<{
           <a
             href={githubDownloadURL(asset)}
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 rounded transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <ExternalLink className="w-3.5 h-3.5 text-neutral-500" />
             GitHub 直链
@@ -158,7 +160,7 @@ export const ClientDownloadPanel: React.FC<ClientDownloadPanelProps> = ({
           <div className="flex items-center justify-end">
             <button
               onClick={onRetry}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-800 bg-neutral-100 hover:bg-neutral-200 rounded"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-800 bg-neutral-100 hover:bg-neutral-200 rounded active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               重试
@@ -203,7 +205,7 @@ export const ClientDownloadPanel: React.FC<ClientDownloadPanelProps> = ({
                 <a
                   href={release.checksum_url}
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 hover:text-neutral-900"
+                  className="inline-flex items-center gap-1 hover:text-neutral-900 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   <FileCheck2 className="w-3.5 h-3.5" />
                   SHA256SUMS.txt
@@ -213,7 +215,7 @@ export const ClientDownloadPanel: React.FC<ClientDownloadPanelProps> = ({
                 <a
                   href={release.release_url}
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 hover:text-neutral-900"
+                  className="inline-flex items-center gap-1 hover:text-neutral-900 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   前往 GitHub Releases
@@ -307,18 +309,28 @@ export const ClientDownloadModal: React.FC<ClientDownloadModalProps> = ({ isOpen
     [expectedTag, showToast],
   );
 
-  if (!isOpen) return null;
-
   const title = release ? `下载 RezeHub 客户端 v${release.version}` : '下载 RezeHub 客户端';
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="client-download-title"
-    >
-      <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
+    <AnimatePresence>
+      {isOpen && (
+        <m.div
+          variants={overlayVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="client-download-title"
+        >
+          <m.div
+            variants={panelVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-lg w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden"
+          >
         <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <Download className="w-4 h-4 text-emerald-700 shrink-0" />
@@ -329,13 +341,13 @@ export const ClientDownloadModal: React.FC<ClientDownloadModalProps> = ({ isOpen
           <button
             onClick={onClose}
             aria-label="关闭"
-            className="text-neutral-400 hover:text-neutral-600 p-1 rounded shrink-0"
+            className="text-neutral-400 hover:text-neutral-600 p-1 rounded shrink-0 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="overflow-y-auto">
+        <div className="overflow-y-auto overscroll-y-contain">
           <ClientDownloadPanel
             status={status}
             release={release}
@@ -345,7 +357,9 @@ export const ClientDownloadModal: React.FC<ClientDownloadModalProps> = ({ isOpen
             onRetry={() => setAttempt((value) => value + 1)}
           />
         </div>
-      </div>
-    </div>
+          </m.div>
+        </m.div>
+      )}
+    </AnimatePresence>
   );
 };

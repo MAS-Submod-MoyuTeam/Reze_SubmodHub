@@ -45,3 +45,4 @@ Local reference projects used during design:
 | 2026-10-29 | work | docs/aegis/work/2026-10-27-app-asset-retention/92-review-fixes.md | 第二轮评审修复：派生字节码大小写、平台声明服务端校验、approve/publish 复核平台覆盖、manifest_corrupt 文案、回收日志错误码 |
 | 2026-11-04 | plan | docs/aegis/plans/2026-11-04-mod-deeplink-and-share.md | Mod 详情可寻址 + 深链调起 + 分享链接 + 剪贴板提示；两端规则层单测、类型、构建与真实浏览器验收通过，Windows 安装包与 Android 真机验收待补 |
 | 2026-11-08 | plan | docs/aegis/plans/2026-11-08-persistent-sprite-unlock-status.md | 本机存档精灵赠送状态与应用内删除确认 |
+| 2026-11-09 | plan | docs/aegis/plans/2026-11-09-web-client-motion-android-web.md | 两端悬停/按压/焦点反馈、浮层开合动效（迁移到 `motion` + `AnimatePresence`，覆盖全部 20 个浮层并删除 `usePresence`）、Web 固定滚动条与 Android 竖屏优化；两端单测 195/294、类型与构建通过，可见标签页里实测进出场动画与 reduced-motion 降级通过，Android 真机复验与部署待补 |

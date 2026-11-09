@@ -142,7 +142,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               onClick={onOpenAppUpdate}
               className={`wails-no-drag flex items-center gap-1 text-[10px] font-mono transition-colors hover:text-neutral-200 ${
                 hasAppUpdate ? 'text-emerald-400 font-semibold' : 'text-neutral-500'
-              }`}
+              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
               title={`点击检查更新 (当前 v${__APP_VERSION__})`}
               aria-label={`检查应用更新，当前版本 v${__APP_VERSION__}`}
             >
@@ -170,7 +170,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         <div className="relative min-w-0">
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="wails-no-drag flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 rounded bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-200 transition-colors text-xs max-w-full"
+            className="wails-no-drag flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 rounded bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-200 transition-colors text-xs max-w-full active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
             title={activeInst.path_hint}
           >
             <HardDrive className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
@@ -202,7 +202,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                     }}
                     className={`w-full px-3 py-2 text-left flex items-start justify-between hover:bg-neutral-800 transition-colors ${
                       inst.id === activeInstallationId ? 'bg-neutral-800/50' : ''
-                    }`}
+                    } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
                   >
                     <div className="truncate pr-2">
                       <div className="flex items-center gap-1.5 font-medium text-neutral-200 text-xs truncate">
@@ -226,7 +226,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       setDropdownOpen(false);
                       onOpenInstancesView();
                     }}
-                    className="w-full text-left px-2.5 py-1.5 text-xs text-emerald-400 hover:bg-neutral-800 rounded flex items-center gap-1.5"
+                    className="w-full text-left px-2.5 py-1.5 text-xs text-emerald-400 hover:bg-neutral-800 rounded flex items-center gap-1.5 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                   >
                     <FolderGit2 className="w-3.5 h-3.5" />
                     <span>添加或重新授权 MAS 游戏目录...</span>
@@ -244,7 +244,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               launchDisabled
                 ? 'border-neutral-700 bg-neutral-800 text-neutral-500'
                 : 'border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-600'
-            }`}
+            } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             title={launchTitle}
             aria-label={
               isLaunchingGame
@@ -300,7 +300,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <button
               type="button"
               onClick={handleMinimise}
-              className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors"
+              className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               title="最小化"
               aria-label="最小化"
             >
@@ -309,7 +309,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <button
               type="button"
               onClick={handleToggleMaximise}
-              className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors"
+              className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               title={isMaximised ? '还原' : '最大化'}
               aria-label={isMaximised ? '还原' : '最大化'}
             >
@@ -322,7 +322,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <button
               type="button"
               onClick={handleClose}
-              className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-white hover:bg-red-600 transition-colors"
+              className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-white hover:bg-red-600 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               title="关闭"
               aria-label="关闭"
             >

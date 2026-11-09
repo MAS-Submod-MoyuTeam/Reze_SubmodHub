@@ -252,7 +252,7 @@ export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision,
           type="button"
           onClick={applyMainTag}
           disabled={draft.length >= MAX_TAG_GROUPS}
-          className="shrink-0 px-3 py-1.5 text-xs rounded border border-neutral-300 text-neutral-700 hover:border-emerald-600 disabled:opacity-40"
+          className="shrink-0 px-3 py-1.5 text-xs rounded border border-neutral-300 text-neutral-700 hover:border-emerald-600 disabled:opacity-40 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
         >
           添加主标签
         </button>
@@ -281,7 +281,7 @@ export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision,
                         aria-expanded={isOpen}
                         aria-label={`${isOpen ? '收起' : '展开'} ${group.name} 的子标签（${children.length} 个）`}
                         data-testid={`tag-group-toggle-${group.name}`}
-                        className="p-0.5 rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                        className="p-0.5 rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                       >
                         {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                       </button>
@@ -306,7 +306,7 @@ export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision,
                     aria-label={`上移 ${group.name}`}
                     disabled={index === 0}
                     onClick={() => setDraft(moveMainTag(draft, index, -1))}
-                    className="p-1 rounded text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
+                    className="p-1 rounded text-neutral-500 hover:bg-neutral-100 disabled:opacity-30 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                   >
                     <ChevronUp className="w-3.5 h-3.5" />
                   </button>
@@ -315,7 +315,7 @@ export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision,
                     aria-label={`下移 ${group.name}`}
                     disabled={index === draft.length - 1}
                     onClick={() => setDraft(moveMainTag(draft, index, 1))}
-                    className="p-1 rounded text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
+                    className="p-1 rounded text-neutral-500 hover:bg-neutral-100 disabled:opacity-30 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                   >
                     <ChevronDown className="w-3.5 h-3.5" />
                   </button>
@@ -323,7 +323,7 @@ export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision,
                     type="button"
                     aria-label={`删除 ${group.name}`}
                     onClick={() => setDraft(removeMainTag(draft, group.name))}
-                    className="p-1 rounded text-rose-600 hover:bg-rose-50"
+                    className="p-1 rounded text-rose-600 hover:bg-rose-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -341,7 +341,7 @@ export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision,
                             type="button"
                             aria-label={`删除子标签 ${child.name}`}
                             onClick={() => setDraft(removeChildTag(draft, group.name, child.name))}
-                            className="text-neutral-400 hover:text-rose-600"
+                            className="text-neutral-400 hover:text-rose-600 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                           >
                             <X className="w-3 h-3" />
                           </button>
@@ -375,7 +375,7 @@ export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision,
                       aria-label={`为 ${group.name} 添加子标签`}
                       className="w-28 text-[11px] px-2 py-0.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600"
                     />
-                    <button type="button" onClick={() => applyChildTag(group.name)} className="text-[11px] text-emerald-700 hover:underline">
+                    <button type="button" onClick={() => applyChildTag(group.name)} className="text-[11px] text-emerald-700 hover:underline active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">
                       添加
                     </button>
                   </span>
@@ -397,7 +397,7 @@ export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision,
           type="button"
           onClick={() => { setDraft(cloneGroups(groups)); setError(null); }}
           disabled={!dirty || saving}
-          className="px-3 py-1.5 text-xs rounded text-neutral-600 hover:text-neutral-900 disabled:opacity-40"
+          className="px-3 py-1.5 text-xs rounded text-neutral-600 hover:text-neutral-900 disabled:opacity-40 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
         >
           恢复
         </button>
@@ -405,7 +405,7 @@ export const TagCatalogSettings: React.FC<Props> = ({ apiBase, groups, revision,
           type="button"
           onClick={() => void save()}
           disabled={!dirty || saving}
-          className="px-4 py-1.5 text-xs rounded bg-emerald-700 text-white font-medium hover:bg-emerald-800 disabled:opacity-40 inline-flex items-center gap-1.5"
+          className="px-4 py-1.5 text-xs rounded bg-emerald-700 text-white font-medium hover:bg-emerald-800 disabled:opacity-40 inline-flex items-center gap-1.5 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
         >
           {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
           {saving ? '保存中...' : '保存目录'}

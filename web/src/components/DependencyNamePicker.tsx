@@ -76,7 +76,7 @@ export const DependencyNamePicker: React.FC<Props> = ({ value, options, label, o
           aria-label="选择站内模组"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setOpen((current) => !current)}
-          className="shrink-0 border-l border-neutral-200 px-2 text-neutral-600 hover:bg-neutral-100"
+          className="shrink-0 border-l border-neutral-200 px-2 text-neutral-600 hover:bg-neutral-100 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
         >
           <ChevronDown className="h-4 w-4" />
         </button>
@@ -91,7 +91,7 @@ export const DependencyNamePicker: React.FC<Props> = ({ value, options, label, o
               aria-selected={index === activeIndex}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => select(mod)}
-              className={`block w-full px-3 py-2 text-left text-xs ${index === activeIndex ? 'bg-emerald-50' : 'hover:bg-neutral-50'}`}
+              className={`block w-full px-3 py-2 text-left text-xs ${index === activeIndex ? 'bg-emerald-50' : 'hover:bg-neutral-50'} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
             >
               <span className="block font-medium text-neutral-900">{mod.title}</span>
               <span className="block font-mono text-[10px] text-neutral-500">{mod.id}</span>

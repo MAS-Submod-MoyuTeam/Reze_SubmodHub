@@ -22,6 +22,8 @@ import { InstalledItem } from '../types/client';
 import { Spritepack } from '../wails';
 import { LoadingStatus, isActionBlocked } from '../installedLoading';
 
+import { m } from './Motion';
+import { overlayVariants } from '../../../../ui/motion-presets';
 interface InstalledViewProps {
   installedMods: InstalledItem[];
   spritepacks: Spritepack[];
@@ -219,7 +221,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 subTab === 'managed'
                   ? 'bg-neutral-800 text-white shadow-xs'
                   : 'text-neutral-400 hover:text-neutral-200'
-              }`}
+              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
               <PackageCheck className="w-3.5 h-3.5 text-emerald-400" />
               <span>已安装模组 ({renderBadgeCount('managed')})</span>
@@ -232,7 +234,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 subTab === 'unmanaged'
                   ? 'bg-neutral-800 text-white shadow-xs'
                   : 'text-neutral-400 hover:text-neutral-200'
-              }`}
+              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
               <FileQuestion className="w-3.5 h-3.5 text-amber-400" />
               <span>未收纳模组 ({renderBadgeCount('unmanaged')})</span>
@@ -245,7 +247,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 subTab === 'spritepacks'
                   ? 'bg-neutral-800 text-white'
                   : 'text-neutral-400 hover:text-neutral-200'
-              }`}
+              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
               <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
               <span>已安装精灵包 ({renderBadgeCount('spritepacks')})</span>
@@ -259,7 +261,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
             <button
               onClick={onRefreshSpritepacks}
               disabled={!hasValidInstance || isSpritepacksInitialLoading || isSpritepacksRefreshing}
-              className="px-3 py-1.5 rounded-lg bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-300 hover:text-white transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 rounded-lg bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-300 hover:text-white transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               title="重新扫描已安装精灵包"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSpritepacksRefreshing ? 'animate-spin motion-reduce:animate-none text-cyan-400' : 'text-neutral-400'}`} />
@@ -270,7 +272,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
               <button
                 onClick={onRefreshInstalled}
                 disabled={!hasValidInstance || isModsInitialLoading || isModsRefreshing}
-                className="px-3 py-1.5 rounded-lg bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-300 hover:text-white transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-1.5 rounded-lg bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-300 hover:text-white transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                 title="重新扫描已安装模组"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isModsRefreshing ? 'animate-spin motion-reduce:animate-none text-emerald-400' : 'text-neutral-400'}`} />
@@ -279,7 +281,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
               <button
                 onClick={onVerifyIntegrity}
                 disabled={!hasValidInstance || isVerifying || isModsActionBlocked}
-                className="px-3 py-1.5 rounded-lg bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-300 hover:text-white transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="px-3 py-1.5 rounded-lg bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-300 hover:text-white transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                 title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法校验完整性' : '正在读取模组列表…') : undefined}
               >
                 <ShieldCheck className={`w-3.5 h-3.5 ${isVerifying ? 'animate-spin motion-reduce:animate-none text-emerald-400' : 'text-neutral-400'}`} />
@@ -288,7 +290,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
               <button
                 onClick={onCheckAllUpdates}
                 disabled={!hasValidInstance || isModsActionBlocked}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-colors flex items-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-colors flex items-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                 title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法检查更新' : '正在读取模组列表…') : undefined}
               >
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -359,7 +361,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
             </div>
             <button
               onClick={subTab === 'spritepacks' ? onRefreshSpritepacks : onRefreshInstalled}
-              className="mt-2 px-3 py-1.5 text-xs font-medium rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white transition-colors cursor-pointer border border-neutral-700 flex items-center gap-1.5"
+              className="mt-2 px-3 py-1.5 text-xs font-medium rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white transition-colors cursor-pointer border border-neutral-700 flex items-center gap-1.5 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>重试读取</span>
@@ -376,7 +378,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 </div>
                 <button
                   onClick={subTab === 'spritepacks' ? onRefreshSpritepacks : onRefreshInstalled}
-                  className="px-2.5 py-1 rounded bg-neutral-900 hover:bg-neutral-800 text-amber-300 border border-amber-800/80 shrink-0 transition-colors cursor-pointer font-medium"
+                  className="px-2.5 py-1 rounded bg-neutral-900 hover:bg-neutral-800 text-amber-300 border border-amber-800/80 shrink-0 transition-colors cursor-pointer font-medium active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                 >
                   重试
                 </button>
@@ -402,7 +404,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                         <button
                           type="button"
                           onClick={() => setSpriteSearch('')}
-                          className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-neutral-500 transition-colors cursor-pointer"
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-neutral-500 transition-colors cursor-pointer active:brightness-95"
                           title="清除搜索"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -443,7 +445,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           setSpriteSearch('');
                           setSpriteGroup('');
                         }}
-                        className="inline-flex h-8 items-center px-2 rounded-md text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-neutral-500 transition-colors cursor-pointer"
+                        className="inline-flex h-8 items-center px-2 rounded-md text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-neutral-500 transition-colors cursor-pointer active:brightness-95"
                       >
                         重置筛选
                       </button>
@@ -475,7 +477,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           setSpriteSearch('');
                           setSpriteGroup('');
                         }}
-                        className="mt-2 px-3 py-1 text-xs rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-colors cursor-pointer"
+                        className="mt-2 px-3 py-1 text-xs rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                       >
                         清除筛选条件
                       </button>
@@ -555,7 +557,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           <button
                             disabled={isSpritepacksActionBlocked || !item.complete || !item.giftname || creatingGiftFile !== null || deletingFile === item.file}
                             onClick={() => { void createGift(item.file); }}
-                            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-medium disabled:bg-neutral-800 disabled:text-neutral-500 disabled:cursor-not-allowed transition-colors shadow-xs cursor-pointer"
+                            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-medium disabled:bg-neutral-800 disabled:text-neutral-500 disabled:cursor-not-allowed transition-colors shadow-xs cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                             title={isSpritepacksActionBlocked ? (spritepacksStatus === 'error' ? '精灵包扫描失败，暂无法创建礼物' : '正在读取精灵包…') : (!item.giftname ? '此精灵包未声明礼物名称' : `在 characters 目录创建 ${item.giftname}.gift`)}
                           >
                             <Gift className="w-3.5 h-3.5" />
@@ -564,7 +566,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           <button
                             disabled={isSpritepacksActionBlocked || deletingFile !== null || creatingGiftFile !== null}
                             onClick={() => setSpritepackToDelete(item)}
-                            className="p-1.5 rounded-md text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                            className="p-1.5 rounded-md text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                             title={isSpritepacksActionBlocked ? (spritepacksStatus === 'error' ? '精灵包扫描失败，暂无法删除' : '正在读取精灵包…') : '删除精灵包并保留备份'}
                             aria-label={`删除 ${item.name}`}
                           >
@@ -677,7 +679,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                     <button
                                       disabled={isModsActionBlocked}
                                       onClick={() => onStartUpdatePlan(item.mod_id, item.title)}
-                                      className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-400 hover:bg-amber-300 text-neutral-900 transition-colors shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                      className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-400 hover:bg-amber-300 text-neutral-900 transition-colors shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                                       title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法规划更新' : '正在读取模组列表…') : undefined}
                                     >
                                       规划更新
@@ -687,7 +689,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                   {onOpenDetail && (
                                     <button
                                       onClick={() => onOpenDetail(item.mod_id, item.title)}
-                                      className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer"
+                                      className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                                       title={`打开「${item.title}」详情`}
                                     >
                                       详情
@@ -697,7 +699,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                   <button
                                     disabled={isModsActionBlocked}
                                     onClick={() => onInspectFiles(item)}
-                                    className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                                     title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法查看文件' : '正在读取模组列表…') : '查看该模组已安装文件的本地路径及哈希'}
                                   >
                                     文件清单
@@ -706,7 +708,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                   <button
                                     disabled={isModsActionBlocked}
                                     onClick={() => onStartRepairPlan(item)}
-                                    className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                                     title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法修复' : '正在读取模组列表…') : '预览从已校验的安装材料恢复文件；覆盖前备份，缺少材料时失败'}
                                   >
                                     修复
@@ -715,7 +717,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                   <button
                                     disabled={isModsActionBlocked}
                                     onClick={() => onStartUninstallPlan(item)}
-                                    className="px-2 py-1 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="px-2 py-1 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                                     title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法卸载' : '正在读取模组列表…') : '生成卸载计划，直接删除当前文件，不恢复安装前备份'}
                                   >
                                     卸载
@@ -798,7 +800,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                               <button
                                 disabled={isModsActionBlocked}
                                 onClick={() => onStartUpdatePlan(item.mod_id, item.title)}
-                                className="px-3 py-1.5 text-xs font-semibold rounded bg-amber-400 hover:bg-amber-300 text-neutral-900 transition-colors shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="px-3 py-1.5 text-xs font-semibold rounded bg-amber-400 hover:bg-amber-300 text-neutral-900 transition-colors shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                                 title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法规划更新' : '正在读取模组列表…') : undefined}
                               >
                                 规划更新
@@ -808,7 +810,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             {onOpenDetail && (
                               <button
                                 onClick={() => onOpenDetail(item.mod_id, item.title)}
-                                className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer"
+                                className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                                 title={`打开「${item.title}」详情`}
                               >
                                 详情
@@ -818,7 +820,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             <button
                               disabled={isModsActionBlocked}
                               onClick={() => onInspectFiles(item)}
-                              className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                               title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法查看文件' : '正在读取模组列表…') : '查看该模组已安装文件的本地路径及哈希'}
                             >
                               文件清单
@@ -827,7 +829,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             <button
                               disabled={isModsActionBlocked}
                               onClick={() => onStartRepairPlan(item)}
-                              className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                               title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法修复' : '正在读取模组列表…') : '预览从已校验的安装材料恢复文件；覆盖前备份，缺少材料时失败'}
                             >
                               修复
@@ -836,7 +838,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             <button
                               disabled={isModsActionBlocked}
                               onClick={() => onStartUninstallPlan(item)}
-                              className="px-2.5 py-1.5 text-xs text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-900/60 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-rose-900/50"
+                              className="px-2.5 py-1.5 text-xs text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-900/60 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-rose-900/50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                               title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法卸载' : '正在读取模组列表…') : '生成卸载计划，直接删除当前文件，不恢复安装前备份'}
                             >
                               卸载
@@ -918,7 +920,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => onInspectFiles(item)}
-                                  className="text-emerald-400 hover:text-emerald-300 cursor-pointer font-sans text-[11px]"
+                                  className="text-emerald-400 hover:text-emerald-300 cursor-pointer font-sans text-[11px] active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                                 >
                                   查看完整清单 ({item.unmanaged_paths?.length})
                                 </button>
@@ -941,7 +943,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           <button
                             disabled={isModsActionBlocked}
                             onClick={() => onInspectFiles(item)}
-                            className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700/80 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700/80 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                             title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法检查散列' : '正在读取模组列表…') : undefined}
                           >
                             查看所有文件
@@ -949,7 +951,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           <button
                             disabled={isModsActionBlocked}
                             onClick={() => onOpenAdoptModal(item)}
-                            className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                             title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法收纳' : '正在读取模组列表…') : undefined}
                           >
                             <ArrowUpRight className="w-3.5 h-3.5" />
@@ -966,9 +968,13 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
         )}
       </div>
       {spritepackToDelete && (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
-          onMouseDown={(event) => { if (event.target === event.currentTarget) closeDeleteSpritepack(); }}
+        <m.div
+          variants={overlayVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4 pt-[calc(1rem+env(safe-area-inset-top,0px))] pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
+          onMouseDown={(event: React.MouseEvent<HTMLDivElement>) => { if (event.target === event.currentTarget) closeDeleteSpritepack(); }}
         >
           <section
             ref={deleteDialogRef}
@@ -995,7 +1001,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 type="button"
                 disabled={deletingFile !== null}
                 onClick={closeDeleteSpritepack}
-                className="rounded-md border border-neutral-700 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
+                className="rounded-md border border-neutral-700 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-800 disabled:opacity-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               >
                 取消
               </button>
@@ -1003,13 +1009,13 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 type="button"
                 disabled={deletingFile !== null}
                 onClick={() => { void confirmDeleteSpritepack(); }}
-                className="rounded-md bg-rose-700 px-3 py-2 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-60"
+                className="rounded-md bg-rose-700 px-3 py-2 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-60 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               >
                 {deletingFile === spritepackToDelete.file ? '删除中…' : '确认删除'}
               </button>
             </div>
           </section>
-        </div>
+        </m.div>
       )}
     </div>
   );

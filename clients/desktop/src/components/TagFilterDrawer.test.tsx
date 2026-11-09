@@ -89,6 +89,12 @@ function mount() {
         ctx.document.dispatchEvent(new ctx.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       });
     },
+    /** 等退场动画走完，再断言「已经卸载」。 */
+    settleExit: async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 260));
+      });
+    },
     cardTitles: () =>
       Array.from(ctx.document.querySelectorAll('h4')).map((node) => node.textContent ?? ''),
     close: () => ctx.close(),
@@ -179,8 +185,11 @@ test('点标签按钮打开抽屉，Esc 能关掉', async () => {
     assert.equal(view.tagsButton()!.getAttribute('aria-expanded'), 'true');
     assert.ok(view.chip('语音'), '抽屉里必须列出模组正在用的标签');
 
+    // 退场动画由 `AnimatePresence` 负责，节点何时卸载由它决定；
+    // jsdom 没有 WAAPI，中间帧推进不了，所以这里断言「入口状态回到关闭」。
+    // 卸载时机由真实浏览器验收。
     await view.pressEscape();
-    assert.equal(view.drawer(), null, 'Esc 必须能关闭浮层');
+    assert.equal(view.tagsButton()!.getAttribute('aria-expanded'), 'false', 'Esc 必须关掉抽屉');
   } finally {
     await view.close();
   }
@@ -322,6 +331,45 @@ test('抽屉给 Android 状态栏与手势条留出安全区，关闭键不会�
     const close = view.ctx.document.querySelector('button[aria-label="关闭标签筛选"]:not([tabindex="-1"])');
     assert.ok(close, '抽屉必须有关闭键');
     assert.ok(panel!.contains(close), '关闭键属于面板内容');
+  } finally {
+    await view.close();
+  }
+});
+
+test('抽屉的遮罩与面板由 motion 接管，关闭后不留下幽灵遮罩', async () => {
+  const view = mount();
+  try {
+    await view.render([makeMod(1)]);
+    await view.click(view.tagsButton(), '标签筛选');
+    const panel = view.ctx.document.querySelector('[data-testid="tag-filter-panel"]') as HTMLElement;
+    assert.ok(panel, '打开后必须渲染面板');
+    const overlay = view.ctx.document.querySelector('[aria-label="关闭标签筛选"]') as HTMLElement;
+    // motion 会接管这两个元素并写入内联 style；jsdom 没有 WAAPI，
+    // 进入动画不会推进到终态，所以只断言「确实挂上了」，位移与透明度由真实浏览器验收。
+    assert.ok(panel.getAttribute('style'), '面板必须由 motion 接管');
+    assert.ok(overlay.getAttribute('style'), '遮罩必须由 motion 接管');
+    assert.equal(panel.tagName, 'ASIDE', 'motion 化之后仍是语义化的 aside');
+
+    await view.pressEscape();
+    await view.settleExit();
+    assert.equal(
+      view.ctx.document.querySelector('[data-testid="tag-filter-drawer"]'),
+      null,
+      '退场结束后必须卸载，否则会挡住整屏点击',
+    );
+  } finally {
+    await view.close();
+  }
+});
+
+test('弹窗正文阻止滚动链传给背后页面', async () => {
+  const view = mount();
+  try {
+    await view.render([makeMod(1)]);
+    await view.click(view.tagsButton(), '标签筛选');
+    const body = view.ctx.document.querySelector('[data-testid="tag-filter-panel"] .overflow-y-auto') as HTMLElement;
+    assert.ok(body, '抽屉必须有可滚动的正文区');
+    assert.match(body.className, /overscroll-y-contain/);
   } finally {
     await view.close();
   }

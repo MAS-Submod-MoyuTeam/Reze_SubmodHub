@@ -42,7 +42,7 @@ export function SpritepackPanel({
           type="button"
           disabled={uploading || hasPendingReview}
           onClick={onUpload}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded disabled:opacity-40"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded disabled:opacity-40 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
         >
           <Upload className="w-3.5 h-3.5" />
           {hasPublishedVersion ? '上传替换包' : '上传精灵包 ZIP'}
@@ -50,7 +50,7 @@ export function SpritepackPanel({
       </div>
       {hasPublishedVersion && <p className="text-xs text-neutral-600">已有公开精灵包。替换包审核通过后将成为唯一可下载的包。</p>}
       {loading && <p role="status" className="text-xs text-neutral-500">正在加载版本…</p>}
-      {error && <p role="alert" className="text-xs text-rose-700">版本加载失败：{error} <button onClick={onRetry} className="underline">重试</button></p>}
+      {error && <p role="alert" className="text-xs text-rose-700">版本加载失败：{error} <button onClick={onRetry} className="rounded px-1 py-0.5 transition-colors underline hover:bg-neutral-100 active:bg-neutral-200 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">重试</button></p>}
       {loaded && !versions.length && <p className="text-xs text-neutral-500">尚未上传精灵包。</p>}
       {drafts.map((version) => {
         const report = version.scan_report_id ? scanReports[version.scan_report_id] : null;
@@ -59,7 +59,7 @@ export function SpritepackPanel({
           <div key={version.id} className="border border-neutral-200 rounded-md p-4 space-y-3 text-xs">
             <div className="flex items-center justify-between gap-3">
               <span className="font-semibold text-neutral-800">待发布包 · {version.state}</span>
-              {version.state !== 'ready_for_review' && <button onClick={() => onDeleteVersion(version.id)} className="text-rose-700">删除草稿</button>}
+              {version.state !== 'ready_for_review' && <button onClick={() => onDeleteVersion(version.id)} className="rounded px-1 py-0.5 transition-colors text-rose-700 hover:bg-rose-50 active:bg-rose-100 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">删除草稿</button>}
             </div>
             {report?.sprite_sets && (
               <div className="space-y-2">
@@ -71,7 +71,7 @@ export function SpritepackPanel({
             )}
             {blockers.length > 0 && <p className="text-rose-700">扫描阻断：{blockers.join('；')}</p>}
             {version.state === 'uploaded' && report && (
-              <button disabled={blockers.length > 0 || submittingVersionId === version.id} onClick={() => onSubmitReview(version.id)} className="px-3 py-1.5 bg-emerald-700 text-white rounded disabled:opacity-40 flex items-center gap-1.5">
+              <button disabled={blockers.length > 0 || submittingVersionId === version.id} onClick={() => onSubmitReview(version.id)} className="px-3 py-1.5 bg-emerald-700 text-white rounded transition-colors hover:bg-emerald-800 disabled:opacity-40 flex items-center gap-1.5 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">
                 <Send className="w-3.5 h-3.5" />提交审核
               </button>
             )}

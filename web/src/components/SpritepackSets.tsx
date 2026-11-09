@@ -53,7 +53,7 @@ export function SpritepackSets({ modID, showToast }: SpritepackSetsProps) {
   };
 
   if (loading) return <div className="flex items-center gap-2 text-neutral-500"><LoaderCircle className="w-4 h-4 animate-spin" />正在读取精灵包内容</div>;
-  if (error) return <div className="flex items-center justify-between gap-3 text-rose-700"><span>套件列表加载失败：{error}</span><button onClick={() => { setLoading(true); fetchSpriteSets(modID, base).then((items) => { setSets(items); setError(''); setLoading(false); }).catch((reason) => { setError(String(reason)); setLoading(false); }); }} className="underline">重试</button></div>;
+  if (error) return <div className="flex items-center justify-between gap-3 text-rose-700"><span>套件列表加载失败：{error}</span><button onClick={() => { setLoading(true); fetchSpriteSets(modID, base).then((items) => { setSets(items); setError(''); setLoading(false); }).catch((reason) => { setError(String(reason)); setLoading(false); }); }} className="rounded px-1 py-0.5 transition-colors underline hover:bg-rose-50 active:bg-rose-100 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">重试</button></div>;
 
   return (
     <section className="space-y-4">
@@ -63,9 +63,9 @@ export function SpritepackSets({ modID, showToast }: SpritepackSetsProps) {
           <p className="text-[11px] text-neutral-500 mt-1">{sets.length} 套 · {sets.reduce((sum, set) => sum + set.items.length, 0)} 个精灵项目</p>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setSelected(selected.length === sets.length ? [] : sets.map((set) => set.id))} className="px-2.5 py-1.5 border border-neutral-300 rounded text-neutral-700 hover:bg-neutral-50">{selected.length === sets.length ? '取消全选' : '全选'}</button>
-          <button type="button" onClick={() => void download(selected)} disabled={!selected.length || downloading} className="px-3 py-1.5 bg-emerald-700 text-white rounded disabled:opacity-40 flex items-center gap-1.5"><Download className="w-3.5 h-3.5" />下载已选 ({selected.length})</button>
-          <button type="button" onClick={() => void download(sets.map((set) => set.id))} disabled={!sets.length || downloading} className="px-3 py-1.5 border border-emerald-700 text-emerald-800 rounded disabled:opacity-40">全部下载</button>
+          <button type="button" onClick={() => setSelected(selected.length === sets.length ? [] : sets.map((set) => set.id))} className="px-2.5 py-1.5 border border-neutral-300 rounded text-neutral-700 hover:bg-neutral-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{selected.length === sets.length ? '取消全选' : '全选'}</button>
+          <button type="button" onClick={() => void download(selected)} disabled={!selected.length || downloading} className="px-3 py-1.5 bg-emerald-700 text-white rounded transition-colors hover:bg-emerald-800 disabled:opacity-40 flex items-center gap-1.5 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"><Download className="w-3.5 h-3.5" />下载已选 ({selected.length})</button>
+          <button type="button" onClick={() => void download(sets.map((set) => set.id))} disabled={!sets.length || downloading} className="px-3 py-1.5 border border-emerald-700 text-emerald-800 rounded transition-colors hover:bg-emerald-50 disabled:opacity-40 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">全部下载</button>
         </div>
       </div>
       {sets.map((set) => (

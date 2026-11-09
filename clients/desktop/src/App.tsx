@@ -50,6 +50,8 @@ import {
   AppUpdateState,
 } from './types/client';
 
+import { AnimatePresence, m } from './components/Motion';
+import { toastVariants } from '../../../ui/motion-presets';
 const UNVERIFIED_INSTALLATION: Installation = {
   id: 'unverified',
   label: '尚未连接 MAS',
@@ -400,13 +402,18 @@ export default function App() {
 
   // Toast / System notice
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
+  // 只保留「什么时候移除」这一个计时器；退场动画由 AnimatePresence 负责，
+  // 它会在节点被移除后继续播完再真正卸载。
   const toastTimerRef = useRef<number | null>(null);
 
   const showToast = (message: string, tone: ToastTone = 'info') => {
-    setToast({ message, tone });
-    // 新提示必须完整显示，不能被上一条的计时器提前清掉。
+    // 新提示必须完整显示，不能被上一条的计时器提前清掉，也不能继承上一条的退场状态。
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToast(null), 3500);
+    setToast({ message, tone });
+    toastTimerRef.current = window.setTimeout(() => {
+      toastTimerRef.current = null;
+      setToast(null);
+    }, 3500);
   };
 
   /**
@@ -1818,17 +1825,24 @@ export default function App() {
             )}
 
             {/* Toast Notification */}
-            {toast && (
-              <div
-                role="status"
-                className={`absolute bottom-4 right-4 max-w-[calc(100vw-2rem)] z-50 px-4 py-2.5 rounded-lg bg-neutral-900 border shadow-xl text-xs flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-150 break-words pointer-events-auto ${
-                  toast.tone === 'warn' ? 'border-amber-500/60 text-amber-100' : 'border-neutral-700 text-neutral-200'
-                }`}
-              >
-                <span className={`w-2 h-2 rounded-full shrink-0 ${toast.tone === 'warn' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
-                <span className="min-w-0">{toast.message}</span>
-              </div>
-            )}
+            <AnimatePresence>
+              {toast && (
+                <m.div
+                  role="status"
+                  aria-live="polite"
+                  variants={toastVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className={`absolute bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] right-4 max-w-[calc(100vw-2rem)] z-50 px-4 py-2.5 rounded-lg bg-neutral-900 border shadow-xl text-xs flex items-center gap-2 break-words pointer-events-auto ${
+                    toast.tone === 'warn' ? 'border-amber-500/60 text-amber-100' : 'border-neutral-700 text-neutral-200'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${toast.tone === 'warn' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                  <span className="min-w-0">{toast.message}</span>
+                </m.div>
+              )}
+            </AnimatePresence>
           </main>
         </div>
 
@@ -1905,34 +1919,34 @@ export default function App() {
         )}
 
         {/* 5. Plan Preview Modal (Contract: PreviewInstall / PreviewUpdate / PreviewUninstall) */}
-        {currentPlan && (
-          <PlanPreviewModal
-            plan={currentPlan}
-            activeInstallation={activeInstallation}
-            isGameRunning={isGameRunning}
-            onClose={() => { if (currentPlan?.backend_operation_id) void CancelStage(currentPlan.backend_operation_id); setCurrentPlan(null); }}
-            onApplyPlan={() => { if (currentPlan) void handleApplyPlan(currentPlan); }}
-            onOpenRecovery={() => { setCurrentPlan(null); setActiveTab('operations'); void refreshOperations(); }}
-          />
-        )}
+      {currentPlan && (
+        <PlanPreviewModal
+          plan={currentPlan}
+          activeInstallation={activeInstallation}
+          isGameRunning={isGameRunning}
+          onClose={() => { if (currentPlan?.backend_operation_id) void CancelStage(currentPlan.backend_operation_id); setCurrentPlan(null); }}
+          onApplyPlan={() => { if (currentPlan) void handleApplyPlan(currentPlan); }}
+          onOpenRecovery={() => { setCurrentPlan(null); setActiveTab('operations'); void refreshOperations(); }}
+        />
+      )}
 
         {/* 6. Adopt Unmanaged Mod Modal */}
-        {adoptTarget && (
-          <AdoptModal
-            item={adoptTarget}
-            onClose={() => setAdoptTarget(null)}
-            onConfirmAdopt={handleConfirmAdopt}
-          />
-        )}
+      {adoptTarget && (
+        <AdoptModal
+          item={adoptTarget}
+          onClose={() => setAdoptTarget(null)}
+          onConfirmAdopt={handleConfirmAdopt}
+        />
+      )}
 
         {/* 7. File Inspection Modal */}
-        {inspectTarget && (
-          <FileInspectModal
-            key={`${activeInstallationId}:${inspectTarget.mod_id}`}
-            item={inspectTarget}
-            onClose={() => setInspectTarget(null)}
-          />
-        )}
+      {inspectTarget && (
+        <FileInspectModal
+          key={`${activeInstallationId}:${inspectTarget.mod_id}`}
+          item={inspectTarget}
+          onClose={() => setInspectTarget(null)}
+        />
+      )}
 
         {/* 8. App Auto-Update Modal */}
         <AppUpdateModal

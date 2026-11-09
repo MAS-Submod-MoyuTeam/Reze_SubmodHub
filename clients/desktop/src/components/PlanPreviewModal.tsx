@@ -11,6 +11,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Plan, Installation } from '../types/client';
+import { m } from './Motion';
+import { overlayVariants } from '../../../../ui/motion-presets';
 
 interface PlanPreviewModalProps {
   plan: Plan | null;
@@ -136,7 +138,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs select-none">
+    <m.div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs select-none" variants={overlayVariants}>
       <div className="bg-neutral-900 border border-neutral-700/80 rounded-xl w-full max-w-4xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
         <div className="p-3 sm:p-4 border-b border-neutral-800 bg-neutral-900/90 flex items-start justify-between gap-3 shrink-0">
@@ -644,6 +646,6 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </m.div>
   );
 };

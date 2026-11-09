@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { Operation } from '../types/client';
 import { copyToClipboard } from '../clipboard';
+import { m } from './Motion';
+import { overlayVariants } from '../../../../ui/motion-presets';
 
 /** Single payload for both the copy button and the JSON disclosure, so the two
  *  can never drift apart. */
@@ -156,7 +158,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs">
+    <m.div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs" variants={overlayVariants}>
       <div
         role="dialog"
         aria-modal="true"
@@ -329,6 +331,6 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </m.div>
   );
 };

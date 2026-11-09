@@ -97,7 +97,8 @@ const MainLayout: React.FC = () => {
   }, [setDetailModalModId]);
 
   return (
-    <div className="min-h-screen bg-neutral-100/70 text-neutral-900 flex flex-col">
+    // `min-h-[100dvh]`：Android 地址栏收放时 `vh` 不会跟着变，用 dvh 才不会露出底部空白。
+    <div className="min-h-screen min-h-[100dvh] bg-neutral-100/70 text-neutral-900 flex flex-col">
       {/* Strict 3-zone Header Contract */}
       <Header
         onOpenLoginModal={() => setIsLoginModalOpen(true)}
@@ -105,7 +106,7 @@ const MainLayout: React.FC = () => {
       />
 
       {/* Main Viewport */}
-      <main className="flex-1 pb-12">
+      <main className="flex-1 pb-[calc(3rem+env(safe-area-inset-bottom,0px))]">
         {activeTab === 'catalog' && (
           <CatalogView
             onSelectMod={handleSelectMod}

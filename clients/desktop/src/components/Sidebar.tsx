@@ -90,11 +90,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 key={item.id}
                 onClick={() => onSelectTab(item.id)}
+                aria-current={isActive ? 'page' : undefined}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left group ${
                   isActive
                     ? 'bg-neutral-800 text-white font-semibold shadow-xs'
                     : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/40'
-                }`}
+                } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
               >
                 <div className="flex items-center gap-2.5 truncate">
                   <Icon

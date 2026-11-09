@@ -312,7 +312,7 @@ export const AdminPanel: React.FC = () => {
       {tagCatalogConflict ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 flex flex-wrap items-center justify-between gap-2">
           <span>标签目录已被其他管理员更新，请重新加载后再保存。</span>
-          <button type="button" onClick={() => void loadSettings()} className="underline font-medium">重新加载</button>
+          <button type="button" onClick={() => void loadSettings()} className="rounded px-1 py-0.5 transition-colors underline font-medium hover:bg-neutral-100 active:bg-neutral-200 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">重新加载</button>
         </div>
       ) : null}
       <TagCatalogSettings
@@ -357,7 +357,7 @@ export const AdminPanel: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => void loadSettings()}
-                  className="px-2.5 py-1 rounded bg-rose-100 text-rose-800 hover:bg-rose-200 font-medium transition-colors"
+                  className="px-2.5 py-1 rounded bg-rose-100 text-rose-800 hover:bg-rose-200 font-medium transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   重试
                 </button>
@@ -429,7 +429,7 @@ export const AdminPanel: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => void loadSettings()}
-                      className="px-2.5 py-1 rounded bg-amber-200/80 hover:bg-amber-300 text-amber-900 font-medium shrink-0 ml-2 transition-colors"
+                      className="px-2.5 py-1 rounded bg-amber-200/80 hover:bg-amber-300 text-amber-900 font-medium shrink-0 ml-2 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                     >
                       刷新获取最新
                     </button>
@@ -482,7 +482,7 @@ export const AdminPanel: React.FC = () => {
                 type="button"
                 onClick={() => void handleTestProxy()}
                 disabled={testingProxy || savingSettings || !proxyTemplate.trim()}
-                className="px-3.5 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                className="px-3.5 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
                 {testingProxy ? (
                   <RefreshCw className="w-3.5 h-3.5 animate-spin text-neutral-500" />
@@ -497,7 +497,7 @@ export const AdminPanel: React.FC = () => {
                   type="button"
                   onClick={() => void handleSaveSettings('')}
                   disabled={savingSettings || testingProxy || (!proxyTemplate && !savedTemplate)}
-                  className="px-3 py-2 rounded-lg border border-neutral-200 text-neutral-600 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50/50 disabled:opacity-40 text-xs font-medium transition-colors cursor-pointer"
+                  className="px-3 py-2 rounded-lg border border-neutral-200 text-neutral-600 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50/50 disabled:opacity-40 text-xs font-medium transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   清空直连
                 </button>
@@ -506,7 +506,7 @@ export const AdminPanel: React.FC = () => {
                   type="button"
                   onClick={() => void handleSaveSettings(proxyTemplate)}
                   disabled={savingSettings || testingProxy}
-                  className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   {savingSettings ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                   {savingSettings ? '保存中...' : '保存代理配置'}
@@ -565,7 +565,7 @@ export const AdminPanel: React.FC = () => {
                       href="https://github.com/settings/tokens"
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 hover:text-emerald-800 hover:underline"
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 hover:text-emerald-800 hover:underline active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                     >
                       去 GitHub 创建令牌
                       <ExternalLink className="w-3 h-3" />
@@ -587,7 +587,7 @@ export const AdminPanel: React.FC = () => {
                         href="https://github.com/settings/personal-access-tokens/new"
                         target="_blank"
                         rel="noreferrer"
-                        className="font-medium text-emerald-700 hover:underline"
+                        className="font-medium text-emerald-700 hover:underline active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                       >
                         Fine-grained
                       </a>
@@ -599,7 +599,7 @@ export const AdminPanel: React.FC = () => {
                         href="https://github.com/settings/tokens/new"
                         target="_blank"
                         rel="noreferrer"
-                        className="font-medium text-emerald-700 hover:underline"
+                        className="font-medium text-emerald-700 hover:underline active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                       >
                         Classic
                       </a>
@@ -653,7 +653,7 @@ export const AdminPanel: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => void loadSettings()}
-                      className="px-2.5 py-1 rounded bg-amber-200/80 hover:bg-amber-300 text-amber-900 font-medium shrink-0 ml-2 transition-colors"
+                      className="px-2.5 py-1 rounded bg-amber-200/80 hover:bg-amber-300 text-amber-900 font-medium shrink-0 ml-2 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                     >
                       刷新获取最新
                     </button>
@@ -669,7 +669,7 @@ export const AdminPanel: React.FC = () => {
                 type="button"
                 onClick={() => void handleSaveToken('')}
                 disabled={savingToken || !tokenConfigured}
-                className="px-3 py-2 rounded-lg border border-neutral-200 text-neutral-600 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50/50 disabled:opacity-40 text-xs font-medium transition-colors cursor-pointer"
+                className="px-3 py-2 rounded-lg border border-neutral-200 text-neutral-600 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50/50 disabled:opacity-40 text-xs font-medium transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
                 清除令牌
               </button>
@@ -677,7 +677,7 @@ export const AdminPanel: React.FC = () => {
                 type="button"
                 onClick={() => void handleSaveToken(tokenInput)}
                 disabled={savingToken || !tokenInput.trim()}
-                className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+                className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
                 {savingToken ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                 {savingToken ? '保存中...' : '保存令牌'}
@@ -752,7 +752,7 @@ export const AdminPanel: React.FC = () => {
                           syncMaxAge.trim() === preset
                             ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
                             : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
-                        }`}
+                        } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
                       >
                         {preset === '30m' ? '30 分钟' : preset === '60m' ? '60 分钟' : preset === '6h' ? '6 小时' : '24 小时'}
                       </button>
@@ -791,7 +791,7 @@ export const AdminPanel: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => void loadSettings()}
-                      className="px-2.5 py-1 rounded bg-amber-200/80 hover:bg-amber-300 text-amber-900 font-medium shrink-0 ml-2 transition-colors"
+                      className="px-2.5 py-1 rounded bg-amber-200/80 hover:bg-amber-300 text-amber-900 font-medium shrink-0 ml-2 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                     >
                       刷新获取最新
                     </button>
@@ -807,7 +807,7 @@ export const AdminPanel: React.FC = () => {
                 type="button"
                 onClick={() => void handleSaveSyncMaxAge('')}
                 disabled={syncMaxAgeLocked || savingSyncMaxAge || savedSyncMaxAge === '1h0m0s'}
-                className="px-3 py-2 rounded-lg border border-neutral-200 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 disabled:opacity-40 text-xs font-medium transition-colors cursor-pointer"
+                className="px-3 py-2 rounded-lg border border-neutral-200 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 disabled:opacity-40 text-xs font-medium transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
                 恢复默认 60 分钟
               </button>
@@ -816,7 +816,7 @@ export const AdminPanel: React.FC = () => {
                   type="button"
                   onClick={() => void handleSaveSyncMaxAge('0')}
                   disabled={syncMaxAgeLocked || savingSyncMaxAge || savedSyncMaxAge === '0s'}
-                  className="px-3 py-2 rounded-lg border border-neutral-200 text-neutral-600 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50/50 disabled:opacity-40 text-xs font-medium transition-colors cursor-pointer"
+                  className="px-3 py-2 rounded-lg border border-neutral-200 text-neutral-600 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50/50 disabled:opacity-40 text-xs font-medium transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   关闭自动刷新
                 </button>
@@ -824,7 +824,7 @@ export const AdminPanel: React.FC = () => {
                   type="button"
                   onClick={() => void handleSaveSyncMaxAge(syncMaxAge)}
                   disabled={syncMaxAgeLocked || savingSyncMaxAge || !isSyncMaxAgeDirty}
-                  className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   {savingSyncMaxAge ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                   {savingSyncMaxAge ? '保存中...' : '保存刷新窗口'}
@@ -873,7 +873,7 @@ export const AdminPanel: React.FC = () => {
                     type="button"
                     onClick={() => void loadUserRoles()}
                     disabled={loadingRoles || !/^[1-9]\d*$/.test(userID.trim())}
-                    className="px-3.5 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-700 text-xs font-medium flex items-center gap-1.5 transition-colors shadow-2xs shrink-0 cursor-pointer"
+                    className="px-3.5 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-700 text-xs font-medium flex items-center gap-1.5 transition-colors shadow-2xs shrink-0 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                   >
                     {loadingRoles ? <RefreshCw className="w-3 h-3 animate-spin text-neutral-500" /> : <KeyRound className="w-3.5 h-3.5 text-neutral-500" />}
                     {loadingRoles ? '查询中...' : '查询角色'}
@@ -949,7 +949,7 @@ export const AdminPanel: React.FC = () => {
               <button
                 type="submit"
                 disabled={savingRoles || !userID.trim()}
-                className="px-5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+                className="px-5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
                 {savingRoles ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                 {savingRoles ? '正在保存...' : '保存授权设定'}

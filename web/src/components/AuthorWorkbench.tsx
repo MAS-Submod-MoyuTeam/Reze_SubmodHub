@@ -53,6 +53,8 @@ import {
   RefreshCw,
   EyeOff,
 } from 'lucide-react';
+import { AnimatePresence, m } from './Motion';
+import { overlayVariants, panelVariants } from '../../../ui/motion-presets';
 
 export const AuthorWorkbench: React.FC = () => {
   const workspace = useAuthorWorkspace();
@@ -584,8 +586,8 @@ export const AuthorWorkbench: React.FC = () => {
             <button
               onClick={() => setWorkbenchView('mods')}
               className={`px-3 py-1.5 rounded transition-colors ${
-                workbenchView === 'mods' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'
-              }`}
+                workbenchView === 'mods' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:bg-white/60 hover:text-neutral-900'
+              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
             >
               模组与候选版本
             </button>
@@ -603,7 +605,7 @@ export const AuthorWorkbench: React.FC = () => {
 
                   <button
                     onClick={openNewModEditor}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded transition-colors shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded transition-colors shadow-xs active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <Plus className="w-3.5 h-3.5" />
             新建模组草稿
@@ -624,7 +626,7 @@ export const AuthorWorkbench: React.FC = () => {
             </span>
           </div>
 
-          <div className="flex flex-wrap gap-1 text-xs">{[{id:'all',label:'全部'},{id:'ready_for_review',label:'待审核'},{id:'published',label:'已发布'},{id:'rejected',label:'已驳回'}].map((filter) => <button key={filter.id} onClick={() => workspace.changeHistoryState(filter.id)} className={`min-h-8 rounded px-3 ${workspace.historyState === filter.id ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600'}`}>{filter.label}</button>)}</div>
+          <div className="flex flex-wrap gap-1 text-xs">{[{id:'all',label:'全部'},{id:'ready_for_review',label:'待审核'},{id:'published',label:'已发布'},{id:'rejected',label:'已驳回'}].map((filter) => <button key={filter.id} onClick={() => workspace.changeHistoryState(filter.id)} className={`min-h-8 rounded px-3 transition-colors ${workspace.historyState === filter.id ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}>{filter.label}</button>)}</div>
           {historyRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">正在加载提交历史…</p>}
           {historyRequest.error && <p role="alert" className="text-xs text-rose-700">提交历史加载失败：{historyRequest.error} <button onClick={historyRequest.reload} className="underline">重试</button></p>}
           {historyRequest.data && (authorSubmissions.length === 0 ? (
@@ -700,7 +702,7 @@ export const AuthorWorkbench: React.FC = () => {
                                 setWorkbenchView('mods');
                                 openVersionForm(subVer);
                               }}
-                              className="px-3 py-1 text-xs font-medium text-white bg-rose-700 hover:bg-rose-800 rounded transition-colors flex items-center gap-1"
+                              className="px-3 py-1 text-xs font-medium text-white bg-rose-700 hover:bg-rose-800 rounded transition-colors flex items-center gap-1 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                             >
                               编辑被驳回版本
                             </button>
@@ -714,7 +716,7 @@ export const AuthorWorkbench: React.FC = () => {
                       <div className="flex items-center gap-2 pt-1 text-[11px]">
                         <button
                           onClick={() => setInspectingReportId(sub.scan_report_id || subVer?.scan_report_id || null)}
-                          className="text-emerald-700 hover:underline flex items-center gap-1 font-medium"
+                          className="text-emerald-700 hover:underline flex items-center gap-1 font-medium active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                         >
                           <FileCheck className="w-3.5 h-3.5" />
                           查看关联的静态扫描报告
@@ -739,7 +741,7 @@ export const AuthorWorkbench: React.FC = () => {
               </h2>
               <button
                 onClick={openNewModEditor}
-                className="text-xs text-emerald-700 hover:underline font-medium"
+                className="text-xs text-emerald-700 hover:underline font-medium active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
                 + 新建草稿
               </button>
@@ -820,7 +822,7 @@ export const AuthorWorkbench: React.FC = () => {
                             href={getGitHubRepoUrl(activeMod.github_owner, activeMod.github_repo)}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-emerald-700 hover:underline font-mono"
+                            className="text-emerald-700 hover:underline font-mono active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                           >
                             {activeMod.github_owner}/{activeMod.github_repo}
                           </a>
@@ -876,12 +878,12 @@ export const AuthorWorkbench: React.FC = () => {
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={() => openModEditor(activeMod)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-700 border border-neutral-300 hover:bg-neutral-50 rounded transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-700 border border-neutral-300 hover:bg-neutral-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                     >
                       <Pencil className="w-3.5 h-3.5" />
                       编辑模组
                     </button>
-                    {activeMod.is_published ? <button type="button" onClick={() => { if (window.confirm('确认下架这个模组？版本、归档和详情图会保留。')) void unpublishMod(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors"><EyeOff className="w-3.5 h-3.5" />下架模组</button> : canDeleteActiveModDraft && <button type="button" onClick={() => { if (window.confirm('确认删除草稿模组？候选版本、扫描记录和详情图会一并删除。')) void deleteModDraft(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-700 border border-rose-200 hover:bg-rose-50 rounded transition-colors">删除草稿模组</button>}
+                    {activeMod.is_published ? <button type="button" onClick={() => { if (window.confirm('确认下架这个模组？版本、归档和详情图会保留。')) void unpublishMod(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"><EyeOff className="w-3.5 h-3.5" />下架模组</button> : canDeleteActiveModDraft && <button type="button" onClick={() => { if (window.confirm('确认删除草稿模组？候选版本、扫描记录和详情图会一并删除。')) void deleteModDraft(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-700 border border-rose-200 hover:bg-rose-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">删除草稿模组</button>}
                     {activeMod.source_type === 'github_releases' ? (
                       <button
                         type="button"
@@ -894,7 +896,7 @@ export const AuthorWorkbench: React.FC = () => {
                             setIsSyncingReleases(false);
                           }
                         }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 rounded transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                       >
                         <RefreshCw className={`w-3.5 h-3.5 ${isSyncingReleases ? 'animate-spin' : ''}`} />
                         {isSyncingReleases ? '正在同步...' : '立即同步 Releases'}
@@ -903,7 +905,7 @@ export const AuthorWorkbench: React.FC = () => {
                       activeMod.category !== 'spritepack' && (
                         <button
                           onClick={() => openVersionForm()}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded transition-colors"
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           创建候选版本
@@ -1008,26 +1010,26 @@ export const AuthorWorkbench: React.FC = () => {
                               </div>
 
                               {!isPublished && (
-                                <button onClick={() => { if (window.confirm('确认删除此版本？该操作不可恢复。')) void deleteVersion(v.id); }} className="px-2.5 py-1.5 text-xs text-rose-700 border border-rose-200 rounded hover:bg-rose-50">{isDraft ? '删除草稿' : '删除旧版本'}</button>
+                                <button onClick={() => { if (window.confirm('确认删除此版本？该操作不可恢复。')) void deleteVersion(v.id); }} className="px-2.5 py-1.5 text-xs text-rose-700 border border-rose-200 rounded hover:bg-rose-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{isDraft ? '删除草稿' : '删除旧版本'}</button>
                               )}
                               {isPublished && (
                                 <>
                                   {activeMod?.latest_version_id === v.id ? (
                                     <span className="text-[11px] text-emerald-700">目录最新版本</span>
                                   ) : (
-                                    <button onClick={() => void setLatestPublishedVersion(v.id)} className="px-2.5 py-1.5 text-xs text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-50">设为最新版本</button>
+                                    <button onClick={() => void setLatestPublishedVersion(v.id)} className="px-2.5 py-1.5 text-xs text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">设为最新版本</button>
                                   )}
-                                  <button onClick={() => { const reason = window.prompt('请输入下架理由'); if (reason?.trim()) void unpublishVersion(v.id, reason); }} className="px-2.5 py-1.5 text-xs text-amber-700 border border-amber-200 rounded hover:bg-amber-50">下架版本</button>
+                                  <button onClick={() => { const reason = window.prompt('请输入下架理由'); if (reason?.trim()) void unpublishVersion(v.id, reason); }} className="px-2.5 py-1.5 text-xs text-amber-700 border border-amber-200 rounded hover:bg-amber-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">下架版本</button>
                                 </>
                               )}
                               {!v.deprecated && v.state !== 'draft' && (
-                                <button onClick={() => { const reason = window.prompt('请输入不推荐使用的原因'); if (reason?.trim()) void markVersionDeprecated(v.id, reason); }} className="px-2.5 py-1.5 text-xs text-orange-700 border border-orange-200 rounded hover:bg-orange-50">标记不推荐</button>
+                                <button onClick={() => { const reason = window.prompt('请输入不推荐使用的原因'); if (reason?.trim()) void markVersionDeprecated(v.id, reason); }} className="px-2.5 py-1.5 text-xs text-orange-700 border border-orange-200 rounded hover:bg-orange-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">标记不推荐</button>
                               )}
                               {v.deprecated && (
                                 <button onClick={() => { if (window.confirm('取消不推荐标记并清除原因？')) void clearVersionDeprecation(v.id); }} className="px-2.5 py-1.5 text-xs text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-50">取消不推荐</button>
                               )}
                               {canEditVersion(v.state) && (
-                                <button onClick={() => openVersionForm(v)} className="px-2.5 py-1.5 text-xs text-sky-700 border border-sky-200 rounded hover:bg-sky-50">{isDraft ? '编辑草稿' : '编辑版本'}</button>
+                                <button onClick={() => openVersionForm(v)} className="px-2.5 py-1.5 text-xs text-sky-700 border border-sky-200 rounded hover:bg-sky-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{isDraft ? '编辑草稿' : '编辑版本'}</button>
                               )}
 
                               <span className="text-[11px] text-neutral-400 font-mono">
@@ -1075,7 +1077,7 @@ export const AuthorWorkbench: React.FC = () => {
                                     <span className="block mb-1">未识别到唯一版本标识，请手动填写</span>
                                     <input value={manualVersions[v.id] || ''} onChange={(event) => setManualVersions((prev) => ({ ...prev, [v.id]: event.target.value }))} placeholder="例如 1.27.1" className="w-full px-2.5 py-1.5 rounded border border-neutral-300 bg-white font-mono" />
                                   </label>
-                                  <button disabled={!manualVersions[v.id]?.trim()} onClick={() => void editVersion(v.id, manualVersions[v.id].trim(), v.release_notes)} className="px-3 py-1.5 rounded bg-neutral-900 text-white disabled:opacity-40">保存版本标识</button>
+                                  <button disabled={!manualVersions[v.id]?.trim()} onClick={() => void editVersion(v.id, manualVersions[v.id].trim(), v.release_notes)} className="px-3 py-1.5 rounded bg-neutral-900 text-white transition-colors hover:bg-neutral-800 disabled:opacity-40 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">保存版本标识</button>
                                 </div>
                               )}
 
@@ -1189,9 +1191,22 @@ export const AuthorWorkbench: React.FC = () => {
       )}
 
       {/* Uploading Progress Modal */}
+      <AnimatePresence>
       {isUploading && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-          <div className="bg-white rounded-lg p-6 max-w-sm w-full space-y-4 text-center shadow-xl animate-in fade-in">
+        <m.div
+          variants={overlayVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+        >
+          <m.div
+            variants={panelVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="bg-white rounded-lg p-6 max-w-sm w-full space-y-4 text-center shadow-xl"
+          >
             <Upload className="w-8 h-8 text-emerald-700 mx-auto animate-bounce" />
             <div>
               <h3 className="text-sm font-semibold text-neutral-900">
@@ -1210,14 +1225,28 @@ export const AuthorWorkbench: React.FC = () => {
             <div className="text-[11px] font-mono text-neutral-400">
               Idempotency-Key 校验通过 · {uploadProgress}%
             </div>
-          </div>
-        </div>
+          </m.div>
+        </m.div>
       )}
+      </AnimatePresence>
 
       {/* Full Scan Report Inspector Modal */}
+      <AnimatePresence>
       {inspectingReport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs">
-          <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
+        <m.div
+          variants={overlayVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs"
+        >
+          <m.div
+            variants={panelVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-3xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden"
+          >
             <div className="px-6 py-4 border-b border-neutral-200 flex items-center justify-between shrink-0 bg-neutral-50/50">
               <div className="flex items-center gap-2">
                 <FileCheck className="w-5 h-5 text-neutral-700" />
@@ -1232,13 +1261,13 @@ export const AuthorWorkbench: React.FC = () => {
               </div>
               <button
                 onClick={() => setInspectingReportId(null)}
-                className="text-neutral-400 hover:text-neutral-700 text-xs px-2 py-1 rounded"
+                className="text-neutral-400 hover:text-neutral-700 text-xs px-2 py-1 rounded active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
                 关闭
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-5 text-xs text-neutral-700 leading-relaxed">
+            <div className="p-6 overflow-y-auto overscroll-y-contain space-y-5 text-xs text-neutral-700 leading-relaxed">
               {/* Blockers & Warnings */}
               {inspectingReport.blockers.length > 0 && (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-900 space-y-1.5">
@@ -1320,7 +1349,7 @@ export const AuthorWorkbench: React.FC = () => {
               {/* Sprite Identities & Derived Gifts */}
               {inspectingReport.sprite_identities.length > 0 && (
                 <details className="group rounded border border-neutral-200 bg-white overflow-hidden">
-                  <summary className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 cursor-pointer select-none list-none hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+                  <summary className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 cursor-pointer select-none list-none hover:bg-neutral-50 [&::-webkit-details-marker]:hidden active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">
                     <span className="text-xs font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-1.5">
                       <ChevronRight className="w-3.5 h-3.5 text-neutral-500 group-open:hidden" />
                       <ChevronDown className="w-3.5 h-3.5 text-neutral-500 hidden group-open:block" />
@@ -1411,19 +1440,33 @@ export const AuthorWorkbench: React.FC = () => {
             <div className="px-6 py-3 border-t border-neutral-200 bg-neutral-50/50 flex justify-end">
               <button
                 onClick={() => setInspectingReportId(null)}
-                className="px-4 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded transition-colors"
+                className="px-4 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
                 完成查看
               </button>
             </div>
-          </div>
-        </div>
+          </m.div>
+        </m.div>
       )}
+      </AnimatePresence>
 
       {/* New Mod Draft Modal */}
+      <AnimatePresence>
       {isNewModModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs">
-          <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-5xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
+        <m.div
+          variants={overlayVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs"
+        >
+          <m.div
+            variants={panelVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-5xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden"
+          >
             <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between shrink-0">
               <h3 className="text-sm font-semibold text-neutral-900">{editingModId ? '编辑模组元数据' : '新建模组草稿'}</h3>
               <button
@@ -1868,14 +1911,28 @@ export const AuthorWorkbench: React.FC = () => {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          </m.div>
+        </m.div>
       )}
+      </AnimatePresence>
 
       {/* New Candidate Version Modal */}
+      <AnimatePresence>
       {versionFormTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-          <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
+        <m.div
+          variants={overlayVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+        >
+          <m.div
+            variants={panelVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden"
+          >
             <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-neutral-900">
                 {versionFormTarget === 'new' ? '创建候选版本' : '编辑候选版本'}
@@ -1960,14 +2017,28 @@ export const AuthorWorkbench: React.FC = () => {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          </m.div>
+        </m.div>
       )}
+      </AnimatePresence>
 
       {/* GitHub Releases Import Modal */}
+      <AnimatePresence>
       {isGithubImportOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-          <div className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95">
+        <m.div
+          variants={overlayVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+        >
+          <m.div
+            variants={panelVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-md w-full overflow-hidden"
+          >
             <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Github className="w-4 h-4 text-neutral-900" />
@@ -2019,9 +2090,10 @@ export const AuthorWorkbench: React.FC = () => {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          </m.div>
+        </m.div>
       )}
+      </AnimatePresence>
     </div>
   );
 };

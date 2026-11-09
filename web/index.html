@@ -2,7 +2,13 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      viewport-fit=cover：Android 边到边渲染时必须声明，否则 env(safe-area-inset-*) 恒为 0，
+      顶栏会被状态栏压住、右下悬浮控件会落到手势条下面。
+      不写 user-scalable=no：那会剥夺用户双指缩放的权利。
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>RezeHub - Monika After Story 模组枢纽平台</title>
     <meta name="description" content="RezeHub 前端设计稿与功能演示平台：面向 Monika After Story (MAS) 的模组目录、作者工作台、静态扫描报告、审核与审计管理系统。" />

@@ -14,8 +14,9 @@ interface Props {
   catalogFailed: boolean;
 }
 
+// 圆钮的共用样式：尺寸沿用既有的 `w-11 h-11`（44px），这里只补动效与焦点环。
 const BUTTON =
-  'pointer-events-auto w-11 h-11 rounded-full flex items-center justify-center border shadow-lg transition-colors';
+  'pointer-events-auto w-11 h-11 rounded-full flex items-center justify-center border shadow-lg transition-colors active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600';
 
 /**
  * 目录页右下角的悬浮控件组（Web 浅色版）：返回顶部 / 标签筛选 / 刷新。
@@ -42,7 +43,7 @@ export const CatalogFloatingControls: React.FC<Props> = ({
           aria-label="返回顶部"
           title="返回顶部"
           data-testid="catalog-back-to-top"
-          className={`${BUTTON} cursor-pointer border-neutral-200 bg-white/95 text-neutral-600 hover:border-emerald-300 hover:text-emerald-700`}
+          className={`${BUTTON} cursor-pointer border-neutral-200 bg-white/95 text-neutral-600 hover:border-emerald-300 hover:text-emerald-700 active:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
         >
           <ArrowUp className="w-4 h-4" aria-hidden="true" />
         </button>
@@ -59,8 +60,8 @@ export const CatalogFloatingControls: React.FC<Props> = ({
         className={`${BUTTON} relative cursor-pointer ${
           tagDrawerOpen || activeTagCount > 0
             ? 'border-emerald-600 bg-emerald-700 text-white'
-            : 'border-neutral-200 bg-white/95 text-neutral-600 hover:border-emerald-300 hover:text-emerald-700'
-        }`}
+            : 'border-neutral-200 bg-white/95 text-neutral-600 hover:border-emerald-300 hover:text-emerald-700 active:bg-neutral-100'
+        } focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
       >
         <Tag className="w-4 h-4" aria-hidden="true" />
         {activeTagCount > 0 ? (
@@ -85,8 +86,8 @@ export const CatalogFloatingControls: React.FC<Props> = ({
           className={`${BUTTON} ${
             catalogRefreshing
               ? 'cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400'
-              : 'cursor-pointer border-neutral-200 bg-white/95 text-neutral-600 hover:border-emerald-300 hover:text-emerald-700'
-          }`}
+              : 'cursor-pointer border-neutral-200 bg-white/95 text-neutral-600 hover:border-emerald-300 hover:text-emerald-700 active:bg-neutral-100'
+          } focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
         >
           <RefreshCw className={`w-4 h-4 ${catalogRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
         </button>

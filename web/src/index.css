@@ -1,1 +1,68 @@
 @import "tailwindcss";
+
+/*
+ * 整页滚动条：恒定宽度 + 恒定沟槽。
+ *
+ * 目标是「滚动条一直看得见，但它的出现/消失不改变页面排版」：
+ * - `scrollbar-gutter: stable` 让文档永远预留滚动条那一列，页面从短变长（或反向）
+ *   时正文不会横向跳一下；
+ * - `::-webkit-scrollbar` 固定 10px，避免不同平台/缩放比例下默认宽度不一，
+ *   沟槽与滚动条宽度才对得上（否则 stable 预留的列与实际绘制的宽度不一致）；
+ * - Firefox 走 `scrollbar-width`/`scrollbar-color` 这条独立分支，宽度由浏览器
+ *   决定（thin ≈ 8–12px），因此沟槽仍可能差几像素；这是浏览器能力差异，
+ *   不靠 hack 补偿。
+ *
+ * 不用 `overflow-y: scroll`：那会永远画一条空轨道，目录页首屏就会出现一条
+ * 没有滑块的长条。
+ */
+html {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #a3a3a3 transparent;
+  /* Android 横竖屏切换时浏览器会自作主张放大字号，这一条把它关掉。 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  /* 透明边框 + content-box 让滑块比沟槽窄，看起来像一条细胶囊而不是整列填满。 */
+  background: #d4d4d4;
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a3a3a3;
+  background-clip: content-box;
+}
+
+/*
+ * Android 触摸体验：默认的点击高亮方块会盖住 hover/active 的变化，
+ * 而我们自己已经给了按压反馈，所以关掉它。
+ */
+body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+/* 无障碍：跟随系统「减弱动态效果」。客户端的 index.css 已有同款全局块。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -54,7 +54,7 @@ export const SpritepackSelection: React.FC<SpritepackSelectionProps> = ({
           <button
             type="button"
             onClick={onRetry}
-            className="flex items-center gap-1 rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-200 hover:bg-neutral-700"
+            className="flex items-center gap-1 rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-200 hover:bg-neutral-700 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
           >
             <RefreshCw className="h-3 w-3" /> 重试
           </button>
@@ -154,7 +154,7 @@ export const SpritepackSelection: React.FC<SpritepackSelectionProps> = ({
           <button
             type="button"
             onClick={allSelected ? onDeselectAll : onSelectAll}
-            className="rounded bg-neutral-800 px-2.5 py-1 text-xs font-medium text-neutral-200 hover:bg-neutral-700 hover:text-white"
+            className="rounded bg-neutral-800 px-2.5 py-1 text-xs font-medium text-neutral-200 hover:bg-neutral-700 hover:text-white active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
           >
             {allSelected ? '取消全选' : '全选'}
           </button>

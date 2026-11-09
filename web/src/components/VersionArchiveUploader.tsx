@@ -22,10 +22,12 @@ interface VersionArchiveUploaderProps {
 }
 
 const uploadButtonClass =
-  'px-3 py-1.5 font-medium text-neutral-800 bg-white hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed rounded border border-neutral-300 flex items-center gap-1.5 transition-colors';
+  'px-3 py-1.5 font-medium text-neutral-800 bg-white hover:bg-neutral-100 hover:border-neutral-400 active:bg-neutral-200 disabled:opacity-50 disabled:cursor-not-allowed rounded border border-neutral-300 flex items-center gap-1.5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600';
 
 const shapeButtonClass = (active: boolean) =>
-  `px-2.5 py-1 rounded transition-colors ${active ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'}`;
+  `px-2.5 py-1 rounded transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${
+    active ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 active:bg-neutral-200'
+  }`;
 
 export const VersionArchiveUploader: React.FC<VersionArchiveUploaderProps> = ({ version, declaredPlatforms, busy, onPick }) => {
   const shape = versionArchiveShape(version);

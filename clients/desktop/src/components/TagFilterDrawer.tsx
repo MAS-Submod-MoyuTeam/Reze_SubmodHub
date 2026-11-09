@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Minus, X } from 'lucide-react';
+import { AnimatePresence, m } from './Motion';
+import { drawerVariants, overlayVariants } from '../../../../ui/motion-presets';
 import {
   activeTagFilterCount,
   describeTagFilter,
@@ -114,28 +116,38 @@ export const TagFilterDrawer: React.FC<Props> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end"
-      role="dialog"
-      aria-modal="true"
-      aria-label="标签筛选"
-      data-testid="tag-filter-drawer"
-    >
-      <button
-        type="button"
-        aria-label="关闭标签筛选"
-        tabIndex={-1}
-        onClick={onClose}
-        className="absolute inset-0 bg-black/60 cursor-default"
-      />
+    <AnimatePresence>
+      {open && (
+        <m.div
+          className="fixed inset-0 z-50 flex justify-end"
+          role="dialog"
+          aria-modal="true"
+          aria-label="标签筛选"
+          data-testid="tag-filter-drawer"
+        >
+          <m.button
+            type="button"
+            aria-label="关闭标签筛选"
+            tabIndex={-1}
+            onClick={onClose}
+            variants={overlayVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="absolute inset-0 bg-black/60 cursor-default active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+          />
       {/*
         抽屉铺满整个视口，而 Android 是边到边渲染：状态栏、刘海和底部手势条都盖在
         页面之上。这里按安全区让开，否则右上角的关闭键正好落在状态栏下面，点不到。
       */}
-      <aside
-        data-testid="tag-filter-panel"
-        className="relative h-full w-full max-w-sm sm:max-w-md border-l border-neutral-800 bg-neutral-900 text-neutral-200 shadow-2xl flex flex-col pt-[env(safe-area-inset-top,0px)] pr-[env(safe-area-inset-right,0px)] pb-[env(safe-area-inset-bottom,0px)]"
-      >
+          <m.aside
+            data-testid="tag-filter-panel"
+            variants={drawerVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="relative h-full w-full max-w-sm sm:max-w-md border-l border-neutral-800 bg-neutral-900 text-neutral-200 shadow-2xl flex flex-col pt-[env(safe-area-inset-top,0px)] pr-[env(safe-area-inset-right,0px)] pb-[env(safe-area-inset-bottom,0px)]"
+          >
         <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-neutral-800">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-neutral-100">标签筛选</h2>
@@ -154,7 +166,7 @@ export const TagFilterDrawer: React.FC<Props> = ({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+        <div className="flex-1 overflow-y-auto overscroll-y-contain px-4 py-3 space-y-3">
           {active > 0 ? (
             <p className="text-[11px] text-neutral-400" data-testid="tag-filter-summary">
               {describeTagFilter(states)}
@@ -232,7 +244,9 @@ export const TagFilterDrawer: React.FC<Props> = ({
             清除全部
           </button>
         </div>
-      </aside>
-    </div>
+          </m.aside>
+        </m.div>
+      )}
+    </AnimatePresence>
   );
 };

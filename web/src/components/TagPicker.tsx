@@ -42,10 +42,13 @@ export const TagPicker: React.FC<Props> = ({ groups, value, onChange, max = MAX_
         disabled={disabled || blocked}
         onClick={() => onChange(toggleTagSelection(groups, value, name, max))}
         className={[
-          'w-full text-left rounded border px-2 py-1 transition-colors',
+          'w-full text-left rounded border px-2 py-1.5 transition-colors',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600',
           main ? 'font-medium' : '',
-          selected ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-neutral-200 bg-white text-neutral-800 hover:border-emerald-600',
-          blocked || disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer',
+          selected
+            ? 'border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800 active:bg-emerald-900'
+            : 'border-neutral-200 bg-white text-neutral-800 hover:border-emerald-600 hover:bg-emerald-50 active:bg-emerald-100',
+          blocked || disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer active:brightness-95',
         ].join(' ').trim()}
       >
         <span className="flex items-center gap-1 text-[11px]">
@@ -91,7 +94,7 @@ export const TagPicker: React.FC<Props> = ({ groups, value, onChange, max = MAX_
                       aria-expanded={isOpen}
                       aria-label={`${isOpen ? '收起' : '展开'} ${group.name} 的子标签（${children.length} 个）`}
                       data-testid={`tag-picker-toggle-${group.name}`}
-                      className="mt-1 p-0.5 rounded text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-700 cursor-pointer"
+                      className="mt-1 p-0.5 rounded text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-700 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                     >
                       {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                     </button>

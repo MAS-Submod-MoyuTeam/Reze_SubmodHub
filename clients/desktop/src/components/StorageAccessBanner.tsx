@@ -55,7 +55,7 @@ export const StorageAccessBanner: React.FC<StorageAccessBannerProps> = ({
             type="button"
             onClick={onRefreshStatus}
             disabled={isRefreshing}
-            className="min-h-[38px] sm:min-h-0 px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium flex items-center justify-center gap-1 transition-colors border border-zinc-700 disabled:opacity-50 cursor-pointer"
+            className="min-h-[38px] sm:min-h-0 px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium flex items-center justify-center gap-1 transition-colors border border-zinc-700 disabled:opacity-50 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
             title="重新检查权限状态"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -65,7 +65,7 @@ export const StorageAccessBanner: React.FC<StorageAccessBannerProps> = ({
           <button
             type="button"
             onClick={onRequestAccess}
-            className="min-h-[38px] sm:min-h-0 px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-medium flex items-center justify-center gap-1 transition-colors shadow-sm cursor-pointer"
+            className="min-h-[38px] sm:min-h-0 px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-medium flex items-center justify-center gap-1 transition-colors shadow-sm cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             <span>去设置授权</span>
