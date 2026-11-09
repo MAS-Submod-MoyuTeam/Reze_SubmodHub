@@ -15,7 +15,8 @@ func TestAuthorReviewPublishLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	s.sessions[sessionKey(token)] = authSession{User: authUser{ID: "flarum:7", DisplayName: "Author"}, Roles: []string{"admin"}, CSRF: "csrf", Expires: time.Now().Add(time.Hour)}
+	s.AdminGroupIDs = map[string]bool{"16": true}
+	s.sessions[sessionKey(token)] = authSession{User: authUser{ID: "flarum:7", DisplayName: "Author"}, GroupIDs: []string{"16"}, CSRF: "csrf", Expires: time.Now().Add(time.Hour)}
 	ts := httptest.NewServer(NewStoreHandler(s))
 	defer ts.Close()
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/author/mods", bytes.NewBufferString(`{"title":"Demo","summary":"summary","description":"## Details\n\n**Markdown** body","category":"submod","tags":["工具"],"supported_platforms":["windows"],"mas_version_range":">=0.12.14","recommended_priority":10}`))

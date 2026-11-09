@@ -47,7 +47,8 @@ func TestAuthorChoosesLatestAtSubmissionAndCanChangePublishedLatest(t *testing.T
 	authorToken := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	adminToken := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	s.sessions[sessionKey(authorToken)] = authSession{User: authUser{ID: "author"}, Expires: time.Now().Add(time.Hour)}
-	s.sessions[sessionKey(adminToken)] = authSession{User: authUser{ID: "admin"}, Roles: []string{"admin"}, Expires: time.Now().Add(time.Hour)}
+	s.AdminGroupIDs = map[string]bool{"16": true}
+	s.sessions[sessionKey(adminToken)] = authSession{User: authUser{ID: "admin"}, GroupIDs: []string{"16"}, Expires: time.Now().Add(time.Hour)}
 	ts := httptest.NewServer(NewStoreHandler(s))
 	defer ts.Close()
 	call := func(method, path, token, body string) *http.Response {

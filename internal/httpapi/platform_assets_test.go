@@ -615,7 +615,8 @@ func TestReviewDetailExposesEveryPlatformReport(t *testing.T) {
 	store.mu.Unlock()
 
 	adminToken := strings.Repeat("d", 64)
-	store.sessions[sessionKey(adminToken)] = authSession{User: authUser{ID: "admin"}, Roles: []string{"admin"}, Expires: time.Now().Add(time.Hour)}
+	store.AdminGroupIDs = map[string]bool{"16": true}
+	store.sessions[sessionKey(adminToken)] = authSession{User: authUser{ID: "admin"}, GroupIDs: []string{"16"}, Expires: time.Now().Add(time.Hour)}
 	server := httptest.NewServer(NewStoreHandler(store))
 	defer server.Close()
 
@@ -1145,11 +1146,12 @@ func TestSavedPlatformSetFollowsSourceConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := strings.Repeat("a", 64)
+	store.AdminGroupIDs = map[string]bool{"16": true}
 	store.sessions[sessionKey(token)] = authSession{
-		User:    authUser{ID: "author", DisplayName: "Author"},
-		Roles:   []string{"admin"},
-		CSRF:    "csrf",
-		Expires: time.Now().Add(time.Hour),
+		User:     authUser{ID: "author", DisplayName: "Author"},
+		GroupIDs: []string{"16"},
+		CSRF:     "csrf",
+		Expires:  time.Now().Add(time.Hour),
 	}
 	server := httptest.NewServer(NewStoreHandler(store))
 	defer server.Close()
@@ -1318,7 +1320,8 @@ func TestLocalModPlatformDeclarationIsValidatedOnCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := strings.Repeat("a", 64)
-	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "author"}, Roles: []string{"admin", "author"}, Expires: time.Now().Add(time.Hour)}
+	store.AdminGroupIDs = map[string]bool{"16": true}
+	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "author"}, GroupIDs: []string{"16"}, Expires: time.Now().Add(time.Hour)}
 	server := httptest.NewServer(NewStoreHandler(store))
 	defer server.Close()
 
@@ -1357,7 +1360,8 @@ func TestLocalModPlatformDeclarationOnEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := strings.Repeat("a", 64)
-	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "author"}, Roles: []string{"admin", "author"}, Expires: time.Now().Add(time.Hour)}
+	store.AdminGroupIDs = map[string]bool{"16": true}
+	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "author"}, GroupIDs: []string{"16"}, Expires: time.Now().Add(time.Hour)}
 	server := httptest.NewServer(NewStoreHandler(store))
 	defer server.Close()
 
@@ -1405,7 +1409,8 @@ func TestReviewPublishRefusesUncoveredDeclaredPlatform(t *testing.T) {
 		PlatformAssets: []PlatformAssetRule{{Platform: "windows", ArchivePath: "w.zip", SizeBytes: 1, SHA256: "h"}},
 	})
 	token := strings.Repeat("a", 64)
-	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "admin"}, Roles: []string{"admin"}, Expires: time.Now().Add(time.Hour)}
+	store.AdminGroupIDs = map[string]bool{"16": true}
+	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "admin"}, GroupIDs: []string{"16"}, Expires: time.Now().Add(time.Hour)}
 	store.mu.Lock()
 	store.Catalog.Mods[0].SupportedPlatforms = []string{"windows", "android"}
 	store.Catalog.Submissions = []Submission{{ID: "sub_1", ModID: "m1", VersionID: "v1", State: "ready_for_review"}}

@@ -126,15 +126,16 @@ func TestAdminCanUnpublishOtherAuthorModAndPreserveArtifacts(t *testing.T) {
 	adminToken := "1111111111111111111111111111111111111111111111111111111111111111"
 	userToken := "2222222222222222222222222222222222222222222222222222222222222222"
 
+	store.AdminGroupIDs = map[string]bool{"16": true}
 	store.sessions[sessionKey(adminToken)] = authSession{
-		User:    authUser{ID: "admin-user", Username: "admin", DisplayName: "Admin"},
-		Roles:   []string{"admin"},
-		Expires: time.Now().Add(time.Hour),
+		User:     authUser{ID: "admin-user", Username: "admin", DisplayName: "Admin"},
+		GroupIDs: []string{"16"},
+		Expires:  time.Now().Add(time.Hour),
 	}
 	store.sessions[sessionKey(userToken)] = authSession{
-		User:    authUser{ID: "random-user", Username: "random", DisplayName: "Random"},
-		Roles:   []string{"user"},
-		Expires: time.Now().Add(time.Hour),
+		User:     authUser{ID: "random-user", Username: "random", DisplayName: "Random"},
+		GroupIDs: []string{},
+		Expires:  time.Now().Add(time.Hour),
 	}
 
 	server := httptest.NewServer(NewStoreHandler(store))

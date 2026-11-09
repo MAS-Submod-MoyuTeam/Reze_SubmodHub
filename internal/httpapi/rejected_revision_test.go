@@ -35,7 +35,8 @@ func TestRejectedVersionCanBeRevisedInPlaceAndResubmitted(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "author"}, Roles: []string{"admin"}, Expires: time.Now().Add(time.Hour)}
+	store.AdminGroupIDs = map[string]bool{"16": true}
+	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "author"}, GroupIDs: []string{"16"}, Expires: time.Now().Add(time.Hour)}
 	server := httptest.NewServer(NewStoreHandler(store))
 	defer server.Close()
 	call := func(method, path string, body []byte, contentType string) *http.Response {

@@ -24,8 +24,8 @@ func TestAutoPublishSubmissionWithoutReviewer(t *testing.T) {
 				t.Fatal(err)
 			}
 			store, err := NewStore(dir, Catalog{
-				Mods: []Mod{{ID: "m1", Category: category, Author: Author{ID: "author"}}},
-				Versions: map[string]Version{"v1": {ID: "v1", ModID: "m1", Version: "1.0.0", State: "uploaded", ArchivePath: archivePath, ScanReportID: "scan_v1"}},
+				Mods:        []Mod{{ID: "m1", Category: category, Author: Author{ID: "author"}}},
+				Versions:    map[string]Version{"v1": {ID: "v1", ModID: "m1", Version: "1.0.0", State: "uploaded", ArchivePath: archivePath, ScanReportID: "scan_v1"}},
 				ScanReports: map[string]packagezip.Report{"scan_v1": {}},
 			})
 			if err != nil {

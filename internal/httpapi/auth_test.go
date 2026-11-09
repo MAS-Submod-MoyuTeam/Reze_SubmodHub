@@ -119,9 +119,13 @@ func TestTestAccountDoesNotBlockFlarumLogin(t *testing.T) {
 	}))
 	defer forum.Close()
 	client, err := auth.NewFlarumClient(forum.URL, forum.Client())
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	store, err := NewStore(t.TempDir(), Catalog{})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	store.TestMode = true
 	store.TestUsername = "submodhub-test"
 	store.TestPassword = "test-secret"
@@ -132,16 +136,31 @@ func TestTestAccountDoesNotBlockFlarumLogin(t *testing.T) {
 		t.Helper()
 		body, _ := json.Marshal(map[string]string{"identification": username, "password": password})
 		res, err := server.Client().Post(server.URL+"/api/v1/auth/flarum/login", "application/json", bytes.NewReader(body))
-		if err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer res.Body.Close()
-		var result struct { Code string `json:"code"`; User authUser `json:"user"` }
-		if err := json.NewDecoder(res.Body).Decode(&result); err != nil { t.Fatal(err) }
+		var result struct {
+			Code string   `json:"code"`
+			User authUser `json:"user"`
+		}
+		if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+			t.Fatal(err)
+		}
 		return res.StatusCode, result.Code + result.User.ID
 	}
-	if status, result := login("submodhub-test", "test-secret"); status != 200 || result != "flarum:test-1" { t.Fatalf("test login: %d %s", status, result) }
-	if status, result := login("submodhub-test", "wrong"); status != 401 || result != "invalid_test_credentials" { t.Fatalf("wrong test password: %d %s", status, result) }
-	if status, result := login("alice", "secret"); status != 200 || result != "flarum:17" { t.Fatalf("Flarum login: %d %s", status, result) }
-	if forumCalls != 1 { t.Fatalf("Flarum called %d times, want 1", forumCalls) }
+	if status, result := login("submodhub-test", "test-secret"); status != 200 || result != "flarum:test-1" {
+		t.Fatalf("test login: %d %s", status, result)
+	}
+	if status, result := login("submodhub-test", "wrong"); status != 401 || result != "invalid_test_credentials" {
+		t.Fatalf("wrong test password: %d %s", status, result)
+	}
+	if status, result := login("alice", "secret"); status != 200 || result != "flarum:17" {
+		t.Fatalf("Flarum login: %d %s", status, result)
+	}
+	if forumCalls != 1 {
+		t.Fatalf("Flarum called %d times, want 1", forumCalls)
+	}
 }
 
 func TestAdminRoleGrantRequiresCSRFAndRefreshesSession(t *testing.T) {
@@ -230,7 +249,9 @@ func TestAdminRoleGrantRequiresCSRFAndRefreshesSession(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer res.Body.Close()
-		var current struct { Roles []string `json:"roles"` }
+		var current struct {
+			Roles []string `json:"roles"`
+		}
 		_ = json.NewDecoder(res.Body).Decode(&current)
 		return res.StatusCode, current.Roles
 	}
@@ -280,6 +301,92 @@ func TestAdminRoleGrantRequiresCSRFAndRefreshesSession(t *testing.T) {
 	}
 	if got := restarted.Catalog.RoleGrants["flarum:23"]; len(got) != 1 || got[0] != "author" {
 		t.Fatalf("persisted grant %+v", got)
+	}
+}
+
+// A session caches the forum groups the user belonged to at login, and the
+// admin role is recomputed from the deployment's current whitelist on every
+// request. Otherwise a whitelist change or a forum membership change would be
+// invisible until the session expires (7 days).
+func TestAdminRoleFollowsCurrentGroupWhitelistWithoutRelogin(t *testing.T) {
+	forum := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/token":
+			_, _ = w.Write([]byte(`{"token":"forum-token","userId":23}`))
+		case "/api/users/23":
+			_, _ = w.Write([]byte(`{"data":{"id":"23","attributes":{"username":"edge"},"relationships":{"groups":{"data":[{"id":"1"},{"id":"21"}]}}}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer forum.Close()
+	client, err := auth.NewFlarumClient(forum.URL, forum.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewStore(t.TempDir(), Catalog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Flarum = client
+	store.AdminGroupIDs = map[string]bool{"16": true, "22": true}
+	server := httptest.NewTLSServer(NewStoreHandler(store))
+	defer server.Close()
+
+	res, err := server.Client().Post(server.URL+"/api/v1/auth/flarum/login", "application/json", strings.NewReader(`{"identification":"edge","password":"secret"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logged authSession
+	if err := json.NewDecoder(res.Body).Decode(&logged); err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("login status %d", res.StatusCode)
+	}
+	if len(logged.Roles) != 1 || logged.Roles[0] != "user" {
+		t.Fatalf("login roles %+v, want user under the old whitelist", logged.Roles)
+	}
+	cookie := res.Cookies()[0]
+
+	readRoles := func() []string {
+		req, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/session", nil)
+		req.AddCookie(cookie)
+		current, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer current.Body.Close()
+		var session struct {
+			Roles []string `json:"roles"`
+		}
+		if err := json.NewDecoder(current.Body).Decode(&session); err != nil {
+			t.Fatal(err)
+		}
+		return session.Roles
+	}
+
+	// Promotion: the same session must become admin once the whitelist covers
+	// the site-owner group, without logging in again.
+	store.AdminGroupIDs = map[string]bool{"1": true, "16": true, "17": true, "21": true}
+	if roles := readRoles(); len(roles) != 1 || roles[0] != "admin" {
+		t.Fatalf("roles after whitelist widening %+v, want admin", roles)
+	}
+
+	// Demotion: narrowing the whitelist again must revoke admin immediately.
+	store.AdminGroupIDs = map[string]bool{"16": true, "22": true}
+	if roles := readRoles(); len(roles) != 1 || roles[0] != "user" {
+		t.Fatalf("roles after whitelist narrowing %+v, want user", roles)
+	}
+
+	// The session must cache the forum groups, otherwise the recomputation above
+	// has nothing to work from.
+	store.mu.RLock()
+	cached := append([]string(nil), store.sessions[sessionKey(cookie.Value)].GroupIDs...)
+	store.mu.RUnlock()
+	if len(cached) != 2 || cached[0] != "1" || cached[1] != "21" {
+		t.Fatalf("cached group IDs %+v, want [1 21]", cached)
 	}
 }
 

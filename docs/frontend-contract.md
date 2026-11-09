@@ -15,7 +15,7 @@
 
 登录仅用于作者、审核员和管理员。访客可浏览与下载。登录只走 Flarum，使用服务端代验凭据；不提供 GitHub OAuth 登录入口。角色变化后界面必须重新获取会话并即时隐藏无权限操作；服务端仍独立校验权限。
 
-当前实施决策：登录只接 Flarum，Web 端已移除 GitHub OAuth 登录与账号绑定入口；Flarum 是唯一身份来源，界面不再提供任何「绑定第三方账号」操作（`/identity-links` 契约与 `User.linked_accounts` 字段一并删除）。Flarum 登录请求体用 `{identification,password}`；仅 Flarum 组 ID `16`、`22` 自动映射 `admin`，其他组当前为 `user`，不自动授予作者或审核员。登录必须通过 HTTPS；远端 `100.72.137.92:18082` 的 HTTP 测试地址不能提交论坛密码。Android MAS 固定根目录是 `/storage/emulated/0/MAS/`，`game/` 是其子目录；Android 11+ 侧载 APK 使用系统“所有文件访问权限”，固定路径和清单声明都不代表已授权。
+当前实施决策：登录只接 Flarum，Web 端已移除 GitHub OAuth 登录与账号绑定入口；Flarum 是唯一身份来源，界面不再提供任何「绑定第三方账号」操作（`/identity-links` 契约与 `User.linked_accounts` 字段一并删除）。Flarum 登录请求体用 `{identification,password}`；仅 Flarum 组 ID `1`、`16`、`17`、`21` 自动映射 `admin`，其他组当前为 `user`，不自动授予作者或审核员。`admin` 按会话缓存的论坛组 ID 在每次请求时重算，调整白名单后已登录会话即时生效；作者与审核员由管理端角色授权另行叠加，两者互不覆盖。登录必须通过 HTTPS；远端 `100.72.137.92:18082` 的 HTTP 测试地址不能提交论坛密码。Android MAS 固定根目录是 `/storage/emulated/0/MAS/`，`game/` 是其子目录；Android 11+ 侧载 APK 使用系统“所有文件访问权限”，固定路径和清单声明都不代表已授权。
 
 ### 页面功能
 

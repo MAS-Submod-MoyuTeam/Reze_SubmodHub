@@ -16,8 +16,9 @@ func TestReviewPagination(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := strings.Repeat("a", 64)
-	s.sessions[sessionKey(token)] = authSession{User: authUser{ID: "admin"}, Roles: []string{"admin"}, Expires: time.Now().Add(time.Hour)}
-	s.sessions[sessionKey(strings.Repeat("b", 64))] = authSession{User: authUser{ID: "author"}, Roles: []string{"user"}, Expires: time.Now().Add(time.Hour)}
+	s.AdminGroupIDs = map[string]bool{"16": true}
+	s.sessions[sessionKey(token)] = authSession{User: authUser{ID: "admin"}, GroupIDs: []string{"16"}, Expires: time.Now().Add(time.Hour)}
+	s.sessions[sessionKey(strings.Repeat("b", 64))] = authSession{User: authUser{ID: "author"}, GroupIDs: []string{}, Expires: time.Now().Add(time.Hour)}
 	s.Catalog.Mods = []Mod{{ID: "mod", Title: "Title", Category: "spritepack"}}
 	for i := 0; i < 45; i++ {
 		state := "published"

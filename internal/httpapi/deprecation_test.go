@@ -12,7 +12,7 @@ import (
 func TestAuthorCanClearVersionDeprecation(t *testing.T) {
 	dir := t.TempDir()
 	store, err := NewStore(dir, Catalog{
-		Mods: []Mod{{ID: "mod_1", Author: Author{ID: "author"}, LatestVersionID: "ver_1"}},
+		Mods:     []Mod{{ID: "mod_1", Author: Author{ID: "author"}, LatestVersionID: "ver_1"}},
 		Versions: map[string]Version{"ver_1": {ID: "ver_1", ModID: "mod_1", State: "published", Deprecated: true, DeprecationReason: "old version"}},
 	})
 	if err != nil {
@@ -23,7 +23,8 @@ func TestAuthorCanClearVersionDeprecation(t *testing.T) {
 	adminToken := "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 	store.sessions[sessionKey(ownerToken)] = authSession{User: authUser{ID: "author"}, Expires: time.Now().Add(time.Hour)}
 	store.sessions[sessionKey(otherToken)] = authSession{User: authUser{ID: "other"}, Expires: time.Now().Add(time.Hour)}
-	store.sessions[sessionKey(adminToken)] = authSession{User: authUser{ID: "admin"}, Roles: []string{"admin"}, Expires: time.Now().Add(time.Hour)}
+	store.AdminGroupIDs = map[string]bool{"16": true}
+	store.sessions[sessionKey(adminToken)] = authSession{User: authUser{ID: "admin"}, GroupIDs: []string{"16"}, Expires: time.Now().Add(time.Hour)}
 	server := httptest.NewServer(NewStoreHandler(store))
 	defer server.Close()
 	call := func(token string) *http.Response {

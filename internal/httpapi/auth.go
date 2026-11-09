@@ -17,10 +17,18 @@ import (
 )
 
 type authSession struct {
-	User    authUser  `json:"user"`
-	Roles   []string  `json:"roles"`
-	CSRF    string    `json:"csrf_token"`
-	Expires time.Time `json:"expires_at"`
+	User authUser `json:"user"`
+	// Roles is derived on every read from GroupIDs and the deployment's current
+	// whitelist; it exists only for the API response shape and operator
+	// inspection. A value stored at login is never treated as authority.
+	Roles []string `json:"roles"`
+	// GroupIDs caches the Flarum groups seen at login. Admin is recomputed from
+	// this list on every request, so a whitelist change takes effect without a
+	// relogin. Sessions created before this field existed carry no groups and
+	// read back as plain users; users must log in again after such an upgrade.
+	GroupIDs []string  `json:"flarum_group_ids,omitempty"`
+	CSRF     string    `json:"csrf_token"`
+	Expires  time.Time `json:"expires_at"`
 }
 
 type authUser struct {
@@ -114,7 +122,7 @@ func (s *Store) effectiveRoles(session authSession) []string {
 	s.mu.RLock()
 	grants := append([]string(nil), s.Catalog.RoleGrants[session.User.ID]...)
 	s.mu.RUnlock()
-	roles := append([]string(nil), session.Roles...)
+	roles := []string{auth.RoleForGroupIDs(session.GroupIDs, s.AdminGroupIDs)}
 	for _, grant := range grants {
 		if grant == "author" || grant == "reviewer" {
 			roles = append(roles, grant)
@@ -178,7 +186,13 @@ func (s *Store) loginFlarum(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, code, "Flarum login failed")
 		return
 	}
-	role := auth.RoleForFlarum(profile, s.AdminGroupIDs)
+	groupIDs := make([]string, 0, len(profile.Groups))
+	for _, group := range profile.Groups {
+		if group.ID != "" {
+			groupIDs = append(groupIDs, group.ID)
+		}
+	}
+	role := auth.RoleForGroupIDs(groupIDs, s.AdminGroupIDs)
 	token, err := randomToken()
 	if err != nil {
 		writeError(w, 500, "auth_error", "session creation failed")
@@ -189,7 +203,7 @@ func (s *Store) loginFlarum(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "auth_error", "session creation failed")
 		return
 	}
-	session := authSession{User: authUser{ID: "flarum:" + profile.ID, Username: profile.Username, DisplayName: profile.DisplayName, AvatarURL: profile.AvatarURL}, Roles: []string{role}, CSRF: csrf, Expires: time.Now().Add(7 * 24 * time.Hour)}
+	session := authSession{User: authUser{ID: "flarum:" + profile.ID, Username: profile.Username, DisplayName: profile.DisplayName, AvatarURL: profile.AvatarURL}, Roles: []string{role}, GroupIDs: groupIDs, CSRF: csrf, Expires: time.Now().Add(7 * 24 * time.Hour)}
 	if err := s.saveSession(sessionKey(token), session); err != nil {
 		writeError(w, 500, "storage_error", "session creation failed")
 		return

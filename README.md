@@ -169,7 +169,7 @@ cd cmd/client/SubmodHub && wails3 dev
 | `SUBMODHUB_DATA_DIR` | — | 归档与本地快照目录（容器内 `/data`） |
 | `POSTGRES_DSN` | 空 | 为空时退化为本地 JSON 快照存储 |
 | `FLARUM_URL` | 空 | 论坛地址；留空则不启用论坛登录 |
-| `ADMIN_FLARUM_GROUP_IDS` | 空 | 自动映射为 `admin` 的 Flarum 组 ID，如 `16,22` |
+| `ADMIN_FLARUM_GROUP_IDS` | 空 | 自动映射为 `admin` 的 Flarum 组 ID，如 `1,16,17,21`。会话缓存的论坛组每次请求重新判定，改这里即时生效，无需用户重新登录 |
 | `SUBMODHUB_AUTO_PUBLISH` | `false` | `true` 时跳过人工审核直接发布 |
 | `SUBMODHUB_UPLOAD_TOKEN` | 空 | 直接上传令牌 |
 | `GITHUB_SYNC_MAX_AGE` | 设置页（默认 `60m`） | 检查更新窗口：距上次检查超过该值的 GitHub 源会自动回源。有人打开模组时立即补抓，长时间无人访问时由后台巡检兜底。`0` 表示只有显式「立即同步」才回源。环境变量仅用于覆盖设置页的值 |

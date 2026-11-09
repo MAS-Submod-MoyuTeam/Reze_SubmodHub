@@ -241,7 +241,12 @@ func newReviewArchiveServer(store *Store) *httptest.Server {
 }
 
 func seedReviewSession(store *Store, token, role string) {
-	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: role}, Roles: []string{role}, Expires: time.Now().Add(time.Hour)}
+	if role == "admin" {
+		store.AdminGroupIDs = map[string]bool{"16": true}
+		store.sessions[sessionKey(token)] = authSession{User: authUser{ID: role}, GroupIDs: []string{"16"}, Expires: time.Now().Add(time.Hour)}
+		return
+	}
+	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: role}, GroupIDs: []string{}, Expires: time.Now().Add(time.Hour)}
 }
 
 func writeReviewArchive(t *testing.T, dataDir, name string, body []byte) string {

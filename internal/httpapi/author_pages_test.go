@@ -38,7 +38,8 @@ func (window authorModWindow) ids() []string {
 
 func authorSession(t *testing.T, s *Store, token, userID string) http.Handler {
 	t.Helper()
-	s.sessions[sessionKey(token)] = authSession{User: authUser{ID: userID}, Roles: []string{"admin", "author"}, Expires: time.Now().Add(time.Hour)}
+	s.AdminGroupIDs = map[string]bool{"16": true}
+	s.sessions[sessionKey(token)] = authSession{User: authUser{ID: userID}, GroupIDs: []string{"16"}, Expires: time.Now().Add(time.Hour)}
 	return NewStoreHandler(s)
 }
 

@@ -106,6 +106,47 @@ func TestFlarumDoesNotForwardCredentialsToRedirectHost(t *testing.T) {
 	}
 }
 
+// RoleForGroupIDs is evaluated per request against the deployment's current
+// whitelist, so a cached group list must map differently when the whitelist
+// changes. This is what makes forum group changes take effect without relogin.
+func TestRoleForGroupIDsFollowsCurrentWhitelist(t *testing.T) {
+	groups := []string{"1", "21"}
+	for _, tc := range []struct {
+		name  string
+		admin map[string]bool
+		want  string
+	}{
+		{"whitelist excludes both", map[string]bool{"16": true, "22": true}, "user"},
+		{"whitelist covers site owner", map[string]bool{"1": true, "16": true, "17": true, "21": true}, "admin"},
+		{"whitelist covers hidden backend group", map[string]bool{"1": true}, "admin"},
+		{"empty whitelist", map[string]bool{}, "user"},
+		{"nil whitelist", nil, "user"},
+	} {
+		if got := RoleForGroupIDs(groups, tc.admin); got != tc.want {
+			t.Errorf("%s: got %q want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestRoleForGroupIDsIgnoresEmptyAndUnknownGroups(t *testing.T) {
+	if got := RoleForGroupIDs([]string{"", "999"}, map[string]bool{"999": false, "16": true}); got != "user" {
+		t.Fatalf("got %q want user", got)
+	}
+	if got := RoleForGroupIDs(nil, map[string]bool{"16": true}); got != "user" {
+		t.Fatalf("got %q want user", got)
+	}
+}
+
+func TestRoleForFlarumDelegatesToGroupIDs(t *testing.T) {
+	profile := FlarumProfile{Groups: []FlarumGroup{{ID: "1", Name: "维护人员"}, {ID: "21", Name: "站长"}}}
+	if got := RoleForFlarum(profile, map[string]bool{"21": true}); got != "admin" {
+		t.Fatalf("got %q want admin", got)
+	}
+	if got := RoleForFlarum(profile, map[string]bool{"16": true}); got != "user" {
+		t.Fatalf("got %q want user", got)
+	}
+}
+
 func TestParseGroupIDs(t *testing.T) {
 	got := ParseGroupIDs("16, 22， 22; ")
 	if len(got) != 2 || !got["16"] || !got["22"] {

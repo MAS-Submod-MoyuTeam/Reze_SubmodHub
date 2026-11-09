@@ -246,7 +246,8 @@ func TestApprovingSpritepackReplacementRetiresOldArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := strings.Repeat("a", 64)
-	s.sessions[sessionKey(token)] = authSession{User: authUser{ID: "admin"}, Roles: []string{"admin"}, Expires: now.Add(time.Hour)}
+	s.AdminGroupIDs = map[string]bool{"16": true}
+	s.sessions[sessionKey(token)] = authSession{User: authUser{ID: "admin"}, GroupIDs: []string{"16"}, Expires: now.Add(time.Hour)}
 	server := httptest.NewServer(NewStoreHandler(s))
 	defer server.Close()
 	req, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/review/submissions/sub_new/decision", strings.NewReader(`{"decision":"approve","reason":"ok"}`))

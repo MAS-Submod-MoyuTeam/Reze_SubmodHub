@@ -150,8 +150,9 @@ func TestAdminSettingsTokenSurvivesRestart(t *testing.T) {
 	if store.DeliverySecrets, err = delivery.NewSecrets(key); err != nil {
 		t.Fatal(err)
 	}
+	store.AdminGroupIDs = map[string]bool{"16": true}
 	store.sessions[sessionKey(strings.Repeat("d", 64))] = authSession{
-		User: authUser{ID: "flarum:1", Username: "admin"}, Roles: []string{"admin"},
+		User: authUser{ID: "flarum:1", Username: "admin"}, GroupIDs: []string{"16"},
 		CSRF: "csrf", Expires: time.Now().Add(time.Hour),
 	}
 	server := httptest.NewServer(NewStoreHandler(store))

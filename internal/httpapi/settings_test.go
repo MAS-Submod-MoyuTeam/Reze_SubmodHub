@@ -30,17 +30,19 @@ func createTestStoreWithAdmin(t *testing.T) (*Store, *http.Cookie, string, *http
 	adminSessionKey := sessionKey(adminToken)
 	userSessionKey := sessionKey(userToken)
 
+	store.AdminGroupIDs = map[string]bool{"16": true}
 	store.sessions[adminSessionKey] = authSession{
-		User:    authUser{ID: "flarum:1", Username: "admin_user", DisplayName: "Admin"},
-		Roles:   []string{"admin"},
-		CSRF:    "admin-csrf-token",
-		Expires: time.Now().Add(24 * time.Hour),
+		User:     authUser{ID: "flarum:1", Username: "admin_user", DisplayName: "Admin"},
+		GroupIDs: []string{"16"},
+		CSRF:     "admin-csrf-token",
+		Expires:  time.Now().Add(24 * time.Hour),
 	}
+	store.Catalog.RoleGrants = map[string][]string{"flarum:2": {"author"}}
 	store.sessions[userSessionKey] = authSession{
-		User:    authUser{ID: "flarum:2", Username: "normal_user", DisplayName: "User"},
-		Roles:   []string{"author"},
-		CSRF:    "user-csrf-token",
-		Expires: time.Now().Add(24 * time.Hour),
+		User:     authUser{ID: "flarum:2", Username: "normal_user", DisplayName: "User"},
+		GroupIDs: []string{},
+		CSRF:     "user-csrf-token",
+		Expires:  time.Now().Add(24 * time.Hour),
 	}
 
 	adminCookie := &http.Cookie{Name: "submodhub_session", Value: adminToken}
@@ -202,11 +204,12 @@ func TestAdminSettingsPersistenceAndRestart(t *testing.T) {
 
 	adminToken := strings.Repeat("c", 64)
 	adminSessionKey := sessionKey(adminToken)
+	store.AdminGroupIDs = map[string]bool{"16": true}
 	store.sessions[adminSessionKey] = authSession{
-		User:    authUser{ID: "flarum:1", Username: "admin", DisplayName: "Admin"},
-		Roles:   []string{"admin"},
-		CSRF:    "admin-csrf",
-		Expires: time.Now().Add(24 * time.Hour),
+		User:     authUser{ID: "flarum:1", Username: "admin", DisplayName: "Admin"},
+		GroupIDs: []string{"16"},
+		CSRF:     "admin-csrf",
+		Expires:  time.Now().Add(24 * time.Hour),
 	}
 	adminCookie := &http.Cookie{Name: "submodhub_session", Value: adminToken}
 

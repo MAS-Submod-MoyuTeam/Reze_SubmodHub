@@ -222,7 +222,7 @@ func TestModTagsValidationAndParentCompletion(t *testing.T) {
 	defer server.Close()
 
 	token := strings.Repeat("c", 64)
-	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "flarum:9", DisplayName: "Author"}, Roles: []string{"author"}, CSRF: "csrf", Expires: time.Now().Add(time.Hour)}
+	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "flarum:9", DisplayName: "Author"}, GroupIDs: []string{}, CSRF: "csrf", Expires: time.Now().Add(time.Hour)}
 
 	base := `{"title":"Demo","summary":"s","description":"d","category":"submod","supported_platforms":["windows"],"mas_version_range":"","recommended_priority":1`
 
