@@ -107,8 +107,8 @@ const (
 )
 
 // matches reports whether this record describes exactly this candidate's asset.
-// AssetSHA256 takes part because correcting a manifest's declared hash is how its
-// author retries a mismatching download.
+// AssetSHA256 takes part because an author who replaces an asset to fix a
+// mismatch must be able to retry that download.
 func (f GitHubReleaseFailure) matches(cand releaseCandidate, asset github.SelectedAsset) bool {
 	return f.ReleaseID == cand.ReleaseID &&
 		f.AssetID == asset.AssetID &&
@@ -746,7 +746,7 @@ func (s *Store) commitImportedVersion(mod Mod, cand releaseCandidate, archive im
 
 // finishSync records the outcome of one refresh attempt and is the only writer
 // of a mod's sync metadata (time, error, backoff, cache cursors).
-func (s *Store) finishSync(modID string, now time.Time, summary *SyncSummary, etag, manifestDigest string) {
+func (s *Store) finishSync(modID string, now time.Time, summary *SyncSummary, etag string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.Catalog.Mods {
@@ -775,9 +775,6 @@ func (s *Store) finishSync(modID string, now time.Time, summary *SyncSummary, et
 		// failed afterwards: the ETag describes the release list, not the import.
 		if etag != "" {
 			mod.GitHubETag = etag
-		}
-		if manifestDigest != "" {
-			mod.GitHubManifestDigest = manifestDigest
 		}
 		_ = s.saveLocked()
 		return

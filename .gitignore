@@ -49,6 +49,8 @@ playwright-report/
 
 # Local Go build cache and temporary verification artifacts
 /.gocache/
+/.gotmp/
+/.tmpwork/
 /tmp/
 /.tmp/
 

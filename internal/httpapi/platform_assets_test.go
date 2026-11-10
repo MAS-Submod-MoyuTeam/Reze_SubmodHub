@@ -1109,14 +1109,6 @@ func TestEffectiveSupportedPlatformsFollowsSourceConfig(t *testing.T) {
 	if got := shared.effectiveSupportedPlatforms(); !slices.Equal(got, SupportedPlatforms) {
 		t.Fatalf("shared archive must serve every platform, got %v", got)
 	}
-	manifest := Mod{
-		SourceType:           "github_releases",
-		GitHubManifest:       true,
-		GitHubPlatformAssets: []GitHubPlatformRule{{Platform: "android", Regex: "a"}},
-	}
-	if got := manifest.effectiveSupportedPlatforms(); !slices.Equal(got, SupportedPlatforms) {
-		t.Fatalf("manifest discovery ignores platform rules, got %v", got)
-	}
 	splitAndroid := Mod{
 		SourceType:           "github_releases",
 		GitHubPlatformAssets: []GitHubPlatformRule{{Platform: "android", Regex: "a"}},

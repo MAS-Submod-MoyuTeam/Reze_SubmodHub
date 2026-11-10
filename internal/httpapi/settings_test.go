@@ -458,6 +458,18 @@ func TestGitHubSyncSweepRefreshesStaleMods(t *testing.T) {
 	store.GitHubClient = github.NewClient(github.WithBaseURL(server.URL), github.WithHTTPClient(server.Client()))
 	store.GitHubSyncMaxAge = 30 * time.Minute
 
+	// This test is about the stale-sync window, so every mod starts as if the
+	// six-hour version probe had just run. Otherwise the probe runs on the first
+	// pass (a never-checked mod is due) and its reads would be indistinguishable
+	// from the sweep's in the counters below, making this test measure two
+	// features at once.
+	probedAt := time.Now().UTC()
+	store.mu.Lock()
+	for i := range store.Catalog.Mods {
+		store.Catalog.Mods[i].GitHubVersionCheckedAt = &probedAt
+	}
+	store.mu.Unlock()
+
 	previous := githubSyncSweepInterval
 	githubSyncSweepInterval = 5 * time.Millisecond
 	store.StartGitHubSync()

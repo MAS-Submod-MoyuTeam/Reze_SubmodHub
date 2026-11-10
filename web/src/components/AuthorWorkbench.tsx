@@ -13,10 +13,8 @@ import {
   platformModeTradeoff,
   formatLastSyncTime,
   getGitHubRepoUrl,
-  MANIFEST_FILE_NAME,
-  MANIFEST_SNIPPET,
-  manifestModeTradeoff,
   onDemandModeTradeoff,
+  WORKFLOW_FILE_PATH,
 } from './sourceConfig';
 import { formatVersionCreatedAt } from './versionDate';
 import { formatVersionLabel } from './versionHistory';
@@ -52,6 +50,7 @@ import {
   Pencil,
   RefreshCw,
   EyeOff,
+  Copy,
 } from 'lucide-react';
 import { AnimatePresence, m } from './Motion';
 import { overlayVariants, panelVariants } from '../../../ui/motion-presets';
@@ -80,6 +79,8 @@ export const AuthorWorkbench: React.FC = () => {
     deleteModDraft,
     editVersion,
     syncModReleases,
+    fetchModWorkflowSnippet,
+    fetchWorkflowTemplate,
     showToast,
     refreshWindowText,
   } = workspace.app;
@@ -122,9 +123,12 @@ export const AuthorWorkbench: React.FC = () => {
   const [newGitHubRepo, setNewGitHubRepo] = useState('');
   const [newGitHubAssetRegex, setNewGitHubAssetRegex] = useState('');
   const [newGitHubSourceCode, setNewGitHubSourceCode] = useState(false);
-  const [newGitHubManifest, setNewGitHubManifest] = useState(false);
   // 分平台抓取：打开后每个平台各自用一条正则匹配同一次 Release 的资产，
   // 全平台共用正则不再参与匹配；关闭时保持原来的“一个文件覆盖全平台”。
+  // 「发版通知」模式：作者在仓库放一个 GitHub Action，发 Release 时由它带着
+  // 下面的文件名正则通知站内。正则随文件一起走，所以这里派生的是「将要写进
+  // 那个文件的内容」，与提交给服务端的规则是同一份事实。
+  const [newGitHubAction, setNewGitHubAction] = useState(true);
   const [newGitHubSplitPlatforms, setNewGitHubSplitPlatforms] = useState(false);
   const [newPlatformRules, setNewPlatformRules] = useState<Record<AssetPlatform, { regex: string; sourceCode: boolean }>>({
     windows: { regex: '', sourceCode: false },
@@ -132,9 +136,9 @@ export const AuthorWorkbench: React.FC = () => {
   });
   // 两种版本发现方式的取舍必须如实展示给作者：清单模式用“多维护一个文件”换“零延迟”。
   // 窗口引用服务端实际生效的值，避免文案与设置页不一致。
-  const manifestTradeoff = manifestModeTradeoff();
   const onDemandTradeoff = onDemandModeTradeoff(refreshWindowText);
   const splitPlatformTradeoff = platformModeTradeoff();
+  const [isCopyingWorkflow, setIsCopyingWorkflow] = useState(false);
   const [isSyncingReleases, setIsSyncingReleases] = useState(false);
 
   // Version Draft Creation Dialog
@@ -220,15 +224,28 @@ export const AuthorWorkbench: React.FC = () => {
       }))
     : [];
   // 分平台规则本身决定目录里展示的平台集合：只有 GitHub 按需抓取时它才生效，
-  // 清单模式与本地源不据此收紧模组的 supported_platforms。服务端会按同一规则
-  // 重新派生（见 effectiveSupportedPlatforms），这里提交的是同一份事实。
-  const splitPlatformsActive = newSourceType === 'github_releases' && newGitHubSplitPlatforms && !newGitHubManifest;
+  // 本地源不据此收紧模组的 supported_platforms。服务端会按同一规则重新派生
+  // （见 effectiveSupportedPlatforms），这里提交的是同一份事实。
+  const splitPlatformsActive = newSourceType === 'github_releases' && newGitHubSplitPlatforms;
   const effectivePlatforms = supportedPlatformsForSource({
     sourceType: newSourceType,
     splitPlatforms: splitPlatformsActive,
     configuredPlatforms: configuredSplitPlatforms,
     declaredPlatforms: newPlatforms,
   });
+
+  // 生成 Action 文件时要写进去的正则。与提交给服务端的是同一组值，否则作者
+  // 复制到的文件会与服务端保存的规则不一致，通知就会认错包。
+  const actionRules = {
+    shared: newGitHubSplitPlatforms ? '' : newGitHubAssetRegex.trim(),
+    windows: newGitHubSplitPlatforms ? newPlatformRules.windows.regex.trim() : '',
+    android: newGitHubSplitPlatforms ? newPlatformRules.android.regex.trim() : '',
+  };
+  // 一条正则都没有时生成的文件毫无意义，按钮据此禁用而不是发一个空规则出去。
+  const workflowRulesReady = newGitHubSplitPlatforms
+    ? Boolean(actionRules.windows || actionRules.android)
+    : Boolean(actionRules.shared);
+
 
   const handleCreateDraftSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -247,7 +264,6 @@ export const AuthorWorkbench: React.FC = () => {
         repo: newGitHubRepo,
         assetRegex: newGitHubAssetRegex,
         sourceCode: newGitHubSourceCode,
-        manifest: newGitHubManifest,
         platformMode: newGitHubSplitPlatforms,
         platformRules: newGitHubSplitPlatforms ? platformRulePayload : [],
       });
@@ -283,7 +299,6 @@ export const AuthorWorkbench: React.FC = () => {
         github_repo: newGitHubRepo.trim(),
         github_asset_regex: newGitHubAssetRegex.trim(),
         github_source_code: newGitHubSourceCode,
-        github_manifest: newGitHubManifest,
         github_platform_assets: platformRulePayload,
       });
       if (saved) {
@@ -339,7 +354,6 @@ export const AuthorWorkbench: React.FC = () => {
       github_repo: newGitHubRepo.trim(),
       github_asset_regex: newGitHubAssetRegex.trim(),
       github_source_code: newGitHubSourceCode,
-      github_manifest: newGitHubManifest,
       github_platform_assets: platformRulePayload,
     });
 
@@ -377,7 +391,6 @@ export const AuthorWorkbench: React.FC = () => {
     setNewGitHubRepo(mod.github_repo || '');
     setNewGitHubAssetRegex(mod.github_asset_regex || '');
     setNewGitHubSourceCode(Boolean(mod.github_source_code));
-    setNewGitHubManifest(Boolean(mod.github_manifest));
     // 已存在的分平台规则必须原样回显，否则作者一打开编辑器就会被“关闭分平台”
     // 悄悄改回全平台共用正则。
     const existingRules = mod.github_platform_assets || [];
@@ -418,7 +431,7 @@ export const AuthorWorkbench: React.FC = () => {
     setNewGitHubRepo('');
     setNewGitHubAssetRegex('');
     setNewGitHubSourceCode(false);
-    setNewGitHubManifest(false);
+    setNewGitHubAction(true);
     setNewGitHubSplitPlatforms(false);
     setNewPlatformRules({ windows: { regex: '', sourceCode: false }, android: { regex: '', sourceCode: false } });
     setPendingDetailImages([]);
@@ -828,45 +841,29 @@ export const AuthorWorkbench: React.FC = () => {
                           </a>
                         </div>
                         <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-600">
-                          <span>
-                            版本发现:{' '}
-                            {activeMod.github_manifest ? (
-                              <code className="text-neutral-800">{MANIFEST_FILE_NAME} 清单</code>
-                            ) : (
-                              <span>站内按需抓取</span>
-                            )}
-                          </span>
+                          <span>版本发现: <span>站内按需抓取 + 发版通知</span></span>
                           <span>最近同步: {formatLastSyncTime(activeMod.github_last_sync_at)}</span>
                         </div>
-                        {!activeMod.github_manifest && (
-                          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-600">
-                            <span>
-                              资产匹配:{' '}
-                              {activeMod.github_platform_assets && activeMod.github_platform_assets.length > 0 ? (
-                                <span className="space-x-2">
-                                  {activeMod.github_platform_assets.map((rule) => (
-                                    <span key={rule.platform}>
-                                      {assetPlatformLabel(rule.platform)} <code className="text-neutral-800">{rule.regex || (rule.source_code ? '源码包' : '未配置')}</code>
-                                    </span>
-                                  ))}
-                                </span>
-                              ) : (
-                                <code className="text-neutral-800">{activeMod.github_asset_regex || '无（仅源码包）'}</code>
-                              )}
-                            </span>
-                          </div>
-                        )}
-                        {!activeMod.github_manifest && (
-                          <div className="text-[11px] text-amber-800 bg-amber-50 p-1.5 rounded border border-amber-200">
-                            未使用清单：距上次检查超过 {refreshWindowText} 才会回源；有人打开该模组时立即补抓，无人访问时由后台巡检兜底。
-                          </div>
-                        )}
-                        {activeMod.github_manifest && (
-                          <div className="text-[11px] text-neutral-600">
-                            站内读取仓库根目录的 <code className="text-neutral-800">{MANIFEST_FILE_NAME}</code>，发版后记得补一条记录。
-                          </div>
-                        )}
-                        {activeMod.github_last_sync_error && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-600">
+                          <span>
+                            资产匹配:{' '}
+                            {activeMod.github_platform_assets && activeMod.github_platform_assets.length > 0 ? (
+                              <span className="space-x-2">
+                                {activeMod.github_platform_assets.map((rule) => (
+                                  <span key={rule.platform}>
+                                    {assetPlatformLabel(rule.platform)} <code className="text-neutral-800">{rule.regex || (rule.source_code ? '源码包' : '未配置')}</code>
+                                  </span>
+                                ))}
+                              </span>
+                            ) : (
+                              <code className="text-neutral-800">{activeMod.github_asset_regex || '无（仅源码包）'}</code>
+                            )}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-amber-800 bg-amber-50 p-1.5 rounded border border-amber-200">
+                          距上次检查超过 {refreshWindowText} 才会自动回源；仓库里放了发版通知 Action 时，发布 Release 会立刻触发检查。
+                        </div>
+{activeMod.github_last_sync_error && (
                           <div className="text-[11px] text-rose-600 bg-rose-50 p-1.5 rounded border border-rose-200 mt-1">
                             同步状态: {activeMod.github_last_sync_error}
                           </div>
@@ -885,6 +882,30 @@ export const AuthorWorkbench: React.FC = () => {
                     </button>
                     {activeMod.is_published ? <button type="button" onClick={() => { if (window.confirm('确认下架这个模组？版本、归档和详情图会保留。')) void unpublishMod(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"><EyeOff className="w-3.5 h-3.5" />下架模组</button> : canDeleteActiveModDraft && <button type="button" onClick={() => { if (window.confirm('确认删除草稿模组？候选版本、扫描记录和详情图会一并删除。')) void deleteModDraft(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-700 border border-rose-200 hover:bg-rose-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">删除草稿模组</button>}
                     {activeMod.source_type === 'github_releases' ? (
+                      <>
+                      <button
+                        type="button"
+                        disabled={isCopyingWorkflow}
+                        onClick={async () => {
+                          setIsCopyingWorkflow(true);
+                          try {
+                            const snippet = await fetchModWorkflowSnippet(activeMod.id);
+                            if (!snippet) return;
+                            try {
+                              await navigator.clipboard.writeText(snippet.content);
+                              showToast('success', `已复制发布通知文件，请粘贴到仓库的 ${snippet.path}`);
+                            } catch {
+                              showToast('error', '无法写入剪贴板，请手动复制');
+                            }
+                          } finally {
+                            setIsCopyingWorkflow(false);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-700 border border-neutral-300 hover:bg-neutral-50 disabled:opacity-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        {isCopyingWorkflow ? '获取中...' : '复制发布通知文件'}
+                      </button>
                       <button
                         type="button"
                         disabled={isSyncingReleases}
@@ -901,6 +922,7 @@ export const AuthorWorkbench: React.FC = () => {
                         <RefreshCw className={`w-3.5 h-3.5 ${isSyncingReleases ? 'animate-spin' : ''}`} />
                         {isSyncingReleases ? '正在同步...' : '立即同步 Releases'}
                       </button>
+                      </>
                     ) : (
                       activeMod.category !== 'spritepack' && (
                         <button
@@ -1575,10 +1597,10 @@ export const AuthorWorkbench: React.FC = () => {
                     <div className="grid grid-cols-2 gap-2 p-1 bg-white rounded border border-neutral-200">
                       <button
                         type="button"
-                        aria-pressed={!newGitHubManifest}
-                        onClick={() => setNewGitHubManifest(false)}
+                        aria-pressed={!newGitHubAction}
+                        onClick={() => setNewGitHubAction(false)}
                         className={`py-1.5 text-xs font-medium rounded transition-colors ${
-                          !newGitHubManifest
+                          !newGitHubAction
                             ? 'bg-neutral-900 text-white'
                             : 'text-neutral-500 hover:text-neutral-800'
                         }`}
@@ -1587,36 +1609,78 @@ export const AuthorWorkbench: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        aria-pressed={newGitHubManifest}
-                        onClick={() => setNewGitHubManifest(true)}
+                        aria-pressed={newGitHubAction}
+                        onClick={() => setNewGitHubAction(true)}
                         className={`py-1.5 text-xs font-medium rounded transition-colors ${
-                          newGitHubManifest
+                          newGitHubAction
                             ? 'bg-emerald-700 text-white'
                             : 'text-neutral-500 hover:text-neutral-800'
                         }`}
                       >
-                        仓库清单 {MANIFEST_FILE_NAME}
+                        发版通知（推荐）
                       </button>
                     </div>
                   </div>
 
                   <div
                     className={`rounded border p-2.5 text-[11px] space-y-1 ${
-                      newGitHubManifest ? 'border-emerald-300 bg-white' : 'border-amber-200 bg-amber-50'
+                      newGitHubAction ? 'border-emerald-300 bg-white' : 'border-amber-200 bg-amber-50'
                     }`}
                   >
-                    {newGitHubManifest ? (
+                    {newGitHubAction ? (
                       <>
-                        <p className="text-emerald-800">好处：{manifestTradeoff.benefit}</p>
-                        <p className="text-amber-800">额外维护成本：{manifestTradeoff.cost}</p>
-                        <p className="text-neutral-600 pt-1">
-                          请在仓库根目录新建 <code className="bg-neutral-100 px-1 py-0.5 rounded">{MANIFEST_FILE_NAME}</code>，每次发版追加一条：
-                        </p>
-                        <pre className="bg-neutral-900 text-neutral-100 rounded p-2 overflow-x-auto text-[10px] leading-relaxed">
-{MANIFEST_SNIPPET}</pre>
-                        <p className="text-neutral-600 pt-1">
-                          清单指向的单个归档对所有平台等价，目录会同时向 Windows 与 Android 展示该模组。
-                        </p>
+                        <p className="text-emerald-800">好处：发 Release 后几秒内站内就会检查，不用等后台轮询。</p>
+                        <p className="text-amber-800">代价：要在仓库里放一个 GitHub Action 文件；改了文件名规则要同步改它。</p>
+                        <div className="mt-2 pt-2 border-t border-emerald-200 space-y-1.5">
+                          <p className="text-neutral-800 font-medium">第 1 步：确认文件名规则</p>
+                          <p className="text-neutral-600">
+                            上面的正则决定哪个 Release 附件算这个模组的包。生成的 Action 会把它们一起发过来，
+                            所以这里填错，通知也就认不出新版本。
+                          </p>
+                          {newGitHubSplitPlatforms ? (
+                            <ul className="list-disc pl-4 text-neutral-600">
+                              <li>Windows：<code className="bg-neutral-100 px-1 rounded">{newPlatformRules.windows.regex.trim() || '未填写'}</code></li>
+                              <li>Android：<code className="bg-neutral-100 px-1 rounded">{newPlatformRules.android.regex.trim() || '未填写'}</code></li>
+                            </ul>
+                          ) : (
+                            <p className="text-neutral-600">
+                              全平台共用一个文件：<code className="bg-neutral-100 px-1 rounded">{newGitHubAssetRegex.trim() || '未填写'}</code>
+                            </p>
+                          )}
+                          <p className="text-neutral-800 font-medium pt-1">第 2 步：把这个文件放进仓库</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={isCopyingWorkflow || !workflowRulesReady}
+                              onClick={async () => {
+                                setIsCopyingWorkflow(true);
+                                try {
+                                  const snippet = await fetchWorkflowTemplate(actionRules);
+                                  if (!snippet) return;
+                                  try {
+                                    await navigator.clipboard.writeText(snippet.content);
+                                    showToast('success', `已复制发布通知文件，请粘贴到仓库的 ${snippet.path}`);
+                                  } catch {
+                                    showToast('error', '无法写入剪贴板，请手动复制');
+                                  }
+                                } finally {
+                                  setIsCopyingWorkflow(false);
+                                }
+                              }}
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+                            >
+                              <Copy className="w-3 h-3" />
+                              {isCopyingWorkflow ? '获取中...' : '复制 GitHub Action 文件'}
+                            </button>
+                            <span className="text-neutral-500 font-mono text-[10px]">{WORKFLOW_FILE_PATH}</span>
+                          </div>
+                          {!workflowRulesReady && (
+                            <p className="text-amber-800">先填写文件名正则，生成的 Action 才有内容可发。</p>
+                          )}
+                          <p className="text-neutral-500">
+                            文件不含密钥，只声明这个仓库的包名规则；RezeHub 按仓库绑定识别是哪个模组。
+                          </p>
+                        </div>
                       </>
                     ) : (
                       <>
@@ -1626,8 +1690,6 @@ export const AuthorWorkbench: React.FC = () => {
                     )}
                   </div>
 
-                  {!newGitHubManifest && (
-                    <>
                   <div>
                     <label className="block font-medium text-neutral-700 mb-1">资产分发方式</label>
                     <div className="grid grid-cols-2 gap-2 p-1 bg-white rounded border border-neutral-200">
@@ -1716,6 +1778,7 @@ export const AuthorWorkbench: React.FC = () => {
                     <>
                   <div>
                     <label className="block font-medium text-neutral-700 mb-1">Release 资产文件名正则 (RE2)</label>
+
                     <input
                       type="text"
                       placeholder="例如: ^MyMod[-_]v?\d+\.\d+\.\d+.*\.zip$"
@@ -1746,8 +1809,6 @@ export const AuthorWorkbench: React.FC = () => {
                   <p className="text-[11px] text-neutral-500">
                     共用文件对所有平台等价，目录会同时向 Windows 与 Android 展示该模组。要只发布其中一个平台，请改用上面的分平台模式并留空另一个平台。
                   </p>
-                    </>
-                  )}
                     </>
                   )}
                 </div>

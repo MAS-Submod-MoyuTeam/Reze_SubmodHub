@@ -23,7 +23,7 @@ import (
 // source tree:
 //
 //	go build -ldflags "-X github.com/reze/submodhub/internal/version.Version=0.9.1"
-var Version = "0.10.1"
+var Version = "0.10.7"
 
 // RepoOwner and RepoName identify the official repository that publishes
 // SubmodHub releases. The API server (app-update delivery) and the desktop

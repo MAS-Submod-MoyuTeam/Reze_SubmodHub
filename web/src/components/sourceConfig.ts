@@ -9,8 +9,6 @@ export interface GitHubSourceInput {
   repo?: string;
   assetRegex?: string;
   sourceCode?: boolean;
-  /** true 表示版本由仓库根目录的 rezehub.yml 声明，而不是站内调用 releases API。 */
-  manifest?: boolean;
   /**
    * 非空时分平台抓取：每个平台用自己的正则匹配同名 Release 中的资产，
    * 全平台共用正则 (assetRegex) 不再参与匹配。
@@ -23,8 +21,11 @@ export interface GitHubSourceInput {
   platformMode?: boolean;
 }
 
-/** 作者需要自己维护的清单文件名（放在仓库根目录）。 */
-export const MANIFEST_FILE_NAME = 'rezehub.yml';
+/**
+ * 发布通知工作流在仓库里的路径。GitHub 只从这个固定目录运行工作流，
+ * 必须与服务端 AuthorWorkflowPath 保持一致。
+ */
+export const WORKFLOW_FILE_PATH = '.github/workflows/rezehub-notify.yml';
 
 /**
  * 服务端尚未返回策略时的兜底值，与服务端 GITHUB_SYNC_MAX_AGE 的默认值一致。
@@ -56,20 +57,11 @@ export function refreshWindowText(policy?: SourcePolicy | null): string {
   return describeRefreshWindow(policy.github_sync_max_age_seconds);
 }
 
-/** 可直接粘贴到仓库根目录的清单骨架。 */
-export const MANIFEST_SNIPPET = `schema: 1
-releases:
-  - version: 1.2.0
-    url: https://github.com/<owner>/<repo>/releases/download/v1.2.0/MyMod-1.2.0.zip
-    notes: 本次更新的内容（可选）
-`;
-
 export function validateGitHubSourceInput(input: GitHubSourceInput): { valid: boolean; error?: string } {
   const owner = (input.owner || '').trim();
   const repo = (input.repo || '').trim();
   const assetRegex = (input.assetRegex || '').trim();
   const sourceCode = Boolean(input.sourceCode);
-  const manifest = Boolean(input.manifest);
 
   if (!owner) {
     return { valid: false, error: 'GitHub 组织/用户名 (Owner) 不能为空' };
@@ -85,15 +77,15 @@ export function validateGitHubSourceInput(input: GitHubSourceInput): { valid: bo
     return { valid: false, error: 'GitHub Repo 格式不合法，仅支持字母、数字、点、下划线和连字符' };
   }
 
-  // 清单模式直接按 rezehub.yml 下载，资产正则不再参与匹配，因此不能强制要求填写。
-  // 分平台模式下每个平台各自带正则，全平台共用正则不再参与匹配，同样不能强制要求。
+  // 分平台模式下每个平台各自带正则，全平台共用正则不再参与匹配，因此不能强制要求。
+  // 但至少要有一个平台真的填了规则，否则这个源什么都匹配不到。
   const platformRules = input.platformRules || [];
   const splitPlatforms = Boolean(input.platformMode) || platformRules.length > 0;
-  if (!manifest && !splitPlatforms && !assetRegex && !sourceCode) {
+  if (!splitPlatforms && !assetRegex && !sourceCode) {
     return { valid: false, error: '必须配置 Release 资产文件名正则或勾选允许使用源码包 ZIP' };
   }
 
-  if (splitPlatforms && !manifest) {
+  if (splitPlatforms) {
     const rules = validatePlatformRules(platformRules);
     if (!rules.valid) return rules;
   }
@@ -215,17 +207,7 @@ export interface DiscoveryModeTradeoff {
 }
 
 /**
- * 清单模式的取舍，必须在前端如实展示：它把「更新延迟」换成「作者多维护一个文件」。
- */
-export function manifestModeTradeoff(): DiscoveryModeTradeoff {
-  return {
-    benefit: `站内直接读取仓库里的 ${MANIFEST_FILE_NAME}，不消耗 GitHub API 配额，打开页面即可看到最新版本。`,
-    cost: `需要你在仓库根目录额外维护一个 ${MANIFEST_FILE_NAME}，每次发版都要手动补一条记录；忘记更新时站内不会出现新版本。`,
-  };
-}
-
-/**
- * 非清单模式（站内按需抓取）的取舍。这是默认模式，不需要作者做任何额外工作。
+ * 站内按需抓取的取舍。这是默认模式，不需要作者做任何额外工作。
  * 窗口必须传入服务端实际生效的值，不能让作者看到与设置不符的文案。
  */
 export function onDemandModeTradeoff(windowText: string): DiscoveryModeTradeoff {

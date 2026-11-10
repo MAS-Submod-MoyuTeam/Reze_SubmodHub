@@ -84,8 +84,6 @@ export interface ModSummary {
   // Per-platform discovery rules. A non-empty list replaces github_asset_regex:
   // every listed platform is matched by its own regex on every release.
   github_platform_assets?: GitHubPlatformRule[];
-  github_manifest?: boolean;
-  github_manifest_digest?: string;
   github_last_sync_at?: string;
   github_last_sync_error?: string;
   github_last_release_id?: number;

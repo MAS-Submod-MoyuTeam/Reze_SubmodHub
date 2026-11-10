@@ -333,6 +333,34 @@ jobs:
             --notes-file release-notes.md \
             out/*
 
+      # The hub cannot poll GitHub for a brand-new release the moment it appears,
+      # so this pushes the ownership pair it already has bound as a mod. The
+      # endpoint only marks that mod stale; the hub's own sweep does the sync, so
+      # a failure here must never fail a release that already shipped.
+      - name: Notify hub of the new release
+        if: steps.release.outputs.exists == 'false'
+        continue-on-error: true
+        env:
+          HUB_URL: ${{ vars.SUBMODHUB_API_URL }}
+          TAG: ${{ needs.version.outputs.tag }}
+          # Which release assets count as this repo's packages. Kept here because
+          # this repo's workflow is hand-written; a mod created through the
+          # workbench gets an equivalent file with the author's own regexes.
+          RULES: '{"shared":"(?i)\\.(zip|7z)$"}'
+        run: |
+          set -euo pipefail
+          base="${HUB_URL:-https://rezehub.0721play.icu}"
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          printf '{"owner":"%s","repo":"%s","version":"%s","rules":%s}\n' \
+            "${owner}" "${repo}" "${TAG}" "${RULES}" > notify.json
+          curl --fail-with-body --silent --show-error \
+            --max-time 20 \
+            --retry 3 --retry-delay 5 --retry-all-errors \
+            -H 'Content-Type: application/json' \
+            --data @notify.json \
+            "${base%/}/api/v1/github-release-notify"
+
       - name: Summarize outcome
         run: |
           {

@@ -2,11 +2,13 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"net/url"
-	"path"
+	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -77,12 +79,6 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 	}
 
 	client := s.githubClient()
-
-	// Manifest mode never touches the REST API, so the API rate-limit backoff
-	// must not suppress it.
-	if targetMod.GitHubManifest {
-		return s.syncModFromManifest(ctx, client, *targetMod, force, now)
-	}
 
 	// Rate limit backoff check
 	s.mu.RLock()
@@ -172,7 +168,7 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 			SyncedAt: now,
 			Items:    []SyncItemResult{},
 		}
-		s.finishSync(modID, now, summary, newETag, "")
+		s.finishSync(modID, now, summary, newETag)
 		return summary, nil
 	}
 
@@ -312,85 +308,8 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 		summary.Items = append(summary.Items, result)
 	}
 
-	s.finishSync(modID, now, summary, newETag, "")
+	s.finishSync(modID, now, summary, newETag)
 	return summary, nil
-}
-
-// syncModFromManifest imports versions declared by the repository's rezehub.yml.
-// It reads raw.githubusercontent.com (no REST quota) and downloads the declared
-// asset URLs, so a repository that maintains the file needs no API access at all.
-func (s *Store) syncModFromManifest(ctx context.Context, client *github.Client, mod Mod, force bool, now time.Time) (*SyncSummary, error) {
-	manifest, digest, err := client.FetchManifest(ctx, mod.GitHubOwner, mod.GitHubRepo)
-	if err != nil {
-		summary := &SyncSummary{
-			ModID:     mod.ID,
-			SyncedAt:  now,
-			Failed:    1,
-			LastError: err.Error(),
-			Items:     []SyncItemResult{},
-		}
-		s.finishSync(mod.ID, now, summary, "", "")
-		return summary, nil
-	}
-
-	// The digest identifies the exact document. An unchanged manifest declares
-	// an unchanged version list, so nothing has to be downloaded.
-	if !force && mod.GitHubLastSyncError == "" && digest != "" && digest == mod.GitHubManifestDigest {
-		summary := &SyncSummary{ModID: mod.ID, SyncedAt: now, Items: []SyncItemResult{}}
-		s.finishSync(mod.ID, now, summary, "", digest)
-		return summary, nil
-	}
-
-	summary := &SyncSummary{
-		ModID:    mod.ID,
-		SyncedAt: now,
-		Items:    make([]SyncItemResult, 0, len(manifest.Releases)),
-	}
-	for _, rel := range manifest.Releases {
-		if s.modHasVersion(mod.ID, rel.Version) {
-			summary.Skipped++
-			summary.Items = append(summary.Items, SyncItemResult{
-				Tag:    rel.Version,
-				Action: "skipped",
-				Reason: "version tag already exists",
-			})
-			continue
-		}
-		result, created := s.importCandidate(ctx, client, mod, releaseCandidate{
-			Version:      rel.Version,
-			Notes:        rel.Notes,
-			DownloadURL:  rel.URL,
-			FileName:     manifestAssetName(rel.URL),
-			SourceKind:   github.SourceKindAsset,
-			Owner:        mod.GitHubOwner,
-			Repo:         mod.GitHubRepo,
-			ExpectSHA256: rel.SHA256,
-		}, now, force)
-		switch {
-		case created:
-			summary.Created++
-		case result.Action == "failed":
-			summary.Failed++
-		default:
-			summary.Skipped++
-		}
-		summary.Items = append(summary.Items, result)
-	}
-
-	if s.AutoPublish {
-		s.followManifestLatest(mod.ID, manifest.Releases)
-	}
-	s.finishSync(mod.ID, now, summary, "", digest)
-	return summary, nil
-}
-
-// manifestAssetName recovers a display filename from a declared asset URL.
-func manifestAssetName(assetURL string) string {
-	parsed, err := url.Parse(assetURL)
-	if err != nil {
-		return ""
-	}
-	return path.Base(parsed.Path)
 }
 
 func (s *Store) modHasVersion(modID, version string) bool {
@@ -402,27 +321,6 @@ func (s *Store) modHasVersion(modID, version string) bool {
 		}
 	}
 	return false
-}
-
-// followManifestLatest chooses the last published entry in manifest order,
-// including versions imported by an earlier attempt.
-func (s *Store) followManifestLatest(modID string, releases []github.ManifestRelease) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i := len(releases) - 1; i >= 0; i-- {
-		for _, version := range s.Catalog.Versions {
-			if version.ModID != modID || version.Version != releases[i].Version || version.State != "published" {
-				continue
-			}
-			for j := range s.Catalog.Mods {
-				if s.Catalog.Mods[j].ID == modID && s.Catalog.Mods[j].LatestVersionID != version.ID {
-					s.Catalog.Mods[j].LatestVersionID = version.ID
-					_ = s.saveLocked()
-				}
-			}
-			return
-		}
-	}
 }
 
 // MaybeSyncGitHubMod refreshes one mod if it has not been checked for longer
@@ -492,13 +390,11 @@ func (s *Store) syncDueLocked(mod Mod, now time.Time) bool {
 	if s.GitHubSyncMaxAge <= 0 {
 		return false
 	}
-	if !mod.GitHubManifest {
-		if !s.gitHubBackoffUntil.IsZero() && now.Before(s.gitHubBackoffUntil) {
-			return false
-		}
-		if mod.GitHubBackoffUntil != nil && now.Before(*mod.GitHubBackoffUntil) {
-			return false
-		}
+	if !s.gitHubBackoffUntil.IsZero() && now.Before(s.gitHubBackoffUntil) {
+		return false
+	}
+	if mod.GitHubBackoffUntil != nil && now.Before(*mod.GitHubBackoffUntil) {
+		return false
 	}
 	return mod.GitHubLastSyncAt == nil || now.Sub(*mod.GitHubLastSyncAt) >= s.GitHubSyncMaxAge
 }
@@ -678,15 +574,433 @@ func (s *Store) StartGitHubSync() {
 			case <-s.syncStopChan:
 				return
 			case <-ticker.C:
+				// A disabled window means the operator wants no unattended
+				// GitHub traffic at all, and the version probe is GitHub
+				// traffic: it stays inside the same switch.
 				if s.syncMaxAge() <= 0 {
 					continue
 				}
+				// The six-hour comparison is cheaper and rarer than a sync, and
+				// it is what notices a change in an idle catalog even when the
+				// stale-sweep has nothing to do.
+				versionCtx, versionCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				s.CheckStaleModVersions(versionCtx)
+				versionCancel()
+
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 				s.SyncStaleGitHubMods(ctx)
 				cancel()
 			}
 		}
 	}()
+}
+
+// MarkGitHubReleaseStale implements the push half of GitHub discovery. A release
+// published by the bound repository is the only signal the hub cannot poll for,
+// so the notify endpoint turns it into ordinary staleness: the mod is marked due
+// and the existing passive and sweep paths refresh it exactly as they would
+// after the staleness window expired.
+//
+// Every unbound owner/repo pair reads as "not found" rather than as an error: the
+// binding is the only capability here, and reporting whether some other
+// repository is bound would leak the catalog to any caller that can reach the
+// endpoint.
+func (s *Store) MarkGitHubReleaseStale(owner, repo string) (int, bool) {
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	if owner == "" || repo == "" {
+		return 0, false
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	matched := 0
+	for i := range s.Catalog.Mods {
+		mod := &s.Catalog.Mods[i]
+		if mod.GetSourceType() != "github_releases" {
+			continue
+		}
+		if !strings.EqualFold(mod.GitHubOwner, owner) || !strings.EqualFold(mod.GitHubRepo, repo) {
+			continue
+		}
+		if mod.GitHubLastSyncAt != nil {
+			mod.GitHubLastSyncAt = nil
+		}
+		matched++
+	}
+	if matched == 0 {
+		return 0, false
+	}
+	if err := s.saveLocked(); err != nil {
+		log.Printf("[github-sync] marking %s/%s stale was not persisted: %v", owner, repo, err)
+	}
+	return matched, true
+}
+
+// githubReleaseNotify handles the push trigger a repository's release workflow
+// sends after publishing. It is deliberately unauthenticated: the owner/repo pair
+// already has to match a mod the hub bound to GitHub, and a caller that cannot
+// name a bound repository changes nothing. It never starts a download itself.
+func (s *Store) githubReleaseNotify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, 405, "method_not_allowed", "method is not supported")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 8192)
+	var req struct {
+		Owner   string                `json:"owner"`
+		Repo    string                `json:"repo"`
+		Version string                `json:"version,omitempty"`
+		Rules   *workflowPlatformRules `json:"rules,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "invalid_body", "owner and repo are required")
+		return
+	}
+	// Rules are optional so a workflow generated before they existed keeps
+	// working, but when present they must be usable patterns: a malformed regex
+	// is reported here rather than silently matching every asset later.
+	if req.Rules != nil {
+		if err := validateWorkflowRuleSet(*req.Rules); err != nil {
+			writeError(w, 400, "invalid_rules", err.Error())
+			return
+		}
+	}
+	matched, ok := s.MarkGitHubReleaseStale(req.Owner, req.Repo)
+	if !ok {
+		// An unbound repository is indistinguishable from a typo. Both are
+		// dropped, so the endpoint cannot be used to discover bindings.
+		writeError(w, 404, "not_found", "no mod is bound to this repository")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"matched_mods": matched,
+		"status":       "stale",
+	})
+}
+
+// validateWorkflowRuleSet rejects patterns the hub cannot compile. The empty set
+// is valid: it means the workflow predates rule delivery, and the mod's stored
+// configuration decides what to publish.
+func validateWorkflowRuleSet(rules workflowPlatformRules) error {
+	for name, pattern := range map[string]string{
+		"shared":  rules.Shared,
+		"windows": rules.Windows,
+		"android": rules.Android,
+	} {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		if len(pattern) > 512 {
+			return fmt.Errorf("%s pattern is longer than 512 characters", name)
+		}
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("%s pattern is not a valid regular expression: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// GitHubVersionCheckInterval is how often the hub re-compares the version a mod
+// serves against the version its repository announces. It is slower than the
+// sync window on purpose: this check answers "did anything change at all", so
+// running it every minute would only re-read an unchanged number.
+var GitHubVersionCheckInterval = 6 * time.Hour
+
+// checkModVersionDueLocked reports whether the slow version comparison is due.
+// It reads only stored timestamps, so it costs nothing on a catalog-wide pass.
+// Callers must hold the store lock.
+func (s *Store) checkModVersionDueLocked(mod Mod, now time.Time) bool {
+	if mod.GetSourceType() != "github_releases" {
+		return false
+	}
+	return mod.GitHubVersionCheckedAt == nil || now.Sub(*mod.GitHubVersionCheckedAt) >= GitHubVersionCheckInterval
+}
+
+// CheckModVersion re-reads the version the repository announces and marks the
+// mod stale when it differs from what the hub currently serves. The signal is
+// the release tag the repository already publishes, so the author maintains
+// nothing extra and the check stays cheap enough to run unattended every six
+// hours.
+//
+// It never downloads an archive: a difference only clears the sync clock, and
+// the ordinary passive/sweep path does the actual import. Anything it cannot
+// determine leaves the previous observation in place instead of turning into a
+// sync, because a wrong "changed" verdict costs a full refresh on every pass.
+func (s *Store) CheckModVersion(ctx context.Context, modID string) (changed bool, served, announced string) {
+	now := time.Now().UTC()
+	s.mu.RLock()
+	var mod *Mod
+	for i := range s.Catalog.Mods {
+		if s.Catalog.Mods[i].ID == modID {
+			m := s.Catalog.Mods[i]
+			mod = &m
+			break
+		}
+	}
+	served = s.servedLatestVersionLocked(modID)
+	s.mu.RUnlock()
+	if mod == nil || mod.GetSourceType() != "github_releases" {
+		return false, "", ""
+	}
+
+	client := s.githubClient()
+	announced, err := announcedReleaseVersion(ctx, client, mod.GitHubOwner, mod.GitHubRepo)
+	if err != nil {
+		// An unreachable or missing probe is not evidence of a new version. The
+		// clock still advances so a broken repository is not re-probed on every
+		// sweep; the recorded observation is left untouched.
+		log.Printf("[github-sync] version probe for %s (%s/%s) failed: %v", modID, mod.GitHubOwner, mod.GitHubRepo, err)
+		s.markVersionChecked(modID, now, "", false)
+		return false, served, ""
+	}
+
+	announced = strings.TrimSpace(announced)
+	// Only a version the catalog does not already have counts. Two false
+	// positives are avoided here:
+	//
+	//   - string comparison would read every v-prefixed tag as different, so the
+	//     sides are compared as versions;
+	//   - a repository may hold releases the catalog already passed (a back-filled
+	//     patch, a maintenance branch), so an older tag is not a change either.
+	changed = announced != "" && !sameVersion(announced, served) && isNewerVersion(announced, served)
+
+	s.markVersionChecked(modID, now, announced, changed)
+	return changed, served, announced
+}
+
+// announcedReleaseVersion reports the version a repository's newest release
+// carries, which is the version signal that every repository already publishes:
+// a release tag needs no file the author has to remember to maintain.
+//
+// /releases/latest is deliberately not used here. It answers "latest by
+// created_at", so back-filling an older release, editing a draft into
+// publication, or publishing a patch for a maintenance branch can all move a
+// repository's "latest" backwards. Reading the first page and keeping the
+// highest tag is stable against that, and it is the same question the catalog
+// actually asks — "is there a version above what I serve?".
+//
+// Drafts and prereleases are skipped: neither is something the catalog should
+// import, so neither may count as a new version. The page is small and the call
+// runs once per six hours per mod, so the extra request budget is irrelevant.
+func announcedReleaseVersion(ctx context.Context, client *github.Client, owner, repo string) (string, error) {
+	releases, _, _, err := client.ListReleases(ctx, owner, repo, "")
+	if err != nil {
+		return "", err
+	}
+	best := ""
+	for _, release := range releases {
+		if release.Draft || release.Prerelease {
+			continue
+		}
+		tag := strings.TrimSpace(release.TagName)
+		if tag == "" {
+			continue
+		}
+		if best == "" || isNewerVersion(tag, best) {
+			best = tag
+		}
+	}
+	if best == "" {
+		return "", fmt.Errorf("%w: %s/%s has no published release yet", github.ErrNotFound, owner, repo)
+	}
+	return best, nil
+}
+
+// sameVersion compares two version labels after normalizing the usual tag
+// decoration. It is deliberately lenient in one direction only: it answers
+// "are these the same version", never "which is newer", because a false
+// "different" would cost a full sync on every pass.
+func sameVersion(a, b string) bool {
+	if a == b {
+		return true
+	}
+	return normalizeVersionLabel(a) == normalizeVersionLabel(b)
+}
+
+// normalizeVersionLabel strips the decoration version labels carry in the wild:
+// a leading "v"/"V", surrounding space, and trailing build noise.
+func normalizeVersionLabel(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "v")
+	s = strings.TrimPrefix(s, "V")
+	return s
+}
+
+// compareVersionLabels orders two release labels, answering -1/0/+1.
+//
+// Release tags are not always strict semver: this catalog ships versions like
+// "1.4.2.2", which Masterminds/semver rejects outright. Comparing those as
+// "not newer" would silently exempt every such mod from the six-hour check, so
+// the numeric segments are compared directly and a stricter parser is not
+// required. Labels whose numeric prefixes tie fall back to the raw string so
+// the order stays total and comparisons never claim equality they cannot prove.
+func compareVersionLabels(a, b string) int {
+	an, aok := numericVersionSegments(a)
+	bn, bok := numericVersionSegments(b)
+	if !aok || !bok {
+		return strings.Compare(normalizeVersionLabel(a), normalizeVersionLabel(b))
+	}
+	for i := 0; i < len(an) || i < len(bn); i++ {
+		var av, bv int
+		if i < len(an) {
+			av = an[i]
+		}
+		if i < len(bn) {
+			bv = bn[i]
+		}
+		if av != bv {
+			if av < bv {
+				return -1
+			}
+			return 1
+		}
+	}
+	// The numeric prefixes tie. A label that has something after the numeric run
+	// (a prerelease like "1.2.3-beta") sorts BELOW the bare release, which is
+	// the one ordering rule callers rely on. Two labels with the same shape fall
+	// back to the raw string so the order stays total.
+	aSuffix := versionSuffix(a)
+	bSuffix := versionSuffix(b)
+	switch {
+	case aSuffix == "" && bSuffix == "":
+		return strings.Compare(normalizeVersionLabel(a), normalizeVersionLabel(b))
+	case aSuffix == "":
+		return 1
+	case bSuffix == "":
+		return -1
+	}
+	return strings.Compare(aSuffix, bSuffix)
+}
+
+// versionSuffix returns whatever follows the leading dotted numeric run, which
+// is the prerelease/build part of a label ("1.2.3-beta" → "-beta").
+func versionSuffix(label string) string {
+	label = normalizeVersionLabel(label)
+	lastDigit := -1
+	for i := 0; i < len(label); i++ {
+		c := label[i]
+		if c >= '0' && c <= '9' {
+			lastDigit = i
+			continue
+		}
+		if c == '.' {
+			continue
+		}
+		return label[i:]
+	}
+	if lastDigit == -1 {
+		return label
+	}
+	return ""
+}
+
+// numericVersionSegments extracts the leading dotted run of integers from a
+// label. Anything after it (a prerelease marker, build metadata) is ignored
+// here and left to the raw comparison in compareVersionLabels.
+func numericVersionSegments(label string) ([]int, bool) {
+	label = normalizeVersionLabel(label)
+	if label == "" {
+		return nil, false
+	}
+	var segments []int
+	for _, part := range strings.Split(label, ".") {
+		end := 0
+		for end < len(part) && part[end] >= '0' && part[end] <= '9' {
+			end++
+		}
+		if end == 0 {
+			break
+		}
+		value, err := strconv.Atoi(part[:end])
+		if err != nil {
+			break
+		}
+		segments = append(segments, value)
+		if end != len(part) {
+			// Trailing non-numeric text ends the numeric run (1.2.3-beta).
+			break
+		}
+	}
+	if len(segments) == 0 {
+		return nil, false
+	}
+	return segments, true
+}
+
+// isNewerVersion reports whether announced is a version above served.
+func isNewerVersion(announced, served string) bool {
+	if served == "" {
+		// Nothing is served yet, so any announced version is new.
+		return strings.TrimSpace(announced) != ""
+	}
+	return compareVersionLabels(announced, served) > 0
+}
+
+// markVersionChecked records one comparison result. A changed verdict reuses the
+// release notification's lever: the mod simply becomes due, and the existing
+// passive and sweep paths do the import.
+func (s *Store) markVersionChecked(modID string, now time.Time, announced string, changed bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.Catalog.Mods {
+		if s.Catalog.Mods[i].ID != modID {
+			continue
+		}
+		s.Catalog.Mods[i].GitHubVersionCheckedAt = &now
+		if announced != "" {
+			s.Catalog.Mods[i].GitHubVersionSeen = announced
+		}
+		if changed {
+			s.Catalog.Mods[i].GitHubLastSyncAt = nil
+		}
+	}
+	if err := s.saveLocked(); err != nil {
+		log.Printf("[github-sync] version check for %s was not persisted: %v", modID, err)
+	}
+}
+
+// servedLatestVersionLocked returns the highest published version the mod
+// serves. Callers must hold the store lock.
+func (s *Store) servedLatestVersionLocked(modID string) string {
+	best := ""
+	for _, version := range s.Catalog.Versions {
+		if version.ModID != modID || version.State != "published" {
+			continue
+		}
+		// Same comparator the release probe uses: the catalog serves four-part
+		// versions too, and a stricter parser would quietly drop them here and
+		// report an empty "served" version.
+		if best == "" || isNewerVersion(version.Version, best) {
+			best = version.Version
+		}
+	}
+	return best
+}
+
+// CheckStaleModVersions runs the six-hour self-check across the catalog. Mods
+// whose check is not due are skipped without any network access.
+func (s *Store) CheckStaleModVersions(ctx context.Context) int {
+	now := time.Now().UTC()
+	s.mu.RLock()
+	due := make([]string, 0)
+	for _, m := range s.Catalog.Mods {
+		if s.checkModVersionDueLocked(m, now) {
+			due = append(due, m.ID)
+		}
+	}
+	s.mu.RUnlock()
+
+	checked := 0
+	for _, id := range due {
+		if ctx.Err() != nil {
+			return checked
+		}
+		s.CheckModVersion(ctx, id)
+		checked++
+	}
+	return checked
 }
 
 func (s *Store) Close() error {
@@ -712,7 +1026,6 @@ type GitHubSyncDiagnostics struct {
 	LastSyncAt       *time.Time `json:"last_sync_at,omitempty"`
 	LastSyncError    string     `json:"last_sync_error,omitempty"`
 	TotalManagedMods int        `json:"total_managed_mods"`
-	ManifestMods     int        `json:"manifest_mods"`
 	// TokenConfigured reports whether an API token is stored; the token itself is
 	// never part of any response.
 	TokenConfigured bool `json:"token_configured"`
@@ -724,16 +1037,12 @@ func (s *Store) GetGitHubSyncDiagnostics() *GitHubSyncDiagnostics {
 	defer s.mu.RUnlock()
 
 	managedCount := 0
-	manifestCount := 0
 	var latestSync *time.Time
 	var latestErr string
 
 	for _, m := range s.Catalog.Mods {
 		if m.GetSourceType() == "github_releases" {
 			managedCount++
-			if m.GitHubManifest {
-				manifestCount++
-			}
 			if m.GitHubLastSyncAt != nil && (latestSync == nil || m.GitHubLastSyncAt.After(*latestSync)) {
 				latestSync = m.GitHubLastSyncAt
 			}
@@ -762,7 +1071,6 @@ func (s *Store) GetGitHubSyncDiagnostics() *GitHubSyncDiagnostics {
 		LastSyncAt:       latestSync,
 		LastSyncError:    latestErr,
 		TotalManagedMods: managedCount,
-		ManifestMods:     manifestCount,
 		TokenConfigured:  s.Catalog.Settings.GitHubToken != nil && s.Catalog.Settings.GitHubToken.Value != "",
 		TokenEncrypted:   s.Catalog.Settings.GitHubToken != nil && s.Catalog.Settings.GitHubToken.Encrypted,
 	}

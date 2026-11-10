@@ -103,14 +103,13 @@ func normalizePlatformRules(rules []GitHubPlatformRule) ([]GitHubPlatformRule, e
 // mod. GitHub discovery owns that decision: while per-platform rules are active
 // (on-demand discovery, at least one rule) the rules are exactly the supported
 // platforms, and leaving a platform out means the mod does not publish for it.
-// A shared archive or a manifest listing serves every supported platform, so it
-// may not be narrowed — otherwise the catalog would hide a mod from a platform
+// A shared archive serves every supported platform, so it may not be narrowed — otherwise the catalog would hide a mod from a platform
 // that can install the very same bytes. Local mods keep the author's declaration.
 func (m Mod) effectiveSupportedPlatforms() []string {
 	if m.GetSourceType() != "github_releases" {
 		return m.SupportedPlatforms
 	}
-	if m.GitHubManifest || len(m.GitHubPlatformAssets) == 0 {
+	if len(m.GitHubPlatformAssets) == 0 {
 		return slices.Clone(SupportedPlatforms)
 	}
 	out := make([]string, 0, len(m.GitHubPlatformAssets))

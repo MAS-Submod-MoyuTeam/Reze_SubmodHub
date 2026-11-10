@@ -12,13 +12,10 @@ import {
   isCandidateVersionAllowed,
   formatLastSyncTime,
   getGitHubRepoUrl,
-  manifestModeTradeoff,
   onDemandModeTradeoff,
   DEFAULT_REFRESH_WINDOW_MINUTES,
   describeRefreshWindow,
   refreshWindowText,
-  MANIFEST_FILE_NAME,
-  MANIFEST_SNIPPET,
 } from './sourceConfig';
 
 test('validates required github owner and repo', () => {
@@ -61,25 +58,7 @@ test('builds github repository URL', () => {
   assert.equal(getGitHubRepoUrl('octocat', 'hello-world'), 'https://github.com/octocat/hello-world');
 });
 
-test('manifest mode does not require an asset regex', () => {
-  assert.equal(
-    validateGitHubSourceInput({ owner: 'octocat', repo: 'hello', assetRegex: '', sourceCode: false, manifest: true }).valid,
-    true,
-  );
-  // Owner and repo stay mandatory in both modes.
-  assert.equal(validateGitHubSourceInput({ owner: '', repo: 'hello', manifest: true }).valid, false);
-  // A broken regex is still rejected when one is supplied.
-  assert.equal(validateGitHubSourceInput({ owner: 'octocat', repo: 'hello', assetRegex: '[bad', manifest: true }).valid, false);
-  // Without the manifest flag the regex/fallback requirement still applies.
-  assert.equal(validateGitHubSourceInput({ owner: 'octocat', repo: 'hello', assetRegex: '' }).valid, false);
-});
-
 test('tradeoff copy tells the author what each mode costs', () => {
-  const manifest = manifestModeTradeoff();
-  assert.ok(manifest.benefit.includes(MANIFEST_FILE_NAME));
-  assert.ok(manifest.cost.includes(MANIFEST_FILE_NAME));
-  assert.ok(manifest.cost.includes('维护'));
-
   // The copy quotes the server's window, so the default text is the default value.
   const defaultText = describeRefreshWindow(DEFAULT_REFRESH_WINDOW_MINUTES * 60);
   const onDemand = onDemandModeTradeoff(defaultText);
@@ -97,13 +76,6 @@ test('tradeoff copy tells the author what each mode costs', () => {
   assert.equal(describeRefreshWindow(0), '已关闭自动刷新');
   assert.equal(refreshWindowText(null), '1 小时');
   assert.equal(refreshWindowText({ github_sync_max_age: '5400s', github_sync_max_age_seconds: 5400, github_sync_max_age_configured: true }), '1 小时 30 分钟');
-});
-
-test('manifest snippet matches the document the server parses', () => {
-  assert.ok(MANIFEST_SNIPPET.includes('schema: 1'));
-  assert.ok(MANIFEST_SNIPPET.includes('releases:'));
-  assert.ok(MANIFEST_SNIPPET.includes('version:'));
-  assert.ok(MANIFEST_SNIPPET.includes('.zip'));
 });
 
 test('per-platform rules accept one or both platforms', () => {

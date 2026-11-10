@@ -189,8 +189,6 @@ type Mod struct {
 	// assets. Each listed platform is matched by its own regex on every release;
 	// an empty list keeps the single-file rule (github_asset_regex).
 	GitHubPlatformAssets []GitHubPlatformRule `json:"github_platform_assets,omitempty"`
-	GitHubManifest          bool       `json:"github_manifest,omitempty"`
-	GitHubManifestDigest    string     `json:"github_manifest_digest,omitempty"`
 	GitHubLastSyncAt        *time.Time `json:"github_last_sync_at,omitempty"`
 	GitHubLastSyncError     string     `json:"github_last_sync_error,omitempty"`
 	GitHubLastReleaseID     int64      `json:"github_last_release_id,omitempty"`
@@ -200,6 +198,15 @@ type Mod struct {
 	// a reason those exact bytes always reproduce, so the sweep skips them
 	// instead of downloading them again on every window.
 	GitHubReleaseFailures []GitHubReleaseFailure `json:"github_release_failures,omitempty"`
+	// GitHubVersionCheckedAt is when the hub last compared this mod's published
+	// latest version against the version the repository announces. It is the
+	// slow self-check clock, deliberately separate from github_last_sync_at:
+	// refreshing that one must not postpone the next version comparison.
+	GitHubVersionCheckedAt *time.Time `json:"github_version_checked_at,omitempty"`
+	// GitHubVersionSeen is the announced version the last comparison observed,
+	// recorded so a repository that keeps announcing the same version is not
+	// re-read every window. A different value is what marks the mod stale.
+	GitHubVersionSeen string `json:"github_version_seen,omitempty"`
 }
 
 func (m Mod) GetSourceType() string {
@@ -220,7 +227,6 @@ type sourceConfigInput struct {
 	Repo         string
 	AssetRegex   string
 	SourceCode   bool
-	Manifest     bool
 	PlatformMode bool
 	PlatformRules []GitHubPlatformRule
 }
@@ -240,22 +246,6 @@ func validateSourceConfig(in sourceConfigInput) error {
 		}
 		if !githubRepoRegex.MatchString(repo) {
 			return errors.New("invalid github_repo format")
-		}
-		// Manifest mode resolves every version through the repository's
-		// rezehub.yml, so release asset matching never runs and must not be
-		// demanded from the author.
-		if in.Manifest {
-			if strings.TrimSpace(in.AssetRegex) != "" {
-				if _, err := regexp.Compile(in.AssetRegex); err != nil {
-					return fmt.Errorf("invalid github_asset_regex: %w", err)
-				}
-			}
-			if len(in.PlatformRules) > 0 {
-				if _, err := normalizePlatformRules(in.PlatformRules); err != nil {
-					return err
-				}
-			}
-			return nil
 		}
 		// Per-platform discovery replaces the single-file rule entirely: every
 		// platform declares its own matcher, so the shared regex is not used.
@@ -296,7 +286,6 @@ func cleanPublicMod(m Mod) Mod {
 	cp.GitHubLastReleaseID = 0
 	cp.GitHubBackoffUntil = nil
 	cp.GitHubETag = ""
-	cp.GitHubManifestDigest = ""
 	cp.GitHubReleaseFailures = nil
 	return cp
 }
@@ -537,12 +526,14 @@ func NewStoreHandler(s *Store) http.Handler {
 	mux.HandleFunc("/api/v1/admin/settings", s.handleAdminSettings)
 	mux.HandleFunc("/api/v1/admin/settings/github-proxy/test", s.handleAdminSettingsTestGitHubProxy)
 	mux.HandleFunc("/api/v1/author/mods", s.authorMods)
+	mux.HandleFunc("/api/v1/author/workflow-template", s.authorWorkflowTemplate)
 	mux.HandleFunc("/api/v1/author/mods/", s.authorModResource)
 	mux.HandleFunc("/api/v1/author/versions/", s.authorVersionResource)
 	mux.HandleFunc("/api/v1/author/submissions", s.authorSubmissions)
 	mux.HandleFunc("/api/v1/review/submissions", s.reviewSubmissions)
 	mux.HandleFunc("/api/v1/review/audit", s.reviewAudit)
 	mux.HandleFunc("/api/v1/review/submissions/", s.reviewSubmissionResource)
+	mux.HandleFunc("/api/v1/github-release-notify", s.githubReleaseNotify)
 	mux.HandleFunc("/api/v1/mods/", s.modResource)
 	mux.HandleFunc("/api/v1/spritepacks/", s.spritepackResource)
 	mux.HandleFunc("/api/v1/versions/", s.downloadDescriptor)
@@ -602,7 +593,6 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		GitHubRepo          string   `json:"github_repo"`
 		GitHubAssetRegex    string   `json:"github_asset_regex"`
 		GitHubSourceCode    bool     `json:"github_source_code"`
-		GitHubManifest      bool     `json:"github_manifest"`
 		// A non-nil list switches this source to per-platform discovery; nil or
 		// empty keeps the single-file rule.
 		GitHubPlatformAssets []GitHubPlatformRule `json:"github_platform_assets"`
@@ -619,7 +609,6 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		Repo:          req.GitHubRepo,
 		AssetRegex:    req.GitHubAssetRegex,
 		SourceCode:    req.GitHubSourceCode,
-		Manifest:      req.GitHubManifest,
 		PlatformMode:  len(req.GitHubPlatformAssets) > 0,
 		PlatformRules: req.GitHubPlatformAssets,
 	}); err != nil {
@@ -681,7 +670,6 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 		GitHubRepo:          strings.TrimSpace(req.GitHubRepo),
 		GitHubAssetRegex:    strings.TrimSpace(req.GitHubAssetRegex),
 		GitHubSourceCode:    req.GitHubSourceCode,
-		GitHubManifest:      req.GitHubManifest,
 	}
 	// Validation already normalized the rules; store the canonical order so the
 	// workbench and the sync loop agree without re-sorting.
@@ -690,7 +678,7 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 	}
 	// The source configuration, not the request body, owns the platform set for
 	// GitHub mods: a split config lists exactly its configured platforms, while
-	// a shared file or manifest serves all of them.
+	// a shared file serves all of them.
 	mod.SupportedPlatforms = mod.effectiveSupportedPlatforms()
 	s.mu.Lock()
 	s.Catalog.Mods = append(s.Catalog.Mods, mod)
@@ -996,7 +984,6 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			GitHubRepo       string `json:"github_repo"`
 			GitHubAssetRegex string `json:"github_asset_regex"`
 			GitHubSourceCode bool   `json:"github_source_code"`
-			GitHubManifest   bool   `json:"github_manifest"`
 			GitHubPlatformAssets []GitHubPlatformRule `json:"github_platform_assets"`
 		}
 		dec := json.NewDecoder(r.Body)
@@ -1011,7 +998,6 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			Repo:          req.GitHubRepo,
 			AssetRegex:    req.GitHubAssetRegex,
 			SourceCode:    req.GitHubSourceCode,
-			Manifest:      req.GitHubManifest,
 			PlatformMode:  len(req.GitHubPlatformAssets) > 0,
 			PlatformRules: req.GitHubPlatformAssets,
 		}); err != nil {
@@ -1037,9 +1023,8 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		if srcType == "" {
 			srcType = "local"
 		}
-		if mod.GitHubOwner != strings.TrimSpace(req.GitHubOwner) || mod.GitHubRepo != strings.TrimSpace(req.GitHubRepo) || mod.GitHubManifest != req.GitHubManifest || !slices.Equal(mod.GitHubPlatformAssets, rules) {
+		if mod.GitHubOwner != strings.TrimSpace(req.GitHubOwner) || mod.GitHubRepo != strings.TrimSpace(req.GitHubRepo) || !slices.Equal(mod.GitHubPlatformAssets, rules) {
 			mod.GitHubETag = ""
-			mod.GitHubManifestDigest = ""
 			mod.GitHubBackoffUntil = nil
 		}
 		mod.SourceType = srcType
@@ -1047,7 +1032,6 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		mod.GitHubRepo = strings.TrimSpace(req.GitHubRepo)
 		mod.GitHubAssetRegex = strings.TrimSpace(req.GitHubAssetRegex)
 		mod.GitHubSourceCode = req.GitHubSourceCode
-		mod.GitHubManifest = req.GitHubManifest
 		mod.GitHubPlatformAssets = rules
 		mod.SupportedPlatforms = mod.effectiveSupportedPlatforms()
 		mod.GitHubLastSyncError = ""
@@ -1060,6 +1044,10 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		updated := *mod
 		s.mu.Unlock()
 		writeJSON(w, http.StatusOK, updated)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "github-workflow" && r.Method == http.MethodGet {
+		s.authorWorkflow(w, r, parts[0], session.User.ID, containsRole(s.effectiveRoles(session), "admin"))
 		return
 	}
 	if len(parts) == 2 && parts[1] == "github-sync" && r.Method == http.MethodPost {
@@ -1180,7 +1168,6 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			GitHubRepo          *string  `json:"github_repo"`
 			GitHubAssetRegex    *string  `json:"github_asset_regex"`
 			GitHubSourceCode    *bool    `json:"github_source_code"`
-			GitHubManifest      *bool    `json:"github_manifest"`
 			// Omitted keeps the stored platform rules; an explicit list replaces
 			// them, and an empty list returns to the single-file rule.
 			GitHubPlatformAssets *[]GitHubPlatformRule `json:"github_platform_assets"`
@@ -1229,7 +1216,7 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		mod.Tags = tags
 		mod.MASVersionRange = req.MASVersionRange
 		mod.RecommendedPriority = req.RecommendedPriority
-		if req.SourceType != nil || req.GitHubOwner != nil || req.GitHubRepo != nil || req.GitHubAssetRegex != nil || req.GitHubSourceCode != nil || req.GitHubManifest != nil || req.GitHubPlatformAssets != nil {
+		if req.SourceType != nil || req.GitHubOwner != nil || req.GitHubRepo != nil || req.GitHubAssetRegex != nil || req.GitHubSourceCode != nil || req.GitHubPlatformAssets != nil {
 			newSourceType := mod.GetSourceType()
 			if req.SourceType != nil {
 				newSourceType = *req.SourceType
@@ -1250,10 +1237,6 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 			if req.GitHubSourceCode != nil {
 				newSourceCode = *req.GitHubSourceCode
 			}
-			newManifest := mod.GitHubManifest
-			if req.GitHubManifest != nil {
-				newManifest = *req.GitHubManifest
-			}
 			newRules := mod.GitHubPlatformAssets
 			if req.GitHubPlatformAssets != nil {
 				newRules = *req.GitHubPlatformAssets
@@ -1264,7 +1247,6 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 				Repo:          newRepo,
 				AssetRegex:    newRegex,
 				SourceCode:    newSourceCode,
-				Manifest:      newManifest,
 				PlatformMode:  len(newRules) > 0,
 				PlatformRules: newRules,
 			}); err != nil {
@@ -1273,19 +1255,17 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			normalizedRules, _ := normalizePlatformRules(newRules)
-			// A different repository or a different version-discovery mode
-			// invalidates both cached cursors: the ETag belongs to the releases
-			// API listing and the digest belongs to rezehub.yml.
-			if mod.GitHubOwner != strings.TrimSpace(newOwner) || mod.GitHubRepo != strings.TrimSpace(newRepo) || mod.GitHubManifest != newManifest || !slices.Equal(mod.GitHubPlatformAssets, normalizedRules) {
+			// A different repository or different platform rules invalidate the
+			// cached ETag: it belongs to the releases API listing for that exact
+			// configuration.
+			if mod.GitHubOwner != strings.TrimSpace(newOwner) || mod.GitHubRepo != strings.TrimSpace(newRepo) || !slices.Equal(mod.GitHubPlatformAssets, normalizedRules) {
 				mod.GitHubETag = ""
-				mod.GitHubManifestDigest = ""
 			}
 			mod.SourceType = newSourceType
 			mod.GitHubOwner = strings.TrimSpace(newOwner)
 			mod.GitHubRepo = strings.TrimSpace(newRepo)
 			mod.GitHubAssetRegex = strings.TrimSpace(newRegex)
 			mod.GitHubSourceCode = newSourceCode
-			mod.GitHubManifest = newManifest
 			mod.GitHubPlatformAssets = normalizedRules
 		}
 		// A local mod's platform declaration is author data, so it is validated on

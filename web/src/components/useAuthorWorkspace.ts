@@ -13,7 +13,6 @@ export function mapAuthorMod({ mod, is_published, has_published_version, has_arc
     mas_version_range: mod.mas_version_range || '', recommended_priority: mod.recommended_priority || 0,
     latest_version_id: mod.latest_version_id || '', downloads_count: 0, created_at: mod.created_at || '', updated_at: '',
     is_published, source_type: mod.source_type || 'local', github_source_code: Boolean(mod.github_source_code),
-    github_manifest: Boolean(mod.github_manifest),
     has_published_version, has_archived_version, has_pending_review, candidate_version_id: candidate_version_id || undefined,
   };
 }
@@ -32,7 +31,7 @@ function mapSubmission(item: ApiAuthorSubmission): Submission {
     scan_report_id: item.scan_report_snapshot ? `scan_submission_${item.id}` : undefined };
 }
 
-type AuthorActions = Pick<AppContextType, 'createModDraft' | 'updateModDraft' | 'createCandidateVersion' | 'uploadArchiveAndScan' | 'uploadDetailImages' | 'submitVersionForReview' | 'setLatestPublishedVersion' | 'unpublishVersion' | 'markVersionDeprecated' | 'clearVersionDeprecation' | 'deleteVersion' | 'unpublishMod' | 'deleteModDraft' | 'editVersion' | 'syncModReleases'>;
+type AuthorActions = Pick<AppContextType, 'createModDraft' | 'updateModDraft' | 'createCandidateVersion' | 'uploadArchiveAndScan' | 'uploadDetailImages' | 'submitVersionForReview' | 'setLatestPublishedVersion' | 'unpublishVersion' | 'markVersionDeprecated' | 'clearVersionDeprecation' | 'deleteVersion' | 'unpublishMod' | 'deleteModDraft' | 'editVersion' | 'syncModReleases' | 'fetchModWorkflowSnippet' | 'fetchWorkflowTemplate'>;
 
 export function useAuthorWorkspace() {
   const app = useApp();
@@ -118,7 +117,8 @@ export function useAuthorWorkspace() {
     uploadArchiveAndScan: wrap(app.uploadArchiveAndScan), uploadDetailImages: wrap(app.uploadDetailImages), submitVersionForReview: wrap(app.submitVersionForReview),
     setLatestPublishedVersion: wrap(app.setLatestPublishedVersion), unpublishVersion: wrap(app.unpublishVersion), markVersionDeprecated: wrap(app.markVersionDeprecated),
     clearVersionDeprecation: wrap(app.clearVersionDeprecation), deleteVersion: wrap(app.deleteVersion), unpublishMod: wrap(app.unpublishMod),
-    deleteModDraft: wrap(app.deleteModDraft), editVersion: wrap(app.editVersion), syncModReleases: wrap(app.syncModReleases),
+    deleteModDraft: wrap(app.deleteModDraft), editVersion: wrap(app.editVersion), syncModReleases: wrap(app.syncModReleases), fetchModWorkflowSnippet: wrap(app.fetchModWorkflowSnippet),
+    fetchWorkflowTemplate: wrap(app.fetchWorkflowTemplate),
   };
   // Windows move one cursor step at a time: the server supplies the keyset
   // position of the neighbouring window, so no client-side page arithmetic runs.

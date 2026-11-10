@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { listAuthorWorkspace, clearVersionDeprecation, updateAuthorMod, createAuthorMod, reorderModImages, uploadModImages, updateAuthorModSource, syncAuthorModGitHub, unpublishAuthorMod, uploadAuthorArchive, fetchReviewArchive } from './submission-api';
+import { listAuthorWorkspace, fetchAuthorModWorkflow, fetchAuthorWorkflowTemplate, clearVersionDeprecation, updateAuthorMod, createAuthorMod, reorderModImages, uploadModImages, updateAuthorModSource, syncAuthorModGitHub, unpublishAuthorMod, uploadAuthorArchive, fetchReviewArchive } from './submission-api';
 
 test('loads one authenticated author mod window without nested versions', async () => {
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -111,38 +111,6 @@ test('creates a mod with github source configuration', async () => {
   assert.equal(result.source_type, 'github_releases');
   assert.equal(result.github_owner, 'octocat');
   assert.equal(result.github_repo, 'hello-world');
-});
-
-test('passes manifest discovery mode through to the server', async () => {
-  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    assert.equal(String(input), '/api/v1/author/mods');
-    const body = JSON.parse(String(init?.body));
-    assert.equal(body.github_manifest, true);
-    // Manifest mode needs no asset regex.
-    assert.equal(body.github_asset_regex, '');
-    return new Response(JSON.stringify({
-      id: 'mod_manifest',
-      title: 'Manifest Mod',
-      summary: 'Summary',
-      category: 'submod',
-      author: { id: 'u1', display_name: 'Author' },
-      source_type: 'github_releases',
-      github_owner: 'octocat',
-      github_repo: 'hello-world',
-      github_manifest: true,
-    }), { status: 201 });
-  }) as typeof fetch;
-  const result = await createAuthorMod('/api/v1', {
-    title: 'Manifest Mod',
-    summary: 'Summary',
-    category: 'submod',
-    source_type: 'github_releases',
-    github_owner: 'octocat',
-    github_repo: 'hello-world',
-    github_asset_regex: '',
-    github_manifest: true,
-  }, fetcher);
-  assert.equal(result.github_manifest, true);
 });
 
 test('updates mod source configuration through dedicated endpoint', async () => {
@@ -314,3 +282,62 @@ test('reports the server code when a submission has no stored archive', async ()
   const fetcher = (async () => Response.json({ code: 'archive_not_found' }, { status: 404 })) as typeof fetch;
   await assert.rejects(fetchReviewArchive('/api/v1', 'sub_1', undefined, fetcher), /archive_not_found/);
 });
+
+test('fetches the generated release-notification workflow for one mod', async () => {
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), '/api/v1/author/mods/mod_test/github-workflow');
+    assert.equal(init?.method, 'GET');
+    assert.equal(init?.credentials, 'same-origin');
+    return Response.json({
+      mod_id: 'mod_test',
+      path: '.github/workflows/rezehub-notify.yml',
+      owner: 'reze',
+      repo: 'demo',
+      content: 'name: Notify RezeHub',
+      notify_url: 'https://hub.example/api/v1/github-release-notify',
+    });
+  }) as typeof fetch;
+  const snippet = await fetchAuthorModWorkflow('/api/v1', 'mod_test', fetcher);
+  assert.equal(snippet.path, '.github/workflows/rezehub-notify.yml');
+  assert.equal(snippet.notify_url, 'https://hub.example/api/v1/github-release-notify');
+  assert.equal(snippet.content, 'name: Notify RezeHub');
+});
+
+test('fetches the workflow template with the author regexes embedded', async () => {
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(
+      String(input),
+      '/api/v1/author/workflow-template?shared=MyMod.*.zip%24&windows=MyMod-windows'
+    );
+    assert.equal(init?.method, 'GET');
+    assert.equal(init?.credentials, 'same-origin');
+    return Response.json({
+      path: '.github/workflows/rezehub-notify.yml',
+      rules: { shared: 'MyMod.*\.zip$', windows: 'MyMod-windows' },
+      content: 'name: Notify RezeHub',
+      notify_url: 'https://hub.example/api/v1/github-release-notify',
+    });
+  }) as typeof fetch;
+  const template = await fetchAuthorWorkflowTemplate(
+    '/api/v1',
+    { shared: 'MyMod.*\.zip$', windows: 'MyMod-windows' },
+    fetcher
+  );
+  assert.equal(template.path, '.github/workflows/rezehub-notify.yml');
+  assert.equal(template.rules.windows, 'MyMod-windows');
+  assert.equal(template.content, 'name: Notify RezeHub');
+});
+
+test('omits blank regexes so the template query stays clean', async () => {
+  const fetcher = (async (input: RequestInfo | URL) => {
+    assert.equal(String(input), '/api/v1/author/workflow-template');
+    return Response.json({
+      path: '.github/workflows/rezehub-notify.yml',
+      rules: {},
+      content: 'name: Notify RezeHub',
+      notify_url: 'https://hub.example/api/v1/github-release-notify',
+    });
+  }) as typeof fetch;
+  await fetchAuthorWorkflowTemplate('/api/v1', { shared: '   ', windows: '' }, fetcher);
+});
+

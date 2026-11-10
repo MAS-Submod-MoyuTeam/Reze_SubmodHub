@@ -224,10 +224,8 @@ journal 事务阶段为 `planned -> prepared -> applying -> committing -> commit
 - `source_type`: `local`（默认，站内创建候选版本）或 `github_releases`（由外部 Release 自动同步）。
 - `github_owner`: GitHub 组织或用户坐标。
 - `github_repo`: GitHub 仓库名称。
-- `github_asset_regex`: RE2 正则表达式，匹配 Release 资产中的 `.zip` 文件名。清单模式下不参与匹配。
-- `github_source_code`: 布尔值，当 Release 未提供匹配的资产文件时，是否允许自动使用 Release 源码包 (`zipball_url`)。清单模式下不生效。
-- `github_manifest`: 布尔值，`true` 表示版本发现走仓库根目录的 `rezehub.yml`（不调用 REST API、零配额消耗，但作者需自行维护该文件）；`false`/省略表示站内按需抓取 Releases。
-- `github_manifest_digest`: 最近一次成功读取的清单摘要，用于判断清单是否变化（仅服务端使用，公开目录自动脱敏）。
+- `github_asset_regex`: RE2 正则表达式，匹配 Release 资产中的 `.zip` 文件名。分平台模式（`github_platform_assets` 非空）下不参与匹配。
+- `github_source_code`: 布尔值，当 Release 未提供匹配的资产文件时，是否允许自动使用 Release 源码包 (`zipball_url`)。分平台模式下不生效。
 - `github_last_sync_at`: 最近一次同步时间（仅作者工作台与管理端可见，公开目录自动脱敏）。
 - `github_last_sync_error`: 最近一次同步非致命错误描述（仅作者工作台与管理端可见）。
 - `github_last_release_id`: 最近处理的 GitHub Release ID（仅作者工作台与管理端可见）。
@@ -253,8 +251,8 @@ journal 事务阶段为 `planned -> prepared -> applying -> committing -> commit
 - 只出一个平台的版本（`platform_assets` 恰好一条）不需要用户选择：那份归档就是该平台的包，前端可以直接按它请求，这不属于「替用户猜平台」。
 
 ### 接口定义
-- `PATCH /api/v1/author/mods/{id}/source`：更新模组的源配置。鉴权要求作者或管理员。校验 owner/repo 格式及 asset regex 语法，保存后清空上次同步错误。接受 `github_manifest`（清单模式，此时 `github_asset_regex` 可留空）与 `github_platform_assets`（分平台，此时 `github_asset_regex` 同样可留空；传 `[]` 回到共用文件）。切换 owner/repo/清单模式/分平台规则会清空 ETag 与清单摘要。
-- `POST /api/v1/author/mods/{id}/github-sync`：手动触发立即同步（强制回源，忽略 ETag 与清单摘要缓存）。返回 `{ mod_id, synced_at, created, skipped, failed, items: [...] }` 汇总。
+- `PATCH /api/v1/author/mods/{id}/source`：更新模组的源配置。鉴权要求作者或管理员。校验 owner/repo 格式及 asset regex 语法，保存后清空上次同步错误。接受 `github_platform_assets`（分平台，此时 `github_asset_regex` 可留空；传 `[]` 回到共用文件）。切换 owner/repo/分平台规则会清空 ETag。
+- `POST /api/v1/author/mods/{id}/github-sync`：手动触发立即同步（强制回源，忽略 ETag 缓存）。返回 `{ mod_id, synced_at, created, skipped, failed, items: [...] }` 汇总。
 
 ### 分平台归档（本站上传源）
 `POST /api/v1/author/versions/{id}/archive?platform=windows|android`：为该版本上传**一个平台**的归档。
@@ -304,7 +302,14 @@ journal 事务阶段为 `planned -> prepared -> applying -> committing -> commit
 
 作者在“编辑模组”的 GitHub 分段中必须能选择两种发现方式，并**如实展示代价**：
 - **站内按需抓取（默认）**：无需任何额外文件；更新最多延迟约 `GITHUB_SYNC_MAX_AGE`，有人打开该模组时立即补抓，无人访问时由后台巡检兜底。
-- **仓库清单 `rezehub.yml`（可选）**：作者需在仓库根目录维护该文件、每次发版补一条记录；换取零 REST 配额与打开页面即最新。
+- **发版通知（推荐）**：作者把生成好的 `.github/workflows/rezehub-notify.yml` 放进仓库，Release 发布后几秒内即触发检查。这只是仓库侧的 Action，**不是站内设置**，没有对应字段需要提交；正则随生成的文件一起走。
+
+另有每 6 小时一次的版本自查：读取仓库已发布 Release 中版本最高的 tag，只有高于站内版本才触发同步，因此不装 Action 也不会漏更新。
+
+相关接口：
+- `GET /api/v1/author/mods/{id}/github-workflow`：返回该模组的发布通知工作流（作者或管理员）。响应 `{ mod_id, path, owner, repo, rules, content, notify_url }`。
+- `GET /api/v1/author/workflow-template?shared=&windows=&android=`：草稿表单用，尚未创建模组时按传入正则生成同一份文件，响应 `{ path, rules, content, notify_url }`。需登录。
+- `POST /api/v1/github-release-notify`：仓库 Action 调用，**无需鉴权**。载荷 `{ owner, repo, version, rules? }`。未绑定返回 404（与写错仓库名一致，不能用来探测）；正则不合法返回 400 `invalid_rules`；成功返回 202 `{ matched_mods, status: "stale" }`。它只把模组标记为过期，不下载任何文件。
 
 ### 源策略（公开）
 `GET /api/v1/source-policy` 返回当前生效的刷新窗口，供作者端文案引用**实际值**而不是硬编码默认值：

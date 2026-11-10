@@ -12,7 +12,7 @@ import {
 } from '../types/submodhub';
 import { fetchDownloadDescriptor, fetchPublishedCatalog, fetchPublishedVersions } from '../../../ui/catalog-api';
 import { loginFlarum as loginFlarumRequest, logout as logoutRequest, readSession, Session } from '../../../ui/auth-api';
-import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, markPublishedVersionLatest, platformScanReportId, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages, syncAuthorModGitHub, type SyncSummary } from '../../../ui/submission-api';
+import { clearVersionDeprecation as clearVersionDeprecationRequest, createAuthorMod, createAuthorVersion, decideReview, deleteAuthorMod as deleteAuthorModRequest, deleteAuthorVersion, deprecateVersion as deprecateVersionRequest, editAuthorVersion, markPublishedVersionLatest, platformScanReportId, publishReview, submitAuthorVersion, unpublishAuthorMod as unpublishAuthorModRequest, unpublishVersion as unpublishVersionRequest, updateAuthorMod, uploadAuthorArchive, uploadModImages, syncAuthorModGitHub, fetchAuthorModWorkflow, fetchAuthorWorkflowTemplate, type SyncSummary, type GitHubWorkflowSnippet, type GitHubWorkflowTemplate, type GitHubWorkflowRules } from '../../../ui/submission-api';
 import { mapServerScanReport } from './scanReport';
 import { refreshWindowText as formatRefreshWindow, type SourcePolicy } from '../components/sourceConfig';
 import { assetPlatformLabel } from '../types/submodhub';
@@ -115,6 +115,9 @@ export interface AppContextType {
   // Admin Actions
   unpublishVersion: (versionId: string, reason: string) => Promise<void>;
   syncModReleases: (modId: string) => Promise<SyncSummary | null>;
+  fetchModWorkflowSnippet: (modId: string) => Promise<GitHubWorkflowSnippet | null>;
+  // Mod-independent workflow body, for the draft form before a mod exists.
+  fetchWorkflowTemplate: (rules?: GitHubWorkflowRules) => Promise<GitHubWorkflowTemplate | null>;
   markVersionDeprecated: (versionId: string, reason: string) => Promise<void>;
   clearVersionDeprecation: (versionId: string) => Promise<void>;
   deleteVersion: (versionId: string) => Promise<void>;
@@ -360,7 +363,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         github_repo: data.github_repo || '',
         github_asset_regex: data.github_asset_regex || '',
         github_source_code: Boolean(data.github_source_code),
-        github_manifest: Boolean(data.github_manifest),
       };
 
       const base = apiBase();
@@ -380,7 +382,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           github_repo: newMod.github_repo,
           github_asset_regex: newMod.github_asset_regex,
           github_source_code: newMod.github_source_code,
-          github_manifest: newMod.github_manifest,
           github_platform_assets: data.github_platform_assets,
         });
         const persisted = {
@@ -395,7 +396,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           github_repo: remote.github_repo,
           github_asset_regex: remote.github_asset_regex,
           github_source_code: remote.github_source_code,
-          github_manifest: remote.github_manifest,
           github_platform_assets: remote.github_platform_assets,
         };
         setMods((prev) => [persisted, ...prev]);
@@ -430,7 +430,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           github_repo: data.github_repo ?? existing.github_repo,
           github_asset_regex: data.github_asset_regex ?? existing.github_asset_regex,
           github_source_code: data.github_source_code ?? existing.github_source_code,
-          github_manifest: data.github_manifest ?? existing.github_manifest,
           github_platform_assets: data.github_platform_assets ?? existing.github_platform_assets,
         });
         setMods((prev) => prev.map((mod) => mod.id === modId ? {
@@ -787,6 +786,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [showToast]
   );
 
+  const fetchModWorkflowSnippet = useCallback(
+    async (modId: string): Promise<GitHubWorkflowSnippet | null> => {
+      const base = apiBase();
+      try {
+        return await fetchAuthorModWorkflow(base, modId);
+      } catch (err) {
+        showToast('error', `获取通知文件失败: ${err instanceof Error ? err.message : '未知错误'}`);
+        return null;
+      }
+    },
+    [showToast]
+  );
+
+  // The draft form needs the same file before any mod exists, so it asks for the
+  // mod-independent template instead of a per-mod snippet.
+  const fetchWorkflowTemplate = useCallback(async (rules?: GitHubWorkflowRules): Promise<GitHubWorkflowTemplate | null> => {
+    const base = apiBase();
+    try {
+      return await fetchAuthorWorkflowTemplate(base, rules ?? {});
+    } catch (err) {
+      showToast('error', `获取通知文件失败: ${err instanceof Error ? err.message : '未知错误'}`);
+      return null;
+    }
+  }, [showToast]);
+
   const value = useMemo(
     () => ({
       activeTab,
@@ -823,6 +847,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createModDraft,
       updateModDraft,
       syncModReleases,
+      fetchModWorkflowSnippet,
+      fetchWorkflowTemplate,
       createCandidateVersion,
       uploadArchiveAndScan,
       uploadDetailImages,
@@ -869,6 +895,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createModDraft,
       updateModDraft,
       syncModReleases,
+      fetchModWorkflowSnippet,
+      fetchWorkflowTemplate,
       createCandidateVersion,
       uploadArchiveAndScan,
       uploadDetailImages,
