@@ -105,13 +105,23 @@ curl -s http://100.72.137.92:18083/ | grep -o 'assets/index-[^"]*' # 与本地 d
   - 例如：`https://gh-proxy.com/{url}` 或 `https://proxy.example/fetch?url={url_encoded}`
   - 必须使用 `https://` 协议，不得包含凭证或锚点。留空并保存表示清空并恢复直连。
 - **持久化机制**：设置保存在 PostgreSQL `catalog_snapshot`（或本地 JSON 快照）中，API 重启不丢失。
-- **容量与并发**：API 容器 `/tmp` tmpfs 挂载大小为 640 MiB（容纳 2 个并发 256 MiB 临时文件），系统通过全局信号量限制同时进行的临时下载（同步与中转下载合计并发上限为 2），单个下载上限为 256 MiB 与 5 分钟超时，防止耗尽容器 tmpfs。`deploy/compose.yaml` 的 tmpfs 大小必须不小于「并发上限 × 单文件上限」，否则大包并发会先耗尽 tmpfs。
+- **容量与并发**：单包归档上限由环境变量 `SUBMODHUB_MAX_ARCHIVE_SIZE` 统一控制（默认 `1GiB`，接受字节数或 `512MiB` / `2GiB` 这类写法，所有后缀都是 1024 的幂，下限 1 MiB、上限 64 GiB）。上传、GitHub 同步的资产预判与下载、中转下载、已存版本的大小检查、以及客户端下载钳制都读同一个值，改一处即全链路生效；单次下载超过 30 分钟视为网络失败。API 容器 `/tmp` tmpfs 为 3 GiB（容纳 2 个并发 1 GiB 临时文件并留余量），全局信号量把同时进行的临时下载限制为 2 个。**调大上限时必须同步调大 `deploy/compose.yaml` 的 tmpfs（不小于「并发上限 × 单文件上限」）**，否则大包并发会先耗尽 tmpfs；ZIP 扫描的解压预算按上限的 2 倍推导（`archiveScanLimits`），`deploy/web.nginx.conf` 的 `client_max_body_size` 覆盖手工上传路径，也要跟着改。归档落盘与扫描不再整包读进内存：临时文件直接以 `*os.File`（`io.ReaderAt`）交给扫描器。
 - **排障错误码**：
   - `502 github_upstream_failed`：代理服务器不可达或 GitHub 报告 404/网络错误。
   - `504 github_upstream_timeout`：代理或上游下载超时。
   - `502 upstream_archive_changed`：上游 ZIP 哈希或大小与发布时快照不符。
   - `503 github_upstream_rate_limited`：上游触发频率限制（含 `Retry-After`）。
   - `503 relay_busy`：服务端并发下载中转槽位占满，需稍后重试。
+
+### 设置导入导出（备份与迁移）
+
+`GET /api/v1/admin/settings/export` 把当前可配置项（GitHub 代理模板、检查更新窗口、标签目录、下载节点清单）导出成一份 JSON；`POST /api/v1/admin/settings/import` 用同一份 JSON 整份覆盖回去。字段与错误码见 `docs/frontend-contract.md`「设置导入导出」。
+
+- **导出不含任何凭据**：没有 GitHub API 令牌，节点的 `password` 也不会出现，只有 `credential_configured` 说明来源部署配过密码。因此导出文件可以放心放进工单或仓库之外的备份目录。
+- **同一部署还原**：直接导入即可，节点密码沿用已存的密文，令牌不动（文档里没有 `github_token` 就表示「保持现状」）。迁移到新部署时，用文本编辑器在 `settings.github_token` 和需要改的节点上补 `password`，导入后由目标部署的 `SUBMODHUB_DELIVERY_MASTER_KEY` 重新加密。
+- **整份覆盖**：`download_nodes` 省略 = 节点列表不动，给空数组 = 删除全部节点。导入成功后 `revision` 加一，导入失败（校验或写盘）整份回滚，不会留下半套配置。
+- **管理页入口**：管理面板的「备份与迁移」卡片提供导出与导入按钮，不需要手工调 API。导入前会先弹确认条列出将替换的标签/节点/代理/窗口；成功后页面上的代理、令牌标记、窗口与标签目录会一起刷新。
+- 更新部署后即可用，无需迁移脚本：文档格式自带 `format`/`version`，老版本后端会直接拒绝未知形状。
 
 ## 客户端任务中心与安装事务恢复
 

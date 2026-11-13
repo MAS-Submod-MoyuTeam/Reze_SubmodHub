@@ -46,3 +46,6 @@ Local reference projects used during design:
 | 2026-11-04 | plan | docs/aegis/plans/2026-11-04-mod-deeplink-and-share.md | Mod 详情可寻址 + 深链调起 + 分享链接 + 剪贴板提示；两端规则层单测、类型、构建与真实浏览器验收通过，Windows 安装包与 Android 真机验收待补 |
 | 2026-11-08 | plan | docs/aegis/plans/2026-11-08-persistent-sprite-unlock-status.md | 本机存档精灵赠送状态与应用内删除确认 |
 | 2026-11-09 | plan | docs/aegis/plans/2026-11-09-web-client-motion-android-web.md | 两端悬停/按压/焦点反馈、浮层开合动效（迁移到 `motion` + `AnimatePresence`，覆盖全部 20 个浮层并删除 `usePresence`）、Web 固定滚动条与 Android 竖屏优化；两端单测 195/294、类型与构建通过，可见标签页里实测进出场动画与 reduced-motion 降级通过，Android 真机复验与部署待补 |
+| 2026-11-12 | work | docs/aegis/work/2026-11-12-settings-json-transfer/10-intent.md | 设置项导入导出为 JSON intent（范围、不泄密口径、整份替换语义） |
+| 2026-11-12 | work | docs/aegis/work/2026-11-12-settings-json-transfer/20-checkpoint.md | 设置导入导出 checkpoint（只读导出 + 一次写入整份回滚、复用既有校验、凭据两段式加密） |
+| 2026-11-12 | work | docs/aegis/work/2026-11-12-settings-json-transfer/90-evidence.md | 设置导入导出 evidence（8 个新用例 + 全量 go test；测试服实测导出/导入/非法文档；验收发现节点 revision 被抬升会触发镜像重传并已修复） |

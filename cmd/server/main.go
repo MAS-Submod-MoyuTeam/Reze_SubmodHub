@@ -10,6 +10,7 @@ import (
 
 	"github.com/reze/submodhub/internal/auth"
 	"github.com/reze/submodhub/internal/delivery"
+	"github.com/reze/submodhub/internal/github"
 	"github.com/reze/submodhub/internal/httpapi"
 	"github.com/reze/submodhub/internal/version"
 )
@@ -98,6 +99,22 @@ func main() {
 			log.Printf("GITHUB_SYNC_MAX_AGE=%q overrides the stored settings window for this process", raw)
 		}
 	}
+	// The archive ceiling is one deployment knob: uploads, GitHub release sync,
+	// relay downloads and the client's own download guard all follow it. Sizing
+	// the container for a larger value is the operator's half of the deal —
+	// deploy/compose.yaml tmpfs must hold 2 × limit.
+	if raw := strings.TrimSpace(os.Getenv("SUBMODHUB_MAX_ARCHIVE_SIZE")); raw != "" {
+		limit, parseErr := httpapi.ParseArchiveSize(raw)
+		if parseErr != nil {
+			log.Fatalf("invalid SUBMODHUB_MAX_ARCHIVE_SIZE: %v", parseErr)
+		}
+		store.MaxArchiveSize = limit
+		github.MaxDownloadBytes = limit
+		log.Printf("SUBMODHUB_MAX_ARCHIVE_SIZE=%q: archive limit %d MiB (%d bytes)", raw, limit>>20, limit)
+	} else {
+		log.Printf("archive limit: %d MiB (%d bytes), built-in default", store.MaxArchiveSize>>20, store.MaxArchiveSize)
+	}
+
 	store.StartGitHubSync()
 	if maxAge := store.GitHubSyncMaxAge; maxAge > 0 {
 		log.Printf("GitHub Releases refresh window: %s (a mod unchecked for longer is refreshed on view or by the sweep)", maxAge)

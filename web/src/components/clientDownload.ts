@@ -31,8 +31,13 @@ export function classifyAssetName(name: string): DownloadPlatform {
   return 'other';
 }
 
-export function platformLabel(platform: DownloadPlatform): string {
-  return platform === 'other' ? '其他' : PLATFORM_LABELS[platform];
+/**
+ * 平台显示名。`other` 需要本地化，所以返回文案键以外的值时调用方自己翻；
+ * 为了保持纯函数（不 import React / i18n），这里返回平台名或 `null`——
+ * `null` 表示「需要调用方用 `t('clientDownload.platformOther')` 显示」。
+ */
+export function platformLabel(platform: DownloadPlatform): string | null {
+  return platform === 'other' ? null : PLATFORM_LABELS[platform];
 }
 
 /**
@@ -140,8 +145,9 @@ export function pickSameReleaseAsset(
   return fresh.assets.find((candidate) => candidate.name === name);
 }
 
-export function deliveryLabel(source: DownloadSource): string {
-  return source === 'cloudreve' ? '本站节点（Cloudreve）' : 'GitHub Releases';
+/** 交付来源的文案键；纯模块里不翻译，调用方 `t()` 一次。 */
+export function deliveryLabelKey(source: DownloadSource): 'clientDownload.sourceCloudreve' | 'clientDownload.sourceGithub' {
+  return source === 'cloudreve' ? 'clientDownload.sourceCloudreve' : 'clientDownload.sourceGithub';
 }
 
 export function shortHash(sha256: string | undefined): string {

@@ -68,8 +68,8 @@ func TestMigrateCatalogDocumentConvertsStringChildren(t *testing.T) {
 	if len(children) != 2 || children[0].Name != "绘图" || children[1].Name != "脚本" {
 		t.Fatalf("children = %+v, want 绘图, 脚本 in order", children)
 	}
-	if children[0].Description != "" {
-		t.Fatalf("migration must not invent a description, got %q", children[0].Description)
+	if !children[0].Description.Empty() {
+		t.Fatalf("migration must not invent a description, got %v", children[0].Description)
 	}
 
 	// An empty child list stays absent rather than becoming a stored empty array.

@@ -126,7 +126,8 @@ export function deriveSpriteSelection(
  */
 export function calculateSpriteSelectionDiff(
   baseline: SelectionBaseline,
-  draftIds: string[]
+  draftIds: string[],
+  t: (key: string, vars?: Record<string, string | number>) => string,
 ): SpriteSelectionDiff {
   const normalizedDraft = normalizeSpriteSetIDs(draftIds);
 
@@ -142,7 +143,7 @@ export function calculateSpriteSelectionDiff(
       isUnchanged: false,
       isAllDeselected: normalizedDraft.length === 0,
       requiresUninstallConfirmation: false,
-      summaryText: `已选 ${normalizedDraft.length} 个外观套装`,
+      summaryText: t('spritepacks.selectedLooks', { count: normalizedDraft.length }),
     };
   }
 
@@ -176,7 +177,7 @@ export function calculateSpriteSelectionDiff(
       isUnchanged,
       isAllDeselected,
       requiresUninstallConfirmation,
-      summaryText: `保留 ${keptIds.length} 个 / 新增 ${addedIds.length} 个 / 卸载 ${removedIds.length} 个`,
+      summaryText: t('spritepacks.diff', { kept: keptIds.length, added: addedIds.length, removed: removedIds.length }),
     };
   }
 
@@ -192,7 +193,7 @@ export function calculateSpriteSelectionDiff(
       isUnchanged: false,
       isAllDeselected: normalizedDraft.length === 0,
       requiresUninstallConfirmation: true,
-      summaryText: `已选 ${normalizedDraft.length} 个套装（将替换旧安装内容）`,
+      summaryText: t('spritepacks.selectedReplacing', { count: normalizedDraft.length }),
     };
   }
 
@@ -207,6 +208,6 @@ export function calculateSpriteSelectionDiff(
     isUnchanged: false,
     isAllDeselected: true,
     requiresUninstallConfirmation: false,
-    summaryText: '状态加载中或异常',
+    summaryText: t('spritepacks.statusUnavailable'),
   };
 }

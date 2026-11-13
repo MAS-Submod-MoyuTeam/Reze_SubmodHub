@@ -15,6 +15,7 @@ import {
 import { InstalledItem, StoreMatchCandidate } from '../types/client';
 import { m } from './Motion';
 import { overlayVariants } from '../../../../ui/motion-presets';
+import { useI18n } from '../i18n';
 
 export function normalizePath(p: string): string {
   return p.replace(/^[/\\]+/, '').replace(/^game\//i, '').replace(/\\/g, '/').toLowerCase();
@@ -63,6 +64,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
   onClose,
   onConfirmAdopt,
 }) => {
+  const { t } = useI18n();
   const isAmbiguous = item?.match_status === 'ambiguous';
   const hasMultipleRegistrations = (item?.registrations || []).length > 1;
   const hasUnknownRegs = (item?.registrations || []).some(r => r.unknown);
@@ -86,12 +88,12 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
   );
 
   const [versionStr, setVersionStr] = useState(
-    item?.installed_version && item.installed_version !== '未声明'
+    item?.installed_version && item.installed_version !== t('app.notDeclared')
       ? item.installed_version
       : '1.0.0-adopted'
   );
   const [authorName, setAuthorName] = useState(
-    item?.author_name === '未知作者 (本地检测)' ? '本地自制/导入' : (item?.author_name || '')
+    item?.author_name === t('app.unknownAuthorLocal') ? t('adoptModal.localAuthor') : (item?.author_name || '')
   );
   const [priority, setPriority] = useState(item?.priority || 50);
 
@@ -149,27 +151,27 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
 
     if (activeCandidate) {
       if (modId.trim() && modId.trim() !== activeCandidate.mod_id) {
-        return `候选模组唯一标识符 (${activeCandidate.mod_id}) 与填写的模组 ID (${modId.trim()}) 不一致。`;
+        return t('adoptModal.errorIdMismatch', { candidate: activeCandidate.mod_id, id: modId.trim() });
       }
 
       if (selectedRegistrations.length === 0) {
-        return '所选文件中未包含候选模组的有效注册来源文件，归属不明确，禁止提交。';
+        return t('adoptModal.errorNoCandidateSource');
       }
 
       if (selectedRegistrations.some((r) => r.unknown)) {
-        return '所选文件包含未知或非规范注册头，归属不明确，禁止作为单个商店模组提交。';
+        return t('adoptModal.errorUnknownRegistration');
       }
 
       const matchedCandRegs = selectedRegistrations.filter((r) => matchRegistrationToCandidate(r, activeCandidate));
       if (matchedCandRegs.length === 0) {
-        return '所选文件中未包含候选模组的有效注册来源文件，归属不明确，禁止提交。';
+        return t('adoptModal.errorNoCandidateSource');
       }
 
       // Check if any selected registration does NOT belong to activeCandidate
       const foreignRegs = selectedRegistrations.filter((r) => !matchRegistrationToCandidate(r, activeCandidate));
       if (foreignRegs.length > 0) {
-        const foreignNames = Array.from(new Set(foreignRegs.map((r) => r.name || '未知')));
-        return `所选文件包含其他模组的注册来源 (${foreignNames.join(', ')})，禁止作为单个商店模组提交。`;
+        const foreignNames = Array.from(new Set(foreignRegs.map((r) => r.name || t('adoptModal.unknownShort'))));
+        return t('adoptModal.errorForeignRegistration', { names: foreignNames.join(', ') });
       }
 
       // Check if multiple distinct registration names are present
@@ -178,7 +180,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
         const candRegs = new Set((activeCandidate.registrations || []).map((r) => r.trim()));
         const allCovered = distinctNames.every((n) => candRegs.has(n));
         if (!allCovered) {
-          return `检测到多个不同的子模组注册标识 (${distinctNames.join(', ')})，禁止作为单个商店模组提交。`;
+          return t('adoptModal.errorMultipleRegistrations', { names: distinctNames.join(', ') });
         }
       }
     } else {
@@ -187,7 +189,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
         new Set(selectedRegistrations.filter((r) => !r.unknown && r.name).map((r) => r.name.trim()))
       );
       if (distinctNames.length > 1) {
-        return `检测到多个不同的子模组注册标识 (${distinctNames.join(', ')})，禁止合并为单个模组收纳。请单独收纳对应模组。`;
+        return t('adoptModal.errorMultipleRegistrationsAdopt', { names: distinctNames.join(', ') });
       }
     }
 
@@ -207,7 +209,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
       selected_candidate_registrations: activeCandidate ? activeCandidate.registrations : undefined,
       installed_version: versionStr.trim() || '1.0.0',
       installed_version_id: selectedCandidateId && selectedCandidateId === (activeCandidate ? activeCandidate.mod_id : modId.trim()) ? item.installed_version_id : '',
-      author_name: authorName.trim() || '本地导入',
+      author_name: authorName.trim() || t('app.localImport'),
       priority,
       is_managed: true,
       integrity_status: 'unknown',
@@ -225,7 +227,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
           <div className="flex items-center gap-2 min-w-0">
             <FolderGit2 className="w-4 h-4 text-emerald-400 shrink-0" />
             <h3 className="font-bold text-neutral-100 text-sm truncate">
-              收纳模组向导 (Adopt Unmanaged Mod)
+              {t('adoptModal.title')}
             </h3>
           </div>
           <button onClick={onClose} className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors shrink-0 cursor-pointer">
@@ -236,7 +238,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
         {/* Content */}
         <div className="p-3 sm:p-4 space-y-4 text-xs overflow-y-auto grow">
           <div className="p-3 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-300 leading-relaxed">
-            将当前散落于 MAS 目录内的未收纳脚本/素材纳入 RezeHub 的持久化 Ledger。收纳后该模组将受版本控制、支持冲突计算与模组优先级调节。卸载收纳模组时将安全保留原始文件。
+            {t('adoptModal.intro')}
           </div>
 
           {/* Warning banner for multi-registrations, unknowns, or incomplete scan */}
@@ -246,14 +248,14 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
                 <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
                 <span>
                   {isIncomplete
-                    ? '扫描受限或未完成'
+                    ? t('adoptModal.scanIncomplete')
                     : hasMultipleRegistrations
-                    ? '检测到多个子模组注册头'
-                    : '检测到未知/未规范注册头'}
+                    ? t('adoptModal.multipleRegistrations')
+                    : t('adoptModal.unknownRegistration')}
                 </span>
               </div>
               <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                当前目录可能包含多个模组或未知脚本。文件默认全部勾选，请核对文件与模组归属；身份冲突时无法作为单个商店模组收纳。
+                {t('adoptModal.scanWarning')}
               </p>
             </div>
           )}
@@ -263,10 +265,10 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
             <div className="p-3 bg-purple-950/40 border border-purple-800/80 rounded-lg space-y-1 text-purple-300">
               <div className="flex items-center gap-2 font-semibold">
                 <HelpCircle className="w-4 h-4 shrink-0 text-purple-400" />
-                <span>存在歧义候选模组</span>
+                <span>{t('adoptModal.ambiguousTitle')}</span>
               </div>
               <p className="text-[11px] text-purple-200/90 leading-relaxed">
-                未能唯一确定对应的商店模组。请在下方候选列表中点击“使用此 ID”进行明确选择，或手动指定模组标识符。
+                {t('adoptModal.ambiguousBody')}
               </p>
             </div>
           )}
@@ -276,7 +278,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
             <div className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-lg space-y-2">
               <div className="flex items-center gap-2 text-emerald-400 font-semibold">
                 <Store className="w-4 h-4 shrink-0" />
-                <span>商店已匹配候选模组</span>
+                <span>{t('adoptModal.matchedTitle')}</span>
               </div>
               <div className="space-y-1.5">
                 {item.match_candidates.map((c) => (
@@ -289,7 +291,9 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
                         {c.title} <span className="text-neutral-500 font-mono">({c.mod_id})</span>
                       </div>
                       <div className="text-neutral-400 text-[10px]">
-                        {c.priority === 'single_registration' ? '⭐ 唯一注册头优先匹配' : '多注册头候选'} · 依据: {c.evidence?.join(', ') || '云端签名'}
+                        {t(c.priority === 'single_registration' ? 'adoptModal.candidateSingle' : 'adoptModal.candidateMulti', {
+                          evidence: c.evidence?.join(', ') || t('adoptModal.evidenceCloudSignature'),
+                        })}
                       </div>
                     </div>
                     {modId !== c.mod_id ? (
@@ -298,11 +302,11 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
                         onClick={() => handleApplyCandidate(c)}
                         className="px-2 py-1 bg-emerald-600/80 hover:bg-emerald-500 text-white rounded text-[10px] font-semibold transition-colors cursor-pointer"
                       >
-                        使用此 ID
+                        {t('adoptModal.useThisId')}
                       </button>
                     ) : (
                       <span className="px-2 py-1 bg-emerald-900/50 text-emerald-300 border border-emerald-700/60 rounded text-[10px] font-mono">
-                        已选定
+                        {t('adoptModal.selected')}
                       </span>
                     )}
                   </div>
@@ -316,7 +320,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
             <div className="p-3 bg-rose-950/40 border border-rose-800/80 rounded-lg space-y-1 text-rose-300">
               <div className="flex items-center gap-2 font-semibold">
                 <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
-                <span>模组身份与文件归属冲突</span>
+                <span>{t('adoptModal.conflictTitle')}</span>
               </div>
               <p className="text-[11px] text-rose-200/90 leading-relaxed">
                 {candidateValidationError}
@@ -328,7 +332,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
           <div className="space-y-3">
             <div>
               <label className="text-neutral-300 font-medium block mb-1">
-                模组识别名称 (Title)
+                {t('adoptModal.fieldTitle')}
               </label>
               <input
                 type="text"
@@ -341,7 +345,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-neutral-300 font-medium block mb-1">
-                  唯一标识符 ID (mod_id)
+                  {t('adoptModal.fieldId')}
                 </label>
                 <input
                   type="text"
@@ -353,7 +357,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
 
               <div>
                 <label className="text-neutral-300 font-medium block mb-1">
-                  登记基线版本号
+                  {t('adoptModal.fieldVersion')}
                 </label>
                 <input
                   type="text"
@@ -367,7 +371,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-neutral-300 font-medium block mb-1">
-                  作者/归属声明
+                  {t('adoptModal.fieldAuthor')}
                 </label>
                 <input
                   type="text"
@@ -379,7 +383,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
 
               <div>
                 <label className="text-neutral-300 font-medium block mb-1">
-                  初始优先级
+                  {t('adoptModal.fieldPriority')}
                 </label>
                 <input
                   type="number"
@@ -394,14 +398,14 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
           {/* Scanned files summary with checklist */}
           <div className="p-3 bg-neutral-950 rounded-lg border border-neutral-800 space-y-2 font-mono text-[11px]">
             <div className="flex items-center justify-between text-neutral-400">
-              <span>纳入收纳范围的文件清单 ({selectedPaths.size} / {adoptablePaths.length}):</span>
+              <span>{t('adoptModal.fileList', { selected: selectedPaths.size, total: adoptablePaths.length })}</span>
               {adoptablePaths.length > 5 && (
                 <button
                   type="button"
                   onClick={() => setShowAllFiles(!showAllFiles)}
                   className="text-emerald-400 hover:text-emerald-300 cursor-pointer font-sans text-[11px]"
                 >
-                  {showAllFiles ? '收起' : `展开全部 (${adoptablePaths.length})`}
+                  {showAllFiles ? t('common.collapse') : t('adoptModal.expandAll', { count: adoptablePaths.length })}
                 </button>
               )}
             </div>
@@ -430,12 +434,12 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
             {derivedPaths.length > 0 && (
               <div className="pt-1.5 border-t border-neutral-800 space-y-1 text-neutral-500">
                 <div className="text-neutral-400">
-                  不纳入账本的引擎编译产物 ({derivedPaths.length} 个):
+                  {t('adoptModal.derivedTitle', { count: derivedPaths.length })}
                 </div>
                 {derivedPaths.map((p) => (
                   <div key={p} className="truncate">
                     <span className="line-through decoration-neutral-700">{p}</span>
-                    <span className="text-neutral-600"> — 由 {derivedSources[p]} 编译生成，游戏启动时自动重建</span>
+                    <span className="text-neutral-600"> — {t('adoptModal.derivedHint', { source: derivedSources[p] })}</span>
                   </div>
                 ))}
               </div>
@@ -449,7 +453,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
             onClick={onClose}
             className="min-h-[40px] sm:min-h-0 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg cursor-pointer flex items-center justify-center text-center"
           >
-            取消
+            {t('common.cancel')}
           </button>
           <button
             disabled={selectedPaths.size === 0 || !modId.trim() || Boolean(candidateValidationError) || (isAmbiguous && !activeCandidate)}
@@ -457,7 +461,7 @@ export const AdoptModal: React.FC<AdoptModalProps> = ({
             className="min-h-[40px] sm:min-h-0 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-xs flex items-center justify-center gap-1.5 cursor-pointer text-center"
           >
             <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">确认收纳并写入 Ledger ({selectedPaths.size} 个文件)</span>
+            <span className="truncate">{t('adoptModal.confirm', { count: selectedPaths.size })}</span>
           </button>
         </div>
       </div>

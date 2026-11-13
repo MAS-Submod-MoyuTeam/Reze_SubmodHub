@@ -8,6 +8,10 @@ import {
   type SpriteInstallationSnapshot,
 } from './spritepackUtils';
 
+import { translate } from './i18n/translate';
+
+const tZh = (key: string, vars?: Record<string, string | number>) => translate('zh', key, vars);
+
 test('normalizeSpriteSetIDs sorts, dedupes, and filters out whitespace and empty entries', () => {
   assert.deepEqual(normalizeSpriteSetIDs([]), []);
   assert.deepEqual(normalizeSpriteSetIDs(['  ', '']), []);
@@ -292,7 +296,7 @@ test('calculateSpriteSelectionDiff: computes kept, added, removed, and dirty sta
   const baseline = deriveSpriteSelection(manifestSets, snapshot, 'success');
 
   // Scenario 1: User keeps set_a (no change)
-  const diffUnchanged = calculateSpriteSelectionDiff(baseline, ['set_a']);
+  const diffUnchanged = calculateSpriteSelectionDiff(baseline, ['set_a'], tZh);
   assert.deepEqual(diffUnchanged.keptIds, ['set_a']);
   assert.deepEqual(diffUnchanged.addedIds, []);
   assert.deepEqual(diffUnchanged.removedIds, []);
@@ -301,7 +305,7 @@ test('calculateSpriteSelectionDiff: computes kept, added, removed, and dirty sta
   assert.equal(diffUnchanged.requiresUninstallConfirmation, false);
 
   // Scenario 2: User adds set_b (result: set_a + set_b)
-  const diffAddB = calculateSpriteSelectionDiff(baseline, ['set_a', 'set_b']);
+  const diffAddB = calculateSpriteSelectionDiff(baseline, ['set_a', 'set_b'], tZh);
   assert.deepEqual(diffAddB.keptIds, ['set_a']);
   assert.deepEqual(diffAddB.addedIds, ['set_b']);
   assert.deepEqual(diffAddB.removedIds, []);
@@ -309,7 +313,7 @@ test('calculateSpriteSelectionDiff: computes kept, added, removed, and dirty sta
   assert.equal(diffAddB.requiresUninstallConfirmation, false);
 
   // Scenario 3: User unchecks set_a and checks set_b (result: remove set_a, add set_b)
-  const diffSwitch = calculateSpriteSelectionDiff(baseline, ['set_b']);
+  const diffSwitch = calculateSpriteSelectionDiff(baseline, ['set_b'], tZh);
   assert.deepEqual(diffSwitch.keptIds, []);
   assert.deepEqual(diffSwitch.addedIds, ['set_b']);
   assert.deepEqual(diffSwitch.removedIds, ['set_a']);
@@ -317,14 +321,14 @@ test('calculateSpriteSelectionDiff: computes kept, added, removed, and dirty sta
   assert.equal(diffSwitch.requiresUninstallConfirmation, true);
 
   // Scenario 4: User selects all [set_a, set_b, set_c]
-  const diffAll = calculateSpriteSelectionDiff(baseline, ['set_a', 'set_b', 'set_c']);
+  const diffAll = calculateSpriteSelectionDiff(baseline, ['set_a', 'set_b', 'set_c'], tZh);
   assert.deepEqual(diffAll.keptIds, ['set_a']);
   assert.deepEqual(diffAll.addedIds, ['set_b', 'set_c']);
   assert.deepEqual(diffAll.removedIds, []);
   assert.equal(diffAll.isUnchanged, false);
 
   // Scenario 5: User deselects all [] -> triggers uninstall path
-  const diffNone = calculateSpriteSelectionDiff(baseline, []);
+  const diffNone = calculateSpriteSelectionDiff(baseline, [], tZh);
   assert.deepEqual(diffNone.keptIds, []);
   assert.deepEqual(diffNone.addedIds, []);
   assert.deepEqual(diffNone.removedIds, ['set_a']);
@@ -343,7 +347,7 @@ test('calculateSpriteSelectionDiff: computes kept, added, removed, and dirty sta
   const baselineWithDropped = deriveSpriteSelection(manifestSets, snapshotWithOld, 'success');
   assert.deepEqual(baselineWithDropped.unavailableInstalledIds, ['set_dropped']);
 
-  const diffKeepA = calculateSpriteSelectionDiff(baselineWithDropped, ['set_a']);
+  const diffKeepA = calculateSpriteSelectionDiff(baselineWithDropped, ['set_a'], tZh);
   assert.deepEqual(diffKeepA.keptIds, ['set_a']);
   assert.deepEqual(diffKeepA.addedIds, []);
   // Dropped old set must be included in removedIds!
@@ -362,10 +366,10 @@ test('calculateSpriteSelectionDiff: unknown_installed always requires confirmati
   };
   const baseline = deriveSpriteSelection(manifestSets, snapshotUnknown, 'success');
 
-  const diffSelected = calculateSpriteSelectionDiff(baseline, ['set_a']);
+  const diffSelected = calculateSpriteSelectionDiff(baseline, ['set_a'], tZh);
   assert.equal(diffSelected.requiresUninstallConfirmation, true);
   assert.equal(diffSelected.isAllDeselected, false);
 
-  const diffEmpty = calculateSpriteSelectionDiff(baseline, []);
+  const diffEmpty = calculateSpriteSelectionDiff(baseline, [], tZh);
   assert.equal(diffEmpty.isAllDeselected, true);
 });

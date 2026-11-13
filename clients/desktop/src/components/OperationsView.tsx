@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Operation } from '../types/client';
 import { StateBadge, TransactionDetailModal } from './TransactionDetailModal';
+import { useI18n } from '../i18n';
 
 interface OperationsViewProps {
   operations: Operation[];
@@ -16,6 +17,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
   operations,
   onRecoverOperation,
 }) => {
+  const { t } = useI18n();
   const [logModalOp, setLogModalOp] = useState<Operation | null>(null);
 
   return (
@@ -26,11 +28,11 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
           <div className="flex items-center gap-2">
             <History className="w-4 h-4 text-emerald-400" />
             <h2 className="text-sm font-bold text-neutral-100">
-              客户端操作管线与原子恢复 (ListOperations & RecoverOperation)
+              {t('operationsView.heading')}
             </h2>
           </div>
           <p className="text-xs text-neutral-400 mt-0.5">
-            未完成事务必须先检查诊断，再按恢复材料重新校验并安全回滚。普通已提交安装的文件漂移应使用“已安装 → 修复”；不需要强制回滚安装。恢复后旧计划失效，请重新预览。
+            {t('operationsView.subtitle')}
           </p>
         </div>
       </div>
@@ -41,9 +43,9 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs text-neutral-400">
             <span className="font-semibold text-neutral-300">
-              本地操作日志与快照清单 ({operations.length} 条记录)
+              {t('operationsView.logHeading', { count: operations.length })}
             </span>
-            <span>权威状态源：客户端持久化 Ledger</span>
+            <span>{t('operationsView.authoritySource')}</span>
           </div>
 
           {/* Desktop Table View */}
@@ -55,14 +57,14 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
             <table className="w-full text-left text-xs font-sans">
               <thead className="bg-neutral-950 text-neutral-400 text-[11px] border-b border-neutral-800 uppercase font-medium">
                 <tr>
-                  <th className="py-2.5 px-4">操作 ID / 模组</th>
-                  <th className="py-2.5 px-3">类型</th>
-                  <th className="py-2.5 px-3">当前状态</th>
-                  <th className="py-2.5 px-3">进度 / 阶段</th>
-                  <th className="py-2.5 px-3">备份快照 ID</th>
-                  <th className="py-2.5 px-3">记录时间</th>
+                  <th className="py-2.5 px-4">{t('operationsView.colOperation')}</th>
+                  <th className="py-2.5 px-3">{t('operationsView.colKind')}</th>
+                  <th className="py-2.5 px-3">{t('operationsView.colState')}</th>
+                  <th className="py-2.5 px-3">{t('operationsView.colProgress')}</th>
+                  <th className="py-2.5 px-3">{t('operationsView.colBackup')}</th>
+                  <th className="py-2.5 px-3">{t('operationsView.colCreatedAt')}</th>
                   <th className="py-2.5 px-4 text-right sticky right-0 z-20 bg-neutral-950 border-l border-neutral-800/80 shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.9)]">
-                    恢复与管理
+                    {t('operationsView.colActions')}
                   </th>
                 </tr>
               </thead>
@@ -90,10 +92,10 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                     {/* Progress */}
                     <td className="py-3 px-3 text-[11px]">
                       <div className="text-neutral-300 font-sans truncate max-w-[200px]" title={op.progress?.stage || ''}>
-                        {op.progress?.stage || '无进度信息'}
+                        {op.progress?.stage || t('operationsView.noProgress')}
                       </div>
                       <div className="text-neutral-400 mt-0.5">
-                        {op.progress?.processed_files ?? 0} / {op.progress?.total_files ?? 0} 文件 ({op.progress?.percent ?? 0}%)
+                        {t('operationsView.progressFiles', { processed: op.progress?.processed_files ?? 0, total: op.progress?.total_files ?? 0, percent: op.progress?.percent ?? 0 })}
                       </div>
                       {op.progress?.current_file && (
                         <div className="text-[10px] text-neutral-500 font-mono truncate max-w-[200px] mt-0.5" title={op.progress.current_file}>
@@ -110,7 +112,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                           <span className="truncate">{op.backup_id}</span>
                         </span>
                       ) : (
-                        '无'
+                        t('operationsView.noBackup')
                       )}
                     </td>
 
@@ -129,17 +131,17 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                               <button
                                 onClick={() => onRecoverOperation(op.operation_id)}
                                 className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                                title="重新校验磁盘冲突；若人工处理已恢复则安全回滚，未解决则由后端防护阻断"
+                                title={t('operationsView.reverifyTitle')}
                               >
                                 <RotateCcw className="w-3 h-3" />
-                                <span>重新校验并安全回滚</span>
+                                <span>{t('operationsView.reverifyRollback')}</span>
                               </button>
                             ) : (
                               <span
                                 className="px-2 py-1 text-xs text-rose-400 bg-rose-950/60 rounded border border-rose-800/80 font-mono"
-                                title={op.error?.message || '日志或恢复材料损坏，无法自动回滚'}
+                                title={op.error?.message || t('operationsView.recoveryCorruptTitle')}
                               >
-                                恢复材料损坏
+                                {t('operationsView.recoveryCorrupt')}
                               </span>
                             )}
                           </>
@@ -148,10 +150,10 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                             <button
                               onClick={() => onRecoverOperation(op.operation_id)}
                               className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                              title="安全回滚未完成事务到操作前状态"
+                              title={t('operationsView.rollbackTitle')}
                             >
                               <RotateCcw className="w-3 h-3" />
-                              <span>安全回滚</span>
+                              <span>{t('operationsView.rollback')}</span>
                             </button>
                           )
                         )}
@@ -160,7 +162,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                           onClick={() => setLogModalOp(op)}
                           className="px-2 py-1 text-xs text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                         >
-                          详情
+                          {t('operationsView.details')}
                         </button>
                       </div>
                     </td>
@@ -205,9 +207,9 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                 </div>
 
                 <div className="p-2.5 bg-neutral-950/70 rounded-lg border border-neutral-800/80 text-[11px] space-y-1">
-                  <div className="text-neutral-300 font-sans">{op.progress?.stage || '无进度信息'}</div>
+                  <div className="text-neutral-300 font-sans">{op.progress?.stage || t('operationsView.noProgress')}</div>
                   <div className="text-neutral-400 font-mono">
-                    {op.progress?.processed_files ?? 0} / {op.progress?.total_files ?? 0} 文件 ({op.progress?.percent ?? 0}%)
+                    {t('operationsView.progressFiles', { processed: op.progress?.processed_files ?? 0, total: op.progress?.total_files ?? 0, percent: op.progress?.percent ?? 0 })}
                   </div>
                   {op.progress?.current_file && (
                     <div className="text-[10px] text-neutral-500 font-mono truncate" title={op.progress.current_file}>
@@ -228,17 +230,17 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                         <button
                           onClick={() => onRecoverOperation(op.operation_id)}
                           className="px-3 py-1.5 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                          title="重新校验磁盘冲突；若人工处理已恢复则安全回滚，未解决则由后端防护阻断"
+                          title={t('operationsView.reverifyTitle')}
                         >
                           <RotateCcw className="w-3 h-3" />
-                          <span>重新校验并安全回滚</span>
+                          <span>{t('operationsView.reverifyRollback')}</span>
                         </button>
                       ) : (
                         <span
                           className="px-2.5 py-1 text-xs text-rose-400 bg-rose-950/60 rounded border border-rose-800/80 font-mono"
-                          title={op.error?.message || '日志或恢复材料损坏，无法自动回滚'}
+                          title={op.error?.message || t('operationsView.recoveryCorruptTitle')}
                         >
-                          恢复材料损坏
+                          {t('operationsView.recoveryCorrupt')}
                         </span>
                       )}
                     </>
@@ -247,10 +249,10 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                       <button
                         onClick={() => onRecoverOperation(op.operation_id)}
                         className="px-3 py-1.5 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 transition-colors shadow-xs flex items-center gap-1 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                        title="安全回滚未完成事务到操作前状态"
+                        title={t('operationsView.rollbackTitle')}
                       >
                         <RotateCcw className="w-3 h-3" />
-                        <span>安全回滚</span>
+                        <span>{t('operationsView.rollback')}</span>
                       </button>
                     )
                   )}
@@ -259,7 +261,7 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                     onClick={() => setLogModalOp(op)}
                     className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                   >
-                    详情
+                    {t('operationsView.details')}
                   </button>
                 </div>
               </div>

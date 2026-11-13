@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { X, Lock, Shield, LogOut } from 'lucide-react';
 import { AnimatePresence, m } from './Motion';
 import { overlayVariants, panelVariants } from '../../../ui/motion-presets';
+import { useI18n } from '../i18n';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface LoginModalProps {
 
 export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
   const { currentUser, loginFlarum, logout } = useApp();
+  const { t } = useI18n();
 
   const [flarumUsername, setFlarumUsername] = useState('');
   const [flarumPassword, setFlarumPassword] = useState('');
@@ -46,7 +48,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
           <div className="flex items-center gap-2">
             <Lock className="w-4 h-4 text-emerald-700" />
             <h3 className="text-sm font-semibold text-neutral-900">
-              {currentUser ? '当前会话' : '登录 RezeHub'}
+              {currentUser ? t('login.session') : t('login.title')}
             </h3>
           </div>
           <button
@@ -68,13 +70,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                   <span className="text-[11px] font-mono text-neutral-500">ID: {currentUser.id}</span>
                 </div>
                 <div className="text-xs text-neutral-500 flex items-center gap-2">
-                  <span>角色权限:</span>
+                  <span>{t('login.roleLabel')}</span>
                   <span className="font-mono text-neutral-800">{currentUser.roles.join(', ')}</span>
                 </div>
               </div>
 
               <div className="pt-2 border-t border-neutral-100 flex items-center justify-between">
-                <span className="text-[11px] text-neutral-400">CSRF 保护已启用 · Cookie 会话</span>
+                <span className="text-[11px] text-neutral-400">{t('login.csrfNote')}</span>
                 <button
                   onClick={() => {
                     logout();
@@ -83,7 +85,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                   className="px-3 py-1.5 text-xs text-rose-700 hover:bg-rose-50 rounded border border-rose-200 flex items-center gap-1.5 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  退出当前会话
+                  {t('login.logout')}
                 </button>
               </div>
             </div>
@@ -91,19 +93,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
             /* Not logged in: Flarum credentials only (Section 1) */
             <div className="space-y-4">
               <p className="text-xs text-neutral-600 leading-relaxed">
-                访客无需登录即可自由浏览目录与下载模组。作者、审核员和管理员请通过 DCC论坛凭据登录。
+                {t('login.intro')}
               </p>
 
               {/* Flarum Proxy Form */}
               <form onSubmit={handleFlarumLogin} className="space-y-3">
                 <div>
                   <label className="block text-xs font-medium text-neutral-700 mb-1">
-                    Flarum 用户名 / 邮箱
+                    {t('login.username')}
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="例如: MonikaFan"
+                    placeholder={t('login.usernamePlaceholder')}
                     value={flarumUsername}
                     onChange={(e) => setFlarumUsername(e.target.value)}
                     className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600"
@@ -111,7 +113,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-neutral-700 mb-1">
-                    密码
+                    {t('login.password')}
                   </label>
                   <input
                     type="password"
@@ -127,15 +129,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                   disabled={isSubmitting}
                   className="w-full py-2 px-3 rounded bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-medium transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
-                  {isSubmitting ? '正在验证凭据...' : '登录'}
+                  {isSubmitting ? t('login.submitting') : t('login.submit')}
                 </button>
               </form>
 
               <div className="p-2.5 bg-neutral-50 rounded border border-neutral-100 text-[11px] text-neutral-500 leading-relaxed flex items-start gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-neutral-400 shrink-0 mt-0.5" />
-                <span>
-                  不同角色在界面中即时刷新展示，服务端仍独立做权限校验。
-                </span>
+                <span>{t('login.roleNote')}</span>
               </div>
             </div>
           )}

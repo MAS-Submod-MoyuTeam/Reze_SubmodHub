@@ -46,7 +46,7 @@ await rm(temporary, { recursive: true, force: true });
 /** 一条后端已发布目录项，形状与 `fetchPublishedCatalog` 的返回一致。 */
 const publishedEntry = {
   mod: {
-    id: 'mod_1', title: 'Settled Mod', summary: 'summary', description: '',
+    id: 'mod_1', title: 'Settled Mod', summary: { zh: 'summary' }, description: { zh: '' },
     author: { id: 'usr_1', display_name: 'Reze' }, category: 'submod',
     tags: ['语音'], supported_platforms: ['windows'], mas_version_range: '>=0.12.0',
     recommended_priority: 0, downloads_count: 3,

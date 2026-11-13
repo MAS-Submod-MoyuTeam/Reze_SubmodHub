@@ -1,3 +1,5 @@
+export type LocalizedText = Record<string, string | undefined>;
+
 export type ModCategory = 'submod' | 'spritepack';
 
 export type PlatformType = 'windows' | 'android';
@@ -62,8 +64,9 @@ export interface ModVersion {
 export interface ModSummary {
   id: string;
   title: string;
-  summary: string;
-  description?: string;
+  /** 多语言文本：语言 → 文本；渲染前必须走 `useI18n().resolve()`。 */
+  summary: LocalizedText;
+  description?: LocalizedText;
   author: Author;
   category: ModCategory;
   tags: string[];
@@ -237,7 +240,8 @@ export interface InstalledItem {
   mod_id: string;
   installation_id?: string;
   title: string;
-  summary: string;
+  /** 多语言文本：语言 → 文本；渲染前必须走 `useI18n().resolve()`。 */
+  summary: LocalizedText;
   author_name: string;
   category: ModCategory;
   installed_version: string;

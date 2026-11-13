@@ -356,6 +356,48 @@ journal 事务阶段为 `planned -> prepared -> applying -> committing -> commit
 - 保存成功后 `revision` 递增；只有修改代理或令牌时才清空全局与各模组的限流退避（配额桶已换）。
 - 前端必须区分展示「已加密存储」与「明文存储」，后者要提示配置 `SUBMODHUB_DELIVERY_MASTER_KEY`。
 
+### 设置导入导出（JSON）
+管理端可以把自己这一份可配置项整体导出成 JSON、再原样导入回去（迁移、备份、复制部署）。
+
+- `GET /api/v1/admin/settings/export`（仅管理员，只读因此不需要 CSRF）返回：
+
+```json
+{
+  "format": "submodhub-settings", "version": 1, "exported_at": "2026-11-12T02:15:32Z",
+  "settings": {
+    "github_proxy_template": "https://proxy.example/{url}",
+    "github_sync_max_age": "4h30m0s",
+    "tag_catalog": [{"name": "工具", "description": {"zh": "自动修复类"}, "children": [{"name": "绘图"}]}]
+  },
+  "download_nodes": [{
+    "id": "cloud-one", "name": "Cloud", "type": "cloudreve", "enabled": true, "weight": 1,
+    "api_base_url": "https://disk.example/api/v3", "username": "admin", "directory": "/SubmodHub",
+    "allowed_download_origins": ["https://cdn.example"], "capabilities": ["cloudreve"],
+    "credential_configured": true
+  }]
+}
+```
+
+- `format` 固定为 `submodhub-settings`，`version` 当前为 `1`；不匹配返回 400 `unsupported_settings_document`（不猜、不迁移别的形状）。
+- **导出永不含凭据**：没有 `github_token`，节点也没有 `password`，只有 `credential_configured` 表明该节点在来源部署里配了密码。这与 `GET /admin/settings`、`GET /admin/download-nodes` 的口径一致。响应带 `Cache-Control: no-store` 与下载文件名。
+- `github_sync_max_age` 导出的是**存储值**而不是生效值：空串表示「用内置默认」，导出 `60m0s` 会把默认值固化成显式设置。
+- `POST /api/v1/admin/settings/import`（管理员 + CSRF + 同源）接受同一份文档，**整份替换**配置：
+  - 省略 `download_nodes`（或为 `null`）表示节点列表原样不动；给空数组表示删掉所有节点。
+  - 节点按 `id` 对应已有节点：`password` 为空时沿用本部署已存的密文（所以导出的文件能直接导回，无需带密钥）；给了新密码才重新加密，此时缺 master key 返回 503 `delivery_master_key_unavailable`。新节点没有密码返回 400 `credential_required`。
+  - 节点 `type` 不允许改动（400 `node_type_immutable`），`id` 重复返回 400 `duplicate_download_node`，形状不合法返回 400 `invalid_download_node`。
+  - 配置未变且没给新密码的节点保留原有 `revision`、`status` 与 `last_checked_at`：镜像按节点 revision 绑定，原样导回不能让已就绪的镜像被判成过期。
+  - `settings.github_token` 是**仅导入字段**：省略表示保留现有令牌，`""` 表示清除，非空则校验后重新加密保存。
+  - 代理模板、刷新窗口、标签目录的校验与 `PATCH` 完全一致（`invalid_github_proxy` / `invalid_github_sync_max_age` / `invalid_tag_catalog`）；若部署用 `GITHUB_SYNC_MAX_AGE` 钉死了窗口，导入返回 409 `github_sync_max_age_env_override`，不会静默丢弃文档里的值。
+  - 文档是整份配置，不是补丁：`tag_catalog` 必须给出且非空（空目录沿用 `invalid_tag_catalog`），省略 `github_sync_max_age` 等于恢复默认 60 分钟窗口，省略 `github_proxy_template` 等于清空代理模板。
+  - 导入成功后 `revision` 加一，写一条设置审计事件（`token_changed` / `tags_changed` / `pruned_mod_tags` 如实反映本次导入）；标签目录变窄会在同一次保存里清理模组上的失效标签。保存失败整份回滚（设置、节点、被清理的标签与审计都不留痕）。
+  - 成功响应是 `GET /admin/settings` 的那份 `site_settings` 结构，管理页可直接用它刷新，不需要再拉一次。
+- 管理页的「备份与迁移」卡片：
+  - 导出直接用响应的 `Content-Disposition` 文件名保存；文件不含凭据，可以提醒管理员它适合拷到别的部署。
+  - 导入必须先弹确认条再发请求：文档是整份替换（标签目录变窄会连带清理模组标签、节点按 `id` 对应），管理员要在动手前看到将替换成什么。确认条里的项数来自文档本身，不能等服务端返回才知道。
+  - 文件在发请求前先本地挡一遍：超过 256 KiB、不是 JSON、缺 `format`/`version` 或版本不认识时只提示，不发请求。字段级规则不在前端复刻，交给服务端返回错误码。
+  - 导入成功后用响应刷新页面缓存（revision、代理、令牌标记、窗口、标签目录）并重新拉节点列表与公开目录；否则下一张卡片的保存会带着过期 revision 提交，自己制造一次冲突。
+  - `409`（`settings_conflict` / `github_sync_max_age_env_override`）走「重新加载」提示，不要显示成普通失败；其余错误码（`credential_required`、`node_type_immutable`、`unsupported_settings_document` 等）原样展示。
+
 两种模式的扫描、审核、自动发布流程完全一致，前端其余交互不变。
 
 ### 权限与防护规则

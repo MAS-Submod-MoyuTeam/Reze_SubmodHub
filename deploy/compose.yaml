@@ -33,13 +33,18 @@ services:
       SUBMODHUB_TEST_PASSWORD: ${SUBMODHUB_TEST_PASSWORD:-submodhub-test}
       # Optional override; leave empty so the admin settings page owns the window.
       GITHUB_SYNC_MAX_AGE: ${GITHUB_SYNC_MAX_AGE:-}
+      # 单包归档上限，接受字节数或 1GiB / 512MiB 这类写法；默认 1 GiB。
+      # 调大时必须同时确认下面 api 服务的 tmpfs >= 2 × 该值。
+      SUBMODHUB_MAX_ARCHIVE_SIZE: ${SUBMODHUB_MAX_ARCHIVE_SIZE:-1073741824}
       SUBMODHUB_DELIVERY_MASTER_KEY: ${SUBMODHUB_DELIVERY_MASTER_KEY:-}
     ports:
       - "100.72.137.92:${SUBMODHUB_PORT:-18082}:8080"
     volumes:
       - ./data:/data
     tmpfs:
-      - /tmp:size=640m,mode=1777
+      # Temp archives (GitHub 下载 / 中转) land here. Must stay >= 并发上限(2)
+      # × 单文件上限(1 GiB) 再留余量，否则大包并发会先耗尽 tmpfs。
+      - /tmp:size=3g,mode=1777
     read_only: true
     security_opt:
       - no-new-privileges:true

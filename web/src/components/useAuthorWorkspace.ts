@@ -8,7 +8,7 @@ import { useReviewPage } from './useReviewPage';
 
 export function mapAuthorMod({ mod, is_published, has_published_version, has_archived_version, has_pending_review, candidate_version_id }: ApiAuthorModItem): ModSummary {
   return {
-    ...mod, description: mod.description || mod.summary || '', tags: mod.tags || [],
+    ...mod, description: mod.description && Object.keys(mod.description).length > 0 ? mod.description : (mod.summary || {}), summary: mod.summary || {}, tags: mod.tags || [],
     supported_platforms: (mod.supported_platforms || []) as ModSummary['supported_platforms'],
     mas_version_range: mod.mas_version_range || '', recommended_priority: mod.recommended_priority || 0,
     latest_version_id: mod.latest_version_id || '', downloads_count: 0, created_at: mod.created_at || '', updated_at: '',

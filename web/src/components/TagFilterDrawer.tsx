@@ -1,17 +1,20 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, m } from './Motion';
 import { drawerVariants, overlayVariants } from '../../../ui/motion-presets';
 import { Check, ChevronDown, ChevronRight, Minus, X } from 'lucide-react';
 import {
   activeTagFilterCount,
-  describeTagFilter,
+  describeTagFilterLocalized,
   isTagRowExpanded,
   rowActiveCount,
+  tagFilterDisplayNames,
   type TagFilterEntry,
   type TagFilterRow,
   type TagFilterStates,
   type TagGroupCollapse,
 } from '../../../ui/tag-filter';
+import { resolveTagName } from '../../../ui/tags-api';
+import { useI18n } from '../i18n';
 
 interface Props {
   open: boolean;
@@ -45,9 +48,12 @@ export const TagFilterDrawer: React.FC<Props> = ({
   loading = false,
   error = null,
 }) => {
+  const { t, lang, resolve } = useI18n();
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const [collapse, setCollapse] = useState<TagGroupCollapse>({});
   const active = activeTagFilterCount(states);
+  // 标签名走显示名（管理员可配英文），筛选状态仍然只认存储名。
+  const displayNames = useMemo(() => tagFilterDisplayNames(rows), [rows]);
 
   // Esc 关闭：抽屉是浮层，键盘用户必须能退出，不能只靠点遮罩。
   useEffect(() => {
@@ -67,19 +73,33 @@ export const TagFilterDrawer: React.FC<Props> = ({
 
   const tagButton = (entry: TagFilterEntry, main: boolean, stale: boolean) => {
     const state = states[entry.name];
-    const stateText = state === 'include' ? '包含' : state === 'exclude' ? '排除' : '';
-    const label = [entry.name, stateText && `（${stateText}）`, entry.description && `：${entry.description}`]
-      .filter(Boolean)
-      .join('');
+    const label = resolveTagName(entry.name, displayNames, lang);
+    const description = resolve(entry.description);
+    const stateText = state === 'include'
+      ? t('tagFilter.stateInclude')
+      : state === 'exclude'
+        ? t('tagFilter.stateExclude')
+        : '';
+    // 可访问名把「名字 + 状态 + 描述」凑成一句；只有一句话对读屏才有意义，
+    // 三个片段各读一遍反而听不出谁在描述谁。
+    // 三种组合各自成句：有描述就给描述，没有描述就只说名字和状态，
+    // 都没有时退回名字本身——不拼出「名字（包含）：」这种带空冒号的残句。
+    const ariaLabel = stateText && description
+      ? t('tagFilter.ariaLabel', { name: label, state: stateText, description })
+      : description
+        ? t('tagFilter.ariaLabelPlain', { name: label, description })
+        : stateText
+          ? t('tagFilter.ariaLabelState', { name: label, state: stateText })
+          : label;
     return (
       <button
         key={entry.name}
         type="button"
         data-tag={entry.name}
         data-tag-state={state ?? 'off'}
-        aria-label={label}
+        aria-label={ariaLabel}
         aria-pressed={state !== undefined}
-        title={stale ? '该标签已不在标签目录中，仍可用来筛选存量模组' : label}
+        title={stale ? t('tagFilter.staleHint') : ariaLabel}
         onClick={() => onToggle(entry.name)}
         className={[
           'w-full text-left rounded border px-2 py-1 transition-colors cursor-pointer',
@@ -100,15 +120,15 @@ export const TagFilterDrawer: React.FC<Props> = ({
           ) : state === 'exclude' ? (
             <Minus className="w-3 h-3 shrink-0" aria-hidden="true" />
           ) : null}
-          <span className="truncate">#{entry.name}</span>
+          <span className="truncate">{t('tagFilter.label', { name: label })}</span>
         </span>
-        {entry.description ? (
+        {description ? (
           <span
             className={`block text-[10px] leading-snug mt-0.5 ${
               state === 'include' ? 'text-emerald-100' : state === 'exclude' ? 'text-rose-500' : 'text-neutral-500'
             }`}
           >
-            {entry.description}
+            {description}
           </span>
         ) : null}
       </button>
@@ -122,7 +142,7 @@ export const TagFilterDrawer: React.FC<Props> = ({
           className="fixed inset-0 z-50 flex justify-end"
           role="dialog"
           aria-modal="true"
-          aria-label="标签筛选"
+          aria-label={t('tagFilter.title')}
           data-testid="tag-filter-drawer"
           initial={{ opacity: 1 }}
           animate={{ opacity: 1 }}
@@ -132,7 +152,7 @@ export const TagFilterDrawer: React.FC<Props> = ({
           {/* 遮罩本身可点关闭；用 button 而不是 div，键盘用户也有明确的退出动作。 */}
           <m.button
             type="button"
-            aria-label="关闭标签筛选"
+            aria-label={t('tagFilter.close')}
             tabIndex={-1}
             onClick={onClose}
             variants={overlayVariants}
@@ -150,16 +170,16 @@ export const TagFilterDrawer: React.FC<Props> = ({
           >
         <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-neutral-200">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-neutral-900">标签筛选</h2>
+            <h2 className="text-sm font-semibold text-neutral-900">{t('tagFilter.title')}</h2>
             <p className="text-[11px] mt-0.5 text-neutral-500">
-              点一次包含、再点一次排除、第三次取消；包含的标签需同时满足。
+              {t('tagFilter.howItWorks')}
             </p>
           </div>
           <button
             ref={closeRef}
             type="button"
             onClick={onClose}
-            aria-label="关闭标签筛选"
+            aria-label={t('tagFilter.close')}
             className="shrink-0 w-7 h-7 rounded-md flex items-center justify-center text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <X className="w-4 h-4" aria-hidden="true" />
@@ -169,18 +189,18 @@ export const TagFilterDrawer: React.FC<Props> = ({
           <div className="flex-1 overflow-y-auto overscroll-y-contain px-4 py-3 space-y-3">
           {active > 0 ? (
             <p className="text-[11px] text-neutral-500" data-testid="tag-filter-summary">
-              {describeTagFilter(states)}
+              {describeTagFilterLocalized(rows, states, lang, t)}
             </p>
           ) : null}
 
-          {loading ? <p className="text-[11px] text-neutral-500">正在读取标签目录…</p> : null}
+          {loading ? <p className="text-[11px] text-neutral-500">{t('tagFilter.loading')}</p> : null}
           {error ? (
             <p role="alert" className="text-[11px] text-rose-600">
               {error}
             </p>
           ) : null}
           {rows.length === 0 && !loading && !error ? (
-            <p className="text-[11px] text-neutral-500">目录里还没有可用标签。</p>
+            <p className="text-[11px] text-neutral-500">{t('tagFilter.empty')}</p>
           ) : null}
 
           {rows.map((row) => {
@@ -199,7 +219,9 @@ export const TagFilterDrawer: React.FC<Props> = ({
                       type="button"
                       onClick={() => setCollapse((current) => ({ ...current, [row.main.name]: !expanded }))}
                       aria-expanded={expanded}
-                      aria-label={`${expanded ? '收起' : '展开'} ${row.main.name} 的子标签（${row.children.length} 个）`}
+                      aria-label={expanded
+                        ? t('tagFilter.collapse', { name: resolveTagName(row.main.name, displayNames, lang) })
+                        : t('tagFilter.expand', { name: resolveTagName(row.main.name, displayNames, lang), count: row.children.length })}
                       data-testid={`tag-filter-toggle-${row.main.name}`}
                       className="mt-1 p-0.5 rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                     >
@@ -236,7 +258,7 @@ export const TagFilterDrawer: React.FC<Props> = ({
 
         <div className="px-4 py-3 border-t border-neutral-200 flex items-center justify-between gap-3">
           <span className="text-[11px] text-neutral-500 tabular-nums" data-testid="tag-filter-count">
-            {active === 0 ? '未启用标签筛选' : `已启用 ${active} 个标签`}
+            {active === 0 ? t('tagFilter.noneActive') : t('tagFilter.activeCount', { count: active })}
           </span>
           <button
             type="button"
@@ -244,7 +266,7 @@ export const TagFilterDrawer: React.FC<Props> = ({
             disabled={active === 0}
             className="px-2.5 py-1 text-[11px] font-medium rounded border border-neutral-300 text-neutral-600 hover:text-neutral-900 hover:border-neutral-400 transition-colors disabled:cursor-not-allowed disabled:opacity-40 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
-            清除全部
+            {t('tagFilter.clearAll')}
           </button>
         </div>
           </m.aside>

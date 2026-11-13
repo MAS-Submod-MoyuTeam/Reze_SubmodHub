@@ -8,6 +8,10 @@ import {
   isTransactionInProgressError,
 } from './launchGuard';
 import type { Operation, OperationState } from './types/client';
+import { translate } from './/i18n/translate';
+
+const tZh = (key: string, vars?: Record<string, string | number>) => translate('zh', key, vars);
+
 
 function operation(state: OperationState): Operation {
   return {
@@ -55,9 +59,9 @@ test('按稳定错误码识别事务拦截，不依赖错误文本拼接', () =>
 });
 
 test('事务拦截的提示说明原因与下一步，其他失败保留原始错误码', () => {
-  const blocked = describeLaunchFailure(new Error(TRANSACTION_IN_PROGRESS));
+  const blocked = describeLaunchFailure(new Error(TRANSACTION_IN_PROGRESS), tZh);
   assert.match(blocked, /事务进行中/);
   assert.match(blocked, /等待事务提交或回滚完成/);
 
-  assert.equal(describeLaunchFailure(new Error('mas_executable_missing')), '启动失败：mas_executable_missing');
+  assert.equal(describeLaunchFailure(new Error('mas_executable_missing'), tZh), '启动失败：mas_executable_missing');
 });

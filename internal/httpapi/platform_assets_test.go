@@ -322,7 +322,7 @@ func TestImportPlatformCandidateRejectsOversizedAssetBeforeDownload(t *testing.T
 		TagName: "v1.0.0",
 		Assets: []github.Asset{
 			{ID: 11, Name: "MyMod-windows.zip", Size: int64(len(windowsZip)), BrowserDownloadURL: upstream.URL + "/download/MyMod-windows.zip"},
-			{ID: 12, Name: "MyMod-android.zip", Size: int64(maxArchiveSize) + 1, BrowserDownloadURL: upstream.URL + "/download/MyMod-android.zip"},
+			{ID: 12, Name: "MyMod-android.zip", Size: int64(defaultMaxArchiveSize) + 1, BrowserDownloadURL: upstream.URL + "/download/MyMod-android.zip"},
 		},
 	}
 	mod := store.Catalog.Mods[0]
@@ -1167,7 +1167,7 @@ func TestSavedPlatformSetFollowsSourceConfiguration(t *testing.T) {
 	}
 
 	created := do(http.MethodPost, "/api/v1/author/mods", `{
-		"title": "Android Only", "summary": "s", "description": "d", "category": "submod",
+		"title": "Android Only", "summary": {"zh": "s"}, "description": {"zh": "d"}, "category": "submod",
 		"tags": ["工具"], "supported_platforms": ["windows", "android"],
 		"source_type": "github_releases", "github_owner": "octocat", "github_repo": "hello",
 		"github_platform_assets": [{"platform": "android", "regex": "a\\.zip$"}]
@@ -1177,7 +1177,7 @@ func TestSavedPlatformSetFollowsSourceConfiguration(t *testing.T) {
 	}
 
 	edited := do(http.MethodPatch, "/api/v1/author/mods/"+created.ID, `{
-		"title": "Android Only v2", "summary": "s", "description": "d", "category": "submod",
+		"title": "Android Only v2", "summary": {"zh": "s"}, "description": {"zh": "d"}, "category": "submod",
 		"tags": ["工具"]
 	}`)
 	if !slices.Equal(edited.SupportedPlatforms, []string{"android"}) {
@@ -1317,7 +1317,7 @@ func TestLocalModPlatformDeclarationIsValidatedOnCreate(t *testing.T) {
 	server := httptest.NewServer(NewStoreHandler(store))
 	defer server.Close()
 
-	base := `{"title":"Local Mod","summary":"s","description":"d","category":"submod","tags":["工具"]`
+	base := `{"title":"Local Mod","summary":{"zh":"s"},"description":{"zh":"d"},"category":"submod","tags":["工具"]`
 	for _, tc := range []struct {
 		name          string
 		extra         string
@@ -1358,12 +1358,12 @@ func TestLocalModPlatformDeclarationOnEdit(t *testing.T) {
 	defer server.Close()
 
 	status, created, body := declarePlatforms(t, server, token, http.MethodPost, "/api/v1/author/mods",
-		`{"title":"Edit Me","summary":"s","description":"d","category":"submod","tags":["工具"],"supported_platforms":["android"]}`)
+		`{"title":"Edit Me","summary":{"zh":"s"},"description":{"zh":"d"},"category":"submod","tags":["工具"],"supported_platforms":["android"]}`)
 	if status != http.StatusCreated {
 		t.Fatalf("create: %d %s", status, body)
 	}
 
-	metadataOnly := `{"title":"Edit Me v2","summary":"s","description":"d","category":"submod","tags":["工具"]}`
+	metadataOnly := `{"title":"Edit Me v2","summary":{"zh":"s"},"description":{"zh":"d"},"category":"submod","tags":["工具"]}`
 	status, edited, body := declarePlatforms(t, server, token, http.MethodPatch, "/api/v1/author/mods/"+created.ID, metadataOnly)
 	if status != http.StatusOK {
 		t.Fatalf("metadata edit: %d %s", status, body)
@@ -1373,7 +1373,7 @@ func TestLocalModPlatformDeclarationOnEdit(t *testing.T) {
 	}
 
 	status, edited, body = declarePlatforms(t, server, token, http.MethodPatch, "/api/v1/author/mods/"+created.ID,
-		`{"title":"Edit Me v3","summary":"s","description":"d","category":"submod","tags":["工具"],"supported_platforms":["windows"]}`)
+		`{"title":"Edit Me v3","summary":{"zh":"s"},"description":{"zh":"d"},"category":"submod","tags":["工具"],"supported_platforms":["windows"]}`)
 	if status != http.StatusOK {
 		t.Fatalf("declaration edit: %d %s", status, body)
 	}
@@ -1382,7 +1382,7 @@ func TestLocalModPlatformDeclarationOnEdit(t *testing.T) {
 	}
 
 	status, _, body = declarePlatforms(t, server, token, http.MethodPatch, "/api/v1/author/mods/"+created.ID,
-		`{"title":"Edit Me v4","summary":"s","description":"d","category":"submod","tags":["工具"],"supported_platforms":[]}`)
+		`{"title":"Edit Me v4","summary":{"zh":"s"},"description":{"zh":"d"},"category":"submod","tags":["工具"],"supported_platforms":[]}`)
 	if status != http.StatusBadRequest {
 		t.Fatalf("empty declaration edit: %d %s", status, body)
 	}

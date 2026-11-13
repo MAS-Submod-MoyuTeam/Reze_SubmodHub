@@ -28,10 +28,10 @@ export function isTransactionInProgressError(error: unknown): boolean {
  * 启动失败的提示文案。事务拦截要说明「为什么」和「接下来做什么」；
  * 其他失败保留后端原始错误码，便于用户抄给维护者。
  */
-export function describeLaunchFailure(error: unknown): string {
+export function describeLaunchFailure(error: unknown, t: (key: string, vars?: Record<string, string | number>) => string): string {
   if (isTransactionInProgressError(error)) {
-    return '事务进行中，游戏启动已被阻止。请等待事务提交或回滚完成后再启动游戏。';
+    return t('launchGuard.blockedByTransaction');
   }
   const detail = error instanceof Error ? error.message : String(error);
-  return `启动失败：${detail}`;
+  return t('launchGuard.launchFailed', { detail });
 }

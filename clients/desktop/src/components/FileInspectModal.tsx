@@ -5,6 +5,7 @@ import { ListInstalledModFiles, ScanLocalSubmods } from '../wails';
 import { loadInstalledFiles, type InspectedFile } from '../installedFiles';
 import { m } from './Motion';
 import { overlayVariants } from '../../../../ui/motion-presets';
+import { useI18n } from '../i18n';
 
 interface FileInspectModalProps {
   item: InstalledItem | null;
@@ -12,6 +13,7 @@ interface FileInspectModalProps {
 }
 
 export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClose }) => {
+  const { t } = useI18n();
   const [files, setFiles] = useState<InspectedFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -22,7 +24,7 @@ export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClos
     setError('');
     setLoading(true);
     if (item) {
-      loadInstalledFiles(item, { list: ListInstalledModFiles, scan: ScanLocalSubmods })
+      loadInstalledFiles(item, { list: ListInstalledModFiles, scan: ScanLocalSubmods }, t)
         .then((result) => { if (!cancelled) setFiles(result); })
         .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason)); })
         .finally(() => { if (!cancelled) setLoading(false); });
@@ -48,11 +50,11 @@ export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClos
               <FileCode2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <h3 className="font-bold text-neutral-100 text-sm truncate">{item.title}</h3>
               <span className="text-xs font-mono text-neutral-400 shrink-0">
-                ({item.is_managed ? '已安装' : '未收纳'})
+                ({item.is_managed ? t('fileInspect.installed') : t('fileInspect.unmanaged')})
               </span>
             </div>
             <div className="text-xs text-neutral-400 mt-0.5 font-mono truncate">
-              安装版本: {item.installed_version} · 记录散列: {item.sha256.substring(0, 16)}...
+              {t('fileInspect.versionAndHash', { version: item.installed_version, hash: item.sha256.substring(0, 16) })}
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors shrink-0 cursor-pointer">
@@ -62,21 +64,21 @@ export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClos
 
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 font-mono text-xs">
           <div className="text-neutral-400 font-sans text-xs mb-2">
-            {item.is_managed ? '当前 MAS 实例安装清单及记录哈希（状态已与磁盘核对）：' : '当前 MAS 实例磁盘扫描结果：'}
+            {item.is_managed ? t('fileInspect.manifestIntro') : t('fileInspect.scanIntro')}
           </div>
 
-          {loading && <div role="status" className="text-neutral-400">正在读取真实文件清单…</div>}
-          {error && <div role="alert" className="text-amber-400">加载文件清单失败：{error}</div>}
-          {!loading && !error && files.length === 0 && <div className="text-neutral-400">该模组没有文件记录</div>}
+          {loading && <div role="status" className="text-neutral-400">{t('fileInspect.loading')}</div>}
+          {error && <div role="alert" className="text-amber-400">{t('fileInspect.loadFailed', { message: error })}</div>}
+          {!loading && !error && files.length === 0 && <div className="text-neutral-400">{t('fileInspect.noFiles')}</div>}
 
           <div className="border border-neutral-800 rounded-lg overflow-x-auto">
             <table className="w-full text-left min-w-[480px]">
               <thead className="bg-neutral-950 text-neutral-400 text-[11px] border-b border-neutral-800">
                 <tr>
-                  <th className="py-2 px-3">文件相对路径</th>
-                  <th className="py-2 px-3 text-right">大小</th>
-                  <th className="py-2 px-3">SHA-256 散列</th>
-                  <th className="py-2 px-3">校验状态</th>
+                  <th className="py-2 px-3">{t('fileInspect.colPath')}</th>
+                  <th className="py-2 px-3 text-right">{t('fileInspect.colSize')}</th>
+                  <th className="py-2 px-3">{t('fileInspect.colHash')}</th>
+                  <th className="py-2 px-3">{t('fileInspect.colStatus')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800/60 bg-neutral-900/40">
@@ -95,11 +97,15 @@ export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClos
                       {f.status === 'intact' ? (
                         <span className="text-emerald-400 text-[11px] flex items-center gap-1 font-sans">
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>匹配</span>
+                          <span>{t('fileInspect.statusIntact')}</span>
                         </span>
                       ) : (
                         <span className="text-amber-400 text-[11px] flex items-center gap-1 font-sans">
-                          <span>{f.status === 'overridden' ? '被覆盖' : f.status === 'unmanaged' ? '未收纳' : '已修改或缺失'}</span>
+                          <span>{f.status === 'overridden'
+                            ? t('fileInspect.statusOverridden')
+                            : f.status === 'unmanaged'
+                              ? t('fileInspect.unmanaged')
+                              : t('fileInspect.statusDrifted')}</span>
                         </span>
                       )}
                     </td>
@@ -115,7 +121,7 @@ export const FileInspectModal: React.FC<FileInspectModalProps> = ({ item, onClos
             onClick={onClose}
             className="min-h-[38px] sm:min-h-0 px-4 py-2 text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors cursor-pointer"
           >
-            关闭
+            {t('common.close')}
           </button>
         </div>
       </div>

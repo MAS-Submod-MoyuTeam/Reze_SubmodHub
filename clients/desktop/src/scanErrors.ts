@@ -6,9 +6,9 @@
  */
 export const MANIFEST_LEDGER_PATH = '.submodhub/state/manifest.json';
 
-export function describeScanFailure(message: string): string {
+export function describeScanFailure(message: string, t: (key: string, vars?: Record<string, string | number>) => string): string {
   if (message.includes('manifest_corrupt')) {
-    return `安装账本（${MANIFEST_LEDGER_PATH}）无法解析，已保留上一次读取结果。该状态不会自愈：刷新或重新扫描仍会失败，只能人工修复或重建这个文件。`;
+    return t('scanErrors.ledgerUnparsable', { path: MANIFEST_LEDGER_PATH });
   }
   return message;
 }

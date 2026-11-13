@@ -1,7 +1,7 @@
 import { fetchDownloadNodes, saveDownloadNode, deleteDownloadNode, testDownloadNode } from './settings-api.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchSettings, updateSettings, testGitHubProxy, type SiteSettings, type ProxyTestResponse } from './settings-api.js';
+import { exportSettings, fetchSettings, importSettings, updateSettings, testGitHubProxy, type SiteSettings, type ProxyTestResponse } from './settings-api.js';
 
 test('download node writes use explicit fields and keep blank secret semantics', async () => {
  const calls: Array<{url: string; init?: RequestInit}> = [];
@@ -181,4 +181,80 @@ test('updateSettings sends the whole tag catalog with its hierarchy', async () =
   await updateSettings({ tag_catalog: groups }, 3, 'csrf', '/api/v1', customFetch);
 
   assert.deepEqual(JSON.parse(captured || '{}'), { tag_catalog: groups, revision: 3 });
+});
+test('exportSettings returns the bytes and the filename the server chose', async () => {
+  const body = JSON.stringify({ format: 'submodhub-settings', version: 1, settings: { tag_catalog: [] } });
+  let calledURL = '';
+  const customFetch: typeof fetch = async (input, init) => {
+    calledURL = String(input);
+    assert.equal(init?.method ?? 'GET', 'GET');
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Disposition': 'attachment; filename="submodhub-settings-20261112-021532.json"',
+      },
+    });
+  };
+
+  const file = await exportSettings('/api/v1', customFetch);
+  assert.equal(calledURL, '/api/v1/admin/settings/export');
+  assert.equal(file.filename, 'submodhub-settings-20261112-021532.json');
+  assert.equal(await file.blob.text(), body);
+});
+
+test('exportSettings falls back to a usable filename and surfaces error codes', async () => {
+  const noHeader: typeof fetch = async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+  assert.equal((await exportSettings('/api/v1', noHeader)).filename, 'submodhub-settings.json');
+
+  const forbidden: typeof fetch = async () =>
+    new Response(JSON.stringify({ code: 'forbidden', message: 'admin required' }), { status: 403 });
+  await assert.rejects(async () => exportSettings('/api/v1', forbidden), /forbidden/);
+});
+
+test('importSettings POSTs the whole document with CSRF and returns the new settings', async () => {
+  const document = { format: 'submodhub-settings', version: 1, settings: { tag_catalog: [{ name: '工具' }] } };
+  let capturedURL = '';
+  let capturedHeaders: Headers | null = null;
+  let capturedBody = '';
+  const customFetch: typeof fetch = async (input, init) => {
+    capturedURL = String(input);
+    capturedHeaders = new Headers(init?.headers);
+    capturedBody = String(init?.body);
+    assert.equal(init?.method, 'POST');
+    return Response.json({
+      github_proxy_template: '',
+      github_token_configured: false,
+      github_token_encrypted: false,
+      github_sync_max_age: '1h0m0s',
+      github_sync_max_age_locked: false,
+      tag_catalog: [{ name: '工具' }],
+      master_key_configured: true,
+      revision: 12,
+    });
+  };
+
+  const updated = await importSettings(document, 'csrf-abc', '/api/v1', customFetch);
+  assert.equal(capturedURL, '/api/v1/admin/settings/import');
+  assert.equal(capturedHeaders!.get('X-CSRF-Token'), 'csrf-abc');
+  assert.deepEqual(JSON.parse(capturedBody), document);
+  assert.equal(updated.revision, 12);
+});
+
+test('importSettings surfaces the server error code verbatim', async () => {
+  const rejecting = (status: number, code: string): typeof fetch => async () =>
+    new Response(JSON.stringify({ code, message: code }), { status });
+
+  await assert.rejects(
+    async () => importSettings({}, 'csrf', '/api/v1', rejecting(400, 'unsupported_settings_document')),
+    /unsupported_settings_document/,
+  );
+  await assert.rejects(
+    async () => importSettings({}, 'csrf', '/api/v1', rejecting(403, 'csrf_invalid')),
+    /csrf_invalid/,
+  );
+  await assert.rejects(
+    async () => importSettings({}, 'csrf', '/api/v1', rejecting(409, 'github_sync_max_age_env_override')),
+    /github_sync_max_age_env_override/,
+  );
 });

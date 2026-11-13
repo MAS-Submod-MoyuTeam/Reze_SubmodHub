@@ -117,22 +117,64 @@ func (f GitHubReleaseFailure) matches(cand releaseCandidate, asset github.Select
 		f.AssetSHA256 == cand.ExpectSHA256
 }
 
-// stillBlocks reports whether the verdict still holds under current
-// configuration. Only a size verdict depends on it at all.
-func (f GitHubReleaseFailure) stillBlocks() bool {
+// stillBlocks reports whether the verdict still holds under the current archive
+// limit. Only a size verdict depends on it at all: raising the limit makes a
+// recorded too_large verdict stale, so the sweep tries those bytes again instead
+// of keeping them blocked forever.
+func (f GitHubReleaseFailure) stillBlocks(limit int64) bool {
 	if f.Kind != releaseFailureTooLarge {
 		return true
 	}
-	return f.LimitBytes == int64(maxArchiveSize)
+	return f.LimitBytes == limit
+}
+
+// Retry threshold for a repository whose packaging is structurally broken. A
+// rejected archive says nothing about the network — it says the bytes do not have
+// the shape a mod package needs — so the next release of the same repo almost
+// always fails the same way, and every attempt costs a full download first (the
+// L&DL bundle is 450 MB, and one pass has pulled several of them).
+//
+// After this many rejections the mod's automatic sweep pauses. It does not wait for
+// a timer: it waits for the author. The pause lifts when the repository publishes a
+// release newer than every recorded verdict, or replaces the asset of a release we
+// already rejected (same tag, new bytes) — see authorChangedSinceVerdict. A backlog
+// of never-attempted old releases is not an author change, so a broken repo stops
+// costing one download per old tag.
+const githubRejectedAutoRetryLimit = 2
+
+// rejectionVerdicts summarises what the catalogue already decided about this mod:
+// how many structural rejections are on record, the newest release id we hold a
+// verdict for, and the release ids themselves (so a replaced asset under the same
+// tag can be recognised).
+func (s *Store) rejectionVerdicts(modID string) (count int, newestReleaseID int64, releaseIDs map[int64]bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	releaseIDs = map[int64]bool{}
+	for i := range s.Catalog.Mods {
+		if s.Catalog.Mods[i].ID != modID {
+			continue
+		}
+		for _, failure := range s.Catalog.Mods[i].GitHubReleaseFailures {
+			if failure.Kind == releaseFailureRejected {
+				count++
+			}
+			releaseIDs[failure.ReleaseID] = true
+			if failure.ReleaseID > newestReleaseID {
+				newestReleaseID = failure.ReleaseID
+			}
+		}
+		return count, newestReleaseID, releaseIDs
+	}
+	return 0, 0, releaseIDs
 }
 
 // oversizedAsset returns the first archive of this candidate whose declared size
 // is already past the archive limit. Asset sizes are known before a single byte is
 // fetched, so an archive that can only end in a limit error is rejected without
 // paying for the download that would discover it.
-func oversizedAsset(cand releaseCandidate) (github.SelectedAsset, bool) {
+func oversizedAsset(cand releaseCandidate, limit int64) (github.SelectedAsset, bool) {
 	for _, asset := range cand.assets() {
-		if asset.SizeBytes > maxArchiveSize {
+		if asset.SizeBytes > limit {
 			return asset, true
 		}
 	}
@@ -141,10 +183,10 @@ func oversizedAsset(cand releaseCandidate) (github.SelectedAsset, bool) {
 
 // recordedReleaseFailure returns the recorded decision that still blocks one of
 // this candidate's archives, if any.
-func recordedReleaseFailure(mod Mod, cand releaseCandidate) (GitHubReleaseFailure, bool) {
+func recordedReleaseFailure(mod Mod, cand releaseCandidate, limit int64) (GitHubReleaseFailure, bool) {
 	for _, asset := range cand.assets() {
 		for _, recorded := range mod.GitHubReleaseFailures {
-			if recorded.matches(cand, asset) && recorded.stillBlocks() {
+			if recorded.matches(cand, asset) && recorded.stillBlocks(limit) {
 				return recorded, true
 			}
 		}
@@ -215,14 +257,15 @@ func newVersionID() (string, error) {
 // result is either a skip (already present) or a failure, as described by the
 // result's Action.
 func (s *Store) importCandidate(ctx context.Context, client *github.Client, mod Mod, cand releaseCandidate, now time.Time, force bool) (SyncItemResult, bool) {
-	if asset, oversized := oversizedAsset(cand); oversized {
+	limit := s.archiveLimit()
+	if asset, oversized := oversizedAsset(cand, limit); oversized {
 		return s.failCandidate(mod, cand, asset, fmt.Errorf("%w: %s declares %d bytes and the archive limit is %d",
-			github.ErrTooLarge, asset.AssetName, asset.SizeBytes, int64(maxArchiveSize)), now)
+			github.ErrTooLarge, asset.AssetName, asset.SizeBytes, limit), now)
 	}
 	// A recorded verdict only applies to the bytes that produced it; an explicit
 	// sync is the administrator's override.
 	if !force {
-		if recorded, ok := recordedReleaseFailure(mod, cand); ok {
+		if recorded, ok := recordedReleaseFailure(mod, cand, limit); ok {
 			return failureResult(cand, recorded.AssetName, fmt.Errorf("%s (recorded %s; an explicit sync retries it)",
 				recorded.Reason, recorded.RecordedAt.UTC().Format(time.RFC3339))), false
 		}
@@ -266,7 +309,7 @@ func (s *Store) recordReleaseFailure(modID string, cand releaseCandidate, asset 
 		RecordedAt:  now,
 	}
 	if kind == releaseFailureTooLarge {
-		entry.LimitBytes = int64(maxArchiveSize)
+		entry.LimitBytes = s.archiveLimit()
 	}
 
 	s.mu.Lock()
@@ -404,7 +447,7 @@ func (s *Store) downloadAndScanCandidate(ctx context.Context, client *github.Cli
 	var downloadErr error
 	select {
 	case s.downloadSem <- struct{}{}:
-		tmpPath, _, _, downloadErr = client.DownloadToTemp(ctx, cand.DownloadURL, maxArchiveSize)
+		tmpPath, _, _, downloadErr = client.DownloadToTemp(ctx, cand.DownloadURL, s.archiveLimit())
 		<-s.downloadSem
 	case <-ctx.Done():
 		downloadErr = ctx.Err()
@@ -452,7 +495,7 @@ func (s *Store) downloadAndScanCandidate(ctx context.Context, client *github.Cli
 func (s *Store) downloadToTemp(ctx context.Context, client *github.Client, url string) (string, error) {
 	select {
 	case s.downloadSem <- struct{}{}:
-		tmpPath, _, _, err := client.DownloadToTemp(ctx, url, maxArchiveSize)
+		tmpPath, _, _, err := client.DownloadToTemp(ctx, url, s.archiveLimit())
 		<-s.downloadSem
 		return tmpPath, err
 	case <-ctx.Done():
@@ -767,8 +810,21 @@ func (s *Store) finishSync(modID string, now time.Time, summary *SyncSummary, et
 			}
 			mod.GitHubLastSyncError = lastErr
 			summary.LastError = lastErr
+		} else if summary.PauseReason != "" {
+			// A paused pass is not a healthy pass. The workbench renders
+			// github_last_sync_error, so keeping the reason here is what stops a
+			// paused mod from looking like a healthy mod that simply has no versions.
+			mod.GitHubLastSyncError = summary.PauseReason
+			mod.GitHubBackoffUntil = nil
 		} else {
-			mod.GitHubLastSyncError = ""
+			// A pass that walked the release list and found nothing to do is
+			// genuinely healthy, so the previous complaint is stale. An ETag
+			// short-circuit (no items at all) says nothing about the archives, so it
+			// must not erase why the last import was rejected — that reason is the
+			// only place an author learns the packaging is wrong.
+			if summary.Created > 0 || len(summary.Items) > 0 {
+				mod.GitHubLastSyncError = ""
+			}
 			mod.GitHubBackoffUntil = nil
 		}
 		// A successful listing is cached even when some individual versions

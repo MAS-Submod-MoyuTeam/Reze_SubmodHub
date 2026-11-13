@@ -536,12 +536,24 @@ func (c *Client) ListReleases(ctx context.Context, owner, repo, etag string) ([]
 	return published, newETag, false, nil
 }
 
-func (c *Client) DownloadToTemp(ctx context.Context, downloadURL string, maxSizeBytes int64) (string, string, int64, error) {
-	const defaultMaxDownloadTime = 5 * time.Minute
-	const defaultMaxArchiveSize = 128 * 1024 * 1024 // 128 MiB
+// MaxDownloadBytes is the hard ceiling for a single archive download. It exists
+// so a caller cannot ask for an unbounded temp file; the deployment sets it from
+// SUBMODHUB_MAX_ARCHIVE_SIZE at startup, so the archive limit and this guard never
+// disagree. A caller passing a larger value is clamped to it.
+var MaxDownloadBytes int64 = 1 << 30
 
-	if maxSizeBytes <= 0 || maxSizeBytes > defaultMaxArchiveSize {
-		maxSizeBytes = defaultMaxArchiveSize
+func (c *Client) DownloadToTemp(ctx context.Context, downloadURL string, maxSizeBytes int64) (string, string, int64, error) {
+	// At 30 minutes, 1 GiB needs only ~0.6 MB/s, so the timeout bounds a dead
+	// connection rather than the package size. It must not be shorter than the
+	// caller's own sync deadline, or the download dies first for no reason.
+	const defaultMaxDownloadTime = 30 * time.Minute
+
+	ceiling := MaxDownloadBytes
+	if ceiling <= 0 {
+		ceiling = 1 << 30
+	}
+	if maxSizeBytes <= 0 || maxSizeBytes > ceiling {
+		maxSizeBytes = ceiling
 	}
 
 	if _, ok := ctx.Deadline(); !ok {

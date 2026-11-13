@@ -20,5 +20,4 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/nlpodyssey/gopickle v0.3.0
 	golang.org/x/text v0.39.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

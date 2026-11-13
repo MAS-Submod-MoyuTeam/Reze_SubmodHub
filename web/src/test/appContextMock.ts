@@ -11,8 +11,8 @@ import type { ModSummary, ModVersion } from '../types/submodhub';
 export const sampleMod: ModSummary = {
   id: 'mod_test_1',
   title: '测试模组标题',
-  summary: '测试模组简介',
-  description: '测试模组详细描述',
+  summary: { zh: '测试模组简介' },
+  description: { zh: '测试模组详细描述' },
   author: { id: 'author_1', display_name: '原作者' },
   category: 'submod',
   tags: ['dialogue'],

@@ -35,6 +35,7 @@ import {
   type DownloadNodeInput,
   type DownloadNodeSettings,
 } from '../../../ui/settings-api';
+import { useI18n } from '../i18n';
 
 const blank = (): DownloadNodeInput => ({
   id: '',
@@ -50,17 +51,26 @@ const blank = (): DownloadNodeInput => ({
   allowed_download_origins: [],
 });
 
-const failure = (error: unknown) => {
-  const message = error instanceof Error ? error.message : '';
-  if (message.includes('conflict')) return '设置已被其他管理员修改。请刷新节点列表后重试，表单内容已保留。';
-  if (message.includes('authentication')) return '认证失败，请检查网页登录用户名与密码。';
-  if (message.includes('timeout')) return '连接超时，请检查节点网络状态后重试。';
-  if (message.includes('master_key')) return '服务端尚未配置有效主密钥，暂时无法保存新凭据。';
-  if (message.includes('forbidden')) return '权限不足，请重新登录并确认管理员权限。';
-  return '操作失败，请检查配置参数或稍后重试。';
-};
+const FAILURE_KEYS = [
+  ['conflict', 'downloadNode.errConflict'],
+  ['authentication', 'downloadNode.errAuth'],
+  ['timeout', 'downloadNode.errTimeout'],
+  ['master_key', 'downloadNode.errMasterKey'],
+  ['forbidden', 'downloadNode.errForbidden'],
+] as const;
 
-export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
+/** 错误码 → 文案键；真正的翻译在组件里用 `t()` 做，这里只做纯映射。 */
+function failureKey(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  for (const [needle, key] of FAILURE_KEYS) {
+    if (message.includes(needle)) return key;
+  }
+  return 'downloadNode.errGeneric';
+}
+
+export function DownloadNodeSettings({ apiBase, reloadSignal = 0 }: { apiBase: string; reloadSignal?: number }) {
+  const { t } = useI18n();
+  const failure = (error: unknown) => t(failureKey(error));
   const [settings, setSettings] = useState<DownloadNodeSettings | null>(null);
   const [input, setInput] = useState<DownloadNodeInput>(blank);
   const [editing, setEditing] = useState(false);
@@ -87,7 +97,9 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
 
   useEffect(() => {
     void load();
-  }, [load]);
+    // A settings import replaces the node list behind this component's back, so
+    // it has to re-read rather than keep rendering nodes that no longer exist.
+  }, [load, reloadSignal]);
 
   const edit = (node: DownloadNode) => {
     if (node.type === 'builtin') return;
@@ -122,7 +134,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
       setSettings(await saveDownloadNode(input, settings.revision, session.csrf_token, editing, apiBase));
       setInput(blank());
       setOpen(false);
-      setNotice('节点配置已保存。分发镜像将在后台排队补齐。');
+      setNotice(t('downloadNode.saved'));
     } catch (err) {
       setError(failure(err));
       setInput((old) => ({ ...old, password: '' }));
@@ -139,7 +151,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
       const session = await readSession(apiBase);
       setSettings(await deleteDownloadNode(deleteID, settings.revision, session.csrf_token, apiBase));
       setDeleteID('');
-      setNotice('节点配置已成功删除，网盘对象不受影响。');
+      setNotice(t('downloadNode.deleted'));
     } catch (err) {
       setError(failure(err));
     } finally {
@@ -156,7 +168,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
     try {
       const session = await readSession(apiBase);
       const result = await retryDownloadMirrors(node.id, settings.revision, session.csrf_token, apiBase);
-      setNotice(`已重新排队 ${result.retried} 个失败镜像。`);
+      setNotice(t('downloadNode.retried', { count: result.retried }));
       setSettings(await fetchDownloadNodes(apiBase));
     } catch (err) {
       setError(failure(err));
@@ -176,7 +188,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
       const session = await readSession(apiBase);
       const result = await testDownloadNode(node.id, settings.revision, session.csrf_token, apiBase);
       if (result.ok) {
-        setNotice(`节点连通性测试通过（耗时 ${result.elapsed_ms} ms）。认证与根目录元数据均正常。`);
+        setNotice(t('downloadNode.testOk', { ms: result.elapsed_ms }));
       } else {
         setError(failure(new Error(result.error_code)));
       }
@@ -203,10 +215,10 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
           </div>
           <div>
             <h2 id="download-nodes-title" className="text-base font-bold text-neutral-900 tracking-tight">
-              下载交付与镜像网络
+              {t('downloadNode.title')}
             </h2>
             <p className="text-xs text-neutral-500 mt-0.5">
-              Cloudreve 网盘存储直链 · GitHub 资产代理转发 · 主服务器备用兜底
+              {t('downloadNode.subtitle')}
             </p>
           </div>
         </div>
@@ -219,7 +231,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
             className="px-3.5 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-emerald-600' : 'text-neutral-500'}`} />
-            刷新列表
+            {t('downloadNode.refresh')}
           </button>
           <button
             type="button"
@@ -233,7 +245,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
             className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <Plus className="w-3.5 h-3.5" />
-            添加交付节点
+            {t('downloadNode.add')}
           </button>
         </div>
       </div>
@@ -243,7 +255,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
         <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-neutral-50 border border-neutral-200/80 text-xs text-neutral-600 leading-relaxed">
           <Info className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
           <div>
-            普通模组 ZIP 安装包优先通过已完成哈希校验的外部镜像分发交付；主服务器始终保留兜底能力。复杂精灵包（Spritepacks）继续由主服务器流水线统一交付。
+            {t('downloadNode.banner')}
           </div>
         </div>
 
@@ -265,13 +277,13 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
         {settings?.builtin_fallback && (
           <div className="flex items-center gap-2.5 text-xs text-amber-900 bg-amber-50 border border-amber-200/80 rounded-xl p-3.5 shadow-2xs">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>当前没有处于可用状态的外部镜像节点，全站所有下载流量将由主服务器承担。建议配置 Cloudreve 节点分担带宽。</span>
+            <span>{t('downloadNode.noMirror')}</span>
           </div>
         )}
         {settings && !settings.master_key_configured && (
           <div className="flex items-center gap-2.5 text-xs text-amber-900 bg-amber-50 border border-amber-200/80 rounded-xl p-3.5 shadow-2xs">
             <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>服务端尚未配置凭据主密钥（Master Key），无法保存新节点的鉴权密码或授权密钥。请联系系统运维人员。</span>
+            <span>{t('downloadNode.noMasterKey')}</span>
           </div>
         )}
 
@@ -279,7 +291,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
         {loading ? (
           <div className="py-16 text-center text-xs text-neutral-400 flex flex-col items-center justify-center gap-3">
             <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
-            <span>正在加载交付节点状态...</span>
+            <span>{t('downloadNode.loading')}</span>
           </div>
         ) : settings ? (
           <div className="grid grid-cols-1 gap-4">
@@ -318,10 +330,10 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                         </h3>
                         <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200/60">
                           {isBuiltin
-                            ? '内置兜底'
+                            ? t('downloadNode.builtin')
                             : isCloudreve
-                            ? 'Cloudreve 直链'
-                            : 'GitHub 转发'}
+                            ? t('downloadNode.cloudreve')
+                            : t('downloadNode.githubRelay')}
                         </span>
                         <span
                           className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
@@ -331,10 +343,10 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                           }`}
                         >
                           <span className={`w-1.5 h-1.5 rounded-full ${node.enabled ? 'bg-emerald-600' : 'bg-neutral-400'}`} />
-                          {node.enabled ? '已启用' : '已停用'}
+                          {node.enabled ? t('downloadNode.enabled') : t('downloadNode.disabled')}
                         </span>
                         <span className="text-[11px] text-neutral-500 font-mono">
-                          权重: {node.weight}
+                          {t('downloadNode.weight', { weight: node.weight })}
                         </span>
                       </div>
 
@@ -343,32 +355,32 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                         <div className="flex items-center gap-1.5">
                           {node.status === 'available' ? (
                             <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> 连接正常
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> {t('downloadNode.statusAvailable')}
                             </span>
                           ) : node.status === 'failed' ? (
                             <span className="inline-flex items-center gap-1 text-rose-700 font-medium">
-                              <XCircle className="w-3.5 h-3.5 text-rose-600" /> 检测失败
+                              <XCircle className="w-3.5 h-3.5 text-rose-600" /> {t('downloadNode.statusFailed')}
                             </span>
                           ) : isBuiltin ? (
                             <span className="inline-flex items-center gap-1 text-neutral-600">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-neutral-400" /> 始终可用
+                              <CheckCircle2 className="w-3.5 h-3.5 text-neutral-400" /> {t('downloadNode.statusAlways')}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-neutral-400">
-                              <Activity className="w-3.5 h-3.5" /> 尚未检测
+                              <Activity className="w-3.5 h-3.5" /> {t('downloadNode.statusUnknown')}
                             </span>
                           )}
                         </div>
 
                         {node.credential_configured && (
                           <span className="text-[11px] font-mono text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded border border-neutral-200/50">
-                            凭据已安全配置
+                            {t('downloadNode.credentialConfigured')}
                           </span>
                         )}
 
                         {node.last_checked_at && (
                           <span className="text-[11px] text-neutral-400">
-                            最近检测：{new Date(node.last_checked_at).toLocaleTimeString()}
+                            {t('downloadNode.lastChecked', { time: new Date(node.last_checked_at).toLocaleTimeString() })}
                           </span>
                         )}
                       </div>
@@ -376,19 +388,19 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                       {/* Mirror Progress Counters */}
                       {node.mirror_states && (
                         <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
-                          <span className="text-neutral-500 font-medium">镜像缓存：</span>
+                          <span className="text-neutral-500 font-medium">{t('downloadNode.mirrorCache')}</span>
                           <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-mono border border-emerald-200/60">
-                            就绪 {node.mirror_states.ready || 0}
+                            {t('downloadNode.cacheReady', { count: node.mirror_states.ready || 0 })}
                           </span>
                           <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-mono border border-amber-200/60">
-                            上传中 {node.mirror_states.uploading || 0}
+                            {t('downloadNode.cacheUploading', { count: node.mirror_states.uploading || 0 })}
                           </span>
                           <span className="px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-mono border border-neutral-200/60">
-                            等待中 {node.mirror_states.pending || 0}
+                            {t('downloadNode.cachePending', { count: node.mirror_states.pending || 0 })}
                           </span>
                           {(node.mirror_states.failed || 0) > 0 && (
                             <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 font-mono font-bold border border-rose-200/60">
-                              失败 {node.mirror_states.failed}
+                              {t('downloadNode.cacheFailed', { count: node.mirror_states.failed || 0 })}
                             </span>
                           )}
                         </div>
@@ -397,19 +409,19 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                       {/* App update asset cache, kept separate from mod archives */}
                       {node.app_asset_states && (
                         <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
-                          <span className="text-neutral-500 font-medium">软件更新缓存：</span>
+                          <span className="text-neutral-500 font-medium">{t('downloadNode.appAssetCache')}</span>
                           <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-mono border border-emerald-200/60">
-                            就绪 {node.app_asset_states.ready || 0}
+                            {t('downloadNode.cacheReady', { count: node.app_asset_states.ready || 0 })}
                           </span>
                           <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-mono border border-amber-200/60">
-                            上传中 {node.app_asset_states.uploading || 0}
+                            {t('downloadNode.cacheUploading', { count: node.app_asset_states.uploading || 0 })}
                           </span>
                           <span className="px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-mono border border-neutral-200/60">
-                            等待中 {node.app_asset_states.pending || 0}
+                            {t('downloadNode.cachePending', { count: node.app_asset_states.pending || 0 })}
                           </span>
                           {(node.app_asset_states.failed || 0) > 0 && (
                             <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 font-mono font-bold border border-rose-200/60">
-                              失败 {node.app_asset_states.failed}
+                              {t('downloadNode.cacheFailed', { count: node.app_asset_states.failed || 0 })}
                             </span>
                           )}
                         </div>
@@ -437,7 +449,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                           ) : (
                             <Activity className="w-3.5 h-3.5 text-neutral-500" />
                           )}
-                          {isTesting ? '测试中...' : '测试连接'}
+                          {isTesting ? t('downloadNode.testing') : t('downloadNode.test')}
                         </button>
 
                         {!!node.mirror_states?.failed && (
@@ -452,7 +464,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                             ) : (
                               <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
                             )}
-                            {isRetrying ? '正在重试...' : '重试失败镜像'}
+                            {isRetrying ? t('downloadNode.retrying') : t('downloadNode.retryMirrors')}
                           </button>
                         )}
 
@@ -463,7 +475,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                           className="px-3 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 hover:border-neutral-300 disabled:opacity-40 text-neutral-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                         >
                           <Edit3 className="w-3.5 h-3.5 text-neutral-500" />
-                          编辑
+                          {t('common.edit')}
                           <span className="sr-only">{node.name}</span>
                         </button>
 
@@ -474,7 +486,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                           className="px-3 py-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 disabled:opacity-40 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                         >
                           <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                          删除
+                          {t('common.delete')}
                           <span className="sr-only">{node.name}</span>
                         </button>
                       </div>
@@ -495,10 +507,8 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
               <div className="space-y-1">
-                <h4 className="font-bold text-sm text-rose-900">确定要删除该交付节点配置吗？</h4>
-                <p className="text-neutral-600 leading-relaxed">
-                  删除后系统将移除对应的分发凭据和路由规则，网盘端已上传的文件对象将保留。若删除最后一个外部镜像节点，所有流量将即刻回落至主服务器。
-                </p>
+                <h4 className="font-bold text-sm text-rose-900">{t('downloadNode.deleteTitle')}</h4>
+                <p className="text-neutral-600 leading-relaxed">{t('downloadNode.deleteBody')}</p>
               </div>
             </div>
             <div className="flex gap-2.5 pt-1 pl-7">
@@ -508,7 +518,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                 onClick={() => void remove()}
                 className="px-4 py-2 rounded-lg bg-rose-700 hover:bg-rose-800 disabled:opacity-40 text-white font-semibold transition-colors shadow-2xs cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
-                {busy ? '正在删除...' : '确认永久删除'}
+                {busy ? t('downloadNode.deleting') : t('downloadNode.confirmDelete')}
               </button>
               <button
                 type="button"
@@ -516,7 +526,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                 onClick={() => setDeleteID('')}
                 className="px-4 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-700 font-medium transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
-                取消
+                {t('common.cancel')}
               </button>
             </div>
           </div>
@@ -540,11 +550,9 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-neutral-900">
-                    {editing ? '编辑交付节点配置' : '添加外部交付节点'}
+                    {editing ? t('downloadNode.editTitle') : t('downloadNode.addTitle')}
                   </h3>
-                  <p className="text-xs text-neutral-500">
-                    配置直链网盘或加速服务，实现普通安装包就近多源分流
-                  </p>
+                  <p className="text-xs text-neutral-500">{t('downloadNode.formSubtitle')}</p>
                 </div>
               </div>
               <button
@@ -555,17 +563,17 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                 }}
                 className="text-xs text-neutral-400 hover:text-neutral-700 p-1 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
-                关闭
+                {t('downloadNode.close')}
               </button>
             </div>
 
             <fieldset disabled={busy} className="grid grid-cols-1 sm:grid-cols-2 gap-5 disabled:opacity-60">
               <label className="text-xs font-semibold text-neutral-800 space-y-1.5">
-                <span>节点标识 ID（英数字符）</span>
+                <span>{t('downloadNode.idLabel')}</span>
                 <input
                   required
                   pattern="[a-zA-Z0-9_-]{1,64}"
-                  placeholder="如 node-beijing-cloudreve"
+                  placeholder={t('downloadNode.idPlaceholder')}
                   className="w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2 text-xs font-mono text-neutral-900 focus:outline-hidden focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/15"
                   value={input.id}
                   disabled={editing}
@@ -574,11 +582,11 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
               </label>
 
               <label className="text-xs font-semibold text-neutral-800 space-y-1.5">
-                <span>节点显示名称</span>
+                <span>{t('downloadNode.nameLabel')}</span>
                 <input
                   required
                   maxLength={128}
-                  placeholder="如 华北加速节点 (Cloudreve)"
+                  placeholder={t('downloadNode.namePlaceholder')}
                   className="w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2 text-xs text-neutral-900 focus:outline-hidden focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/15"
                   value={input.name}
                   onChange={(e) => setInput({ ...input, name: e.target.value })}
@@ -586,7 +594,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
               </label>
 
               <label className="text-xs font-semibold text-neutral-800 space-y-1.5">
-                <span>节点架构类型</span>
+                <span>{t('downloadNode.typeLabel')}</span>
                 <select
                   className="w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2 text-xs text-neutral-900 focus:outline-hidden focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/15"
                   value={input.type}
@@ -601,15 +609,15 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                     });
                   }}
                 >
-                  <option value="cloudreve">Cloudreve 存储与直链（推荐）</option>
-                  <option value="github_relay">GitHub 转发代理</option>
+                  <option value="cloudreve">{t('downloadNode.typeCloudreve')}</option>
+                  <option value="github_relay">{t('downloadNode.typeGithub')}</option>
                 </select>
               </label>
 
               <label className="text-xs font-semibold text-neutral-800 space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span>分发选择权重 (1 - 100)</span>
-                  <span className="font-mono text-neutral-400 font-normal">当前: {input.weight}</span>
+                  <span>{t('downloadNode.weightLabel')}</span>
+                  <span className="font-mono text-neutral-400 font-normal">{t('downloadNode.weightCurrent', { weight: input.weight })}</span>
                 </div>
                 <input
                   type="number"
@@ -625,7 +633,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
               {input.type === 'cloudreve' ? (
                 <>
                   <label className="text-xs font-semibold text-neutral-800 space-y-1.5 sm:col-span-2">
-                    <span>Cloudreve REST API 根地址</span>
+                    <span>{t('downloadNode.apiBaseLabel')}</span>
                     <input
                       type="url"
                       required
@@ -637,7 +645,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                   </label>
 
                   <label className="text-xs font-semibold text-neutral-800 space-y-1.5">
-                    <span>网页登录用户名 / 邮箱</span>
+                    <span>{t('downloadNode.usernameLabel')}</span>
                     <input
                       required
                       autoComplete="off"
@@ -649,7 +657,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                   </label>
 
                   <label className="text-xs font-semibold text-neutral-800 space-y-1.5">
-                    <span>项目在网盘上的存储专用目录</span>
+                    <span>{t('downloadNode.directoryLabel')}</span>
                     <input
                       required
                       placeholder="/SubmodHub"
@@ -657,13 +665,11 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                       value={input.directory || ''}
                       onChange={(e) => setInput({ ...input, directory: e.target.value })}
                     />
-                    <span className="block text-[11px] text-neutral-500 font-normal">
-                      测试连接或上传时，若目录不存在服务端将自动创建。
-                    </span>
+                    <span className="block text-[11px] text-neutral-500 font-normal">{t('downloadNode.directoryHint')}</span>
                   </label>
 
                   <label className="text-xs font-semibold text-neutral-800 space-y-1.5 sm:col-span-2">
-                    <span>下载与上传从机允许的 HTTPS Origin（每行一个）</span>
+                    <span>{t('downloadNode.originsLabel')}</span>
                     <textarea
                       required
                       rows={3}
@@ -681,7 +687,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                 </>
               ) : (
                 <label className="text-xs font-semibold text-neutral-800 space-y-1.5 sm:col-span-2">
-                  <span>节点 HTTPS 服务基础地址</span>
+                  <span>{t('downloadNode.relayBaseLabel')}</span>
                   <input
                     type="url"
                     required
@@ -694,20 +700,18 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
               )}
 
               <label className="text-xs font-semibold text-neutral-800 space-y-1.5 sm:col-span-2">
-                <span>{input.type === 'cloudreve' ? '网盘登录密码' : '节点授权密钥（至少 32 字节）'}</span>
+                <span>{input.type === 'cloudreve' ? t('downloadNode.passwordCloudreve') : t('downloadNode.passwordRelay')}</span>
                 <input
                   type="password"
                   autoComplete="new-password"
                   required={!editing}
-                  placeholder={editing ? '留空表示保持原有密钥不变' : '请输入密码或密钥'}
+                  placeholder={editing ? t('downloadNode.passwordKeep') : t('downloadNode.passwordEnter')}
                   className="w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2 text-xs font-mono text-neutral-900 focus:outline-hidden focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/15"
                   value={input.password}
                   onChange={(e) => setInput({ ...input, password: e.target.value })}
                 />
                 <span className="block text-[11px] text-neutral-500 font-normal">
-                  {editing
-                    ? '留空保留原凭据；输入新值将即刻替换。'
-                    : '密钥仅在保存时发送至服务端并以 AES 加密存储。'}
+                  {editing ? t('downloadNode.passwordHintEdit') : t('downloadNode.passwordHintNew')}
                 </span>
               </label>
 
@@ -719,18 +723,16 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                     onChange={(e) => setInput({ ...input, enabled: e.target.checked })}
                     className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 accent-emerald-600"
                   />
-                  <span className="text-xs font-semibold text-neutral-800">启用此节点接入分发调度</span>
+                  <span className="text-xs font-semibold text-neutral-800">{t('downloadNode.enableLabel')}</span>
                 </label>
                 <span className="text-[11px] text-neutral-500">
-                  能力：{input.type === 'cloudreve' ? 'Cloudreve 存储与直链' : 'GitHub 转发'}
+                  {t('downloadNode.capability', { value: input.type === 'cloudreve' ? t('downloadNode.capabilityCloudreve') : t('downloadNode.capabilityGithub') })}
                 </span>
               </div>
             </fieldset>
 
             <div className="flex items-center justify-between pt-4 border-t border-neutral-200">
-              <span className="text-[11px] text-neutral-500">
-                保存后可立即在列表点击「测试连接」验证节点连通性。
-              </span>
+              <span className="text-[11px] text-neutral-500">{t('downloadNode.footerHint')}</span>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -741,7 +743,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                   }}
                   className="px-4 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-700 text-xs font-medium transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
@@ -749,7 +751,7 @@ export function DownloadNodeSettings({ apiBase }: { apiBase: string }) {
                   className="px-5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   {busy ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
-                  {busy ? '正在处理...' : editing ? '保存修改' : '确认添加'}
+                  {busy ? t('downloadNode.busy') : editing ? t('downloadNode.saveChanges') : t('downloadNode.confirmAdd')}
                 </button>
               </div>
             </div>

@@ -183,6 +183,10 @@ import {
   mergeOperationIntoList,
 } from './executionCoordinator';
 import type { Operation, Plan, ExecutionSession } from './types/client';
+import { translate } from './/i18n/translate';
+
+const tZh = (key: string, vars?: Record<string, string | number>) => translate('zh', key, vars);
+
 
 test('ExecutionCoordinator: startSession immediately registers in-flight operation with snapshot ID', () => {
   let sessionState: ExecutionSession | null = null;
@@ -218,7 +222,7 @@ test('ExecutionCoordinator: startSession immediately registers in-flight operati
     warnings: [],
   };
 
-  const coordinator = new ExecutionCoordinator({
+  const coordinator = new ExecutionCoordinator({ t: tZh,
     activeInstanceId: () => currentInstId,
     onSessionChange: (s) => {
       sessionState = s;
@@ -302,7 +306,7 @@ test('ExecutionCoordinator: polls backend, increments progress, and stops on ter
     },
   ];
 
-  const coordinator = new ExecutionCoordinator({
+  const coordinator = new ExecutionCoordinator({ t: tZh,
     activeInstanceId: () => currentInstId,
     onSessionChange: (s) => {
       sessionState = s;
@@ -355,7 +359,7 @@ test('ExecutionCoordinator: rejects and stops polling when active instance switc
   let operationsState: Operation[] = [];
   let currentInstId = 'inst-A';
 
-  const coordinator = new ExecutionCoordinator({
+  const coordinator = new ExecutionCoordinator({ t: tZh,
     activeInstanceId: () => currentInstId,
     onSessionChange: (s) => {
       sessionState = s;
@@ -426,7 +430,7 @@ test('ExecutionCoordinator: finishSession preserves needs_manual_recovery and er
   let sessionState: ExecutionSession | null = null;
   let operationsState: Operation[] = [];
 
-  const coordinator = new ExecutionCoordinator({
+  const coordinator = new ExecutionCoordinator({ t: tZh,
     activeInstanceId: () => 'inst-fail',
     onSessionChange: (s) => {
       sessionState = s;
@@ -500,7 +504,7 @@ test('ExecutionCoordinator: finishSession with error preserves committed backend
   let sessionState: ExecutionSession | null = null;
   let operationsState: Operation[] = [];
 
-  const coordinator = new ExecutionCoordinator({
+  const coordinator = new ExecutionCoordinator({ t: tZh,
     activeInstanceId: () => 'inst-test',
     onSessionChange: (s) => {
       sessionState = s;
@@ -568,7 +572,7 @@ test('ExecutionCoordinator: finishSession fallback on getOperation rejection mar
   let sessionState: ExecutionSession | null = null;
   let operationsState: Operation[] = [];
 
-  const coordinator = new ExecutionCoordinator({
+  const coordinator = new ExecutionCoordinator({ t: tZh,
     activeInstanceId: () => 'inst-test',
     onSessionChange: (s) => {
       sessionState = s;
@@ -619,7 +623,7 @@ test('ExecutionCoordinator: polling already received committed -> query failure 
   let operationsState: Operation[] = [];
   let pollCount = 0;
 
-  const coordinator = new ExecutionCoordinator({
+  const coordinator = new ExecutionCoordinator({ t: tZh,
     activeInstanceId: () => 'inst-test',
     onSessionChange: (s) => {
       sessionState = s;
@@ -692,7 +696,7 @@ test('ExecutionCoordinator: ExecutePlan confirmed committed in finishSession opt
   let sessionState: ExecutionSession | null = null;
   let operationsState: Operation[] = [];
 
-  const coordinator = new ExecutionCoordinator({
+  const coordinator = new ExecutionCoordinator({ t: tZh,
     activeInstanceId: () => 'inst-test',
     onSessionChange: (s) => {
       sessionState = s;
@@ -752,7 +756,7 @@ test('ExecutionCoordinator: polling received needs_manual_recovery -> finishSess
   let operationsState: Operation[] = [];
   let pollCount = 0;
 
-  const coordinator = new ExecutionCoordinator({
+  const coordinator = new ExecutionCoordinator({ t: tZh,
     activeInstanceId: () => 'inst-test',
     onSessionChange: (s) => {
       sessionState = s;
@@ -844,7 +848,7 @@ test('ExecutionCoordinator: late poll response on same instance does not overwri
 
   let poll2Called = false;
 
-  const coordinator = new ExecutionCoordinator({
+  const coordinator = new ExecutionCoordinator({ t: tZh,
     activeInstanceId: () => currentInstId,
     onSessionChange: (s) => {
       sessionHistory.push(s);
@@ -990,7 +994,7 @@ test('ExecutionCoordinator: late poll response after clearSession does not reviv
     resolvePoll = resolve;
   });
 
-  const coordinator = new ExecutionCoordinator({
+  const coordinator = new ExecutionCoordinator({ t: tZh,
     activeInstanceId: () => currentInstId,
     onSessionChange: (s) => {
       sessionHistory.push(s);

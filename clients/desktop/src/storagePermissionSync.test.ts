@@ -8,7 +8,10 @@ import {
   subscribeStorageStateChanged,
 } from './storagePermissionSync';
 import { getAndroidDiagnosticInfo } from './components/InstancesView';
+import { translate } from './i18n';
 import type { AndroidStorageAccessStatus, MASInstancesState } from './wails';
+
+const tZh = (key: string, vars?: Record<string, string | number>) => translate('zh', key, vars);
 
 test('isInstanceAuthorized returns true only when valid and game_exists are both true', () => {
   assert.equal(isInstanceAuthorized({ status: { valid: true, game_exists: true } }), true);
@@ -502,79 +505,79 @@ test('operation lifecycle simulation: focus/storage refresh preserves polling, p
 });
 
 test('androidDiagnostic: handles empty or undefined diagnostic with neutral fallback', () => {
-  const resultUndefined = getAndroidDiagnosticInfo(undefined);
+  const resultUndefined = getAndroidDiagnosticInfo(undefined, undefined, tZh);
   assert.equal(resultUndefined.summary, '目录检查未通过');
   assert.equal(resultUndefined.detail, '目录检查未通过，暂无详细原因。');
   assert.equal(resultUndefined.isPermissionIssue, false);
 
-  const resultEmpty = getAndroidDiagnosticInfo('');
+  const resultEmpty = getAndroidDiagnosticInfo('', undefined, tZh);
   assert.equal(resultEmpty.summary, '目录检查未通过');
   assert.equal(resultEmpty.detail, '目录检查未通过，暂无详细原因。');
 });
 
 test('androidDiagnostic: handles storage permission diagnostics without asserting missing game', () => {
-  const denied = getAndroidDiagnosticInfo('storage_access_denied');
+  const denied = getAndroidDiagnosticInfo('storage_access_denied', undefined, tZh);
   assert.equal(denied.summary, '存储访问权限未授予');
   assert.match(denied.detail, /尚未获得 Android 存储访问权限/);
   assert.doesNotMatch(denied.detail, /game/);
   assert.equal(denied.isPermissionIssue, true);
 
-  const providerUnavailable = getAndroidDiagnosticInfo('storage_provider_unavailable');
+  const providerUnavailable = getAndroidDiagnosticInfo('storage_provider_unavailable', undefined, tZh);
   assert.equal(providerUnavailable.summary, '存储权限服务未就绪');
   assert.equal(providerUnavailable.isPermissionIssue, true);
 
-  const queryFailed = getAndroidDiagnosticInfo('storage_access_query_failed', 'timeout');
+  const queryFailed = getAndroidDiagnosticInfo('storage_access_query_failed', 'timeout', tZh);
   assert.equal(queryFailed.summary, '存储权限查询失败');
   assert.match(queryFailed.detail, /timeout/);
   assert.equal(queryFailed.isPermissionIssue, true);
 
-  const unsupported = getAndroidDiagnosticInfo('storage_access_unsupported');
+  const unsupported = getAndroidDiagnosticInfo('storage_access_unsupported', undefined, tZh);
   assert.equal(unsupported.summary, '当前环境不支持存储访问');
   assert.equal(unsupported.isPermissionIssue, true);
 
-  const error = getAndroidDiagnosticInfo('storage_access_error', 'internal io failure');
+  const error = getAndroidDiagnosticInfo('storage_access_error', 'internal io failure', tZh);
   assert.equal(error.summary, '存储权限检查异常');
   assert.match(error.detail, /internal io failure/);
   assert.equal(error.isPermissionIssue, true);
 });
 
 test('androidDiagnostic: handles root directory diagnostics', () => {
-  const rootMissing = getAndroidDiagnosticInfo('mas_root_missing');
+  const rootMissing = getAndroidDiagnosticInfo('mas_root_missing', undefined, tZh);
   assert.equal(rootMissing.summary, 'MAS 根目录不存在');
   assert.match(rootMissing.detail, /未检测到 MAS 根目录/);
   assert.equal(rootMissing.isPermissionIssue, false);
 
-  const notDir = getAndroidDiagnosticInfo('mas_root_not_directory');
+  const notDir = getAndroidDiagnosticInfo('mas_root_not_directory', undefined, tZh);
   assert.equal(notDir.summary, 'MAS 根路径不是目录');
   assert.equal(notDir.isPermissionIssue, false);
 
-  const unreadable = getAndroidDiagnosticInfo('mas_root_unreadable', 'permission denied');
+  const unreadable = getAndroidDiagnosticInfo('mas_root_unreadable', 'permission denied', tZh);
   assert.equal(unreadable.summary, 'MAS 根目录无法访问');
   assert.match(unreadable.detail, /permission denied/);
   assert.equal(unreadable.isPermissionIssue, false);
 });
 
 test('androidDiagnostic: handles game directory diagnostics', () => {
-  const gameMissing = getAndroidDiagnosticInfo('game_directory_missing');
+  const gameMissing = getAndroidDiagnosticInfo('game_directory_missing', undefined, tZh);
   assert.equal(gameMissing.summary, '未找到 game/ 目录');
   assert.match(gameMissing.detail, /未找到 game\/ 子目录/);
   assert.equal(gameMissing.isPermissionIssue, false);
 
-  const notDir = getAndroidDiagnosticInfo('game_path_not_directory');
+  const notDir = getAndroidDiagnosticInfo('game_path_not_directory', undefined, tZh);
   assert.equal(notDir.summary, 'game 路径不是目录');
   assert.equal(notDir.isPermissionIssue, false);
 
-  const unreadable = getAndroidDiagnosticInfo('game_directory_unreadable', 'EACCES');
+  const unreadable = getAndroidDiagnosticInfo('game_directory_unreadable', 'EACCES', tZh);
   assert.equal(unreadable.summary, 'game/ 目录无法访问');
   assert.match(unreadable.detail, /EACCES/);
   assert.equal(unreadable.isPermissionIssue, false);
 
-  const verified = getAndroidDiagnosticInfo('game_directory_verified');
+  const verified = getAndroidDiagnosticInfo('game_directory_verified', undefined, tZh);
   assert.equal(verified.summary, 'game/ 目录已验证');
 });
 
 test('androidDiagnostic: handles unknown diagnostic code neutrally', () => {
-  const unknown = getAndroidDiagnosticInfo('custom_err_code', 'extra info');
+  const unknown = getAndroidDiagnosticInfo('custom_err_code', 'extra info', tZh);
   assert.equal(unknown.summary, '目录检查未通过（custom_err_code）');
   assert.match(unknown.detail, /custom_err_code/);
   assert.match(unknown.detail, /extra info/);

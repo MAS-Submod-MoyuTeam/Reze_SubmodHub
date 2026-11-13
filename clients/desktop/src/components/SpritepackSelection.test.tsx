@@ -5,6 +5,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { SpritepackSelection } from './SpritepackSelection';
 import { deriveSpriteSelection, calculateSpriteSelectionDiff } from '../spritepackUtils';
 import type { SpriteSet } from '../../../../ui/catalog-api';
+import { translate } from '../i18n/translate';
+
+const tZh = (key: string, vars?: Record<string, string | number>) => translate('zh', key, vars);
 
 function makeMockSets(): SpriteSet[] {
   return [
@@ -26,7 +29,7 @@ test('SpritepackSelection: known_installed displays fixed prompt, badges, and su
   }, 'success');
 
   // User keeps A and adds B
-  const diff = calculateSpriteSelectionDiff(baseline, ['set_a', 'set_b']);
+  const diff = calculateSpriteSelectionDiff(baseline, ['set_a', 'set_b'], tZh);
 
   const html = renderToStaticMarkup(
     <SpritepackSelection
@@ -68,7 +71,7 @@ test('SpritepackSelection: known_installed unchecking installed set displays "åº
   }, 'success');
 
   // User unchecks set_a and only checks set_b
-  const diff = calculateSpriteSelectionDiff(baseline, ['set_b']);
+  const diff = calculateSpriteSelectionDiff(baseline, ['set_b'], tZh);
 
   const html = renderToStaticMarkup(
     <SpritepackSelection
@@ -98,7 +101,7 @@ test('SpritepackSelection: deselecting all displays uninstall prompt for known_i
     selectionHash: 'hash_a',
   }, 'success');
 
-  const diff = calculateSpriteSelectionDiff(baseline, []);
+  const diff = calculateSpriteSelectionDiff(baseline, [], tZh);
 
   const html = renderToStaticMarkup(
     <SpritepackSelection
@@ -118,7 +121,7 @@ test('SpritepackSelection: deselecting all displays uninstall prompt for known_i
 test('SpritepackSelection: first_install displays zero-selection blocking alert and no installed prompt', () => {
   const sets = makeMockSets();
   const baseline = deriveSpriteSelection(sets, null, 'success');
-  const diff = calculateSpriteSelectionDiff(baseline, []);
+  const diff = calculateSpriteSelectionDiff(baseline, [], tZh);
 
   const html = renderToStaticMarkup(
     <SpritepackSelection
@@ -145,7 +148,7 @@ test('SpritepackSelection: unknown_installed displays legacy warning and risk co
     versionId: 'v1',
     operationId: 'op_legacy',
   }, 'success');
-  const diff = calculateSpriteSelectionDiff(baseline, ['set_a']);
+  const diff = calculateSpriteSelectionDiff(baseline, ['set_a'], tZh);
 
   const htmlUnconfirmed = renderToStaticMarkup(
     <SpritepackSelection
@@ -174,7 +177,7 @@ test('SpritepackSelection: unavailable installed IDs displays warning notice', (
     setIds: ['set_a', 'set_discontinued'],
     selectionHash: 'hash_a',
   }, 'success');
-  const diff = calculateSpriteSelectionDiff(baseline, ['set_a']);
+  const diff = calculateSpriteSelectionDiff(baseline, ['set_a'], tZh);
 
   const html = renderToStaticMarkup(
     <SpritepackSelection

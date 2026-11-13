@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { AlertCircle, CheckCircle2, Info, AlertTriangle, X } from 'lucide-react';
 import { AnimatePresence, m } from './Motion';
 import { toastVariants } from '../../../ui/motion-presets';
+import { useI18n } from '../i18n';
 
 type ToastTone = 'success' | 'error' | 'warning' | 'info';
 
@@ -40,12 +41,13 @@ const BORDERS: Record<ToastTone, string> = {
  */
 export const ToastContainer: React.FC = () => {
   const { toasts, removeToast } = useApp();
+  const { t } = useI18n();
 
   return (
     <div
       className="pointer-events-none fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom,0px))] left-4 right-4 z-50 flex flex-col gap-2 sm:left-auto sm:right-5 sm:w-full sm:max-w-md"
       role="region"
-      aria-label="操作提示"
+      aria-label={t('toast.regionLabel')}
     >
       <AnimatePresence initial={false}>
         {toasts.map((toast) => (
@@ -71,7 +73,7 @@ export const ToastContainer: React.FC = () => {
             <button
               type="button"
               onClick={() => removeToast(toast.id)}
-              aria-label="关闭提示"
+              aria-label={t('toast.dismiss')}
               className="text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 active:bg-neutral-200 p-1 -m-0.5 rounded transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
             >
               <X className="w-3.5 h-3.5" aria-hidden="true" />

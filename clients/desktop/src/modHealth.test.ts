@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { compareVersions, resolveHasUpdate, summarizeIntegrity, type IntegrityTotals } from './modHealth';
+import { translate } from './/i18n/translate';
+
+const tZh = (key: string, vars?: Record<string, string | number>) => translate('zh', key, vars);
+
 
 test('compareVersions compares numeric segments and pads missing ones', () => {
   assert.equal(compareVersions('1.2.0', '1.2.0'), 0);
@@ -50,13 +54,13 @@ function totals(overrides: Partial<IntegrityTotals> = {}): IntegrityTotals {
 }
 
 test('summarizeIntegrity reports a clean ledger without inventing numbers', () => {
-  const summary = summarizeIntegrity(totals());
+  const summary = summarizeIntegrity(totals(), tZh);
   assert.equal(summary.tone, 'info');
   assert.match(summary.text, /已安装文件 12 个，全部与账本一致/);
 });
 
 test('summarizeIntegrity separates drift, layered overrides, and files without a ledger', () => {
-  const summary = summarizeIntegrity(totals({ driftedFiles: 3, overriddenFiles: 2, unmanagedFiles: 7 }));
+  const summary = summarizeIntegrity(totals({ driftedFiles: 3, overriddenFiles: 2, unmanagedFiles: 7 }), tZh);
   assert.equal(summary.tone, 'warn');
   assert.match(summary.text, /已安装文件 12 个，其中 3 个哈希与账本不一致/);
   assert.match(summary.text, /2 个文件被其他模组覆盖（分层结果，非漂移）/);
@@ -66,15 +70,15 @@ test('summarizeIntegrity separates drift, layered overrides, and files without a
 });
 
 test('summarizeIntegrity refuses to claim an all-clear when nothing was checked', () => {
-  const empty = summarizeIntegrity(totals({ modCount: 0 }));
+  const empty = summarizeIntegrity(totals({ modCount: 0 }), tZh);
   assert.equal(empty.tone, 'warn');
   assert.match(empty.text, /当前没有可校验的已安装模组/);
 
-  const noLedger = summarizeIntegrity(totals({ checkedFiles: 0, unmanagedFiles: 4 }));
+  const noLedger = summarizeIntegrity(totals({ checkedFiles: 0, unmanagedFiles: 4 }), tZh);
   assert.equal(noLedger.tone, 'warn');
   assert.match(noLedger.text, /没有任何已安装文件可供比对/);
 
-  const unreadable = summarizeIntegrity(totals({ unreadableMods: ['A', 'B'] }));
+  const unreadable = summarizeIntegrity(totals({ unreadableMods: ['A', 'B'] }), tZh);
   assert.equal(unreadable.tone, 'warn');
   assert.match(unreadable.text, /2 个模组读取清单失败/);
 });

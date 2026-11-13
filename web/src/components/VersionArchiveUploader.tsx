@@ -11,6 +11,8 @@ import { Upload } from 'lucide-react';
 import { assetPlatformLabel, type AssetPlatform, type ModVersion, type Platform } from '../types/submodhub';
 import { formatBytes } from './formatBytes';
 import { missingPlatformArchives, uploadPlatforms, versionArchiveShape, versionUploadPlatforms } from './versionShipping';
+import { useI18n } from '../i18n';
+import { valueSegmentClass } from './selectionStyles';
 
 interface VersionArchiveUploaderProps {
   version: ModVersion;
@@ -24,12 +26,12 @@ interface VersionArchiveUploaderProps {
 const uploadButtonClass =
   'px-3 py-1.5 font-medium text-neutral-800 bg-white hover:bg-neutral-100 hover:border-neutral-400 active:bg-neutral-200 disabled:opacity-50 disabled:cursor-not-allowed rounded border border-neutral-300 flex items-center gap-1.5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600';
 
+// 形状二选一：选中项走统一的实心主色口径（见 selectionStyles）。
 const shapeButtonClass = (active: boolean) =>
-  `px-2.5 py-1 rounded transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${
-    active ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 active:bg-neutral-200'
-  }`;
+  `${valueSegmentClass(active, 'px-2.5 py-1 rounded')} focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`;
 
 export const VersionArchiveUploader: React.FC<VersionArchiveUploaderProps> = ({ version, declaredPlatforms, busy, onPick }) => {
+  const { t } = useI18n();
   const shape = versionArchiveShape(version);
   // 只对「还没有归档」的版本有意义：一旦落盘，形状由数据决定，不再由这个选择决定。
   const [shapeChoice, setShapeChoice] = useState<'shared' | 'split'>('shared');
@@ -46,17 +48,17 @@ export const VersionArchiveUploader: React.FC<VersionArchiveUploaderProps> = ({ 
               <button key={platform} type="button" disabled={busy} onClick={() => onPick(platform)} className={uploadButtonClass}>
                 <Upload className="h-3.5 w-3.5 text-neutral-600" />
                 {asset
-                  ? `${assetPlatformLabel(platform)}：重新上传 (${formatBytes(asset.size_bytes)})`
-                  : `上传 ${assetPlatformLabel(platform)} 归档`}
+                  ? t('upload.reuploadPlatform', { platform: assetPlatformLabel(platform), size: formatBytes(asset.size_bytes, t('common.unknown')) })
+                  : t('upload.uploadPlatform', { platform: assetPlatformLabel(platform) })}
               </button>
             );
           })}
         </div>
         <p className="text-[11px] text-neutral-500">
-          这个版本按平台分包，不会再接受全平台共用的包。
+          {t('upload.splitExplain')}
           {missing.length > 0
-            ? `还需上传 ${missing.map(assetPlatformLabel).join('、')} 归档，提交审核前必须补全已声明的平台。`
-            : '每个平台的归档与扫描报告都独立保存。'}
+            ? t('upload.splitMissing', { platforms: missing.map(assetPlatformLabel).join(t('upload.joiner')) })
+            : t('upload.splitOk')}
         </p>
       </div>
     );
@@ -67,11 +69,9 @@ export const VersionArchiveUploader: React.FC<VersionArchiveUploaderProps> = ({ 
       <div className="space-y-1">
         <button type="button" disabled={busy} onClick={() => onPick('')} className={uploadButtonClass}>
           <Upload className="h-3.5 w-3.5 text-neutral-600" />
-          重新上传 ZIP 归档（全平台共用）
+          {t('upload.reuploadShared')}
         </button>
-        <p className="text-[11px] text-neutral-500">
-          这个版本只有一个归档，Windows 与 Android 安装的是同一份字节。要改成按平台分包，请删除这个草稿版本后重建：同一版本不能混用两种形状。
-        </p>
+        <p className="text-[11px] text-neutral-500">{t('upload.sharedExplain')}</p>
       </div>
     );
   }
@@ -80,10 +80,10 @@ export const VersionArchiveUploader: React.FC<VersionArchiveUploaderProps> = ({ 
     <div className="space-y-1.5">
       <div className="flex w-fit items-center rounded bg-neutral-100 p-0.5 text-[11px] font-medium">
         <button type="button" aria-pressed={shapeChoice === 'shared'} onClick={() => setShapeChoice('shared')} className={shapeButtonClass(shapeChoice === 'shared')}>
-          全平台共用一个包
+          {t('upload.sharedChoice')}
         </button>
         <button type="button" aria-pressed={shapeChoice === 'split'} onClick={() => setShapeChoice('split')} className={shapeButtonClass(shapeChoice === 'split')}>
-          按平台分别上传
+          {t('upload.splitChoice')}
         </button>
       </div>
 
@@ -91,9 +91,9 @@ export const VersionArchiveUploader: React.FC<VersionArchiveUploaderProps> = ({ 
         <>
           <button type="button" disabled={busy} onClick={() => onPick('')} className={uploadButtonClass}>
             <Upload className="h-3.5 w-3.5 text-neutral-600" />
-            上传 ZIP 归档（全平台共用）
+            {t('upload.uploadShared')}
           </button>
-          <p className="text-[11px] text-neutral-500">一个归档服务所有平台，Windows 与 Android 安装同一份字节。</p>
+          <p className="text-[11px] text-neutral-500">{t('upload.sharedLedger')}</p>
         </>
       ) : (
         <>
@@ -101,14 +101,14 @@ export const VersionArchiveUploader: React.FC<VersionArchiveUploaderProps> = ({ 
             {declared.map((platform) => (
               <button key={platform} type="button" disabled={busy} onClick={() => onPick(platform)} className={uploadButtonClass}>
                 <Upload className="h-3.5 w-3.5 text-neutral-600" />
-                上传 {assetPlatformLabel(platform)} 归档
+                {t('upload.uploadPlatform', { platform: assetPlatformLabel(platform) })}
               </button>
             ))}
           </div>
           <p className="text-[11px] text-neutral-500">
             {declared.length > 1
-              ? '每个平台各自上传自己的包；本版本一旦按平台上传，就不能再换回全平台共用包。'
-              : `模组只声明了 ${assetPlatformLabel(declared[0] ?? '')} 平台；要同时发布另一个平台，请先在「编辑模组」里勾选它。`}
+              ? t('upload.splitLedger')
+              : t('upload.onlyDeclared', { platform: assetPlatformLabel(declared[0] ?? '') })}
           </p>
         </>
       )}

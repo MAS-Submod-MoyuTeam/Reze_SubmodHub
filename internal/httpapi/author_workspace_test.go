@@ -97,7 +97,7 @@ func TestAdminCanUnpublishOtherAuthorModAndPreserveArtifacts(t *testing.T) {
 			{
 				ID:                  "other-mod",
 				Title:               "Other Mod",
-				Summary:             "A mod by someone else",
+				Summary:             LocalizedText{"zh": "A mod by someone else"},
 				Author:              Author{ID: "author-user", DisplayName: "Author"},
 				Category:            "submod",
 				LatestVersionID:     "v1",

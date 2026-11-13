@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { apiBase } from '../apiBase';
 import { Download, ImageOff, LoaderCircle } from 'lucide-react';
 import { fetchSpriteSets, fetchVerifiedSpriteSelection, type SpriteSet } from '../../../ui/catalog-api';
+import { useI18n } from '../i18n';
 
 interface SpritepackSetsProps {
   modID: string;
@@ -9,6 +10,7 @@ interface SpritepackSetsProps {
 }
 
 export function SpritepackSets({ modID, showToast }: SpritepackSetsProps) {
+  const { t } = useI18n();
   const [sets, setSets] = useState<SpriteSet[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,28 +46,28 @@ export function SpritepackSets({ modID, showToast }: SpritepackSetsProps) {
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      showToast('success', '精灵包 ZIP 已校验并交给浏览器保存。');
+      showToast('success', t('spritepack.zipSaved'));
     } catch (reason) {
-      showToast('error', `精灵包下载失败：${reason instanceof Error ? reason.message : 'unknown_error'}`);
+      showToast('error', t('spritepack.zipFailed', { error: reason instanceof Error ? reason.message : 'unknown_error' }));
     } finally {
       setDownloading(false);
     }
   };
 
-  if (loading) return <div className="flex items-center gap-2 text-neutral-500"><LoaderCircle className="w-4 h-4 animate-spin" />正在读取精灵包内容</div>;
-  if (error) return <div className="flex items-center justify-between gap-3 text-rose-700"><span>套件列表加载失败：{error}</span><button onClick={() => { setLoading(true); fetchSpriteSets(modID, base).then((items) => { setSets(items); setError(''); setLoading(false); }).catch((reason) => { setError(String(reason)); setLoading(false); }); }} className="rounded px-1 py-0.5 transition-colors underline hover:bg-rose-50 active:bg-rose-100 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">重试</button></div>;
+  if (loading) return <div className="flex items-center gap-2 text-neutral-500"><LoaderCircle className="w-4 h-4 animate-spin" />{t('spritepack.setsLoading')}</div>;
+  if (error) return <div className="flex items-center justify-between gap-3 text-rose-700"><span>{t('spritepack.setsLoadFailed', { error })}</span><button onClick={() => { setLoading(true); fetchSpriteSets(modID, base).then((items) => { setSets(items); setError(''); setLoading(false); }).catch((reason) => { setError(String(reason)); setLoading(false); }); }} className="rounded px-1 py-0.5 transition-colors underline hover:bg-rose-50 active:bg-rose-100 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{t('common.retry')}</button></div>;
 
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 pb-3">
         <div>
-          <h3 className="text-sm font-semibold text-neutral-900">精灵包套件</h3>
-          <p className="text-[11px] text-neutral-500 mt-1">{sets.length} 套 · {sets.reduce((sum, set) => sum + set.items.length, 0)} 个精灵项目</p>
+          <h3 className="text-sm font-semibold text-neutral-900">{t('spritepack.setsTitle')}</h3>
+          <p className="text-[11px] text-neutral-500 mt-1">{t('spritepack.setsSummary', { sets: sets.length, items: sets.reduce((sum, set) => sum + set.items.length, 0) })}</p>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setSelected(selected.length === sets.length ? [] : sets.map((set) => set.id))} className="px-2.5 py-1.5 border border-neutral-300 rounded text-neutral-700 hover:bg-neutral-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{selected.length === sets.length ? '取消全选' : '全选'}</button>
-          <button type="button" onClick={() => void download(selected)} disabled={!selected.length || downloading} className="px-3 py-1.5 bg-emerald-700 text-white rounded transition-colors hover:bg-emerald-800 disabled:opacity-40 flex items-center gap-1.5 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"><Download className="w-3.5 h-3.5" />下载已选 ({selected.length})</button>
-          <button type="button" onClick={() => void download(sets.map((set) => set.id))} disabled={!sets.length || downloading} className="px-3 py-1.5 border border-emerald-700 text-emerald-800 rounded transition-colors hover:bg-emerald-50 disabled:opacity-40 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">全部下载</button>
+          <button type="button" onClick={() => setSelected(selected.length === sets.length ? [] : sets.map((set) => set.id))} className="px-2.5 py-1.5 border border-neutral-300 rounded text-neutral-700 hover:bg-neutral-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{selected.length === sets.length ? t('spritepack.clearAll') : t('spritepack.selectAll')}</button>
+          <button type="button" onClick={() => void download(selected)} disabled={!selected.length || downloading} className="px-3 py-1.5 bg-emerald-700 text-white rounded transition-colors hover:bg-emerald-800 disabled:opacity-40 flex items-center gap-1.5 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"><Download className="w-3.5 h-3.5" />{t('spritepack.downloadSelected', { count: selected.length })}</button>
+          <button type="button" onClick={() => void download(sets.map((set) => set.id))} disabled={!sets.length || downloading} className="px-3 py-1.5 border border-emerald-700 text-emerald-800 rounded transition-colors hover:bg-emerald-50 disabled:opacity-40 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{t('spritepack.downloadAll')}</button>
         </div>
       </div>
       {sets.map((set) => (

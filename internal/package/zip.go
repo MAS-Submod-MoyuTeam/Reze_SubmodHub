@@ -76,7 +76,12 @@ func (l Limits) defaults() Limits {
 		l.MaxEntries = 4096
 	}
 	if l.MaxUncompressedBytes == 0 {
-		l.MaxUncompressedBytes = 512 << 20
+		// httpapi derives this budget from its archive limit
+		// (SUBMODHUB_MAX_ARCHIVE_SIZE) and stays above it: a large archive may
+		// expand past its own size, and rejecting it as "ZIP size limit
+		// exceeded" would look like a corrupt package instead of a big one. The
+		// compression ratio guard below still catches zip bombs.
+		l.MaxUncompressedBytes = 2 << 30
 	}
 	if l.MaxCompressionRatio == 0 {
 		l.MaxCompressionRatio = 200

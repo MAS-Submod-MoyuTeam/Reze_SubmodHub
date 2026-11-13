@@ -17,7 +17,7 @@ import (
 )
 
 func TestCatalogAndDownloadContract(t *testing.T) {
-	c := Catalog{Mods: []Mod{{ID: "m1", Title: "Rain", Summary: "dialogue", Category: "submod", LatestVersionID: "v1"}}, Versions: map[string]Version{"v1": {ID: "v1", ModID: "m1", Version: "1.0.0", State: "published", SHA256: "0123456789abcdef", SizeBytes: 42}}}
+	c := Catalog{Mods: []Mod{{ID: "m1", Title: "Rain", Summary: LocalizedText{"zh": "dialogue"}, Category: "submod", LatestVersionID: "v1"}}, Versions: map[string]Version{"v1": {ID: "v1", ModID: "m1", Version: "1.0.0", State: "published", SHA256: "0123456789abcdef", SizeBytes: 42}}}
 	s := httptest.NewServer(New(c))
 	defer s.Close()
 	res, err := s.Client().Get(s.URL + "/api/v1/mods?q=rain")

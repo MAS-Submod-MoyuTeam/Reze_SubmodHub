@@ -59,7 +59,7 @@ func (s *Store) relayDownloadArchive(w http.ResponseWriter, r *http.Request, v V
 		return
 	}
 
-	if v.State != "published" || v.SizeBytes <= 0 || v.SizeBytes > maxArchiveSize {
+	if v.State != "published" || v.SizeBytes <= 0 || v.SizeBytes > s.archiveLimit() {
 		writeError(w, 404, "not_found", "version is no longer available")
 		return
 	}

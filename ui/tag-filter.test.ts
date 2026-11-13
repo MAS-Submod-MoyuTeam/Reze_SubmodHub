@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+
   EMPTY_TAG_FILTER,
   activeTagFilterCount,
   buildTagFilterRows,
@@ -16,6 +17,15 @@ import {
   toggleTagFilter,
   toggleTagRowExpanded,
 } from './tag-filter.js';
+
+// 断言直接构造翻译结果：ui 是纯模块，不 import 任何一端的字典，
+// 所以这里给一份最小实现，只认识筛选摘要用到的两个键。
+const tZh = (key: string, vars?: Record<string, string | number>): string => {
+  if (key === 'tagFilter.include') return `包含 ${vars?.tags ?? ''}`.trim();
+  if (key === 'tagFilter.exclude') return `排除 ${vars?.tags ?? ''}`.trim();
+  return key;
+};
+
 
 test('a tag cycles off → include → exclude → off', () => {
   assert.equal(nextTagFilterState(undefined), 'include');
@@ -72,10 +82,10 @@ test('include and exclude lists are reported separately, in insertion order', ()
 });
 
 test('the filter description names both sides', () => {
-  assert.equal(describeTagFilter(EMPTY_TAG_FILTER), '');
-  assert.equal(describeTagFilter({ 工具: 'include' }), '包含 #工具');
-  assert.equal(describeTagFilter({ 工具: 'exclude' }), '排除 #工具');
-  assert.equal(describeTagFilter({ 工具: 'include', 音乐: 'exclude' }), '包含 #工具 · 排除 #音乐');
+  assert.equal(describeTagFilter(EMPTY_TAG_FILTER, tZh), '');
+  assert.equal(describeTagFilter({ 工具: 'include' }, tZh), '包含 #工具');
+  assert.equal(describeTagFilter({ 工具: 'exclude' }, tZh), '排除 #工具');
+  assert.equal(describeTagFilter({ 工具: 'include', 音乐: 'exclude' }, tZh), '包含 #工具 · 排除 #音乐');
 });
 
 test('rows keep catalog order and append tags that are no longer in the catalog', () => {
@@ -88,20 +98,23 @@ test('rows keep catalog order and append tags that are no longer in the catalog'
   );
   assert.deepEqual(rows, [
     {
-      main: { name: '工具', description: '' },
-      children: [{ name: '绘图', description: '' }, { name: '脚本', description: '' }],
+      main: { name: '工具', displayName: undefined, description: undefined },
+      children: [
+        { name: '绘图', displayName: undefined, description: undefined },
+        { name: '脚本', displayName: undefined, description: undefined },
+      ],
       stale: false,
     },
-    { main: { name: '音乐', description: '' }, children: [], stale: false },
-    { main: { name: '遗留标签', description: '' }, children: [], stale: true },
+    { main: { name: '音乐', displayName: undefined, description: undefined }, children: [], stale: false },
+    { main: { name: '遗留标签' }, children: [], stale: true },
   ]);
 });
 
 test('an empty catalog still exposes every tag in use', () => {
   const rows = buildTagFilterRows([], ['工具', '遗留标签']);
   assert.deepEqual(rows, [
-    { main: { name: '工具', description: '' }, children: [], stale: true },
-    { main: { name: '遗留标签', description: '' }, children: [], stale: true },
+    { main: { name: '工具' }, children: [], stale: true },
+    { main: { name: '遗留标签' }, children: [], stale: true },
   ]);
 });
 
@@ -119,10 +132,12 @@ test('rows carry descriptions for both levels and keep orphan tags last', () => 
   );
 
   assert.equal(rows.length, 3);
-  assert.deepEqual(rows[0].main, { name: '工具', description: '自动修复与诊断类模组' });
-  assert.deepEqual(rows[0].children[0], { name: '绘图', description: '生成与编辑图片' });
-  assert.deepEqual(rows[0].children[1], { name: '脚本', description: '' }, 'missing description becomes an empty string');
-  assert.deepEqual(rows[1].main, { name: '音乐', description: '' });
+  assert.equal(rows[0].main.name, '工具');
+  assert.equal(rows[0].main.description, '自动修复与诊断类模组');
+  assert.equal(rows[0].children[0].description, '生成与编辑图片');
+  assert.equal(rows[0].children[1].description, undefined, 'missing description stays absent, not empty text');
+  assert.equal(rows[1].main.name, '音乐');
+  assert.equal(rows[1].main.description, undefined);
   assert.equal(rows[2].main.name, '遗留标签', 'catalog-less tags stay usable');
   assert.equal(rows[2].stale, true);
   assert.deepEqual(rows[2].children, []);

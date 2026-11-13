@@ -10,7 +10,7 @@ function makeMockInstalledItem(override?: Partial<InstalledItem>): InstalledItem
     mod_id: 'submod_1',
     title: 'Test Submod',
     author_name: 'Test Author',
-    summary: 'A submod for testing',
+    summary: { zh: 'A submod for testing' },
     category: 'submod',
     sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
     installed_version: '1.0.0',

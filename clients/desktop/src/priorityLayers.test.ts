@@ -11,10 +11,11 @@ import {
   comparePriorityDisplay,
 } from './priorityLayers.js';
 
+
 test('validatePriorityInput rejects non-integers, floats, and dirty strings', () => {
   const invalidCases = ['1.5', '1abc', '', '   ', 'NaN', '1e5', 'foo', 1.25, NaN, Infinity];
   for (const input of invalidCases) {
-    const res = validatePriorityInput(input);
+    const res = validatePriorityInput(input, tZh);
     assert.equal(res.valid, false, 'expected input to be invalid: ' + input);
     assert.ok(res.error, 'expected error message for: ' + input);
   }
@@ -32,7 +33,7 @@ test('validatePriorityInput accepts valid integers in range', () => {
     ['1000', 1000],
   ];
   for (const [input, expected] of validCases) {
-    const res = validatePriorityInput(input);
+    const res = validatePriorityInput(input, tZh);
     assert.equal(res.valid, true, 'expected input to be valid: ' + input);
     assert.equal(res.value, expected);
   }
@@ -223,7 +224,7 @@ test('raw input preserves invalid input for display and blocks preview and apply
     // Invalidate stale preview plan on any edit
     previewPlan = null;
 
-    const res = validatePriorityInput(rawValue);
+    const res = validatePriorityInput(rawValue, tZh);
     if (!res.valid) {
       inputErrors[modId] = res.error || '非法输入';
       return;
@@ -282,7 +283,7 @@ test('formatPriorityPlanActions annotates same-hash transfers vs content replace
     },
   ];
 
-  const formatted = formatPriorityPlanActions(actions);
+  const formatted = formatPriorityPlanActions(actions, undefined, tZh);
   assert.equal(formatted.length, 2);
 
   assert.equal(formatted[0].isSameHashTransfer, false);
@@ -296,7 +297,7 @@ test('formatPriorityPlanActions annotates same-hash transfers vs content replace
   const formattedWithTitles = formatPriorityPlanActions(actions, {
     mod_b: 'Mod B Title',
     mod_a: 'Mod A Title',
-  });
+  }, tZh);
   assert.equal(formattedWithTitles[0].previousWinner, 'Mod B Title');
   assert.equal(formattedWithTitles[0].nextWinner, 'Mod A Title');
 });
@@ -326,7 +327,7 @@ test('canApplyPriorityPlan enforces preview-first and blocks bypass', () => {
   };
 
   // 1. Without previewPlan: blocked with explicit message
-  let res = canApplyPriorityPlan(baseParams);
+  let res = canApplyPriorityPlan(baseParams, tZh);
   assert.equal(res.canApply, false);
   assert.equal(res.reason, '请先计算并确认变更预览');
 
@@ -337,14 +338,14 @@ test('canApplyPriorityPlan enforces preview-first and blocks bypass', () => {
     previewPlan: validPlan,
     previewDraftMap: { mod_a: 30, mod_b: 20 },
   };
-  res = canApplyPriorityPlan(validParams);
+  res = canApplyPriorityPlan(validParams, tZh);
   assert.equal(res.canApply, true);
 
   // 3. Draft modified after preview (e.g. mod_a changed to 40)
   res = canApplyPriorityPlan({
     ...validParams,
     currentDraftMap: { mod_a: 40, mod_b: 20 },
-  });
+  }, tZh);
   assert.equal(res.canApply, false);
   assert.ok(res.reason?.includes('草稿已变更'));
 
@@ -352,7 +353,7 @@ test('canApplyPriorityPlan enforces preview-first and blocks bypass', () => {
   res = canApplyPriorityPlan({
     ...validParams,
     previewPlan: { ...validPlan, blockers: ['external_change_detected'] },
-  });
+  }, tZh);
   assert.equal(res.canApply, false);
   assert.ok(res.reason?.includes('存在阻断项'));
 
@@ -360,7 +361,7 @@ test('canApplyPriorityPlan enforces preview-first and blocks bypass', () => {
   res = canApplyPriorityPlan({
     ...validParams,
     previewLoading: true,
-  });
+  }, tZh);
   assert.equal(res.canApply, false);
   assert.ok(res.reason?.includes('正在计算'));
 
@@ -368,7 +369,7 @@ test('canApplyPriorityPlan enforces preview-first and blocks bypass', () => {
   res = canApplyPriorityPlan({
     ...validParams,
     currentInstanceId: 'inst_2',
-  });
+  }, tZh);
   assert.equal(res.canApply, false);
   assert.ok(res.reason?.includes('实例已切换'));
 
@@ -376,7 +377,7 @@ test('canApplyPriorityPlan enforces preview-first and blocks bypass', () => {
   res = canApplyPriorityPlan({
     ...validParams,
     currentGeneration: 2,
-  });
+  }, tZh);
   assert.equal(res.canApply, false);
   assert.ok(res.reason?.includes('状态版本已变更'));
 
@@ -384,14 +385,14 @@ test('canApplyPriorityPlan enforces preview-first and blocks bypass', () => {
   res = canApplyPriorityPlan({
     ...validParams,
     hasChanges: false,
-  });
+  }, tZh);
   assert.equal(res.canApply, false);
 
   // 9. Input errors
   res = canApplyPriorityPlan({
     ...validParams,
     hasInputErrors: true,
-  });
+  }, tZh);
   assert.equal(res.canApply, false);
 });
 
@@ -502,3 +503,7 @@ test('comparePriorityDisplay on path layers places active_owner at top for share
   assert.equal(sortedTieLayers[0].mod_id, tiePath.active_owner);
   assert.equal(sortedTieLayers[0].mod_id, 'mod_b');
 });
+
+import { translate } from './i18n/translate';
+
+const tZh = (key: string, vars?: Record<string, string | number>) => translate('zh', key, vars);

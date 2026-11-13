@@ -2,6 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getPlanActionText, resolveModInstallationId, describeExecutionError } from './planExecution';
 import type { InstalledItem, PlanKind } from './types/client';
+import { translate } from './i18n/translate';
+
+const tZh = (key: string, vars?: Record<string, string | number>) => translate('zh', key, vars);
+const describeExecutionErrorWith = (error: Error) => describeExecutionError(error, tZh);
 
 test('resolveModInstallationId: resolves mod installation target rather than MAS instance ID', () => {
   const masInstanceId = 'default_mas_instance';
@@ -38,15 +42,15 @@ test('resolveModInstallationId: resolves mod installation target rather than MAS
 });
 
 test('getPlanActionText: distinguishes repair from uninstall, install, and update', () => {
-  assert.equal(getPlanActionText('repair'), '修复');
-  assert.equal(getPlanActionText('uninstall'), '卸载');
-  assert.equal(getPlanActionText('install'), '安装');
-  assert.equal(getPlanActionText('update'), '更新');
-  assert.equal(getPlanActionText('adopt'), '收纳');
+  assert.equal(getPlanActionText('repair', tZh), '修复');
+  assert.equal(getPlanActionText('uninstall', tZh), '卸载');
+  assert.equal(getPlanActionText('install', tZh), '安装');
+  assert.equal(getPlanActionText('update', tZh), '更新');
+  assert.equal(getPlanActionText('adopt', tZh), '收纳');
 
   // Verify failure message composition matches expectation
   const makeUncommittedError = (kind: PlanKind, state: string) =>
-    `${getPlanActionText(kind)}事务执行未正常提交，状态为: ${state}`;
+    `${getPlanActionText(kind, tZh)}事务执行未正常提交，状态为: ${state}`;
 
   assert.equal(makeUncommittedError('repair', 'uncommitted'), '修复事务执行未正常提交，状态为: uncommitted');
   assert.equal(makeUncommittedError('uninstall', 'uncommitted'), '卸载事务执行未正常提交，状态为: uncommitted');
@@ -54,14 +58,14 @@ test('getPlanActionText: distinguishes repair from uninstall, install, and updat
   assert.equal(makeUncommittedError('update', 'uncommitted'), '更新事务执行未正常提交，状态为: uncommitted');
 
   const makeToastError = (kind: PlanKind, message: string) =>
-    `真实${getPlanActionText(kind)}失败：${message}`;
+    `真实${getPlanActionText(kind, tZh)}失败：${message}`;
 
   assert.equal(makeToastError('repair', 'corrupted'), '真实修复失败：corrupted');
   assert.equal(makeToastError('uninstall', 'corrupted'), '真实卸载失败：corrupted');
 });
 
 test('describeExecutionError: cache cleanup failure explains rollback and retry path', () => {
-  const message = describeExecutionError(
+  const message = describeExecutionErrorWith(
     new Error('cache_cleanup_failed (op=un_x, path=game/Submods/X/main.rpyc): Access is denied.')
   );
   assert.match(message, /清理 Ren'Py 编译缓存失败/);
@@ -71,5 +75,5 @@ test('describeExecutionError: cache cleanup failure explains rollback and retry 
   assert.match(message, /只读属性/);
   assert.match(message, /cache_cleanup_failed/);
 
-  assert.equal(describeExecutionError(new Error('boom')), 'boom');
+  assert.equal(describeExecutionErrorWith(new Error('boom')), 'boom');
 });

@@ -43,6 +43,11 @@ type SyncSummary struct {
 	Failed    int              `json:"failed"`
 	Items     []SyncItemResult `json:"items"`
 	LastError string           `json:"last_error,omitempty"`
+	// PauseReason explains a pass that imported and rejected nothing because the
+	// retry threshold is in force. It survives into the mod's
+	// github_last_sync_error, which is what the author workbench displays; without
+	// it a paused mod would look like a healthy mod that simply has no versions.
+	PauseReason string `json:"pause_reason,omitempty"`
 }
 
 // githubClient builds a client from the catalog's proxy and token settings. The
@@ -296,6 +301,33 @@ func (s *Store) syncMod(ctx context.Context, modID string, force bool) (*SyncSum
 			candidate.SizeBytes = platforms[0].Asset.SizeBytes
 			candidate.SourceKind = platforms[0].Asset.Kind
 		}
+		// Retry threshold: once enough structural rejections are on record, the
+		// automatic sweep spends another download only when the author changed
+		// something since those verdicts — a release newer than every verdict, or a
+		// release we already rejected whose asset was replaced (same tag, new bytes).
+		// An untouched backlog of old releases is the same broken packaging, so it
+		// stays skipped instead of costing one download per tag. This also caps the
+		// first pass: after the limit is reached the remaining backlog is backlog.
+		if !force {
+			rejected, newestRejected, rejectedReleases := s.rejectionVerdicts(modID)
+			if rejected >= githubRejectedAutoRetryLimit {
+				authorChanged := candidate.ReleaseID > newestRejected || rejectedReleases[candidate.ReleaseID]
+				if !authorChanged {
+					reason := fmt.Sprintf("automatic sync paused after %d rejected archives; waiting for a new release or a replaced asset",
+						rejected)
+					summary.Skipped++
+					summary.PauseReason = reason
+					summary.Items = append(summary.Items, SyncItemResult{
+						ReleaseID: rel.ID,
+						Tag:       tag,
+						Action:    "skipped",
+						Reason:    reason,
+					})
+					continue
+				}
+			}
+		}
+
 		result, created := s.importCandidate(ctx, client, *targetMod, candidate, now, force)
 		switch {
 		case created:
@@ -323,6 +355,12 @@ func (s *Store) modHasVersion(modID, version string) bool {
 	return false
 }
 
+// syncDownloadTimeout bounds one mod's refresh, downloads included. It is sized
+// for the archive ceiling rather than for an API call: 1 GiB in 30 minutes only
+// needs ~0.6 MB/s, so a slow-but-working upstream still finishes, while a dead one
+// releases its download slot instead of holding it forever.
+const syncDownloadTimeout = 30 * time.Minute
+
 // MaybeSyncGitHubMod refreshes one mod if it has not been checked for longer
 // than the configured window. Any request that makes the mod relevant triggers
 // this; everything else keeps reading the cached state.
@@ -332,7 +370,7 @@ func (s *Store) MaybeSyncGitHubMod(modID string) bool {
 		return false
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), syncDownloadTimeout)
 		defer cancel()
 		s.runClaimedSync(ctx, modID)
 	}()
@@ -587,7 +625,7 @@ func (s *Store) StartGitHubSync() {
 				s.CheckStaleModVersions(versionCtx)
 				versionCancel()
 
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				ctx, cancel := context.WithTimeout(context.Background(), syncDownloadTimeout)
 				s.SyncStaleGitHubMods(ctx)
 				cancel()
 			}

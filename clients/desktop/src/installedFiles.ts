@@ -14,10 +14,14 @@ interface FileSources {
   scan: () => Promise<Array<{ id?: string; directory: string; files: Array<{ path: string; size: number; sha256: string }> | null }> | null>;
 }
 
-export async function loadInstalledFiles(item: InstalledItem, sources: FileSources): Promise<InspectedFile[]> {
+export async function loadInstalledFiles(
+  item: InstalledItem,
+  sources: FileSources,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): Promise<InspectedFile[]> {
   if (item.is_managed) {
     const result = await sources.list(item.managed_operation_id || '', item.mod_id);
-    if (!result) throw new Error('未找到模组安装文件清单');
+    if (!result) throw new Error(t('installedFiles.manifestMissing'));
     return (result.files || []).map((file) => ({
       path: file.path, size_bytes: file.size_bytes, sha256: file.sha256,
       status: !file.active ? 'overridden' : file.drifted ? 'modified' : 'intact',
@@ -48,7 +52,7 @@ export async function loadInstalledFiles(item: InstalledItem, sources: FileSourc
     return false;
   });
 
-  if (!submod) throw new Error('未找到模组目录，请刷新已安装模组列表');
+  if (!submod) throw new Error(t('installedFiles.directoryMissing'));
   return (submod.files || []).map((file) => ({
     path: file.path, size_bytes: file.size, sha256: file.sha256, status: 'unmanaged',
   }));

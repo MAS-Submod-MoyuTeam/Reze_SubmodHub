@@ -1,4 +1,4 @@
-import { act } from 'react';
+import React, { act } from 'react';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CatalogView } from './CatalogView';
@@ -26,7 +26,7 @@ function makeMod(index: number, overrides: Partial<ModSummary> = {}): ModSummary
   return {
     id: `catalog_mod_${index}`,
     title: `Submod ${index}`,
-    summary: `summary ${index}`,
+    summary: { zh: `summary ${index}` },
     author: { id: 'usr_1', display_name: 'Reze' },
     category: 'submod',
     tags: ['语音'],

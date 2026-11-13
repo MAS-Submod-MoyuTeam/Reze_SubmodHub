@@ -1,4 +1,17 @@
-import * as native from '@wails-bindings/desktopservice.js';
+import { loadNative, rejectBrowserMode } from './wailsNative';
+
+// 生成的原生绑定只在 wails 构建里解析得到；node 测试进程里 loadNative() 返回 null。
+// 所有调用都写在 `!native` 的分支保护下：绑定缺席时走拒绝路径，
+// 才不会在测试里因为顶层静态 import 解析失败而整个文件加载不了。
+const native = loadNative() as unknown as typeof import('@wails-bindings/desktopservice.js');
+
+const bridge = new Proxy({} as typeof native, {
+  get: (_target, prop) => {
+    const impl = (native as Record<string | symbol, unknown> | null)?.[prop];
+    if (typeof impl === 'function') return impl;
+    return (..._args: unknown[]) => rejectBrowserMode();
+  },
+});
 import { Call } from '@wailsio/runtime';
 import type { Operation } from './types/client';
 
@@ -18,14 +31,14 @@ async function invoke<T>(method: string, callNative: () => Promise<T>, args: unk
   return value as T;
 }
 
-export const ListMASInstances = () => invoke('ListMASInstances', () => native.ListMASInstances());
-export const AddMASInstance = (label: string, root: string) => invoke('AddMASInstance', () => native.AddMASInstance(label, root), [label, root]);
-export const SelectMASInstance = (id: string) => invoke('SelectMASInstance', () => native.SelectMASInstance(id), [id]);
-export const RemoveMASInstance = (id: string) => invoke('RemoveMASInstance', () => native.RemoveMASInstance(id), [id]);
-export const LaunchMASInstance = (id: string) => invoke('LaunchMASInstance', () => native.LaunchMASInstance(id), [id]);
-export const SetMASRoot = (root: string) => invoke('SetMASRoot', () => native.SetMASRoot(root), [root]);
-export const GetMASStatus = () => invoke('GetMASStatus', () => native.GetMASStatus());
-export const ScanLocalSubmods = () => invoke('ScanLocalSubmods', () => native.ScanLocalSubmods());
+export const ListMASInstances = () => invoke('ListMASInstances', () => bridge.ListMASInstances());
+export const AddMASInstance = (label: string, root: string) => invoke('AddMASInstance', () => bridge.AddMASInstance(label, root), [label, root]);
+export const SelectMASInstance = (id: string) => invoke('SelectMASInstance', () => bridge.SelectMASInstance(id), [id]);
+export const RemoveMASInstance = (id: string) => invoke('RemoveMASInstance', () => bridge.RemoveMASInstance(id), [id]);
+export const LaunchMASInstance = (id: string) => invoke('LaunchMASInstance', () => bridge.LaunchMASInstance(id), [id]);
+export const SetMASRoot = (root: string) => invoke('SetMASRoot', () => bridge.SetMASRoot(root), [root]);
+export const GetMASStatus = () => invoke('GetMASStatus', () => bridge.GetMASStatus());
+export const ScanLocalSubmods = () => invoke('ScanLocalSubmods', () => bridge.ScanLocalSubmods());
 export async function fetchRegistrationMatches(names: string[], apiBase: string): Promise<Response> {
   if (isAndroid() && !browserMode) {
     const body = await Call.ByName('main.DesktopService.MatchRegistrations', names) as string;
@@ -37,11 +50,11 @@ export async function fetchRegistrationMatches(names: string[], apiBase: string)
     body: JSON.stringify({ names }),
   });
 }
-export const ListInstalledArchives = () => invoke('ListInstalledArchives', () => native.ListInstalledArchives());
-export const ListInstalledModFiles = (installationID: string, modID: string) => invoke('ListInstalledModFiles', () => native.ListInstalledModFiles(installationID, modID), [installationID, modID]);
-export const ScanInstalledSpritepacks = () => invoke('ScanInstalledSpritepacks', () => native.ScanInstalledSpritepacks());
-export const CreateSpriteGift = (file: string) => invoke('CreateSpriteGift', () => native.CreateSpriteGift(file), [file]);
-export const DeleteSpritepack = (file: string) => invoke('DeleteSpritepack', () => native.DeleteSpritepack(file), [file]);
+export const ListInstalledArchives = () => invoke('ListInstalledArchives', () => bridge.ListInstalledArchives());
+export const ListInstalledModFiles = (installationID: string, modID: string) => invoke('ListInstalledModFiles', () => bridge.ListInstalledModFiles(installationID, modID), [installationID, modID]);
+export const ScanInstalledSpritepacks = () => invoke('ScanInstalledSpritepacks', () => bridge.ScanInstalledSpritepacks());
+export const CreateSpriteGift = (file: string) => invoke('CreateSpriteGift', () => bridge.CreateSpriteGift(file), [file]);
+export const DeleteSpritepack = (file: string) => invoke('DeleteSpritepack', () => bridge.DeleteSpritepack(file), [file]);
 import { normalizeSpriteSetIDs as utilsNormalizeSpriteSetIDs } from './spritepackUtils';
 
 export function normalizeSpriteSetIDs(ids?: string[]): string[] {
@@ -49,22 +62,22 @@ export function normalizeSpriteSetIDs(ids?: string[]): string[] {
   return utilsNormalizeSpriteSetIDs(ids);
 }
 
-export const StageArchive = (request: Parameters<typeof native.StageArchive>[0]) => {
+export const StageArchive = (request: Parameters<typeof bridge.StageArchive>[0]) => {
   const req = { ...request };
   if (req.sprite_set_ids) {
     req.sprite_set_ids = normalizeSpriteSetIDs(req.sprite_set_ids);
   }
-  return invoke('StageArchive', () => native.StageArchive(req), [req]);
+  return invoke('StageArchive', () => bridge.StageArchive(req), [req]);
 };
-export const GetStageProgress = (operationID: string) => invoke('GetStageProgress', () => native.GetStageProgress(operationID), [operationID]);
-export const CancelStage = (operationID: string) => invoke('CancelStage', () => native.CancelStage(operationID), [operationID]);
-export const ReleaseArchive = (archiveID: string) => invoke('ReleaseArchive', () => native.ReleaseArchive(archiveID), [archiveID]);
-export const PreviewArchive = (request: Parameters<typeof native.PreviewArchive>[0]) => {
+export const GetStageProgress = (operationID: string) => invoke('GetStageProgress', () => bridge.GetStageProgress(operationID), [operationID]);
+export const CancelStage = (operationID: string) => invoke('CancelStage', () => bridge.CancelStage(operationID), [operationID]);
+export const ReleaseArchive = (archiveID: string) => invoke('ReleaseArchive', () => bridge.ReleaseArchive(archiveID), [archiveID]);
+export const PreviewArchive = (request: Parameters<typeof bridge.PreviewArchive>[0]) => {
   const req = { ...request };
   if (req.sprite_set_ids) {
     req.sprite_set_ids = normalizeSpriteSetIDs(req.sprite_set_ids);
   }
-  return invoke('PreviewArchive', () => native.PreviewArchive(req), [req]);
+  return invoke('PreviewArchive', () => bridge.PreviewArchive(req), [req]);
 };
 export const PreviewAdopt = (request: {
   instance_id?: string;
@@ -77,19 +90,19 @@ export const PreviewAdopt = (request: {
   title: string;
   priority: number;
   files: string[];
-}) => invoke<Awaited<ReturnType<typeof native.PreviewArchive>>>('PreviewAdopt', () => Call.ByName('main.DesktopService.PreviewAdopt', request), [request]);
-export const PreviewUninstall = (targetID: string) => invoke('PreviewUninstall', () => native.PreviewUninstall(targetID), [targetID]);
-export const PreviewRepair = (targetID: string) => invoke<Awaited<ReturnType<typeof native.PreviewArchive>>>('PreviewRepair', () => Call.ByName('main.DesktopService.PreviewRepair', targetID), [targetID]);
-export const GetPriorityOverview = () => invoke('GetPriorityOverview', () => native.GetPriorityOverview());
-export const PreviewPriority = (priorities: Record<string, number>) => invoke('PreviewPriority', () => native.PreviewPriority(priorities), [priorities]);
-export const ExecutePlan = (request: Parameters<typeof native.ExecutePlan>[0]) => invoke('ExecutePlan', () => native.ExecutePlan(request), [request]);
-export const ApplyArchive = (request: Parameters<typeof native.ApplyArchive>[0]) => invoke('ApplyArchive', () => native.ApplyArchive(request), [request]);
-export const Uninstall = (operationID: string, uninstallID: string) => invoke('Uninstall', () => native.Uninstall(operationID, uninstallID), [operationID, uninstallID]);
-export const Recover = (operationID: string) => invoke('Recover', () => native.Recover(operationID), [operationID]);
+}) => invoke<Awaited<ReturnType<typeof bridge.PreviewArchive>>>('PreviewAdopt', () => Call.ByName('main.DesktopService.PreviewAdopt', request), [request]);
+export const PreviewUninstall = (targetID: string) => invoke('PreviewUninstall', () => bridge.PreviewUninstall(targetID), [targetID]);
+export const PreviewRepair = (targetID: string) => invoke<Awaited<ReturnType<typeof bridge.PreviewArchive>>>('PreviewRepair', () => Call.ByName('main.DesktopService.PreviewRepair', targetID), [targetID]);
+export const GetPriorityOverview = () => invoke('GetPriorityOverview', () => bridge.GetPriorityOverview());
+export const PreviewPriority = (priorities: Record<string, number>) => invoke('PreviewPriority', () => bridge.PreviewPriority(priorities), [priorities]);
+export const ExecutePlan = (request: Parameters<typeof bridge.ExecutePlan>[0]) => invoke('ExecutePlan', () => bridge.ExecutePlan(request), [request]);
+export const ApplyArchive = (request: Parameters<typeof bridge.ApplyArchive>[0]) => invoke('ApplyArchive', () => bridge.ApplyArchive(request), [request]);
+export const Uninstall = (operationID: string, uninstallID: string) => invoke('Uninstall', () => bridge.Uninstall(operationID, uninstallID), [operationID, uninstallID]);
+export const Recover = (operationID: string) => invoke('Recover', () => bridge.Recover(operationID), [operationID]);
 export const ListOperations = () => invoke<Operation[]>('ListOperations', () => (native as any).ListOperations ? (native as any).ListOperations() : Promise.resolve([]));
 export const GetOperation = (operationID: string) => invoke<Operation>('GetOperation', () => (native as any).GetOperation ? (native as any).GetOperation(operationID) : Promise.reject(new Error('not_implemented')), [operationID]);
 export const RollbackOperation = (operationID: string) => invoke<void>('RollbackOperation', () => (native as any).RollbackOperation ? (native as any).RollbackOperation(operationID) : (native as any).Recover(operationID), [operationID]);
-export const BrowseMASDirectory = () => browserMode ? Promise.reject(new Error('浏览器模式请手动输入 MAS 根目录')) : native.BrowseMASDirectory();
+export const BrowseMASDirectory = () => browserMode ? Promise.reject(new Error('browser_mode_manual_path')) : bridge.BrowseMASDirectory();
 
 export type AndroidStorageAccessStatus = {
   state: 'granted' | 'denied' | 'unsupported' | 'error' | string;

@@ -130,7 +130,7 @@ func TestUploadAcceptsArchiveWithUnsupportedEntriesButRealFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report, scanErr := scanArchiveBytes(archive.Bytes(), false)
+	report, scanErr := scanArchiveReader(bytes.NewReader(archive.Bytes()), int64(archive.Len()), false, archiveScanLimits(defaultMaxArchiveSize))
 	if scanErr != nil {
 		t.Fatal(scanErr)
 	}

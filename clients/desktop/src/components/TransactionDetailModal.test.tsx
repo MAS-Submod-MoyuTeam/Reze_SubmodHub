@@ -9,6 +9,7 @@ import {
   buildDiagnostics,
 } from './TransactionDetailModal';
 import type { Operation } from '../types/client';
+import { translate } from '../i18n/translate';
 
 function makeOperation(override?: Partial<Operation>): Operation {
   return {
@@ -37,6 +38,12 @@ function makeOperation(override?: Partial<Operation>): Operation {
   };
 }
 
+
+// 文案来自字典：这里用中文 t 校验，其余调用的语义不变。
+const tZh = (key: string, vars?: Record<string, string | number>) => translate('zh', key, vars);
+const describeRecoveryAvailabilityWith = (op: Parameters<typeof describeRecoveryAvailability>[0]) =>
+  describeRecoveryAvailability(op, tZh);
+
 function renderDetail(op: Operation): string {
   return renderToStaticMarkup(
     <TransactionDetailModal op={op} onClose={() => {}} onRecoverOperation={() => {}} />
@@ -44,7 +51,7 @@ function renderDetail(op: Operation): string {
 }
 
 test('describeRecoveryAvailability: a failed status query is "unknown", not "material missing"', () => {
-  assert.deepEqual(describeRecoveryAvailability(makeOperation({ state: 'query_failed', can_rollback: false })), {
+  assert.deepEqual(describeRecoveryAvailabilityWith(makeOperation({ state: 'query_failed', can_rollback: false })), {
     label: '结果未知：后端状态查询失败',
     tone: 'unknown',
   });
@@ -65,20 +72,20 @@ test('StateBadge: only the states the backend can send have bespoke badges', () 
 });
 
 test('describeRecoveryAvailability: only missing material on a live transaction reads as a fault', () => {
-  assert.deepEqual(describeRecoveryAvailability(makeOperation({ state: 'recoverable', can_rollback: true })), {
+  assert.deepEqual(describeRecoveryAvailabilityWith(makeOperation({ state: 'recoverable', can_rollback: true })), {
     label: '恢复材料可用：可安全回滚',
     tone: 'ready',
   });
-  assert.deepEqual(describeRecoveryAvailability(makeOperation({ state: 'committed', can_rollback: false })), {
+  assert.deepEqual(describeRecoveryAvailabilityWith(makeOperation({ state: 'committed', can_rollback: false })), {
     label: '事务已提交：无回滚材料',
     tone: 'finished',
   });
-  assert.deepEqual(describeRecoveryAvailability(makeOperation({ state: 'rolled_back', can_rollback: false })), {
+  assert.deepEqual(describeRecoveryAvailabilityWith(makeOperation({ state: 'rolled_back', can_rollback: false })), {
     label: '事务已回滚：无待处理变更',
     tone: 'finished',
   });
   assert.deepEqual(
-    describeRecoveryAvailability(makeOperation({ state: 'needs_manual_recovery', can_rollback: false })),
+    describeRecoveryAvailabilityWith(makeOperation({ state: 'needs_manual_recovery', can_rollback: false })),
     { label: '恢复材料缺失：需人工处理', tone: 'blocked' }
   );
 });
@@ -138,7 +145,10 @@ test('TransactionDetailModal: no byte counters, because the backend never fills 
   assert.doesNotMatch(html, /字节/);
   assert.doesNotMatch(html, /NaN/);
   // File-level progress is still the real signal and must stay visible.
-  assert.match(html, /3 \/ 8 文件 · 37%/);
+  assert.ok(
+    html.includes(tZh('txDetail.progressSummary', { processed: 3, total: 8, percent: 37 })),
+    'file-level progress must stay visible',
+  );
 });
 
 test('TransactionDetailModal: the JSON disclosure and the copy payload are the same document', () => {
@@ -146,7 +156,7 @@ test('TransactionDetailModal: the JSON disclosure and the copy payload are the s
   const html = renderDetail(op);
   const payload = buildDiagnostics(op);
 
-  assert.match(html, /复制诊断信息/);
+  assert.ok(html.includes(tZh('txDetail.copyDiagnostics')));
   assert.deepEqual(JSON.parse(payload).operation, JSON.parse(JSON.stringify(op)));
   // The disclosure prints the whole payload (exported_at included), not just the operation.
   assert.ok(html.includes('&quot;exported_at&quot;'), 'expected the exported_at wrapper in the disclosure');

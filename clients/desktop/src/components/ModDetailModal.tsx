@@ -18,6 +18,7 @@ import { copyToClipboard } from '../clipboard';
 import { ModShareLink } from '../wails';
 import { m } from './Motion';
 import { overlayVariants } from '../../../../ui/motion-presets';
+import { useI18n } from '../i18n';
 
 interface Props {
   mod: ModSummary | null;
@@ -60,6 +61,7 @@ export const ModDetailModal: React.FC<Props> = ({
   installationSnapshot,
   installedLoadingStatus,
 }) => {
+  const { t, resolve } = useI18n();
   const [versions, setVersions] = useState<CatalogVersion[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -89,7 +91,7 @@ export const ModDetailModal: React.FC<Props> = ({
     installationSnapshot,
     installedLoadingStatus || 'success'
   );
-  const diff = calculateSpriteSelectionDiff(baseline, selectedSets);
+  const diff = calculateSpriteSelectionDiff(baseline, selectedSets, t);
 
   // Track baseline identity to prevent accidental overwrite of user draft on standard re-renders
   const baselineKey = `${instanceId || ''}:${mod?.id || ''}:${manifestVersionId}:${installationSnapshot?.operationId || ''}:${installationSnapshot?.selectionHash || ''}:${installedLoadingStatus || ''}`;
@@ -146,7 +148,7 @@ export const ModDetailModal: React.FC<Props> = ({
           } else if (r === 'conflict') {
             setIsDraftInitialized(false);
             lastInitializedKeyRef.current = null;
-            setDownloadError('精灵包版本已更新，正在重新加载最新清单…');
+            setDownloadError(t('modDetail.spriteVersionReloading'));
           }
         },
         onSpritepackSuccess: (manifest, ver, r) => {
@@ -158,7 +160,7 @@ export const ModDetailModal: React.FC<Props> = ({
           if (r === 'conflict') {
             // Version conflict refresh: re-establish baseline and notify user
             lastInitializedKeyRef.current = null;
-            setDownloadError('精灵包版本已更新，已刷新至最新版本，请重新检查套装选择。');
+            setDownloadError(t('modDetail.spriteVersionRefreshed'));
           }
         },
         onSubmodSuccess: (pubVersions, pics) => {
@@ -169,7 +171,7 @@ export const ModDetailModal: React.FC<Props> = ({
         onError: (msg, r) => {
           setIsDraftInitialized(false);
           if (r === 'conflict') {
-            setManifestError(`重新加载清单失败：${msg}`);
+            setManifestError(t('modDetail.manifestReloadFailed', { message: msg }));
             setDownloadError('');
           } else {
             setManifestError(msg);
@@ -217,13 +219,13 @@ export const ModDetailModal: React.FC<Props> = ({
       const ok = await copyToClipboard(link);
       if (!ok) {
         // 链接生成成功但写不进剪贴板：把链接本身显示出来，用户还能手动复制。
-        setShareError(`无法写入剪贴板，请手动复制：${link}`);
+        setShareError(t('modDetail.clipboardFailed', { link }));
         return;
       }
       setShareCopied(true);
       window.setTimeout(() => setShareCopied(false), 2000);
     } catch (error) {
-      setShareError(`分享失败：${error instanceof Error ? error.message : String(error)}`);
+      setShareError(t('modDetail.shareFailed', { message: error instanceof Error ? error.message : String(error) }));
     }
   };
   const downloadSets = async (ids: string[]) => {
@@ -249,7 +251,7 @@ export const ModDetailModal: React.FC<Props> = ({
       if (msg.includes('sprite_version_changed')) {
         await loadDetails({ reason: 'conflict', targetMod: mod });
       } else {
-        setDownloadError(`套装下载失败：${msg}`);
+        setDownloadError(t('modDetail.setDownloadFailed', { message: msg }));
       }
     } finally {
       if (modRef.current?.id === downloadModId) {
@@ -269,16 +271,16 @@ export const ModDetailModal: React.FC<Props> = ({
   );
 
   return <m.div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-2 sm:p-4" variants={overlayVariants} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section role="dialog" aria-modal="true" aria-label={`${mod.title} 详情`} className="flex max-h-[92dvh] sm:max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-2xl">
+    <section role="dialog" aria-modal="true" aria-label={t('modDetail.dialogAria', { title: mod.title })} className="flex max-h-[92dvh] sm:max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-2xl">
       <header className="flex shrink-0 items-start justify-between gap-3 border-b border-neutral-800 px-4 sm:px-5 py-3 sm:py-4">
-        <div className="min-w-0 flex-1"><div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-neutral-400"><span className="font-semibold text-emerald-400">{mod.category === 'spritepack' ? 'Spritepack 服饰配件' : 'Submod 功能模组'}</span><span>·</span><span className="truncate max-w-[160px]">作者: {mod.author.display_name}</span>{mod.mas_version_range && <><span>·</span><span>兼容 MAS {mod.mas_version_range}</span></>}</div><h2 className="text-sm sm:text-base font-bold break-words">{mod.title}</h2></div>
+        <div className="min-w-0 flex-1"><div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-neutral-400"><span className="font-semibold text-emerald-400">{mod.category === 'spritepack' ? t('modDetail.categorySpritepack') : t('modDetail.categorySubmod')}</span><span>·</span><span className="truncate max-w-[160px]">{t('modDetail.author', { name: mod.author.display_name })}</span>{mod.mas_version_range && <><span>·</span><span>{t('modDetail.masRange', { range: mod.mas_version_range })}</span></>}</div><h2 className="text-sm sm:text-base font-bold break-words">{mod.title}</h2></div>
         <div className="flex shrink-0 items-center gap-1.5">
           {/* 分享只在详情页：列表项没有稳定上下文，也不值得为它做分享。 */}
-          <button onClick={() => void shareModLink()} title="复制分享链接，可直接粘贴到浏览器" aria-label="复制分享链接" className="rounded-lg px-2.5 py-2 text-neutral-400 hover:bg-neutral-800 hover:text-white min-h-[40px] flex items-center gap-1.5 text-xs">
+          <button onClick={() => void shareModLink()} title={t('modDetail.shareTitle')} aria-label={t('modDetail.shareAria')} className="rounded-lg px-2.5 py-2 text-neutral-400 hover:bg-neutral-800 hover:text-white min-h-[40px] flex items-center gap-1.5 text-xs">
             {shareCopied ? <Check className="h-4 w-4 text-emerald-400" /> : <Share2 className="h-4 w-4" />}
-            <span className="hidden sm:inline">{shareCopied ? '已复制' : '分享'}</span>
+            <span className="hidden sm:inline">{shareCopied ? t('modDetail.copied') : t('modDetail.share')}</span>
           </button>
-          <button onClick={onClose} title="关闭详情" aria-label="关闭详情" className="shrink-0 rounded-lg p-2 text-neutral-400 hover:bg-neutral-800 hover:text-white min-w-[40px] min-h-[40px] flex items-center justify-center"><X className="h-5 w-5" /></button>
+          <button onClick={onClose} title={t('modDetail.closeTitle')} aria-label={t('modDetail.closeTitle')} className="shrink-0 rounded-lg p-2 text-neutral-400 hover:bg-neutral-800 hover:text-white min-w-[40px] min-h-[40px] flex items-center justify-center"><X className="h-5 w-5" /></button>
         </div>
       </header>
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-3.5 sm:p-5 text-xs leading-relaxed">
@@ -289,18 +291,18 @@ export const ModDetailModal: React.FC<Props> = ({
             <span className="min-w-0 break-all">{shareError}</span>
           </div>
         )}
-        <section className="space-y-2"><h3 className="font-semibold text-neutral-100">详细简介</h3><div className="rounded border border-neutral-800 bg-neutral-950 p-3 text-neutral-300"><Markdown value={mod.description || mod.summary || '暂无简介'} /></div></section>
-        {images.length > 0 && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{images.map((url, index) => <img key={url} src={url} alt={`${mod.title} 详情图 ${index + 1}`} loading="lazy" className="max-h-80 w-full rounded border border-neutral-800 bg-neutral-950 object-contain" />)}</div>}
-        {loading && <p className="text-neutral-400">正在读取详情...</p>}
+        <section className="space-y-2"><h3 className="font-semibold text-neutral-100">{t('modDetail.descriptionHeading')}</h3><div className="rounded border border-neutral-800 bg-neutral-950 p-3 text-neutral-300"><Markdown value={resolve(mod.description) || resolve(mod.summary) || t('modDetail.noDescription')} /></div></section>
+        {images.length > 0 && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{images.map((url, index) => <img key={url} src={url} alt={t('modDetail.screenshotAlt', { title: mod.title, index: index + 1 })} loading="lazy" className="max-h-80 w-full rounded border border-neutral-800 bg-neutral-950 object-contain" />)}</div>}
+        {loading && <p className="text-neutral-400">{t('modDetail.loadingDetails')}</p>}
         {manifestError && mod.category !== 'spritepack' && (
           <div role="alert" className="flex items-center justify-between rounded border border-rose-800 bg-rose-950/50 p-3 text-rose-200">
-            <span>详情读取失败：{manifestError}</span>
+            <span>{t('modDetail.detailLoadFailed', { message: manifestError })}</span>
             <button
               type="button"
               onClick={() => void loadDetails({ reason: 'retry' })}
               className="flex items-center gap-1 rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-200 hover:bg-neutral-700"
             >
-              <RefreshCw className="h-3 w-3" /> 重试
+              <RefreshCw className="h-3 w-3" /> {t('common.retry')}
             </button>
           </div>
         )}
@@ -317,15 +319,15 @@ export const ModDetailModal: React.FC<Props> = ({
                   onClick={() => void downloadSets(selectedSets)}
                   className="rounded bg-rose-900/60 px-2 py-1 text-xs text-rose-100 hover:bg-rose-800"
                 >
-                  重试下载
+                  {t('modDetail.retryDownload')}
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => setDownloadError('')}
                 className="rounded p-1 text-rose-300 hover:text-white"
-                title="关闭提示"
-                aria-label="关闭提示"
+                title={t('modDetail.closeNotice')}
+                aria-label={t('modDetail.closeNotice')}
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -352,27 +354,27 @@ export const ModDetailModal: React.FC<Props> = ({
             onToggleLegacyRisk={setLegacyRiskConfirmed}
           />
         ) : (
-          <section className="space-y-3"><h3 className="font-semibold">版本历史</h3><div className="flex gap-2 overflow-x-auto pb-1">{orderedVersions.map((version) => <button key={version.id} onClick={() => setSelectedVersionId(version.id)} className={`shrink-0 rounded px-3 py-1.5 ${selected?.id === version.id ? 'bg-emerald-700 text-white' : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'}`}>{version.version}{version.deprecated && <AlertTriangle className="ml-1 inline h-3 w-3 text-amber-400" aria-label="不推荐使用" />}</button>)}</div>
-            {!loading && !manifestError && versions.length === 0 && <p className="text-neutral-400">暂无公开版本</p>}
-            {selected && <div className="space-y-4 rounded border border-neutral-800 bg-neutral-950 p-4"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 pb-3"><div><div className="font-semibold text-neutral-100">版本 {selected.version}</div><div className="text-neutral-400">大小: {formatBytes(selected.size_bytes)}{selected.created_at && ` · 发布于 ${new Date(selected.created_at).toLocaleDateString()}`}</div></div>{selected.deprecated && <span className="text-amber-400">不推荐使用：{selected.deprecation_reason || '请查看其他版本'}</span>}</div>
-              <div><h4 className="mb-1 font-medium text-neutral-400">发行说明</h4><div className="text-neutral-200"><Markdown value={selected.release_notes || '暂无更新日志'} /></div></div>
-              {(selected.dependencies || []).length > 0 && <div className="space-y-2"><h4 className="font-medium text-neutral-400">前置模组依赖</h4>{selected.dependencies!.map((dep, index) => {
+          <section className="space-y-3"><h3 className="font-semibold">{t('modDetail.versionHistory')}</h3><div className="flex gap-2 overflow-x-auto pb-1">{orderedVersions.map((version) => <button key={version.id} onClick={() => setSelectedVersionId(version.id)} className={`shrink-0 rounded px-3 py-1.5 ${selected?.id === version.id ? 'bg-emerald-700 text-white' : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'}`}>{version.version}{version.deprecated && <AlertTriangle className="ml-1 inline h-3 w-3 text-amber-400" aria-label={t('modDetail.deprecatedAria')} />}</button>)}</div>
+            {!loading && !manifestError && versions.length === 0 && <p className="text-neutral-400">{t('modDetail.noVersions')}</p>}
+            {selected && <div className="space-y-4 rounded border border-neutral-800 bg-neutral-950 p-4"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 pb-3"><div><div className="font-semibold text-neutral-100">{t('modDetail.versionLabel', { version: selected.version })}</div><div className="text-neutral-400">{t('modDetail.versionMeta', { size: formatBytes(selected.size_bytes) })}{selected.created_at && ` · ${t('modDetail.publishedAt', { date: new Date(selected.created_at).toLocaleDateString() })}`}</div></div>{selected.deprecated && <span className="text-amber-400">{t('modDetail.deprecatedNotice', { reason: selected.deprecation_reason || t('modDetail.deprecatedFallback') })}</span>}</div>
+              <div><h4 className="mb-1 font-medium text-neutral-400">{t('modDetail.releaseNotes')}</h4><div className="text-neutral-200"><Markdown value={selected.release_notes || t('modDetail.noReleaseNotes')} /></div></div>
+              {(selected.dependencies || []).length > 0 && <div className="space-y-2"><h4 className="font-medium text-neutral-400">{t('modDetail.dependenciesHeading')}</h4>{selected.dependencies!.map((dep, index) => {
                 const linkedIds = dep.linked_mod_ids?.length ? dep.linked_mod_ids : dep.linked_mod_id ? [dep.linked_mod_id] : [];
                 const linkedMods = linkedIds.map((id) => catalogMods.find((candidate) => candidate.id === id)).filter((candidate): candidate is ModSummary => Boolean(candidate));
-                return <div key={`${dep.mod_id}-${index}`} className="flex flex-wrap justify-between gap-2 rounded border border-neutral-800 bg-neutral-900 px-3 py-2"><span className="flex flex-wrap gap-2">{linkedMods.length ? linkedMods.map((candidate) => <button key={candidate.id} type="button" onClick={() => onSelectMod(candidate)} className="text-left font-medium text-emerald-400 hover:underline">{candidate.title}</button>) : dep.mod_title || dep.mod_id}</span><span className="text-neutral-400">{dep.version_range} {dep.required ? '(必需)' : '(可选建议)'}</span></div>;
+                return <div key={`${dep.mod_id}-${index}`} className="flex flex-wrap justify-between gap-2 rounded border border-neutral-800 bg-neutral-900 px-3 py-2"><span className="flex flex-wrap gap-2">{linkedMods.length ? linkedMods.map((candidate) => <button key={candidate.id} type="button" onClick={() => onSelectMod(candidate)} className="text-left font-medium text-emerald-400 hover:underline">{candidate.title}</button>) : dep.mod_title || dep.mod_id}</span><span className="text-neutral-400">{dep.version_range} {dep.required ? t('modDetail.depRequired') : t('modDetail.depOptional')}</span></div>;
               })}</div>}
-              <div><div className="mb-1 flex items-center justify-between gap-2"><h4 className="font-medium text-neutral-400">归档 SHA-256</h4><button onClick={() => void copyHash()} title="复制 SHA-256" aria-label="复制 SHA-256" className="text-emerald-400">{copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}</button></div><div className="break-all rounded border border-neutral-800 bg-neutral-900 p-2 font-mono text-neutral-200 select-all">{selected.sha256}</div></div>
-              {selected.scan_report_id && <p className="text-neutral-500">扫描报告 ID：{selected.scan_report_id}。公开接口暂未提供完整扫描报告。</p>}
+              <div><div className="mb-1 flex items-center justify-between gap-2"><h4 className="font-medium text-neutral-400">{t('modDetail.archiveHash')}</h4><button onClick={() => void copyHash()} title={t('modDetail.copyHash')} aria-label={t('modDetail.copyHash')} className="text-emerald-400">{copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}</button></div><div className="break-all rounded border border-neutral-800 bg-neutral-900 p-2 font-mono text-neutral-200 select-all">{selected.sha256}</div></div>
+              {selected.scan_report_id && <p className="text-neutral-500">{t('modDetail.scanReportNote', { id: selected.scan_report_id })}</p>}
             </div>}
           </section>)}
       </div>
-      {progress && <div role="status" aria-label="下载进度" className="shrink-0 space-y-1.5 border-t border-neutral-800 bg-neutral-900 px-5 py-3 text-xs"><div className="flex justify-between gap-3 text-neutral-300"><span>{progress.stage === 'connecting' ? '正在连接下载源' : progress.stage === 'verifying' ? '正在校验' : '正在下载'}</span><span className="font-mono tabular-nums">{progress.total > 0 ? `${progressPercent}% · ${formatBytes(progress.received)} / ${formatBytes(progress.total)}` : formatBytes(progress.received)}</span></div><div className="h-2 overflow-hidden rounded bg-neutral-700" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.total > 0 ? progressPercent : undefined}><div className={`h-full bg-emerald-500 transition-[width] duration-150 ${progress.total > 0 ? '' : 'w-full animate-pulse'}`} style={progress.total > 0 ? { width: `${progressPercent}%` } : undefined} /></div></div>}
+      {progress && <div role="status" aria-label={t('modDetail.downloadProgress')} className="shrink-0 space-y-1.5 border-t border-neutral-800 bg-neutral-900 px-5 py-3 text-xs"><div className="flex justify-between gap-3 text-neutral-300"><span>{progress.stage === 'connecting' ? t('modDetail.progressConnecting') : progress.stage === 'verifying' ? t('modDetail.progressVerifying') : t('modDetail.progressDownloading')}</span><span className="font-mono tabular-nums">{progress.total > 0 ? `${progressPercent}% · ${formatBytes(progress.received)} / ${formatBytes(progress.total)}` : formatBytes(progress.received)}</span></div><div className="h-2 overflow-hidden rounded bg-neutral-700" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.total > 0 ? progressPercent : undefined}><div className={`h-full bg-emerald-500 transition-[width] duration-150 ${progress.total > 0 ? '' : 'w-full animate-pulse'}`} style={progress.total > 0 ? { width: `${progressPercent}%` } : undefined} /></div></div>}
       {mod.category === 'spritepack' ? (
         <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-800 p-3 sm:p-4 text-xs">
           <span className="text-neutral-400">
             {isInstalled
-              ? `${hasUpdate ? '可更新' : '已安装'} ${installedVersion || ''}`
-              : `已选择 ${selectedSets.length}/${spriteSets.length} 个外观套装`}
+              ? t(hasUpdate ? 'modDetail.installedUpdatable' : 'modDetail.installed', { version: installedVersion || '' })
+              : t('modDetail.setsSelected', { selected: selectedSets.length, total: spriteSets.length })}
           </span>
           <div className="flex flex-wrap gap-2">
             {isInstalled && onStartUninstallPlan && (
@@ -384,10 +386,10 @@ export const ModDetailModal: React.FC<Props> = ({
                   onStartUninstallPlan(mod);
                 }}
                 className="flex items-center gap-1.5 rounded border border-rose-800/80 bg-rose-950/40 px-3 py-2 font-medium text-rose-300 hover:bg-rose-900/60 disabled:opacity-50"
-                title="直接卸载此模组的全部已安装内容"
+                title={t('modDetail.uninstallAllTitle')}
               >
                 <X className="h-4 w-4" />
-                卸载模组
+                {t('modDetail.uninstallMod')}
               </button>
             )}
             <button
@@ -397,7 +399,7 @@ export const ModDetailModal: React.FC<Props> = ({
               className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 text-neutral-100 hover:bg-neutral-700 disabled:opacity-50"
             >
               <Download className="h-4 w-4" />
-              下载已选 ZIP ({selectedSets.length})
+              {t('modDetail.downloadSelectedZip', { count: selectedSets.length })}
             </button>
 
             {/* Action button routing: Install / Apply Selection / Uninstall */}
@@ -408,7 +410,7 @@ export const ModDetailModal: React.FC<Props> = ({
                 className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 font-semibold text-neutral-500 disabled:opacity-50 cursor-not-allowed"
               >
                 <RefreshCw className="h-4 w-4 animate-spin" />
-                正在读取套装清单…
+                {t('modDetail.loadingManifest')}
               </button>
             ) : manifestError ? (
               <button
@@ -416,7 +418,7 @@ export const ModDetailModal: React.FC<Props> = ({
                 disabled
                 className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 font-semibold text-neutral-500 disabled:opacity-50 cursor-not-allowed"
               >
-                套装清单读取失败
+                {t('modDetail.manifestFailed')}
               </button>
             ) : baseline.mode === 'loading' || baseline.mode === 'error' ? (
               <button
@@ -424,7 +426,7 @@ export const ModDetailModal: React.FC<Props> = ({
                 disabled
                 className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 font-semibold text-neutral-500 disabled:opacity-50 cursor-not-allowed"
               >
-                {baseline.mode === 'loading' ? '正在读取安装状态…' : '安装状态读取失败'}
+                {baseline.mode === 'loading' ? t('modDetail.loadingInstallState') : t('modDetail.installStateFailed')}
               </button>
             ) : !isDraftInitialized ? (
               <button
@@ -432,7 +434,7 @@ export const ModDetailModal: React.FC<Props> = ({
                 disabled
                 className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 font-semibold text-neutral-500 disabled:opacity-50 cursor-not-allowed"
               >
-                正在初始化选择…
+                {t('modDetail.initializingSelection')}
               </button>
             ) : baseline.mode === 'first_install' ? (
               <button
@@ -449,7 +451,7 @@ export const ModDetailModal: React.FC<Props> = ({
                 className="flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
               >
                 <Download className="h-4 w-4" />
-                {isInstalling ? '安装中…' : `安装所选套装 (${selectedSets.length})`}
+                {isInstalling ? t('catalog.installing') : t('modDetail.installSelectedSets', { count: selectedSets.length })}
               </button>
             ) : baseline.mode === 'known_installed' ? (
               selectedSets.length === 0 ? (
@@ -463,7 +465,7 @@ export const ModDetailModal: React.FC<Props> = ({
                   className="flex items-center gap-1.5 rounded bg-rose-700 px-3 py-2 font-semibold text-white hover:bg-rose-600 disabled:opacity-50"
                 >
                   <X className="h-4 w-4" />
-                  卸载此精灵包 (已取消全部)
+                  {t('modDetail.uninstallSpritepackNoSets')}
                 </button>
               ) : diff.isUnchanged && !isVersionChanged ? (
                 <button
@@ -471,7 +473,7 @@ export const ModDetailModal: React.FC<Props> = ({
                   disabled
                   className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 font-semibold text-neutral-500 cursor-not-allowed border border-neutral-700"
                 >
-                  套装选择未变化
+                  {t('modDetail.selectionUnchanged')}
                 </button>
               ) : (
                 <button
@@ -488,7 +490,7 @@ export const ModDetailModal: React.FC<Props> = ({
                   className="flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
                 >
                   <Download className="h-4 w-4" />
-                  {isInstalling ? '应用中…' : `应用套装选择 (${selectedSets.length})`}
+                  {isInstalling ? t('modDetail.applying') : t('modDetail.applySelection', { count: selectedSets.length })}
                 </button>
               )
             ) : baseline.mode === 'unknown_installed' ? (
@@ -503,7 +505,7 @@ export const ModDetailModal: React.FC<Props> = ({
                   className="flex items-center gap-1.5 rounded bg-rose-700 px-3 py-2 font-semibold text-white hover:bg-rose-600 disabled:opacity-50"
                 >
                   <X className="h-4 w-4" />
-                  卸载此精灵包 (已取消全部)
+                  {t('modDetail.uninstallSpritepackNoSets')}
                 </button>
               ) : !legacyRiskConfirmed ? (
                 <button
@@ -511,7 +513,7 @@ export const ModDetailModal: React.FC<Props> = ({
                   disabled
                   className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 font-semibold text-neutral-500 cursor-not-allowed border border-neutral-700"
                 >
-                  请先确认替换旧安装风险
+                  {t('modDetail.confirmLegacyRiskFirst')}
                 </button>
               ) : (
                 <button
@@ -528,7 +530,7 @@ export const ModDetailModal: React.FC<Props> = ({
                   className="flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
                 >
                   <Download className="h-4 w-4" />
-                  {isInstalling ? '应用中…' : `应用套装选择 (${selectedSets.length})`}
+                  {isInstalling ? t('modDetail.applying') : t('modDetail.applySelection', { count: selectedSets.length })}
                 </button>
               )
             ) : null}
@@ -537,7 +539,7 @@ export const ModDetailModal: React.FC<Props> = ({
       ) : (
         selected && (
           <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-800 p-3 sm:p-4 text-xs">
-            <span className="text-neutral-400">{isInstalled ? `${hasUpdate ? '可更新' : '已安装'} ${installedVersion || ''}` : '选择版本后下载或安装'}</span>
+            <span className="text-neutral-400">{isInstalled ? t(hasUpdate ? 'modDetail.installedUpdatable' : 'modDetail.installed', { version: installedVersion || '' }) : t('modDetail.selectVersionHint')}</span>
             <div className="flex flex-wrap gap-2">
               {isInstalled && onStartUninstallPlan && (
                 <button
@@ -550,11 +552,21 @@ export const ModDetailModal: React.FC<Props> = ({
                   className="flex items-center gap-1.5 rounded border border-rose-800/80 bg-rose-950/40 px-3 py-2 font-medium text-rose-300 hover:bg-rose-900/60 disabled:opacity-50"
                 >
                   <X className="h-4 w-4" />
-                  卸载模组
+                  {t('modDetail.uninstallMod')}
                 </button>
               )}
-              <button onClick={() => onDownloadArchive(mod, selected.id)} disabled={isDownloadingArchive} className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 text-neutral-100 hover:bg-neutral-700 disabled:opacity-50"><Download className="h-4 w-4" />{isDownloadingArchive ? (archiveProgress?.stage === 'connecting' ? '连接中' : archiveProgress?.stage === 'verifying' ? '校验中' : `下载中 ${archiveProgress && archiveProgress.total > 0 ? Math.round(archiveProgress.received / archiveProgress.total * 100) : 0}%`) : '下载 ZIP'}</button>
-              <button onClick={() => { onClose(); onStartInstallPlan(mod, selected); }} disabled={isInstalling} className="flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"><Download className="h-4 w-4" />{isInstalling ? '安装中…' : '安装'}</button>
+              <button onClick={() => onDownloadArchive(mod, selected.id)} disabled={isDownloadingArchive} className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-2 text-neutral-100 hover:bg-neutral-700 disabled:opacity-50"><Download className="h-4 w-4" />{isDownloadingArchive
+                ? archiveProgress?.stage === 'connecting'
+                  ? t('modDetail.progressConnectingShort')
+                  : archiveProgress?.stage === 'verifying'
+                    ? t('modDetail.progressVerifyingShort')
+                    : t('modDetail.progressDownloadingPercent', {
+                        percent: archiveProgress && archiveProgress.total > 0
+                          ? Math.round((archiveProgress.received / archiveProgress.total) * 100)
+                          : 0,
+                      })
+                : t('modDetail.downloadZip')}</button>
+              <button onClick={() => { onClose(); onStartInstallPlan(mod, selected); }} disabled={isInstalling} className="flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"><Download className="h-4 w-4" />{isInstalling ? t('catalog.installing') : t('catalog.install')}</button>
             </div>
           </footer>
         )

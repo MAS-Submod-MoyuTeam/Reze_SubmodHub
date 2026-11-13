@@ -12,6 +12,7 @@ import {
 import { ModSummary, InstalledItem, Installation } from '../types/client';
 import type { DownloadProgress } from '../../../../ui/catalog-api';
 import { fetchTagCatalog, type TagGroup } from '../../../../ui/tags-api';
+import { darkSegmentClass } from './segmentStyles';
 import {
   EMPTY_TAG_FILTER,
   activeTagFilterCount,
@@ -25,7 +26,8 @@ import { TagFilterDrawer } from './TagFilterDrawer';
 import { useLoadMoreOnScroll } from './useLoadMoreOnScroll';
 import { usePaneScrolled } from './usePaneScrolled';
 import { scrollPaneToTop } from './scrollToTop';
-import { clampLoadedPage, visibleSubmodCount, hasMoreSubmods, loadFooterLabel, submodUnit } from './catalogPaging';
+import { clampLoadedPage, visibleSubmodCount, hasMoreSubmods, loadFooterLabel } from './catalogPaging';
+import { useI18n } from '../i18n';
 
 interface CatalogViewProps {
   mods: ModSummary[];
@@ -66,6 +68,10 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   installProgress,
   defaultPlatform = 'windows',
 }) => {
+  const { t, resolve } = useI18n();
+  // 目录拉取的 effect 只跑一次：把 t 放进 ref 里取最新值，不把 t 塞进依赖数组。
+  const tRef = useRef(t);
+  tRef.current = t;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'submod' | 'spritepack'>('all');
   const [selectedPlatform, setSelectedPlatform] = useState<'all' | 'windows' | 'android'>(defaultPlatform);
@@ -103,7 +109,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
         setTagCatalogError(null);
       })
       .catch(() => {
-        if (!cancelled) setTagCatalogError('标签目录读取失败，已退回按模组聚合出的标签筛选');
+        if (!cancelled) setTagCatalogError(tRef.current('catalog.tagCatalogFallback'));
       })
       .finally(() => {
         if (!cancelled) setTagCatalogLoading(false);
@@ -135,7 +141,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchTitle = mod.title.toLowerCase().includes(q);
-        const matchSummary = mod.summary.toLowerCase().includes(q);
+        // 简介可以是多语言对象：任何一种语言的译文命中都算命中。
+        const matchSummary = (typeof mod.summary === 'string' ? [mod.summary] : Object.values(mod.summary)).some((value) => value?.toLowerCase().includes(q));
         const matchAuthor = mod.author.display_name.toLowerCase().includes(q);
         const matchTags = mod.tags.some((t) => t.toLowerCase().includes(q));
         if (!matchTitle && !matchSummary && !matchAuthor && !matchTags) {
@@ -156,7 +163,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   const hasNextPage = hasMoreSubmods(visibleCount, filteredMods.length);
   // 列表区有独立状态（失败 / 无匹配）时不存在可滚动的内容，也不该出现计数页脚。
   const showsList = !catalogError && filteredMods.length > 0;
-  const footerLabel = loadFooterLabel(showsList ? visibleCount : 0, filteredMods.length, submodUnit);
+  const footerLabel = loadFooterLabel(showsList ? visibleCount : 0, filteredMods.length, t);
   // 「一条目录数据都还没有、但请求在飞」就是加载中，而不是「没有匹配」：首屏请求与
   // 空目录刷新都落在这里。结论性文案只在请求真正落地后出现，否则启动时会先闪一帧
   // 「未找到符合条件的模组」再被真实目录替换。只留一个真值来源（请求在飞），
@@ -218,7 +225,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 setSearchQuery(e.target.value);
                 resetPaging();
               }}
-              placeholder="搜索模组名称、简介、作者或标签..."
+              placeholder={t('catalog.searchPlaceholder')}
               className="w-full pl-9 pr-4 py-1.5 bg-neutral-900 border border-neutral-700/80 rounded-lg text-xs text-neutral-200 placeholder-neutral-500 focus:outline-hidden focus:border-neutral-500 transition-colors"
             />
             {searchQuery && (
@@ -241,39 +248,27 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 setSelectedCategory('all');
                 resetPaging();
               }}
-              className={`px-3 py-1 font-medium rounded-md transition-colors shrink-0 cursor-pointer ${
-                selectedCategory === 'all'
-                  ? 'bg-neutral-800 text-white shadow-xs'
-                  : 'text-neutral-400 hover:text-neutral-200'
-              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
+              className={`${darkSegmentClass(selectedCategory === 'all', 'px-3 py-1 font-medium rounded-md shrink-0 cursor-pointer')} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
-              全部类型
+              {t('catalog.categoryAll')}
             </button>
             <button
               onClick={() => {
                 setSelectedCategory('submod');
                 resetPaging();
               }}
-              className={`px-3 py-1 font-medium rounded-md transition-colors shrink-0 cursor-pointer ${
-                selectedCategory === 'submod'
-                  ? 'bg-neutral-800 text-white shadow-xs'
-                  : 'text-neutral-400 hover:text-neutral-200'
-              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
+              className={`${darkSegmentClass(selectedCategory === 'submod', 'px-3 py-1 font-medium rounded-md shrink-0 cursor-pointer')} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
-              功能模组 (submod)
+              {t('catalog.categorySubmod')}
             </button>
             <button
               onClick={() => {
                 setSelectedCategory('spritepack');
                 resetPaging();
               }}
-              className={`px-3 py-1 font-medium rounded-md transition-colors shrink-0 cursor-pointer ${
-                selectedCategory === 'spritepack'
-                  ? 'bg-neutral-800 text-white shadow-xs'
-                  : 'text-neutral-400 hover:text-neutral-200'
-              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
+              className={`${darkSegmentClass(selectedCategory === 'spritepack', 'px-3 py-1 font-medium rounded-md shrink-0 cursor-pointer')} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
-              服装与外观 (spritepack)
+              {t('catalog.categorySpritepack')}
             </button>
           </div>
         </div>
@@ -283,7 +278,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           <div className="flex items-center justify-between sm:justify-start gap-3 flex-wrap">
             {/* Platform Selector */}
             <div className="flex items-center gap-1.5 text-neutral-400">
-              <span className="shrink-0">目标平台:</span>
+              <span className="shrink-0">{t('catalog.platformLabel')}</span>
               <div className="flex items-center gap-1">
                 {(['all', 'windows', 'android'] as const).map((p) => (
                   <button
@@ -292,13 +287,9 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                       setSelectedPlatform(p);
                       resetPaging();
                     }}
-                    className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
-                      selectedPlatform === p
-                        ? 'bg-neutral-800 text-white border border-neutral-700'
-                        : 'text-neutral-400 hover:text-neutral-200'
-                    } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
+                    className={`${darkSegmentClass(selectedPlatform === p, 'px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer')} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
                   >
-                    {p === 'all' ? '全部' : p === 'windows' ? 'Windows' : 'Android'}
+                    {p === 'all' ? t('catalog.platformAll') : p === 'windows' ? 'Windows' : 'Android'}
                   </button>
                 ))}
               </div>
@@ -308,7 +299,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 不做猜测性解析：这个开关不参与过滤，如实禁用并标注，避免勾选后毫无效果。
                 没有 state 也没有 onChange：勾不上的控件不假装自己是个开关。 */}
             <label
-              title="尚未实现：兼容区间目前是自由文本，没有可用的版本比较规则"
+              title={t('catalog.compatTitle')}
               className="flex items-center gap-1.5 text-neutral-500 cursor-not-allowed select-none shrink-0"
             >
               <input
@@ -318,7 +309,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 readOnly
                 className="rounded bg-neutral-900 border-neutral-700 text-emerald-500 focus:ring-0 focus:outline-hidden disabled:cursor-not-allowed"
               />
-              <span className="text-[11px]">匹配当前 MAS ({activeInstallation.mas_version})（暂不可用）</span>
+              <span className="text-[11px]">{t('catalog.compatLabel', { version: activeInstallation.mas_version })}</span>
             </label>
           </div>
 
@@ -338,7 +329,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
               <Tag className="w-3 h-3" aria-hidden="true" />
-              <span>{activeTagCount > 0 ? `已筛 ${activeTagCount} 个标签` : '标签筛选'}</span>
+              <span>{activeTagCount > 0 ? t('catalog.tagsActive', { count: activeTagCount }) : t('catalog.tagsEntry')}</span>
             </button>
           </div>
         </div>
@@ -355,9 +346,9 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             /* Load Failure State: 没有离线快照，失败必须与「无匹配结果」区分开 */
             <div className="h-full flex flex-col items-center justify-center text-center p-8">
               <AlertCircle className="w-10 h-10 text-amber-500 mb-3" />
-              <h3 className="text-base font-semibold text-neutral-100">目录加载失败</h3>
+              <h3 className="text-base font-semibold text-neutral-100">{t('catalog.loadFailedTitle')}</h3>
               <p className="text-xs text-neutral-400 mt-1 max-w-sm">
-                无法从服务器读取已发布目录：{catalogError}。项目不提供离线缓存快照，请检查网络后重新加载。
+                {t('catalog.loadFailedBody', { message: catalogError })}
               </p>
               <button
                 onClick={onReloadCatalog}
@@ -365,7 +356,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-200 bg-amber-950/70 border border-amber-800/80 hover:bg-amber-900/60 rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>{isCatalogRefreshing ? '重新加载中…' : '重新加载目录'}</span>
+                <span>{isCatalogRefreshing ? t('catalog.reloading') : t('catalog.reload')}</span>
               </button>
             </div>
           ) : showsCatalogSkeleton ? (
@@ -373,7 +364,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             <div className="space-y-3" data-testid="catalog-loading-skeleton" role="status">
               <div className="flex items-center gap-2 text-xs text-neutral-400 bg-neutral-900/40 p-2.5 rounded-lg border border-neutral-800/60">
                 <RefreshCw className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none text-emerald-400 shrink-0" aria-hidden="true" />
-                <span>正在读取模组目录…</span>
+                <span>{t('catalog.loadingCatalog')}</span>
               </div>
               {/* 占位卡片与真卡片同构，数量跟随真实页大小：加载完成时列表高度不会突然跳一截。 */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5" aria-hidden="true">
@@ -401,18 +392,18 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           ) : filteredMods.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-400">
               <Filter className="w-10 h-10 text-neutral-600 mb-3" />
-              <h3 className="text-base font-semibold text-neutral-200">未找到符合条件的模组</h3>
+              <h3 className="text-base font-semibold text-neutral-200">{t('catalog.emptyTitle')}</h3>
               <p className="text-xs text-neutral-400 mt-1 max-w-sm">
                 {selectedPlatform === 'all'
-                  ? '请尝试修改关键词，或清除平台与标签过滤条件。'
-                  : `当前只显示 ${selectedPlatform === 'windows' ? 'Windows' : 'Android'} 平台的模组，另一个平台的模组不会出现在这里。`}
+                  ? t('catalog.emptyHintAll')
+                  : t('catalog.emptyHintPlatform', { platform: selectedPlatform === 'windows' ? 'Windows' : 'Android' })}
               </p>
               {/* 标签筛选是收窄条件（包含之间是 AND），空结果很可能就是它造成的：
                   说明是哪几个标签，并给出只清标签的入口，而不是只留一个连
                   搜索/分类/平台一起清掉的按钮。 */}
               {activeTagCount > 0 ? (
                 <p className="text-xs text-emerald-300 mt-2" data-testid="catalog-tag-filter-reason">
-                  当前标签筛选：{describeTagFilter(tagFilter)}
+                  {t('catalog.activeTagsReason', { summary: describeTagFilter(tagFilter, t) })}
                 </p>
               ) : null}
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
@@ -425,7 +416,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                     data-testid="catalog-clear-tags"
                     className="px-3 py-1.5 text-xs font-medium text-emerald-100 bg-emerald-800 hover:bg-emerald-700 rounded-lg transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                   >
-                    只清除标签筛选
+                    {t('catalog.clearTagsOnly')}
                   </button>
                 )}
                 {selectedPlatform !== 'all' && (
@@ -436,7 +427,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                     }}
                     className="px-3 py-1.5 text-xs font-medium text-emerald-100 bg-emerald-800 hover:bg-emerald-700 rounded-lg transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                   >
-                    显示全部平台
+                    {t('catalog.showAllPlatforms')}
                   </button>
                 )}
                 <button
@@ -449,7 +440,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   }}
                   className="px-3 py-1.5 text-xs font-medium text-neutral-200 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                 >
-                  重置所有筛选
+                  {t('catalog.resetAllFilters')}
                 </button>
               </div>
             </div>
@@ -481,7 +472,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                             <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 mt-0.5">
                               <span>{mod.author.display_name}</span>
                               <span aria-hidden="true">·</span>
-                              <span>{mod.category === 'submod' ? '功能模组' : '外观礼包'}</span>
+                              <span>{mod.category === 'submod' ? t('catalog.cardCategorySubmod') : t('catalog.cardCategorySpritepack')}</span>
                               <span aria-hidden="true">·</span>
                               <span className="font-mono tabular-nums">{mod.latest_version}</span>
                             </div>
@@ -491,12 +482,12 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                           {installed ? (
                             hasUpdate ? (
                               <span className="text-[11px] text-amber-400 font-medium shrink-0 font-mono">
-                                可更新 ({installed.installed_version})
+                                {t('catalog.updatable', { version: installed.installed_version })}
                               </span>
                             ) : (
                               <span className="text-[11px] text-emerald-400 font-medium shrink-0 flex items-center gap-1 font-mono">
                                 <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>已安装</span>
+                                <span>{t('catalog.installed')}</span>
                               </span>
                             )
                           ) : null}
@@ -504,7 +495,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
                         {/* Summary prose */}
                         <p className="text-xs text-neutral-400 line-clamp-2 leading-relaxed mb-3">
-                          {mod.summary}
+                          {resolve(mod.summary)}
                         </p>
 
                         {/* Unboxed Metadata row: MAS compatibility, size, downloads */}
@@ -513,7 +504,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                           <span aria-hidden="true">/</span>
                           <span className="tabular-nums">{formatBytes(mod.size_bytes)}</span>
                           <span aria-hidden="true">/</span>
-                          <span className="tabular-nums inline-flex items-center gap-1" title="下载次数"><Download className="w-3 h-3" aria-hidden="true" /><span>{mod.downloads_count.toLocaleString()}</span></span>
+                          <span className="tabular-nums inline-flex items-center gap-1" title={t('catalog.downloadsTitle')}><Download className="w-3 h-3" aria-hidden="true" /><span>{mod.downloads_count.toLocaleString()}</span></span>
                         </div>
 
                         {/* Tags row (Clean typographic tags with separators) */}
@@ -537,7 +528,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                           onClick={() => onOpenDetail(mod)}
                           className="px-2.5 py-1.5 text-xs text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 rounded-md transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                         >
-                          查看详情
+                          {t('catalog.viewDetails')}
                         </button>
 
                         {installed ? (
@@ -547,14 +538,14 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                               className="px-3 py-1.5 text-xs font-semibold text-neutral-900 bg-amber-400 hover:bg-amber-300 rounded-md transition-colors flex items-center gap-1.5 shadow-xs active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                             >
                               <RefreshCw className="w-3.5 h-3.5" />
-                              <span>更新至 {mod.latest_version}</span>
+                              <span>{t('catalog.updateTo', { version: mod.latest_version })}</span>
                             </button>
                           ) : (
                             <button
                               onClick={() => onOpenDetail(mod)}
                               className="px-3 py-1.5 text-xs font-medium text-neutral-300 bg-neutral-800 hover:bg-neutral-700/80 rounded-md transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                             >
-                              已是最新
+                              {t('catalog.upToDate')}
                             </button>
                           )
                         ) : (
@@ -570,7 +561,15 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                             className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-md transition-colors flex items-center gap-1.5 shadow-xs active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                           >
                             <Download className="w-3.5 h-3.5" />
-                            <span>{installingModId === mod.id ? installProgress?.stage === 'downloading' ? `下载 ${Math.round(installProgress.received / installProgress.total * 100)}%` : installProgress?.stage === 'verifying' ? '校验中…' : '安装中…' : '安装'}</span>
+                            <span>{installingModId === mod.id
+                              ? installProgress?.stage === 'downloading'
+                                ? t('catalog.installingDownload', {
+                                    percent: Math.round((installProgress.received / installProgress.total) * 100),
+                                  })
+                                : installProgress?.stage === 'verifying'
+                                  ? t('catalog.installingVerifying')
+                                  : t('catalog.installing')
+                              : t('catalog.install')}</span>
                           </button>
                         )}
                       </div>
@@ -598,8 +597,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           <button
             type="button"
             onClick={() => scrollPaneToTop(scrollPane)}
-            aria-label="返回顶部"
-            title="返回顶部"
+            aria-label={t('catalog.backToTop')}
+            title={t('catalog.backToTop')}
             data-testid="catalog-back-to-top"
             className="absolute right-4 bottom-[7.5rem] z-10 w-11 h-11 rounded-full flex items-center justify-center border border-neutral-700 bg-neutral-800/95 text-neutral-300 shadow-lg transition-colors cursor-pointer hover:border-emerald-700/70 hover:bg-neutral-800 hover:text-emerald-300 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
           >
@@ -611,8 +610,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           onClick={() => setTagDrawerOpen((prev) => !prev)}
           aria-expanded={tagDrawerOpen}
           aria-haspopup="dialog"
-          aria-label={activeTagCount > 0 ? `标签筛选（已启用 ${activeTagCount} 个标签）` : '标签筛选'}
-          title={activeTagCount > 0 ? `标签筛选（已启用 ${activeTagCount} 个标签）` : '标签筛选'}
+          aria-label={activeTagCount > 0 ? t('catalog.tagButtonWithCount', { count: activeTagCount }) : t('catalog.tagsEntry')}
+          title={activeTagCount > 0 ? t('catalog.tagButtonWithCount', { count: activeTagCount }) : t('catalog.tagsEntry')}
           data-testid="catalog-tags"
           className={`absolute right-4 bottom-[4.5rem] z-10 w-11 h-11 rounded-full flex items-center justify-center border shadow-lg transition-colors cursor-pointer ${
             tagDrawerOpen || activeTagCount > 0
@@ -636,8 +635,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             onClick={onReloadCatalog}
             disabled={isCatalogRefreshing}
             aria-busy={isCatalogRefreshing || undefined}
-            aria-label="刷新模组目录"
-            title={isCatalogRefreshing ? '正在刷新模组目录…' : '刷新模组目录'}
+            aria-label={t('catalog.refreshCatalog')}
+            title={isCatalogRefreshing ? t('catalog.refreshingCatalog') : t('catalog.refreshCatalog')}
             data-testid="catalog-refresh"
             className={`absolute right-4 bottom-4 z-10 w-11 h-11 rounded-full flex items-center justify-center border shadow-lg transition-colors ${
               isCatalogRefreshing
@@ -685,7 +684,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               onClick={loadMore}
               className="px-2.5 py-1 rounded bg-neutral-800 text-neutral-200 hover:bg-neutral-700 transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
             >
-              加载更多
+              {t('catalog.loadMore')}
             </button>
           ) : null}
         </div>

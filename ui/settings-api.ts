@@ -124,6 +124,93 @@ export async function updateSettings(
   return handleResponse<SiteSettings>(res);
 }
 
+/** 导出文档的格式标识与版本；不匹配的文档服务端会直接拒绝。 */
+export const SETTINGS_TRANSFER_FORMAT = 'submodhub-settings';
+export const SETTINGS_TRANSFER_VERSION = 1;
+/** 服务端导入接口的请求体上限（256 KiB）；导出文件远小于它。 */
+export const SETTINGS_TRANSFER_MAX_BYTES = 256 * 1024;
+
+/** 导入导出文档里的一个下载节点。凭据只有 `credential_configured`，没有密码。 */
+export interface SettingsTransferNode {
+  id: string;
+  name?: string;
+  type?: string;
+  enabled?: boolean;
+  weight?: number;
+  capabilities?: string[];
+  base_url?: string;
+  api_base_url?: string;
+  username?: string;
+  directory?: string;
+  allowed_download_origins?: string[];
+  credential_configured?: boolean;
+  /** 仅导入时有效：非空表示给这个节点换一把新密码。 */
+  password?: string;
+}
+
+export interface SettingsTransferDocument {
+  format: string;
+  version: number;
+  exported_at?: string;
+  settings: {
+    github_proxy_template?: string;
+    /** 存储值：空串表示用内置默认窗口。 */
+    github_sync_max_age?: string;
+    tag_catalog?: TagGroup[];
+    /** 仅导入时有效：非空表示替换令牌，`""` 表示清除。 */
+    github_token?: string;
+  };
+  /** 缺省或 null 表示节点列表原样不动；空数组表示清空。 */
+  download_nodes?: SettingsTransferNode[] | null;
+}
+
+/** 导出结果：已经取回的字节 + 服务端建议的文件名。 */
+export interface SettingsTransferFile {
+  blob: Blob;
+  filename: string;
+}
+
+/**
+ * 取回整份设置文档。
+ *
+ * 服务端把文件名放在 `Content-Disposition` 里（带时间戳），所以这里按 header
+ * 解析，解析不到才退回一个固定名字；响应体不是 2xx 时把错误码抛给调用方。
+ */
+export async function exportSettings(
+  base = '/api/v1',
+  fetcher: typeof fetch = fetch
+): Promise<SettingsTransferFile> {
+  const url = `${base.replace(/\/$/, '')}/admin/settings/export`;
+  const res = await fetcher(url, { method: 'GET', headers: { Accept: 'application/json' } });
+  if (!res.ok) await handleResponse<never>(res);
+  const disposition = res.headers?.get('content-disposition') ?? '';
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] || 'submodhub-settings.json';
+  return { blob: await res.blob(), filename };
+}
+
+/**
+ * 导入整份设置：**整份替换**，不是补丁。
+ *
+ * 成功时返回最新的 `site_settings`，管理页直接用它刷新，不必再拉一次。
+ */
+export async function importSettings(
+  document: unknown,
+  csrfToken: string,
+  base = '/api/v1',
+  fetcher: typeof fetch = fetch
+): Promise<SiteSettings> {
+  const url = `${base.replace(/\/$/, '')}/admin/settings/import`;
+  const res = await fetcher(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': csrfToken,
+    },
+    body: JSON.stringify(document),
+  });
+  return handleResponse<SiteSettings>(res);
+}
+
 export async function testGitHubProxy(
   template: string,
   csrfToken: string,

@@ -2,6 +2,7 @@ import React from 'react';
 import { Link2, X } from 'lucide-react';
 
 import { m } from './Motion';
+import { useI18n } from '../i18n';
 import { toastVariants } from '../../../../ui/motion-presets';
 interface ShareLinkPromptProps {
   /** 提示里显示的名称（通常是模组标题，查不到才是 mod id）。 */
@@ -17,7 +18,9 @@ interface ShareLinkPromptProps {
  * 他只是切回了客户端），所以不该夺走焦点、不该拦住其它操作。放在底部，
  * 与 toast 同一水平区域，但左对齐以免和 toast 抢位置。
  */
-export const ShareLinkPrompt: React.FC<ShareLinkPromptProps> = ({ label, onOpen, onDismiss }) => (
+export const ShareLinkPrompt: React.FC<ShareLinkPromptProps> = ({ label, onOpen, onDismiss }) => {
+  const { t } = useI18n();
+  return (
   <m.div
     role="status"
     variants={toastVariants}
@@ -29,7 +32,7 @@ export const ShareLinkPrompt: React.FC<ShareLinkPromptProps> = ({ label, onOpen,
     <Link2 className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
     <div className="min-w-0 flex-1 space-y-2">
       <p className="leading-relaxed break-words">
-        剪贴板里有一条站内链接：<span className="font-semibold text-white">{label}</span>
+        {t('shareLink.found', { label })}<span className="font-semibold text-white">{label}</span>
       </p>
       <div className="flex items-center gap-2">
         <button
@@ -37,24 +40,25 @@ export const ShareLinkPrompt: React.FC<ShareLinkPromptProps> = ({ label, onOpen,
           onClick={onOpen}
           className="px-3 py-1.5 rounded bg-sky-500 hover:bg-sky-400 text-neutral-950 font-medium transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
         >
-          打开
+          {t('shareLink.open')}
         </button>
         <button
           type="button"
           onClick={onDismiss}
           className="px-3 py-1.5 rounded border border-neutral-700 hover:border-neutral-500 text-neutral-300 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
         >
-          忽略
+          {t('shareLink.dismiss')}
         </button>
       </div>
     </div>
     <button
       type="button"
       onClick={onDismiss}
-      aria-label="忽略这条提示"
+      aria-label={t('shareLink.dismissAria')}
       className="text-neutral-500 hover:text-neutral-300 p-0.5 shrink-0 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
     >
       <X className="w-3.5 h-3.5" />
     </button>
   </m.div>
-);
+  );
+};

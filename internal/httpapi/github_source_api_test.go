@@ -20,7 +20,7 @@ func TestGitHubSourceAPIAndPermissions(t *testing.T) {
 			{
 				ID:         "mod_1",
 				Title:      "Demo Mod",
-				Summary:    "Summary",
+				Summary:    LocalizedText{"zh": "Summary"},
 				Category:   "submod",
 				Author:     Author{ID: "author_1", DisplayName: "Author One"},
 				SourceType: "local",
@@ -193,7 +193,7 @@ func TestGitHubManualSyncEndpoint(t *testing.T) {
 			{
 				ID:               "mod_1",
 				Title:            "Demo Mod",
-				Summary:          "Summary",
+				Summary:          LocalizedText{"zh": "Summary"},
 				Category:         "submod",
 				Author:           Author{ID: "author_1", DisplayName: "Author One"},
 				SourceType:       "github_releases",

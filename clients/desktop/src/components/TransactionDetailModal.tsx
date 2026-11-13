@@ -13,6 +13,7 @@ import { Operation } from '../types/client';
 import { copyToClipboard } from '../clipboard';
 import { m } from './Motion';
 import { overlayVariants } from '../../../../ui/motion-presets';
+import { useI18n } from '../i18n';
 
 /** Single payload for both the copy button and the JSON disclosure, so the two
  *  can never drift apart. */
@@ -29,23 +30,23 @@ function formatTimestamp(value: string): string {
  *  already finished: a committed or rolled-back transaction legitimately has
  *  no rollback material left. A `query_failed` transaction is not a fault
  *  either — we simply do not know, so it must not claim material is missing. */
-export function describeRecoveryAvailability(op: Operation): {
+export function describeRecoveryAvailability(op: Operation, t: (key: string, vars?: Record<string, string | number>) => string): {
   label: string;
   tone: 'ready' | 'finished' | 'blocked' | 'unknown';
 } {
   if (op.can_rollback) {
-    return { label: '恢复材料可用：可安全回滚', tone: 'ready' };
+    return { label: t('txDetail.recoveryReady'), tone: 'ready' };
   }
   if (op.state === 'query_failed') {
-    return { label: '结果未知：后端状态查询失败', tone: 'unknown' };
+    return { label: t('txDetail.recoveryUnknown'), tone: 'unknown' };
   }
   if (op.state === 'committed') {
-    return { label: '事务已提交：无回滚材料', tone: 'finished' };
+    return { label: t('txDetail.recoveryCommitted'), tone: 'finished' };
   }
   if (op.state === 'rolled_back') {
-    return { label: '事务已回滚：无待处理变更', tone: 'finished' };
+    return { label: t('txDetail.recoveryRolledBack'), tone: 'finished' };
   }
-  return { label: '恢复材料缺失：需人工处理', tone: 'blocked' };
+  return { label: t('txDetail.recoveryBlocked'), tone: 'blocked' };
 }
 
 /** One labelled diagnostic field inside the transaction detail panel. */
@@ -65,46 +66,47 @@ const DetailField: React.FC<{ label: string; mono?: boolean; children: React.Rea
  *  后端短暂或从未产出的状态已退役；后端若出现未预期状态，default 分支原样显示，
  *  不伪造“正在写入/已阻断”这类语义。 */
 export const StateBadge: React.FC<{ state: Operation['state'] }> = ({ state }) => {
+  const { t } = useI18n();
   switch (state) {
     case 'committed':
       return (
         <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 font-mono flex items-center gap-1">
           <CheckCircle2 className="w-3.5 h-3.5" />
-          <span>committed (已完成)</span>
+          <span>{t('txDetail.stateCommitted')}</span>
         </span>
       );
     case 'recoverable':
       return (
         <span className="text-[11px] px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/60 font-mono flex items-center gap-1 animate-pulse">
           <RotateCcw className="w-3.5 h-3.5" />
-          <span>recoverable (待回滚)</span>
+          <span>{t('txDetail.stateRecoverable')}</span>
         </span>
       );
     case 'needs_manual_recovery':
       return (
         <span className="text-[11px] px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800/60 font-mono flex items-center gap-1">
           <AlertTriangle className="w-3.5 h-3.5" />
-          <span>needs_manual_recovery (需人工处理)</span>
+          <span>{t('txDetail.stateNeedsManual')}</span>
         </span>
       );
     case 'rolled_back':
       return (
         <span className="text-[11px] px-2 py-0.5 rounded bg-neutral-800 text-neutral-400 font-mono">
-          rolled_back (已回滚)
+          {t('txDetail.stateRolledBack')}
         </span>
       );
     case 'planned':
       return (
         <span className="text-[11px] px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-800/60 font-mono flex items-center gap-1">
           <Clock className="w-3.5 h-3.5 text-sky-400" />
-          <span>planned (就绪执行)</span>
+          <span>{t('txDetail.statePlanned')}</span>
         </span>
       );
     case 'query_failed':
       return (
         <span className="text-[11px] px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700/60 font-mono flex items-center gap-1">
           <HelpCircle className="w-3.5 h-3.5 text-neutral-400" />
-          <span>query_failed (结果未知)</span>
+          <span>{t('txDetail.stateQueryFailed')}</span>
         </span>
       );
     default:
@@ -132,9 +134,10 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   onClose,
   onRecoverOperation,
 }) => {
+  const { t } = useI18n();
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const resetTimer = useRef<number | null>(null);
-  const recoveryAvailability = describeRecoveryAvailability(op);
+  const recoveryAvailability = describeRecoveryAvailability(op, t);
   // One payload for the disclosure and the copy button: no chance of the shown
   // JSON and the copied JSON diverging.
   const diagnostics = useMemo(() => buildDiagnostics(op), [op]);
@@ -162,7 +165,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="事务详情与诊断"
+        aria-label={t('txDetail.ariaLabel')}
         className="bg-neutral-900 border border-neutral-700 rounded-xl w-full max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden shadow-2xl"
       >
         <div className="p-4 border-b border-neutral-800 flex items-center justify-between gap-3 bg-neutral-950">
@@ -171,7 +174,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-neutral-100">{op.mod_title}</div>
               <div className="truncate font-mono text-[11px] text-neutral-400">
-                事务详情与诊断 · {op.operation_id}
+                {t('txDetail.heading', { id: op.operation_id })}
               </div>
             </div>
           </div>
@@ -183,7 +186,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                   ? 'bg-rose-950/60 border-rose-800/70 text-rose-200 hover:bg-rose-900/60'
                   : 'bg-neutral-800 hover:bg-neutral-700/80 border-neutral-700/60 text-neutral-200'
               }`}
-              title="复制整份诊断信息（JSON），用于反馈问题"
+              title={t('txDetail.copyDiagnosticsTitle')}
             >
               {copyState === 'copied' ? (
                 <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -191,13 +194,13 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                 <Copy className="w-3.5 h-3.5 text-neutral-400" />
               )}
               <span>
-                {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制诊断信息'}
+                {copyState === 'copied' ? t('txDetail.copied') : copyState === 'failed' ? t('txDetail.copyFailed') : t('txDetail.copyDiagnostics')}
               </span>
             </button>
             <button
               onClick={onClose}
               className="text-neutral-400 hover:text-white"
-              aria-label="关闭事务详情"
+              aria-label={t('txDetail.closeAria')}
             >
               ✕
             </button>
@@ -224,27 +227,31 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg bg-neutral-900/60 border border-neutral-800">
-            <DetailField label="操作 ID">{op.operation_id}</DetailField>
-            <DetailField label="安装实例">{op.installation_id}</DetailField>
-            <DetailField label="模组" mono={false}>
+            <DetailField label={t('txDetail.fieldOperationId')}>{op.operation_id}</DetailField>
+            <DetailField label={t('txDetail.fieldInstallation')}>{op.installation_id}</DetailField>
+            <DetailField label={t('txDetail.fieldMod')} mono={false}>
               {op.mod_title}
               <span className="text-neutral-500 font-mono"> ({op.mod_id})</span>
             </DetailField>
-            <DetailField label="版本">
+            <DetailField label={t('txDetail.fieldVersion')}>
               {op.version_str}
               {op.version_id ? <span className="text-neutral-500"> ({op.version_id})</span> : null}
             </DetailField>
-            <DetailField label="事务阶段 phase">{op.phase || op.state}</DetailField>
-            <DetailField label="状态机 state">{op.state}</DetailField>
-            <DetailField label="创建时间">{formatTimestamp(op.created_at)}</DetailField>
-            <DetailField label="最近更新">{formatTimestamp(op.updated_at)}</DetailField>
+            <DetailField label={t('txDetail.fieldPhase')}>{op.phase || op.state}</DetailField>
+            <DetailField label={t('txDetail.fieldState')}>{op.state}</DetailField>
+            <DetailField label={t('txDetail.fieldCreatedAt')}>{formatTimestamp(op.created_at)}</DetailField>
+            <DetailField label={t('txDetail.fieldUpdatedAt')}>{formatTimestamp(op.updated_at)}</DetailField>
           </div>
 
           <div className="p-3 rounded-lg bg-neutral-900/60 border border-neutral-800 space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="font-sans font-semibold text-neutral-300">执行进度</span>
+              <span className="font-sans font-semibold text-neutral-300">{t('txDetail.progressHeading')}</span>
               <span className="font-mono text-[11px] text-neutral-400">
-                {op.progress.processed_files} / {op.progress.total_files} 文件 · {op.progress.percent}%
+                {t('txDetail.progressSummary', {
+                  processed: op.progress.processed_files,
+                  total: op.progress.total_files,
+                  percent: op.progress.percent,
+                })}
               </span>
             </div>
             <div className="h-1.5 w-full rounded-full bg-neutral-800 overflow-hidden">
@@ -256,26 +263,26 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
             <div className="font-sans text-neutral-300">{op.progress.stage}</div>
             {op.progress.current_file && (
               <div className="font-mono text-[11px] text-neutral-500 break-all">
-                最后处理路径: {op.progress.current_file}
+                {t('txDetail.lastProcessed', { path: op.progress.current_file })}
               </div>
             )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg bg-neutral-900/60 border border-neutral-800">
-            <DetailField label="备份快照 ID">{op.backup_id || '无'}</DetailField>
-            <DetailField label="可回滚 can_rollback">{String(Boolean(op.can_rollback))}</DetailField>
+            <DetailField label={t('txDetail.fieldBackup')}>{op.backup_id || t('priority.none')}</DetailField>
+            <DetailField label={t('txDetail.fieldCanRollback')}>{String(Boolean(op.can_rollback))}</DetailField>
             {op.conflict_path && (
-              <DetailField label="冲突文件路径">
+              <DetailField label={t('txDetail.fieldConflictPath')}>
                 <span className="text-amber-300">{op.conflict_path}</span>
               </DetailField>
             )}
             {op.expected_hash && (
-              <DetailField label="Ledger 期望 SHA-256">
+              <DetailField label={t('txDetail.fieldExpectedHash')}>
                 <span className="text-emerald-400">{op.expected_hash}</span>
               </DetailField>
             )}
             {op.actual_hash && (
-              <DetailField label="磁盘实测 SHA-256">
+              <DetailField label={t('txDetail.fieldActualHash')}>
                 <span className="text-amber-400">{op.actual_hash}</span>
               </DetailField>
             )}
@@ -283,8 +290,8 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
 
           {op.error && (
             <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-800/60 text-rose-300 space-y-1">
-              <div className="font-mono font-semibold">[错误代号] {op.error.code}</div>
-              <div className="font-sans">[错误详情] {op.error.message}</div>
+              <div className="font-mono font-semibold">{t('txDetail.errorCode', { code: op.error.code })}</div>
+              <div className="font-sans">{t('txDetail.errorDetail', { message: op.error.message })}</div>
               {op.error.details && Object.keys(op.error.details).length > 0 && (
                 <pre className="pt-1 font-mono text-[11px] whitespace-pre-wrap break-all text-rose-200/80">
                   {JSON.stringify(op.error.details, null, 2)}
@@ -295,13 +302,13 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
 
           {op.state === 'needs_manual_recovery' && (
             <div className="p-3 bg-amber-950/40 border border-amber-800/60 rounded-lg text-amber-200 text-[11px] leading-relaxed font-sans">
-              提示：系统已进入保护性挂起状态。为防止破坏玩家可能手工编辑的文件，请先备份上述冲突文件。若已人工解决外部冲突或还原文件，可点击下方“重新校验并安全回滚”。
+              {t('txDetail.manualHint')}
             </div>
           )}
 
           <details className="rounded-lg bg-neutral-900/60 border border-neutral-800">
             <summary className="px-3 py-2 text-[11px] font-sans text-neutral-400 cursor-pointer select-none">
-              原始诊断数据（与“复制诊断信息”同一份载荷）
+              {t('txDetail.rawDiagnostics')}
             </summary>
             <pre className="max-h-64 overflow-auto px-3 py-2 border-t border-neutral-800 font-mono text-[11px] leading-relaxed text-neutral-300">
               {diagnostics}
@@ -317,17 +324,17 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                 onRecoverOperation(op.operation_id);
               }}
               className="px-3 py-1.5 text-xs bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold rounded-lg flex items-center gap-1 transition-colors"
-              title={op.state === 'needs_manual_recovery' ? '重新校验磁盘冲突并尝试安全回滚' : '安全回滚'}
+              title={op.state === 'needs_manual_recovery' ? t('txDetail.rollbackTitleManual') : t('progress.rollback')}
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>{op.state === 'needs_manual_recovery' ? '重新校验并安全回滚' : '安全回滚'}</span>
+              <span>{op.state === 'needs_manual_recovery' ? t('txDetail.rollbackManual') : t('progress.rollback')}</span>
             </button>
           )}
           <button
             onClick={onClose}
             className="px-4 py-1.5 text-xs bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg"
           >
-            关闭
+            {t('common.close')}
           </button>
         </div>
       </div>

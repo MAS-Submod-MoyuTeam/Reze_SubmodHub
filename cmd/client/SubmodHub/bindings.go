@@ -513,22 +513,24 @@ func (s *DesktopService) mapJournalToDetail(j *core.TxJournal) OperationDetail {
 		percent = 100
 	}
 
-	stage := "操作已初始化"
+	// 这里只产出稳定的阶段码，不再拼中文句子：文案属于展示层，由前端按当前
+	// 语言翻译。前端也用 code 判断状态，而不是拿文案做字符串相等比较。
+	stage := "progress.stage.initialized"
 	switch j.Phase {
 	case core.TxPhaseCommitted:
-		stage = "操作已成功提交"
+		stage = "progress.stage.committed"
 	case core.TxPhaseRolledBack:
-		stage = "操作已安全回滚"
+		stage = "progress.stage.rolledBack"
 	case core.TxPhaseNeedsManualRecovery:
-		stage = "检测到外部冲突或异常，需要人工恢复"
+		stage = "progress.stage.needsManualRecovery"
 	case core.TxPhasePrepared:
-		stage = "快照就绪，准备应用"
+		stage = "progress.stage.prepared"
 	case core.TxPhaseApplying:
-		stage = fmt.Sprintf("正在应用文件变更 (%d/%d)", processedFiles, totalFiles)
+		stage = "progress.stage.applying"
 	case core.TxPhaseCommitting:
-		stage = "正在提交清单与持久化记录"
+		stage = "progress.stage.committing"
 	case core.TxPhasePlanned:
-		stage = "计划已生成"
+		stage = "progress.stage.planned"
 	}
 
 	var opErr *OperationError

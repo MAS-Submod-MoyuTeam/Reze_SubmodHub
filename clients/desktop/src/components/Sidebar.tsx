@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Installation } from '../types/client';
 import { computeDiskUsage } from '../diskUsage';
+import { useI18n } from '../i18n';
 
 export type ActiveTab = 'catalog' | 'installed' | 'priority' | 'operations' | 'instances';
 
@@ -29,6 +30,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   unmanagedCount,
   recoverableOpsCount,
 }) => {
+  const { t } = useI18n();
   const formatBytes = (bytes: number) => {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
   };
@@ -41,36 +43,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     {
       id: 'catalog' as ActiveTab,
-      label: '模组大厅 / 发现',
+      label: t('sidebar.catalogLabel'),
       icon: Compass,
-      hint: '浏览、筛选与获取最新发布模组',
+      hint: t('sidebar.catalogHint'),
     },
     {
       id: 'installed' as ActiveTab,
-      label: '已安装模组',
+      label: t('sidebar.installedLabel'),
       icon: PackageCheck,
-      hint: '已安装版本与未收纳检测',
+      hint: t('sidebar.installedHint'),
       badge: installedCount,
-      unmanagedBadge: unmanagedCount > 0 ? `${unmanagedCount} 项未收纳` : null,
+      unmanagedBadge: unmanagedCount > 0 ? t('sidebar.unmanagedBadge', { count: unmanagedCount }) : null,
     },
     {
       id: 'priority' as ActiveTab,
-      label: '模组优先级',
+      label: t('sidebar.priorityLabel'),
       icon: Layers,
-      hint: '调整模组覆盖次序与冲突检测',
+      hint: t('sidebar.priorityHint'),
     },
     {
       id: 'operations' as ActiveTab,
-      label: '任务与原子恢复',
+      label: t('sidebar.operationsLabel'),
       icon: History,
-      hint: '安装流水线与本地安全快照',
-      alertBadge: recoverableOpsCount > 0 ? `${recoverableOpsCount} 待恢复` : null,
+      hint: t('sidebar.operationsHint'),
+      alertBadge: recoverableOpsCount > 0 ? t('sidebar.recoverBadge', { count: recoverableOpsCount }) : null,
     },
     {
       id: 'instances' as ActiveTab,
-      label: 'MAS 实例与授权',
+      label: t('sidebar.instancesLabel'),
       icon: FolderCog,
-      hint: '管理游戏目录与路径验证',
+      hint: t('sidebar.instancesHint'),
     },
   ];
 
@@ -79,7 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Top Nav Section */}
       <div className="p-3">
         <div className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-          导航控制台
+          {t('sidebar.console')}
         </div>
 
         <nav className="space-y-1">
@@ -131,20 +133,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex items-center justify-between text-neutral-400 mb-1.5">
             <span className="flex items-center gap-1.5 text-[11px]">
               <HardDrive className="w-3.5 h-3.5 text-neutral-400" />
-              <span>当前存储空间</span>
+              <span>{t('sidebar.storageUsage')}</span>
             </span>
             <span className="font-mono text-[11px] text-neutral-300 tabular-nums">
-              {activeInstallation.disk_available_bytes != null ? `${formatBytes(activeInstallation.disk_available_bytes)} 可用` : '容量未知'}
+              {activeInstallation.disk_available_bytes != null ? t('sidebar.available', { size: formatBytes(activeInstallation.disk_available_bytes) }) : t('sidebar.capacityUnknown')}
             </span>
           </div>
           <div
             className="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden"
             role="progressbar"
-            aria-label="存储占用"
+            aria-label={t('sidebar.storageAria')}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={diskUsage ? diskUsage.percent : undefined}
-            title={diskUsage ? `已用 ${formatBytes(diskUsage.usedBytes)} / ${formatBytes(activeInstallation.disk_total_bytes ?? 0)}` : '容量未知'}
+            title={diskUsage ? t('sidebar.storageTooltip', { used: formatBytes(diskUsage.usedBytes), total: formatBytes(activeInstallation.disk_total_bytes ?? 0) }) : t('sidebar.capacityUnknown')}
           >
             <div
               className="bg-emerald-500 h-full rounded-full transition-all"
@@ -153,7 +155,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <div className="flex items-center justify-between text-[10px] text-neutral-400 mt-1 font-mono">
             <span className="truncate max-w-[120px]">{activeInstallation.label}</span>
-            <span className="tabular-nums">{diskUsage ? `已用 ${diskUsage.percent}%` : '—'}</span>
+            <span className="tabular-nums">{diskUsage ? t('sidebar.usedPercent', { percent: diskUsage.percent }) : '—'}</span>
           </div>
         </div>
       </div>

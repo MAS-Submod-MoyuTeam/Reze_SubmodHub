@@ -41,27 +41,27 @@ export function comparePriorityDisplay(first: PriorityDisplayEntry, second: Prio
  * Validates a priority string or number strictly as an integer.
  * Rejects floats (e.g. "1.5"), trailing characters (e.g. "1abc"), NaN, and empty strings.
  */
-export function validatePriorityInput(input: string | number): PriorityValidationResult {
+export function validatePriorityInput(input: string | number, t: (key: string, vars?: Record<string, string | number>) => string): PriorityValidationResult {
   if (typeof input === 'number') {
     if (!Number.isFinite(input) || !Number.isInteger(input)) {
-      return { valid: false, error: '优先级必须为合法整数' };
+      return { valid: false, error: t('priority.notInteger') };
     }
     return { valid: true, value: input };
   }
 
   const trimmed = String(input).trim();
   if (trimmed === '') {
-    return { valid: false, error: '优先级不能为空' };
+    return { valid: false, error: t('priority.empty') };
   }
 
   // Strict regex match for optional sign followed by digits only
   if (!/^-?\d+$/.test(trimmed)) {
-    return { valid: false, error: '优先级必须为纯整数格式，不能包含小数或非数字字符' };
+    return { valid: false, error: t('priority.notPlainInteger') };
   }
 
   const parsed = Number(trimmed);
   if (!Number.isSafeInteger(parsed)) {
-    return { valid: false, error: '数值超出合法整数范围' };
+    return { valid: false, error: t('priority.outOfRange') };
   }
 
   return { valid: true, value: parsed };
@@ -173,7 +173,8 @@ export function formatPriorityPlanActions(
     target_hash: string;
     reason?: string;
   }>,
-  titleMap?: Record<string, string>
+  titleMap: Record<string, string> | undefined,
+  t: (key: string, vars?: Record<string, string | number>) => string
 ): FormattedPriorityDiff[] {
   return actions.map((act) => {
     const isSameHash =
@@ -181,13 +182,13 @@ export function formatPriorityPlanActions(
       act.target_hash !== '' &&
       act.current_hash.toLowerCase() === act.target_hash.toLowerCase();
 
-    let displayReason = act.reason || '优先级生效模组切换';
+    let displayReason = act.reason || t('priority.reasonSwitch');
     if (isSameHash) {
-      displayReason = '归属模组切换（文件内容完全一致，无需重新写盘）';
+      displayReason = t('priority.reasonSameContent');
     }
 
-    const prevRaw = act.current_source || '无';
-    const nextRaw = act.target_source || '无';
+    const prevRaw = act.current_source || t('priority.none');
+    const nextRaw = act.target_source || t('priority.none');
 
     const previousWinner = (titleMap && titleMap[prevRaw]) ? titleMap[prevRaw] : prevRaw;
     const nextWinner = (titleMap && titleMap[nextRaw]) ? titleMap[nextRaw] : nextRaw;
@@ -248,48 +249,48 @@ export interface PriorityApplyCheckResult {
  * Enforces preview-first safety: plan must exist, match current draft, have no blockers,
  * and MAS instance & generation must remain unchanged.
  */
-export function canApplyPriorityPlan(params: PriorityApplyCheckParams): PriorityApplyCheckResult {
+export function canApplyPriorityPlan(params: PriorityApplyCheckParams, t: (key: string, vars?: Record<string, string | number>) => string): PriorityApplyCheckResult {
   if (params.isApplying) {
-    return { canApply: false, reason: '正在应用写盘中' };
+    return { canApply: false, reason: t('priority.applying') };
   }
   if (params.previewLoading) {
-    return { canApply: false, reason: '正在计算变更预览' };
+    return { canApply: false, reason: t('priority.computingPreview') };
   }
   if (params.hasInputErrors) {
-    return { canApply: false, reason: '存在格式错误的优先级输入' };
+    return { canApply: false, reason: t('priority.inputErrors') };
   }
   if (!params.hasChanges) {
-    return { canApply: false, reason: '当前无优先级变动' };
+    return { canApply: false, reason: t('priority.noChanges') };
   }
   if (!params.previewPlan) {
-    return { canApply: false, reason: '请先计算并确认变更预览' };
+    return { canApply: false, reason: t('priority.previewFirst') };
   }
   if (
     params.previewInstanceId &&
     params.currentInstanceId &&
     params.previewInstanceId !== params.currentInstanceId
   ) {
-    return { canApply: false, reason: 'MAS 实例已切换，请重新计算预览' };
+    return { canApply: false, reason: t('priority.instanceChanged') };
   }
   if (
     params.previewGeneration != null &&
     params.currentGeneration != null &&
     params.previewGeneration !== params.currentGeneration
   ) {
-    return { canApply: false, reason: 'MAS 状态版本已变更，请重新计算预览' };
+    return { canApply: false, reason: t('priority.generationChanged') };
   }
   if (
     params.previewPlan.generation != null &&
     params.currentGeneration != null &&
     params.previewPlan.generation !== params.currentGeneration
   ) {
-    return { canApply: false, reason: 'MAS 状态版本已变更，请重新计算预览' };
+    return { canApply: false, reason: t('priority.generationChanged') };
   }
   if (!areDraftPrioritiesEqual(params.currentDraftMap, params.previewDraftMap)) {
-    return { canApply: false, reason: '优先级草稿已变更，请重新计算预览' };
+    return { canApply: false, reason: t('priority.draftChanged') };
   }
   if (params.previewPlan.blockers && params.previewPlan.blockers.length > 0) {
-    return { canApply: false, reason: `存在阻断项无法执行: ${params.previewPlan.blockers.join('; ')}` };
+    return { canApply: false, reason: t('priority.blocked', { items: params.previewPlan.blockers.join('; ') }) };
   }
   return { canApply: true };
 }

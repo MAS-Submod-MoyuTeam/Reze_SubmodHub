@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
@@ -160,31 +159,31 @@ type VersionSourceLocation struct {
 	DownloadURL string `json:"download_url"`
 }
 type Mod struct {
-	DownloadAttempts        int64      `json:"download_attempts"`
-	ClientReportedDownloads int64      `json:"client_reported_downloads"`
-	ID                      string     `json:"id"`
-	Title                   string     `json:"title"`
-	Summary                 string     `json:"summary"`
-	Description             string     `json:"description,omitempty"`
-	Author                  Author     `json:"author"`
-	Category                string     `json:"category"`
-	Tags                    []string   `json:"tags"`
-	SupportedPlatforms      []string   `json:"supported_platforms"`
-	MASVersionRange         string     `json:"mas_version_range"`
-	RecommendedPriority     int        `json:"recommended_priority"`
-	LatestVersionID         string     `json:"latest_version_id"`
-	LatestVersion           string     `json:"latest_version"`
-	SizeBytes               int64      `json:"size_bytes"`
-	SHA256                  string     `json:"sha256"`
-	DownloadsCount          int64      `json:"downloads_count"`
-	CreatedAt               *time.Time `json:"created_at,omitempty"`
-	ImagePaths              []string   `json:"image_paths,omitempty"`
-	Unpublished             bool       `json:"unpublished,omitempty"`
-	SourceType              string     `json:"source_type,omitempty"`
-	GitHubOwner             string     `json:"github_owner,omitempty"`
-	GitHubRepo              string     `json:"github_repo,omitempty"`
-	GitHubAssetRegex        string     `json:"github_asset_regex,omitempty"`
-	GitHubSourceCode        bool       `json:"github_source_code,omitempty"`
+	DownloadAttempts        int64         `json:"download_attempts"`
+	ClientReportedDownloads int64         `json:"client_reported_downloads"`
+	ID                      string        `json:"id"`
+	Title                   string        `json:"title"`
+	Summary                 LocalizedText `json:"summary,omitempty"`
+	Description             LocalizedText `json:"description,omitempty"`
+	Author                  Author        `json:"author"`
+	Category                string        `json:"category"`
+	Tags                    []string      `json:"tags"`
+	SupportedPlatforms      []string      `json:"supported_platforms"`
+	MASVersionRange         string        `json:"mas_version_range"`
+	RecommendedPriority     int           `json:"recommended_priority"`
+	LatestVersionID         string        `json:"latest_version_id"`
+	LatestVersion           string        `json:"latest_version"`
+	SizeBytes               int64         `json:"size_bytes"`
+	SHA256                  string        `json:"sha256"`
+	DownloadsCount          int64         `json:"downloads_count"`
+	CreatedAt               *time.Time    `json:"created_at,omitempty"`
+	ImagePaths              []string      `json:"image_paths,omitempty"`
+	Unpublished             bool          `json:"unpublished,omitempty"`
+	SourceType              string        `json:"source_type,omitempty"`
+	GitHubOwner             string        `json:"github_owner,omitempty"`
+	GitHubRepo              string        `json:"github_repo,omitempty"`
+	GitHubAssetRegex        string        `json:"github_asset_regex,omitempty"`
+	GitHubSourceCode        bool          `json:"github_source_code,omitempty"`
 	// GitHubPlatformAssets switches GitHub discovery to per-platform release
 	// assets. Each listed platform is matched by its own regex on every release;
 	// an empty list keeps the single-file rule (github_asset_regex).
@@ -351,7 +350,26 @@ type Catalog struct {
 }
 
 const maxModImageSize = 10 << 20
-const maxArchiveSize = 256 << 20
+
+// defaultMaxArchiveSize is the built-in ceiling for one mod archive: upload,
+// GitHub release sync, relay download and the size check on already-stored
+// versions all read the same effective value (Store.archiveLimit), which
+// SUBMODHUB_MAX_ARCHIVE_SIZE overrides per deployment. 1 GiB is the product
+// default because the largest real packages are hundreds of megabytes.
+//
+// Anything that has to hold a whole archive must be sized for the configured
+// value, not for this default:
+//
+//   - deploy/compose.yaml mounts /tmp for the download temp file
+//     (github.Client.DownloadToTemp); tmpfs must be at least
+//     download concurrency (2) × the configured limit, plus slack.
+//   - the ZIP scan budget is derived from the limit (archiveScanLimits).
+//   - the GitHub client's own hard ceiling follows the configured limit.
+const defaultMaxArchiveSize int64 = 1 << 30
+
+// minArchiveSize is the floor accepted from configuration; below it the value is
+// a typo (or a unit mistake) rather than a policy.
+const minArchiveSize int64 = 1 << 20
 
 var (
 	// errArchiveRejected marks an archive whose bytes can never be stored or
@@ -409,6 +427,9 @@ type Store struct {
 	TestMode        bool
 	TestUsername    string
 	TestPassword    string
+	// MaxArchiveSize is this process's per-archive ceiling; zero means
+	// defaultMaxArchiveSize. cmd/server sets it from SUBMODHUB_MAX_ARCHIVE_SIZE.
+	MaxArchiveSize int64
 	DB              *sql.DB
 	Flarum          *auth.FlarumClient
 	AdminGroupIDs   map[string]bool
@@ -451,7 +472,7 @@ func newStore(dataDir string, initial Catalog, loadLocalCatalog bool) (*Store, e
 	if err := os.MkdirAll(filepath.Join(dataDir, "archives"), 0o750); err != nil {
 		return nil, err
 	}
-	s := &Store{Catalog: initial, DataDir: dataDir, GitHubSyncMaxAge: defaultGitHubSyncMaxAge, sessions: map[string]authSession{}, simultaneousSyncs: map[string]bool{}, downloadSem: make(chan struct{}, 2)}
+	s := &Store{Catalog: initial, DataDir: dataDir, MaxArchiveSize: defaultMaxArchiveSize, GitHubSyncMaxAge: defaultGitHubSyncMaxAge, sessions: map[string]authSession{}, simultaneousSyncs: map[string]bool{}, downloadSem: make(chan struct{}, 2)}
 	if loadLocalCatalog {
 		if b, err := os.ReadFile(filepath.Join(dataDir, "catalog.json")); err == nil {
 			if decodeErr := json.Unmarshal(b, &s.Catalog); decodeErr != nil {
@@ -524,6 +545,8 @@ func NewStoreHandler(s *Store) http.Handler {
 	mux.HandleFunc("/api/v1/admin/download-nodes", s.handleDeliveryNodes)
 	mux.HandleFunc("/api/v1/admin/download-nodes/", s.handleDeliveryNodes)
 	mux.HandleFunc("/api/v1/admin/settings", s.handleAdminSettings)
+	mux.HandleFunc("/api/v1/admin/settings/export", s.handleAdminSettingsExport)
+	mux.HandleFunc("/api/v1/admin/settings/import", s.handleAdminSettingsImport)
 	mux.HandleFunc("/api/v1/admin/settings/github-proxy/test", s.handleAdminSettingsTestGitHubProxy)
 	mux.HandleFunc("/api/v1/author/mods", s.authorMods)
 	mux.HandleFunc("/api/v1/author/workflow-template", s.authorWorkflowTemplate)
@@ -579,20 +602,20 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 16384)
 	var req struct {
-		Title               string   `json:"title"`
-		Summary             string   `json:"summary"`
-		Description         string   `json:"description"`
-		AuthorDisplayName   string   `json:"author_display_name"`
-		Category            string   `json:"category"`
-		Tags                []string `json:"tags"`
-		SupportedPlatforms  []string `json:"supported_platforms"`
-		MASVersionRange     string   `json:"mas_version_range"`
-		RecommendedPriority int      `json:"recommended_priority"`
-		SourceType          string   `json:"source_type"`
-		GitHubOwner         string   `json:"github_owner"`
-		GitHubRepo          string   `json:"github_repo"`
-		GitHubAssetRegex    string   `json:"github_asset_regex"`
-		GitHubSourceCode    bool     `json:"github_source_code"`
+		Title               string        `json:"title"`
+		Summary             LocalizedText `json:"summary"`
+		Description         LocalizedText `json:"description"`
+		AuthorDisplayName   string        `json:"author_display_name"`
+		Category            string        `json:"category"`
+		Tags                []string      `json:"tags"`
+		SupportedPlatforms  []string      `json:"supported_platforms"`
+		MASVersionRange     string        `json:"mas_version_range"`
+		RecommendedPriority int           `json:"recommended_priority"`
+		SourceType          string        `json:"source_type"`
+		GitHubOwner         string        `json:"github_owner"`
+		GitHubRepo          string        `json:"github_repo"`
+		GitHubAssetRegex    string        `json:"github_asset_regex"`
+		GitHubSourceCode    bool          `json:"github_source_code"`
 		// A non-nil list switches this source to per-platform discovery; nil or
 		// empty keeps the single-file rule.
 		GitHubPlatformAssets []GitHubPlatformRule `json:"github_platform_assets"`
@@ -601,6 +624,16 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	if dec.Decode(&req) != nil || strings.TrimSpace(req.Title) == "" || (req.Category != "submod" && req.Category != "spritepack") {
 		writeError(w, 400, "validation_failed", "title and category are required")
+		return
+	}
+	summary, err := normalizeLocalizedText("invalid_language", "摘要", req.Summary)
+	if err != nil {
+		writeError(w, 400, "invalid_language", err.Error())
+		return
+	}
+	description, err := normalizeLocalizedText("invalid_language", "简介", req.Description)
+	if err != nil {
+		writeError(w, 400, "invalid_language", err.Error())
 		return
 	}
 	if err := validateSourceConfig(sourceConfigInput{
@@ -656,8 +689,8 @@ func (s *Store) authorMods(w http.ResponseWriter, r *http.Request) {
 	mod := Mod{
 		ID:                  id,
 		Title:               strings.TrimSpace(req.Title),
-		Summary:             req.Summary,
-		Description:         req.Description,
+		Summary:             summary,
+		Description:         description,
 		Author:              Author{ID: session.User.ID, DisplayName: authorDisplayName},
 		Category:            req.Category,
 		Tags:                tags,
@@ -1154,20 +1187,20 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		modID := parts[0]
 		r.Body = http.MaxBytesReader(w, r.Body, 16384)
 		var req struct {
-			Title               string   `json:"title"`
-			Summary             string   `json:"summary"`
-			Description         string   `json:"description"`
-			AuthorDisplayName   string   `json:"author_display_name"`
-			Category            string   `json:"category"`
-			Tags                []string `json:"tags"`
-			SupportedPlatforms  []string `json:"supported_platforms"`
-			MASVersionRange     string   `json:"mas_version_range"`
-			RecommendedPriority int      `json:"recommended_priority"`
-			SourceType          *string  `json:"source_type"`
-			GitHubOwner         *string  `json:"github_owner"`
-			GitHubRepo          *string  `json:"github_repo"`
-			GitHubAssetRegex    *string  `json:"github_asset_regex"`
-			GitHubSourceCode    *bool    `json:"github_source_code"`
+			Title               string        `json:"title"`
+			Summary             LocalizedText `json:"summary"`
+			Description         LocalizedText `json:"description"`
+			AuthorDisplayName   string        `json:"author_display_name"`
+			Category            string        `json:"category"`
+			Tags                []string      `json:"tags"`
+			SupportedPlatforms  []string      `json:"supported_platforms"`
+			MASVersionRange     string        `json:"mas_version_range"`
+			RecommendedPriority int           `json:"recommended_priority"`
+			SourceType          *string       `json:"source_type"`
+			GitHubOwner         *string       `json:"github_owner"`
+			GitHubRepo          *string       `json:"github_repo"`
+			GitHubAssetRegex    *string       `json:"github_asset_regex"`
+			GitHubSourceCode    *bool         `json:"github_source_code"`
 			// Omitted keeps the stored platform rules; an explicit list replaces
 			// them, and an empty list returns to the single-file rule.
 			GitHubPlatformAssets *[]GitHubPlatformRule `json:"github_platform_assets"`
@@ -1176,6 +1209,16 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		dec.DisallowUnknownFields()
 		if dec.Decode(&req) != nil || strings.TrimSpace(req.Title) == "" || (req.Category != "submod" && req.Category != "spritepack") {
 			writeError(w, 400, "validation_failed", "title and category are required")
+			return
+		}
+		summary, err := normalizeLocalizedText("invalid_language", "摘要", req.Summary)
+		if err != nil {
+			writeError(w, 400, "invalid_language", err.Error())
+			return
+		}
+		description, err := normalizeLocalizedText("invalid_language", "简介", req.Description)
+		if err != nil {
+			writeError(w, 400, "invalid_language", err.Error())
 			return
 		}
 		isAdmin := containsRole(s.effectiveRoles(session), "admin")
@@ -1207,8 +1250,8 @@ func (s *Store) authorModResource(w http.ResponseWriter, r *http.Request) {
 		}
 		mod := &s.Catalog.Mods[index]
 		mod.Title = strings.TrimSpace(req.Title)
-		mod.Summary = req.Summary
-		mod.Description = req.Description
+		mod.Summary = summary
+		mod.Description = description
 		if strings.TrimSpace(req.AuthorDisplayName) != "" {
 			mod.Author.DisplayName = strings.TrimSpace(req.AuthorDisplayName)
 		}
@@ -1603,7 +1646,7 @@ func (s *Store) listMods(w http.ResponseWriter, r *http.Request) {
 		if !ok || latest.ModID != m.ID || latest.State != "published" {
 			continue
 		}
-		if q != "" && !strings.Contains(strings.ToLower(m.Title+" "+m.Summary), q) {
+		if q != "" && !strings.Contains(strings.ToLower(m.Title+" "+m.Summary.searchText()+" "+m.Description.searchText()), q) {
 			continue
 		}
 		if category != "" && m.Category != category {
@@ -1875,8 +1918,12 @@ func (s *Store) uploadArchive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "archive_shape_conflict", "this version already ships per-platform archives; upload with ?platform=")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxArchiveSize+(2<<20))
-	if err := r.ParseMultipartForm(maxArchiveSize); err != nil {
+	limit := s.archiveLimit()
+	r.Body = http.MaxBytesReader(w, r.Body, limit+(2<<20))
+	// maxMemory is deliberately small: a 1 GiB upload must spill to /tmp (tmpfs,
+	// sized for it in deploy/compose.yaml) instead of sitting in the heap while
+	// the request is parsed.
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		writeError(w, 400, "invalid_upload", err.Error())
 		return
 	}
@@ -2094,26 +2141,30 @@ func (s *Store) persistArchiveAs(versionID, base string, src io.Reader, isSprite
 	if err != nil {
 		return "", 0, "", packagezip.Report{}, err
 	}
+	limit := s.archiveLimit()
 	h := sha256.New()
-	n, copyErr := io.Copy(io.MultiWriter(f, h), io.LimitReader(src, maxArchiveSize+1))
+	n, copyErr := io.Copy(io.MultiWriter(f, h), io.LimitReader(src, limit+1))
 	closeErr := f.Close()
 	if copyErr != nil || closeErr != nil {
 		_ = os.Remove(tmp)
 		return "", 0, "", packagezip.Report{}, errors.New("archive write failed")
 	}
-	if n > maxArchiveSize {
+	if n > limit {
 		_ = os.Remove(tmp)
-		return "", 0, "", packagezip.Report{}, fmt.Errorf("%w: archive exceeds %d MiB limit", errArchiveRejected, int64(maxArchiveSize)>>20)
+		return "", 0, "", packagezip.Report{}, fmt.Errorf("%w: archive exceeds %d MiB limit", errArchiveRejected, limit>>20)
 	}
-	b, err := os.ReadFile(tmp)
+	// Scan straight off the temp file: *os.File is an io.ReaderAt, so a large
+	// archive never has to be loaded into the heap just to be inspected.
+	scanFile, err := os.Open(tmp)
 	if err != nil {
 		_ = os.Remove(tmp)
 		return "", 0, "", packagezip.Report{}, err
 	}
-	report, err := scanArchiveBytes(b, isSpritepack)
-	if err != nil {
+	report, scanErr := scanArchiveReader(scanFile, n, isSpritepack, archiveScanLimits(limit))
+	_ = scanFile.Close()
+	if scanErr != nil {
 		_ = os.Remove(tmp)
-		return "", 0, "", packagezip.Report{}, fmt.Errorf("%w: %v", errArchiveRejected, err)
+		return "", 0, "", packagezip.Report{}, fmt.Errorf("%w: %v", errArchiveRejected, scanErr)
 	}
 	// A ZIP that maps nothing is not a package, it is a source tree or a
 	// mislabelled download. Storing it would publish a version whose install
@@ -2135,14 +2186,14 @@ func (s *Store) persistArchiveAs(versionID, base string, src io.Reader, isSprite
 	return final, n, hex.EncodeToString(h.Sum(nil)), report, nil
 }
 
-// scanArchiveBytes is the single owner of "which scanner runs for this mod":
+// scanArchiveReader is the single owner of "which scanner runs for this mod":
 // spritepacks and submods are read by their own scanner and nothing else picks
 // between them.
-func scanArchiveBytes(data []byte, isSpritepack bool) (packagezip.Report, error) {
+func scanArchiveReader(r io.ReaderAt, size int64, isSpritepack bool, limits packagezip.Limits) (packagezip.Report, error) {
 	if isSpritepack {
-		return packagezip.ScanSpriteArchive(bytes.NewReader(data), int64(len(data)), packagezip.Limits{})
+		return packagezip.ScanSpriteArchive(r, size, limits)
 	}
-	return packagezip.Scan(bytes.NewReader(data), int64(len(data)), packagezip.Limits{})
+	return packagezip.Scan(r, size, limits)
 }
 
 // requireInstallableFiles rejects an archive whose scan found no installable

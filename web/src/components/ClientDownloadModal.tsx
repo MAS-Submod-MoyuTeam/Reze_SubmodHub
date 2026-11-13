@@ -6,7 +6,7 @@ import { formatBytes } from './formatBytes';
 import { AnimatePresence, m } from './Motion';
 import { overlayVariants, panelVariants } from '../../../ui/motion-presets';
 import {
-  deliveryLabel,
+  deliveryLabelKey,
   detectDevicePlatform,
   githubDownloadURL,
   listClientDownloads,
@@ -17,6 +17,7 @@ import {
   type ClientDownloadOption,
   type DownloadPlatform,
 } from './clientDownload';
+import { useI18n, type TFunction } from '../i18n';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -36,12 +37,10 @@ export const SNAPSHOT_STALE_SECONDS = 30 * 60;
 /** 错误原文只用于排障提示，不该把整段 HTML 灌进弹窗。 */
 const MAX_ERROR_DETAIL = 160;
 
-function errorMessageFor(error: unknown): string {
+function errorMessageFor(error: unknown, t: TFunction): string {
   const raw = (error instanceof Error ? error.message : String(error)).slice(0, MAX_ERROR_DETAIL);
-  if (raw.includes('app_release_unavailable')) {
-    return '站点还没有取得最新 Release 的元数据，暂时无法给出下载地址。稍后重试即可。';
-  }
-  return `无法获取客户端下载信息（${raw}）。请稍后重试。`;
+  if (raw.includes('app_release_unavailable')) return t('clientDownload.errorUnavailable');
+  return t('clientDownload.errorGeneric', { detail: raw });
 }
 
 interface ClientDownloadPanelProps {
@@ -65,6 +64,7 @@ const AssetCard: React.FC<{
   device: DownloadPlatform;
   onDownload: (asset: AppReleaseAsset) => void;
 }> = ({ option, device, onDownload }) => {
+  const { t } = useI18n();
   const { asset, platform } = option;
   // 展示与实际跳转必须用同一份判定，避免「写着本站下载、点下去是 GitHub」。
   const route = resolveDownloadRoute(asset);
@@ -76,14 +76,14 @@ const AssetCard: React.FC<{
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <PlatformIcon platform={platform} />
-          <span className="text-sm font-semibold text-neutral-900">{platformLabel(platform)}</span>
+          <span className="text-sm font-semibold text-neutral-900">{platformLabel(platform) ?? t('clientDownload.platformOther')}</span>
           {platform === device && (
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
-              当前设备
+              {t('clientDownload.currentDevice')}
             </span>
           )}
         </div>
-        <span className="text-[11px] font-mono text-neutral-500 tabular-nums">{formatBytes(asset.size_bytes)}</span>
+        <span className="text-[11px] font-mono text-neutral-500 tabular-nums">{formatBytes(asset.size_bytes, t('common.unknown'))}</span>
       </div>
 
       <div className="font-mono text-[11px] text-neutral-600 truncate" title={asset.name}>
@@ -93,7 +93,7 @@ const AssetCard: React.FC<{
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-neutral-500">
         <span className="flex items-center gap-1">
           <FileCheck2 className="w-3.5 h-3.5" />
-          来源：{deliveryLabel(route.source)}
+          {t('clientDownload.source', { source: t(deliveryLabelKey(route.source)) })}
         </span>
         {hash && <span className="font-mono" title={asset.sha256}>SHA-256 {hash}</span>}
       </div>
@@ -104,7 +104,7 @@ const AssetCard: React.FC<{
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
         >
           <Download className="w-3.5 h-3.5" />
-          {hosted ? '从本站下载' : '从 GitHub 下载'}
+          {hosted ? t('clientDownload.downloadHosted') : t('clientDownload.downloadGithub')}
         </button>
         {hosted && (
           <a
@@ -113,15 +113,13 @@ const AssetCard: React.FC<{
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <ExternalLink className="w-3.5 h-3.5 text-neutral-500" />
-            GitHub 直链
+            {t('clientDownload.githubLink')}
           </a>
         )}
       </div>
 
       {route.needsFreshLink && (
-        <p className="text-[11px] text-neutral-500">
-          节点直链已临期：点击下载会先换一条新链接，换不到就直接走 GitHub。
-        </p>
+        <p className="text-[11px] text-neutral-500">{t('clientDownload.freshLink')}</p>
       )}
     </div>
   );
@@ -136,6 +134,7 @@ export const ClientDownloadPanel: React.FC<ClientDownloadPanelProps> = ({
   onDownload,
   onRetry,
 }) => {
+  const { t } = useI18n();
   const options = release ? listClientDownloads(release.assets, device) : [];
   const stale = Boolean(release && release.snapshot_age_seconds > SNAPSHOT_STALE_SECONDS);
 
@@ -144,7 +143,7 @@ export const ClientDownloadPanel: React.FC<ClientDownloadPanelProps> = ({
       {status === 'loading' && (
         <div className="flex items-center gap-2 text-xs text-neutral-500 py-6 justify-center">
           <Loader2 className="w-4 h-4 animate-spin" />
-          正在获取最新客户端版本信息…
+          {t('clientDownload.loading')}
         </div>
       )}
 
@@ -153,9 +152,9 @@ export const ClientDownloadPanel: React.FC<ClientDownloadPanelProps> = ({
           <div className="p-3 rounded border border-rose-200 bg-rose-50 text-rose-900 text-xs space-y-1">
             <div className="font-semibold flex items-center gap-1.5">
               <AlertTriangle className="w-4 h-4 text-rose-700" />
-              下载信息不可用
+              {t('clientDownload.unavailable')}
             </div>
-            <p className="leading-relaxed">{errorMessage || '请稍后重试。'}</p>
+            <p className="leading-relaxed">{errorMessage || t('clientDownload.retryHint')}</p>
           </div>
           <div className="flex items-center justify-end">
             <button
@@ -163,7 +162,7 @@ export const ClientDownloadPanel: React.FC<ClientDownloadPanelProps> = ({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-800 bg-neutral-100 hover:bg-neutral-200 rounded active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              重试
+              {t('common.retry')}
             </button>
           </div>
         </div>
@@ -173,22 +172,21 @@ export const ClientDownloadPanel: React.FC<ClientDownloadPanelProps> = ({
         <>
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-neutral-500">
             <span className="font-semibold text-neutral-900">v{release.version}</span>
-            {release.published_at && <span>发布于 {new Date(release.published_at).toLocaleDateString()}</span>}
+            {release.published_at && <span>{t('clientDownload.releasedAt', { date: new Date(release.published_at).toLocaleDateString() })}</span>}
             <span>·</span>
-            <span>优先使用本站节点，节点不可用时才走 GitHub</span>
+            <span>{t('clientDownload.routeHint')}</span>
           </div>
 
           {stale && (
             <div className="p-2.5 rounded border border-amber-200 bg-amber-50 text-amber-900 text-[11px] leading-relaxed">
-              站点已有 {Math.round(release.snapshot_age_seconds / 60)} 分钟没有成功读取 GitHub 发布信息，
-              这里可能不是最新版本，可前往 GitHub Releases 确认。
+              {t('clientDownload.stale', { minutes: Math.round(release.snapshot_age_seconds / 60) })}
             </div>
           )}
 
           {options.length === 0 ? (
             <div className="py-6 text-center text-xs text-neutral-500 space-y-2">
               <CheckCircle2 className="w-6 h-6 text-neutral-300 mx-auto" />
-              当前发布没有可安装的 Windows / Android 资产。
+              {t('clientDownload.noAssets')}
             </div>
           ) : (
             <div className="space-y-2.5">
@@ -199,7 +197,7 @@ export const ClientDownloadPanel: React.FC<ClientDownloadPanelProps> = ({
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-neutral-100 text-[11px] text-neutral-500">
-            <span>下载后请用 SHA-256 校验文件完整性</span>
+            <span>{t('clientDownload.verifyHint')}</span>
             <div className="flex items-center gap-3">
               {release.checksum_url && (
                 <a
@@ -218,7 +216,7 @@ export const ClientDownloadPanel: React.FC<ClientDownloadPanelProps> = ({
                   className="inline-flex items-center gap-1 hover:text-neutral-900 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  前往 GitHub Releases
+                  {t('clientDownload.goToReleases')}
                 </a>
               )}
             </div>
@@ -236,6 +234,7 @@ interface ClientDownloadModalProps {
 
 export const ClientDownloadModal: React.FC<ClientDownloadModalProps> = ({ isOpen, onClose }) => {
   const { showToast } = useApp();
+  const { t } = useI18n();
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [release, setRelease] = useState<AppRelease | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
@@ -257,13 +256,13 @@ export const ClientDownloadModal: React.FC<ClientDownloadModalProps> = ({ isOpen
       .catch((error) => {
         if (!active) return;
         setRelease(null);
-        setErrorMessage(errorMessageFor(error));
+        setErrorMessage(errorMessageFor(error, t));
         setStatus('error');
       });
     return () => {
       active = false;
     };
-  }, [isOpen, attempt]);
+  }, [isOpen, attempt, t]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -296,7 +295,7 @@ export const ClientDownloadModal: React.FC<ClientDownloadModalProps> = ({ isOpen
       }
 
       if (!route.href) {
-        showToast('error', '无法解析下载地址，请稍后重试。');
+        showToast('error', t('clientDownload.noRoute'));
         return;
       }
       const link = document.createElement('a');
@@ -306,10 +305,10 @@ export const ClientDownloadModal: React.FC<ClientDownloadModalProps> = ({ isOpen
       link.click();
       link.remove();
     },
-    [expectedTag, showToast],
+    [expectedTag, showToast, t],
   );
 
-  const title = release ? `下载 RezeHub 客户端 v${release.version}` : '下载 RezeHub 客户端';
+  const title = release ? t('clientDownload.titleVersion', { version: release.version }) : t('clientDownload.title');
 
   return (
     <AnimatePresence>
@@ -340,7 +339,7 @@ export const ClientDownloadModal: React.FC<ClientDownloadModalProps> = ({ isOpen
           </div>
           <button
             onClick={onClose}
-            aria-label="关闭"
+            aria-label={t('clientDownload.close')}
             className="text-neutral-400 hover:text-neutral-600 p-1 rounded shrink-0 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <X className="w-4 h-4" />

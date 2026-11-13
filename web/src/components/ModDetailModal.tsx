@@ -13,6 +13,7 @@ import { modShareURL } from '../../../ui/mod-link';
 import { copyToClipboard } from '../../../ui/clipboard';
 import { openInClient } from '../clientDeepLink';
 import { AnimatePresence, m } from './Motion';
+import { useI18n } from '../i18n';
 import { overlayVariants, panelVariants } from '../../../ui/motion-presets';
 import {
   X,
@@ -50,6 +51,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
   onNotify,
 }) => {
   const { mods, versions, scanReports, getDownloadDescriptor, showToast, currentUser, unpublishVersion, markVersionDeprecated, clearVersionDeprecation, deleteVersion, setDetailModalModId, unpublishMod, catalogLoading, catalogError } = useApp();
+  const { t, resolve } = useI18n();
 
   // If modId provided, or derived from downloadVersionId
   const effectiveModId =
@@ -107,7 +109,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
     if (!currentMod || inFlightModIdsRef.current.has(currentMod.id)) return;
     const targetModId = currentMod.id;
     const confirmed = window.confirm(
-      `确认下架项目「${currentMod.title}」？该项目将从公开目录隐藏，版本、归档和详情图会保留。`
+      t('detail.confirmUnpublishMod', { title: currentMod.title })
     );
     if (!confirmed) return;
 
@@ -148,7 +150,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
     let active = true;
     getDownloadDescriptor(downloadVersionId)
       .then((descriptor) => { if (active) setDownloadDescriptor(descriptor); })
-      .catch((error) => { if (active) showToast('error', `无法取得下载信息：${error.message}`); });
+      .catch((error) => { if (active) showToast('error', t('detail.downloadInfoFailed', { error: error.message })); });
     return () => { active = false; };
   }, [canPrefetchDescriptor, downloadVersionId, getDownloadDescriptor, showToast]);
 
@@ -178,7 +180,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
           className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-md w-full p-6 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <h2 className="text-base font-bold text-neutral-900">
-              {catalogFailed ? '目录没能加载出来' : '这个模组不在当前目录里'}
+              {catalogFailed ? t('detail.catalogNotLoaded') : t('detail.modMissing')}
             </h2>
             <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 p-1.5 rounded transition-colors">
               <X className="w-5 h-5" />
@@ -186,8 +188,8 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
           </div>
           <p className="text-xs text-neutral-600 leading-relaxed">
             {catalogFailed
-              ? `无法从服务器读取已发布目录（${catalogError}），所以现在还判断不了这个模组在不在。请检查网络后刷新目录再试。`
-              : '链接指向的模组可能已下架或已被删除。请回到目录看看还有哪些模组可用。'}
+              ? t('detail.catalogNotLoadedBody', { error: catalogError ?? t('common.unknown') })
+              : t('detail.modMissingBody')}
           </p>
           {effectiveModId && (
             <p className="font-mono text-[11px] text-neutral-500 break-all">ID: {effectiveModId}</p>
@@ -196,7 +198,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
             onClick={onClose}
             className="w-full text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded px-3 py-2 transition-colors"
           >
-            返回目录
+            {t('detail.backToCatalog')}
           </button>
         </m.div>
       </m.div>
@@ -236,7 +238,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
     try {
       setDownloadDescriptor(await getDownloadDescriptor(vId, platform));
     } catch (error) {
-      showToast('error', `无法取得下载信息：${error instanceof Error ? error.message : 'unknown_error'}`);
+      showToast('error', t('detail.downloadInfoFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
     }
   };
 
@@ -256,9 +258,9 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      showToast('success', 'ZIP 大小与 SHA-256 校验通过，已交给浏览器保存。');
+      showToast('success', t('detail.downloadVerified'));
     } catch (error) {
-      showToast('error', `下载未完成：${error instanceof Error ? error.message : 'unknown_error'}`);
+      showToast('error', t('detail.downloadFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
     } finally {
       setIsDownloading(false);
     }
@@ -267,7 +269,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
   const handleCopyHash = (text: string) => {
     navigator.clipboard?.writeText(text);
     setCopiedHash(true);
-    showToast('info', 'SHA-256 校验和已复制到剪贴板');
+    showToast('info', t('detail.hashCopied'));
     setTimeout(() => setCopiedHash(false), 2000);
   };
 
@@ -283,11 +285,11 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
     if (!copied) {
       // 剪贴板被拒绝（文档没有焦点、权限策略）时别只说「失败」：
       // 把链接本身交给用户，他还能手动复制。
-      showToast('warning', `无法写入剪贴板，请手动复制：${link}`);
+      showToast('warning', t('detail.clipboardBlocked', { link }));
       return;
     }
     setShareState('copied');
-    showToast('success', `分享链接已复制：${link}`);
+    showToast('success', t('detail.shareCopied', { link }));
     setTimeout(() => setShareState('idle'), 2000);
   };
 
@@ -315,12 +317,12 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
           <div>
             <div className="flex items-center gap-2 text-xs text-neutral-500 mb-1">
               <span className="font-semibold text-emerald-700">
-                {currentMod.category === 'spritepack' ? 'Spritepack 服饰配件' : 'Submod 功能模组'}
+                {currentMod.category === 'spritepack' ? t('catalog.kindSpritepackLong') : t('catalog.kindSubmodLong')}
               </span>
               <span>·</span>
-              <span>作者: {currentMod.author.display_name}</span>
+              <span>{t('catalog.author', { name: currentMod.author.display_name })}</span>
               <span>·</span>
-              <span className="font-mono text-neutral-700">兼容 MAS {currentMod.mas_version_range}</span>
+              <span className="font-mono text-neutral-700">{t('detail.masCompatible', { range: currentMod.mas_version_range })}</span>
             </div>
             <h2 className="text-base font-bold text-neutral-900">{currentMod.title}</h2>
           </div>
@@ -330,25 +332,25 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
             <button
               type="button"
               onClick={handleShare}
-              title="复制分享链接，可直接粘贴到浏览器"
+              title={t('detail.shareTitle')}
               className="inline-flex items-center gap-1.5 text-xs text-neutral-600 hover:text-neutral-900 border border-neutral-200 hover:border-neutral-300 rounded px-2.5 py-1.5 transition-colors"
             >
               {shareState === 'copied' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Share2 className="w-3.5 h-3.5" />}
-              {shareState === 'copied' ? '已复制' : '分享'}
+              {shareState === 'copied' ? t('common.copied') : t('detail.share')}
             </button>
             <button
               type="button"
               onClick={() => openInClient(currentMod.id, {
                 onNoClient: () => {
-                  onNotify?.('未检测到已安装的客户端，可以先去下载。');
+                  onNotify?.(t('detail.clientMissing'));
                   onOpenClientDownload?.();
                 },
               })}
-              title="用已安装的桌面/Android 客户端打开这个模组"
+              title={t('detail.openInClientTitle')}
               className="inline-flex items-center gap-1.5 text-xs text-neutral-600 hover:text-neutral-900 border border-neutral-200 hover:border-neutral-300 rounded px-2.5 py-1.5 transition-colors"
             >
               <MonitorSmartphone className="w-3.5 h-3.5" />
-              在客户端打开
+              {t('detail.openInClient')}
             </button>
             <button
               onClick={onClose}
@@ -364,12 +366,12 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
           {/* Summary / Description */}
           <div className="space-y-2">
             <h4 className="text-xs font-semibold text-neutral-900 uppercase tracking-wider">
-              详细简介
+              {t('detail.description')}
             </h4>
-            <MarkdownText value={currentMod.description || currentMod.summary} className="text-neutral-600 bg-neutral-50 p-3 rounded border border-neutral-100" />
+            <MarkdownText value={resolve(currentMod.description) || resolve(currentMod.summary)} className="text-neutral-600 bg-neutral-50 p-3 rounded border border-neutral-100" />
           </div>
 
-          {detailImages.length > 0 && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{detailImages.map((url, index) => <img key={url} src={url} alt={`${currentMod.title} 详情图 ${index + 1}`} loading="lazy" className="w-full max-h-80 object-contain rounded border border-neutral-200 bg-neutral-50" />)}</div>}
+          {detailImages.length > 0 && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{detailImages.map((url, index) => <img key={url} src={url} alt={t('detail.imageAlt', { title: currentMod.title, index: index + 1 })} loading="lazy" className="w-full max-h-80 object-contain rounded border border-neutral-200 bg-neutral-50" />)}</div>}
 
           {currentMod.category === 'spritepack' ? (
             <SpritepackSets modID={currentMod.id} showToast={showToast} />
@@ -379,10 +381,10 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-semibold text-neutral-900 uppercase tracking-wider">
-                版本历史
+                {t('detail.versionHistory')}
               </h4>
               <span className="text-[11px] text-neutral-400">
-                所有已发布版本的 ZIP 归档字节均具备不可变凭证
+                {t('detail.immutableNote')}
               </span>
             </div>
 
@@ -403,17 +405,17 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                     }`}
                   >
                     <span>{formatVersionLabel(v.version)}</span>
-                    {v.deprecated && <AlertTriangle className="h-3 w-3 text-amber-500" aria-label="不推荐使用" />}
+                    {v.deprecated && <AlertTriangle className="h-3 w-3 text-amber-500" aria-label={t('deprecation.label')} />}
                   </button>
                 );
               })}
             </div>
             {currentVersion && (currentUser?.roles.includes('admin') || currentUser?.id === currentMod.author.id) && (
               <div className="flex flex-wrap gap-2 border-t border-neutral-100 pt-3">
-                {currentVersion.state === 'published' && <button onClick={() => { const reason = window.prompt('请输入下架理由'); if (reason?.trim()) void unpublishVersion(currentVersion.id, reason); }} className="text-xs text-amber-700 border border-amber-200 rounded px-2.5 py-1.5">下架此版本</button>}
-                {!currentVersion.deprecated && currentVersion.state !== 'draft' && <button onClick={() => { const reason = window.prompt('请输入不推荐使用的原因'); if (reason?.trim()) void markVersionDeprecated(currentVersion.id, reason); }} className="text-xs text-orange-700 border border-orange-200 rounded px-2.5 py-1.5">标记不推荐</button>}
-                {currentVersion.deprecated && <button onClick={() => { if (window.confirm('取消不推荐标记并清除原因？')) void clearVersionDeprecation(currentVersion.id); }} className="text-xs text-emerald-700 border border-emerald-200 rounded px-2.5 py-1.5">取消不推荐</button>}
-                {currentVersion.state !== 'published' && <button onClick={() => { if (window.confirm('确认删除这个旧版本？')) void deleteVersion(currentVersion.id); }} className="text-xs text-rose-700 border border-rose-200 rounded px-2.5 py-1.5">删除此版本</button>}
+                {currentVersion.state === 'published' && <button onClick={() => { const reason = window.prompt(t('detail.unpublishReasonPrompt')); if (reason?.trim()) void unpublishVersion(currentVersion.id, reason); }} className="text-xs text-amber-700 border border-amber-200 rounded px-2.5 py-1.5">{t('detail.unpublishVersion')}</button>}
+                {!currentVersion.deprecated && currentVersion.state !== 'draft' && <button onClick={() => { const reason = window.prompt(t('detail.deprecateReasonPrompt')); if (reason?.trim()) void markVersionDeprecated(currentVersion.id, reason); }} className="text-xs text-orange-700 border border-orange-200 rounded px-2.5 py-1.5">{t('detail.markDeprecated')}</button>}
+                {currentVersion.deprecated && <button onClick={() => { if (window.confirm(t('detail.confirmUndeprecate'))) void clearVersionDeprecation(currentVersion.id); }} className="text-xs text-emerald-700 border border-emerald-200 rounded px-2.5 py-1.5">{t('detail.undeprecate')}</button>}
+                {currentVersion.state !== 'published' && <button onClick={() => { if (window.confirm(t('detail.confirmDeleteVersion'))) void deleteVersion(currentVersion.id); }} className="text-xs text-rose-700 border border-rose-200 rounded px-2.5 py-1.5">{t('detail.deleteVersion')}</button>}
               </div>
             )}
 
@@ -426,21 +428,21 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-neutral-900">
-                        版本 {currentVersion.version}
+                        {t('detail.versionLabel', { version: currentVersion.version })}
                       </span>
                       {currentVersion.published_at && (
                         <span className="text-[11px] text-neutral-500 flex items-center gap-1">
                           <Calendar className="w-3 h-3 text-neutral-400" />
-                          发布于 {new Date(currentVersion.published_at).toLocaleDateString()}
+                          {t('detail.publishedOn', { date: new Date(currentVersion.published_at).toLocaleDateString() })}
                         </span>
                       )}
                     </div>
                     <div className="text-[11px] text-neutral-500 font-mono mt-0.5">
                       {currentVersion.platform_assets && currentVersion.platform_assets.length > 0
                         ? currentVersion.platform_assets
-                            .map((asset) => `${assetPlatformLabel(asset.platform)} ${formatBytes(asset.size_bytes)}`)
+                            .map((asset) => `${assetPlatformLabel(asset.platform)} ${formatBytes(asset.size_bytes, t('common.unknown'))}`)
                             .join(' · ')
-                        : `大小: ${formatBytes(currentVersion.size_bytes)} (${currentVersion.size_bytes.toLocaleString()} 字节) · 全平台通用`}
+                        : t('detail.sizeAllPlatforms', { size: formatBytes(currentVersion.size_bytes, t('common.unknown')), bytes: currentVersion.size_bytes.toLocaleString() })}
                     </div>
                   </div>
 
@@ -468,25 +470,25 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                     <button
                       onClick={() => handleFetchDownloadDescriptor(currentVersion.id, requestedPlatform)}
                       disabled={platformChoicePending}
-                      title={platformChoicePending ? '该版本为 Windows 与 Android 提供了不同的包，请先选择平台' : undefined}
+                      title={platformChoicePending ? t('detail.platformChoiceTitle') : undefined}
                       className="px-3.5 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded flex items-center gap-1.5 transition-colors shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      {platformChoicePending ? '请先选择平台' : '下载'}
+                      {platformChoicePending ? t('detail.choosePlatformFirst') : t('common.download')}
                     </button>
                   </div>
                 </div>
 
                 {/* Release notes */}
                 <div className="space-y-1">
-                  <span className="text-[11px] font-medium text-neutral-500">发行说明 (Changelog):</span>
-                  <MarkdownText value={currentVersion.release_notes || '暂无更新日志'} className="text-neutral-800 bg-white p-2.5 rounded border border-neutral-200" />
+                  <span className="text-[11px] font-medium text-neutral-500">{t('detail.changelogLabel')}</span>
+                  <MarkdownText value={currentVersion.release_notes || t('detail.noChangelog')} className="text-neutral-800 bg-white p-2.5 rounded border border-neutral-200" />
                 </div>
 
                 {/* Dependencies */}
                 {currentVersion.dependencies.length > 0 && (
                   <div className="space-y-1.5">
-                    <span className="text-[11px] font-medium text-neutral-500">前置模组依赖 (Dependencies):</span>
+                    <span className="text-[11px] font-medium text-neutral-500">{t('detail.dependenciesLabel')}</span>
                     <div className="space-y-1">
                       {currentVersion.dependencies.map((dep) => (
                         <div
@@ -505,7 +507,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                             {!(dep.linked_mod_ids?.length || dep.linked_mod_id) && <span className="font-mono text-neutral-800">{dep.mod_title || dep.mod_id}</span>}
                           </div>
                           <span className="font-mono text-neutral-500">
-                            {dep.version_range} {dep.required ? '(必需)' : '(可选建议)'}
+                            {dep.version_range} {dep.required ? t('detail.depRequired') : t('detail.depOptional')}
                           </span>
                         </div>
                       ))}
@@ -520,7 +522,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-medium text-neutral-500 flex items-center gap-1">
                       <Hash className="w-3 h-3 text-neutral-400" />
-                      归档完整性 SHA-256 校验和 (不可变约束):
+                      {t('detail.checksumLabel')}
                     </span>
                     <button
                       onClick={() => handleCopyHash(
@@ -531,7 +533,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                       className="text-[11px] text-emerald-700 hover:underline flex items-center gap-1"
                     >
                       {copiedHash ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                      复制哈希
+                      {t('detail.copyHash')}
                     </button>
                   </div>
                   {currentVersion.platform_assets && currentVersion.platform_assets.length > 0 ? (
@@ -551,7 +553,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                             {assetPlatformLabel(asset.platform)}
                           </button>
                           <div className="font-mono text-[11px] bg-white p-2 rounded border border-neutral-200 text-neutral-800 break-all select-all tabular-nums flex-1">
-                            {asset.sha256 || '尚未就绪'}
+                            {asset.sha256 || t('detail.notReady')}
                           </div>
                         </div>
                       ))}
@@ -569,7 +571,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 font-medium text-neutral-800">
                         <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                        静态扫描摘要 (Scan Report ID: {scanReport.id})
+                        {t('detail.scanSummary', { id: scanReport.id })}
                       </div>
                       <span className="text-[11px] font-mono text-neutral-400">
                         {new Date(scanReport.scanned_at).toLocaleDateString()}
@@ -578,25 +580,25 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
 
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
                       <div className="bg-white p-2 rounded border border-neutral-200">
-                        <div className="text-[10px] text-neutral-400">总文件数</div>
+                        <div className="text-[10px] text-neutral-400">{t('detail.statTotalFiles')}</div>
                         <div className="font-semibold text-neutral-800 tabular-nums">
                           {scanReport.resource_stats.total_files}
                         </div>
                       </div>
                       <div className="bg-white p-2 rounded border border-neutral-200">
-                        <div className="text-[10px] text-neutral-400">RenPy 脚本</div>
+                        <div className="text-[10px] text-neutral-400">{t('detail.statScripts')}</div>
                         <div className="font-semibold text-neutral-800 tabular-nums">
                           {scanReport.resource_stats.scripts_count}
                         </div>
                       </div>
                       <div className="bg-white p-2 rounded border border-neutral-200">
-                        <div className="text-[10px] text-neutral-400">材质贴图</div>
+                        <div className="text-[10px] text-neutral-400">{t('detail.statTextures')}</div>
                         <div className="font-semibold text-neutral-800 tabular-nums">
                           {scanReport.resource_stats.sprites_count}
                         </div>
                       </div>
                       <div className="bg-white p-2 rounded border border-neutral-200">
-                        <div className="text-[10px] text-neutral-400">原生二进制</div>
+                        <div className="text-[10px] text-neutral-400">{t('detail.statBinaries')}</div>
                         <div
                           className={`font-semibold tabular-nums ${
                             scanReport.resource_stats.binary_flag
@@ -604,7 +606,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                               : 'text-emerald-700'
                           }`}
                         >
-                          {scanReport.resource_stats.binary_flag ? '已检出 (警告)' : '无外挂二进制'}
+                          {scanReport.resource_stats.binary_flag ? t('detail.binaryDetected') : t('detail.noBinary')}
                         </div>
                       </div>
                     </div>
@@ -612,7 +614,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                     {/* Registrations with Confidence requirement */}
                     {scanReport.registrations.length > 0 && (
                       <div className="text-[11px] bg-white p-2.5 rounded border border-neutral-200 space-y-1">
-                        <div className="text-neutral-500 font-medium">Submod 注册标识:</div>
+                        <div className="text-neutral-500 font-medium">{t('detail.registrations')}</div>
                         {scanReport.registrations.map((reg) => (
                           <div key={reg.submod_id} className="font-mono text-neutral-800">
                             {reg.name} [{reg.submod_id}]
@@ -632,30 +634,30 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 font-semibold text-emerald-900 text-xs">
                   <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                  已取得下载信息
+                  {t('detail.descriptorReady')}
                 </div>
                 <span className="text-[11px] font-mono text-emerald-800">
-                  有效时间至: {new Date(downloadDescriptor.expires_at).toLocaleTimeString()}
+                  {t('detail.expiresAt', { time: new Date(downloadDescriptor.expires_at).toLocaleTimeString() })}
                 </span>
               </div>
 
               <div className="space-y-1.5 text-xs text-emerald-950">
                 {downloadDescriptor.platform && (
                   <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">分发平台:</span>
+                    <span className="text-neutral-500">{t('detail.deliveryPlatform')}</span>
                     <span className="font-mono">{assetPlatformLabel(downloadDescriptor.platform)}</span>
                   </div>
                 )}
                 <div className="flex items-center justify-between">
-                  <span className="text-neutral-500">归档文件名:</span>
+                  <span className="text-neutral-500">{t('detail.archiveFileName')}</span>
                   <span className="font-mono">{downloadDescriptor.filename}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-neutral-500">下载大小:</span>
-                  <span className="font-mono tabular-nums">{formatBytes(downloadDescriptor.size_bytes)}</span>
+                  <span className="text-neutral-500">{t('detail.downloadSize')}</span>
+                  <span className="font-mono tabular-nums">{formatBytes(downloadDescriptor.size_bytes, t('common.unknown'))}</span>
                 </div>
                 <div>
-                  <span className="text-neutral-500 block mb-0.5">下载地址:</span>
+                  <span className="text-neutral-500 block mb-0.5">{t('detail.downloadURL')}</span>
                   <input
                     readOnly
                     value={downloadDescriptor.url}
@@ -673,7 +675,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                   className="px-3.5 py-1.5 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded flex items-center gap-1.5 transition-colors disabled:opacity-50"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  {isDownloading ? '正在下载并校验' : '校验并下载 ZIP'}
+                  {isDownloading ? t('detail.downloading') : t('detail.verifyAndDownload')}
                 </button>
               </div>
             </div>
@@ -684,7 +686,7 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
 
         {/* Modal Footer */}
         <div className="px-6 py-3 border-t border-neutral-200 bg-neutral-50/50 flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-500">
-          <span>推荐安装优先级: {currentMod.recommended_priority}</span>
+          <span>{t('detail.recommendedPriority', { priority: currentMod.recommended_priority })}</span>
           <div className="flex items-center gap-2">
             {isAdmin && currentMod.is_published && (
               <button
@@ -694,14 +696,14 @@ export const ModDetailModal: React.FC<ModDetailModalProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors disabled:opacity-50"
               >
                 <EyeOff className="w-3.5 h-3.5" />
-                {isUnpublishingMod ? '正在下架项目...' : '下架项目'}
+                {isUnpublishingMod ? t('detail.unpublishing') : t('detail.unpublishMod')}
               </button>
             )}
             <button
               onClick={onClose}
               className="px-4 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-200/80 rounded transition-colors"
             >
-              关闭
+              {t('common.close')}
             </button>
           </div>
         </div>

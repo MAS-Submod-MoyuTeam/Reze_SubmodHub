@@ -5,7 +5,7 @@ export interface FinishSessionOptions {
   files?: number;
 }
 
-export function createInitialOperationFromPlan(plan: Plan, instanceId: string): Operation {
+export function createInitialOperationFromPlan(plan: Plan, instanceId: string, t: (key: string, vars?: Record<string, string | number>) => string): Operation {
   const opId = plan.backend_operation_id || plan.plan_id;
   const totalFiles = plan.changes?.length || 0;
   return {
@@ -21,7 +21,7 @@ export function createInitialOperationFromPlan(plan: Plan, instanceId: string): 
     phase: 'planned',
     can_rollback: false,
     progress: {
-      stage: '计划已确认，正在初始化写入事务...',
+      stage: t('execution.stageStarting'),
       current_file: '',
       processed_files: 0,
       total_files: totalFiles,
@@ -60,6 +60,8 @@ export function mergeOperationIntoList(operations: Operation[], op: Operation): 
 
 export interface ExecutionCoordinatorOptions {
   activeInstanceId: () => string;
+  /** 文案函数由调用方注入：协调器不是 React 组件，拿不到 hook。 */
+  t: (key: string, vars?: Record<string, string | number>) => string;
   onSessionChange: (session: ExecutionSession | null) => void;
   onOperationsChange: (updater: (prev: Operation[]) => Operation[]) => void;
   getOperation: (operationId: string) => Promise<Operation>;
@@ -103,7 +105,7 @@ export class ExecutionCoordinator {
     this.stopPolling();
     const generation = ++this.sessionGeneration;
     const opId = plan.backend_operation_id || plan.plan_id;
-    const initialOp = createInitialOperationFromPlan(plan, targetInstanceId);
+    const initialOp = createInitialOperationFromPlan(plan, targetInstanceId, this.options.t);
 
     const session: ExecutionSession = {
       operation_id: opId,
@@ -254,7 +256,7 @@ export class ExecutionCoordinator {
       currentOp.state === 'rolled_back' ||
       currentOp.phase === 'rolled_back';
 
-    const queryErrorMsg = queryError?.message || '后端状态查询失败';
+    const queryErrorMsg = queryError?.message || this.options.t('execution.queryFailed');
 
     if (isCommitted) {
       // Confirmed committed state MUST be preserved.
@@ -266,7 +268,7 @@ export class ExecutionCoordinator {
         progress: {
           ...currentOp.progress,
           percent: 100,
-          stage: currentOp.progress?.stage || '已提交',
+          stage: currentOp.progress?.stage || this.options.t('execution.stageCommitted'),
         },
       };
       if (options?.files !== undefined && (finalOp.progress.processed_files === 0 || !finalOp.progress.processed_files)) {
@@ -274,8 +276,8 @@ export class ExecutionCoordinator {
         finalOp.progress.total_files = Math.max(finalOp.progress.total_files, options.files);
       }
       const commError = error
-        ? (queryError ? `${error.message} (查询异常: ${queryErrorMsg})` : error.message)
-        : (queryError ? `后端状态查询失败: ${queryErrorMsg}` : null);
+        ? (queryError ? this.options.t('execution.withQueryError', { error: error.message, query: queryErrorMsg }) : error.message)
+        : (queryError ? this.options.t('execution.queryFailedWithDetail', { detail: queryErrorMsg }) : null);
 
       const updatedSession: ExecutionSession = {
         ...this.currentSession,
@@ -293,8 +295,8 @@ export class ExecutionCoordinator {
     if (isNeedsManual || isRolledBack) {
       // Confirmed terminal recovery/rollback state MUST be preserved.
       const commError = error
-        ? (queryError ? `${error.message} (查询异常: ${queryErrorMsg})` : error.message)
-        : (queryError ? `后端状态查询失败: ${queryErrorMsg}` : null);
+        ? (queryError ? this.options.t('execution.withQueryError', { error: error.message, query: queryErrorMsg }) : error.message)
+        : (queryError ? this.options.t('execution.queryFailedWithDetail', { detail: queryErrorMsg }) : null);
 
       const updatedSession: ExecutionSession = {
         ...this.currentSession,
@@ -315,7 +317,7 @@ export class ExecutionCoordinator {
       phase: 'query_failed',
       progress: {
         ...currentOp.progress,
-        stage: '后端状态查询失败，结果未知',
+        stage: this.options.t('execution.stageQueryFailed'),
       },
       error: error
         ? { code: 'query_failed', message: error.message }
@@ -327,7 +329,7 @@ export class ExecutionCoordinator {
       ...this.currentSession,
       operation: fallbackOp,
       is_finished: true,
-      error: error ? error.message : (queryError ? queryError.message : (this.currentSession.error || '后端状态查询失败')),
+      error: error ? error.message : (queryError ? queryError.message : (this.currentSession.error || this.options.t('execution.queryFailed'))),
       communication_error: error ? error.message : (queryError ? queryError.message : null),
     };
     this.currentSession = updatedSession;

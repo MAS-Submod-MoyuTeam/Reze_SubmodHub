@@ -5,13 +5,14 @@ import { ModSummary, Platform } from '../types/submodhub';
 import { DeprecationNotice } from './DeprecationNotice';
 import { formatVersionLabel } from './versionHistory';
 import { useLoadMoreOnScroll } from './useLoadMoreOnScroll';
-import { fetchTagCatalog, type TagGroup } from '../../../ui/tags-api';
-import { activeTagFilterCount, buildTagFilterRows, describeTagFilter, matchesTagFilter } from '../../../ui/tag-filter';
+import { fetchTagCatalog, tagDisplayNames, resolveTagName, type TagGroup } from '../../../ui/tags-api';
+import { activeTagFilterCount, buildTagFilterRows, describeTagFilterLocalized, matchesTagFilter } from '../../../ui/tag-filter';
 import { TagFilterDrawer } from './TagFilterDrawer';
 import { CatalogFloatingControls } from './CatalogFloatingControls';
 import { CATALOG_PLATFORM_FILTERS } from './catalogPlatforms';
 import { pageScrollPane, usePaneScrolled } from './usePaneScrolled';
 import { scrollPaneToTop } from './scrollToTop';
+import { useI18n } from '../i18n';
 import {
   Search,
   Download,
@@ -19,6 +20,26 @@ import {
   AlertCircle,
   RefreshCw,
 } from 'lucide-react';
+
+/**
+ * 目录错误码 → 一句能读的话。
+ *
+ * 服务端给的是一次失败的 code（`http_500`、`invalid_catalog_response`），
+ * 直接塞进句子只会给用户一个代码。已知的几种给出解释，未知的原样保留——
+ * 未知错误仍要可见，否则用户只会看到「失败了」而无法报告。
+ */
+function describeCatalogError(code: string | null, t: (key: string, vars?: Record<string, string | number>) => string): string {
+  if (!code) return t('common.unknown');
+  const known: Record<string, string> = {
+    http_500: 'catalog.errorServer',
+    http_502: 'catalog.errorServer',
+    http_503: 'catalog.errorServer',
+    http_504: 'catalog.errorServer',
+    invalid_catalog_response: 'catalog.errorInvalidResponse',
+  };
+  const key = known[code];
+  return key ? t(key) : code;
+}
 
 interface CatalogViewProps {
   onSelectMod: (modId: string) => void;
@@ -46,6 +67,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     catalogError,
     reloadCatalog,
   } = useApp();
+
+  const { t, lang, resolve } = useI18n();
 
   /** 标签抽屉的开关是纯 UI 状态，不进全局上下文。 */
   const [tagDrawerOpen, setTagDrawerOpen] = useState(false);
@@ -82,7 +105,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
       .catch(() => {
         if (cancelled) return;
         // 目录读不到不算致命：模组聚合出的标签仍可筛选，抽屉里如实说明。
-        setTagCatalogError('标签目录读取失败，已退回按模组聚合出的标签筛选');
+        setTagCatalogError('tagFilter.loadFailed');
       })
       .finally(() => {
         if (!cancelled) setTagCatalogLoading(false);
@@ -92,6 +115,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     };
   }, []);
   const tagFilterRows = useMemo(() => buildTagFilterRows(tagGroups, allTags), [tagGroups, allTags]);
+  // 标签名、标签描述与模组正文都是多语言对象：渲染前统一走 resolve / 显示名表。
+  const tagNames = useMemo(() => tagDisplayNames(tagGroups), [tagGroups]);
   const activeTagCount = activeTagFilterCount(tagFilter);
 
   // Filtered mods
@@ -101,7 +126,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchTitle = mod.title.toLowerCase().includes(q);
-        const matchSummary = mod.summary.toLowerCase().includes(q);
+        const matchSummary = Object.values(mod.summary).some((value) => value?.toLowerCase().includes(q));
         const matchAuthor = mod.author.display_name.toLowerCase().includes(q);
         const matchTags = mod.tags.some((t) => t.toLowerCase().includes(q));
         if (!matchTitle && !matchSummary && !matchAuthor && !matchTags) return false;
@@ -170,10 +195,10 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold tracking-tight text-neutral-900">
-              Monika After Story 模组与服饰目录
+              {t('catalog.title')}
             </h1>
             <p className="text-xs text-neutral-500 mt-1">
-              在下面挑选你想装的东西吧~
+              {t('catalog.subtitle')}
             </p>
           </div>
 
@@ -182,7 +207,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
             <input
               type="text"
-              placeholder="搜索模组名称、作者、标签..."
+              placeholder={t('catalog.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -195,7 +220,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 onClick={() => setSearchQuery('')}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded text-xs text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 active:bg-neutral-200 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
-                清除
+                {t('catalog.searchClear')}
               </button>
             )}
           </div>
@@ -205,11 +230,11 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
         <div className="pt-3 border-t border-neutral-100 flex flex-wrap items-center gap-x-6 gap-y-3 text-xs">
           {/* Category Tabs */}
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap max-sm:basis-full">
-            <span className="text-neutral-400 font-medium mr-1">分类:</span>
+            <span className="text-neutral-400 font-medium mr-1">{t('catalog.categoryLabel')}</span>
             {[
-              { id: 'all', label: '全部' },
-              { id: 'submod', label: '功能模组 (Submod)' },
-              { id: 'spritepack', label: '服饰配件 (Spritepack)' },
+              { id: 'all', label: t('catalog.categoryAll') },
+              { id: 'submod', label: t('catalog.categorySubmod') },
+              { id: 'spritepack', label: t('catalog.categorySpritepack') },
             ].map((cat) => (
               <button
                 key={cat.id}
@@ -231,7 +256,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
           {/* Platform Filter */}
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap max-sm:basis-full">
-            <span className="text-neutral-400 font-medium mr-1">平台:</span>
+            <span className="text-neutral-400 font-medium mr-1">{t('catalog.platformLabel')}</span>
             {CATALOG_PLATFORM_FILTERS.map((p) => (
               <button
                 key={p.id}
@@ -246,7 +271,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                     : 'text-neutral-600 hover:bg-neutral-100'
                 }`}
               >
-                {p.label}
+                {/* 平台「全部」需要按语言翻译，其余平台名本身就是专有名词。 */}
+                {p.labelKey ? t(p.labelKey) : p.label}
               </button>
             ))}
           </div>
@@ -254,7 +280,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           {/* 标签筛选入口移到右下角悬浮按钮组（与刷新同排），点开是右侧抽屉。
               头部不再铺一行标签：目录标签一多就会把首屏挤掉。 */}
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap max-sm:basis-full">
-            <span className="text-neutral-400 font-medium mr-1">标签:</span>
+            <span className="text-neutral-400 font-medium mr-1">{t('catalog.tagsLabel')}</span>
             <button
               type="button"
               onClick={() => setTagDrawerOpen(true)}
@@ -267,7 +293,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   : 'text-neutral-600 hover:bg-neutral-100'
               }`}
             >
-              {activeTagCount > 0 ? `已筛 ${activeTagCount} 个标签` : '选择标签'}
+              {activeTagCount > 0 ? t('tagFilter.selectedButton', { count: activeTagCount }) : t('tagFilter.selectButton')}
             </button>
           </div>
         </div>
@@ -299,9 +325,9 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           {catalogError ? (
             <div className="bg-white border border-amber-200 rounded-lg p-6 text-center space-y-3">
               <AlertCircle className="w-8 h-8 text-amber-500 mx-auto" />
-              <h3 className="text-sm font-semibold text-neutral-800">目录加载失败</h3>
+              <h3 className="text-sm font-semibold text-neutral-800">{t('catalog.loadFailedTitle')}</h3>
               <p className="text-xs text-neutral-500 max-w-md mx-auto">
-                无法从服务器读取已发布目录：{catalogError}。项目不提供离线缓存快照，请检查网络后重新加载。
+                {t('catalog.loadFailedBody', { error: describeCatalogError(catalogError, t) })}
               </p>
               <div className="pt-2">
                 <button
@@ -310,7 +336,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 rounded border border-amber-200 transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700"
                 >
                   <RefreshCw className={`w-3 h-3 ${catalogRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
-                  <span>{catalogRefreshing ? '重新加载中…' : '重新加载目录'}</span>
+                  <span>{catalogRefreshing ? t('catalog.reloading') : t('catalog.reload')}</span>
                 </button>
               </div>
             </div>
@@ -318,16 +344,16 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             /* Empty Results State (Section 1 requirement) */
             <div className="bg-white border border-neutral-200 rounded-lg p-12 text-center space-y-3">
               <Filter className="w-8 h-8 text-neutral-300 mx-auto" />
-              <h3 className="text-sm font-semibold text-neutral-800">未找到匹配的模组</h3>
+              <h3 className="text-sm font-semibold text-neutral-800">{t('catalog.emptyTitle')}</h3>
               <p className="text-xs text-neutral-500 max-w-sm mx-auto">
-                没有符合当前关键词或分类条件的已发布模组。你可以尝试清空筛选条件或调整搜索词。
+                {t('catalog.emptyBody')}
               </p>
               {/* 标签筛选是收窄条件（包含之间是 AND），空结果很可能就是它造成的。
                   此时必须说明是哪几个标签，并给出只清标签的入口，
                   而不是只留一个连搜索/分类/平台一起清掉的按钮。 */}
               {activeTagCount > 0 ? (
                 <p className="text-xs text-emerald-800" data-testid="catalog-tag-filter-reason">
-                  当前标签筛选：{describeTagFilter(tagFilter)}
+                  {t('catalog.emptyTagReason', { tags: describeTagFilterLocalized(tagFilterRows, tagFilter, lang, t) })}
                 </p>
               ) : null}
               <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
@@ -340,14 +366,14 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                     data-testid="catalog-clear-tags"
                     className="px-3.5 py-1.5 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 rounded border border-emerald-200 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
                   >
-                    只清除标签筛选
+                    {t('catalog.clearTagsOnly')}
                   </button>
                 ) : null}
                 <button
                   onClick={handleResetFilters}
                   className="px-3.5 py-1.5 text-xs font-medium text-neutral-700 bg-white hover:bg-neutral-50 hover:border-neutral-400 active:bg-neutral-100 rounded border border-neutral-300 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
-                  重置所有筛选条件
+                  {t('catalog.resetAll')}
                 </button>
               </div>
             </div>
@@ -355,9 +381,14 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             /* Populated Grid */
             <div className="space-y-4">
               <div className="flex items-center justify-between text-xs text-neutral-500 px-1">
+                {/* 计数是变量，所以整句拆成「前 / 中 / 后」三段：数字用 tabular-nums
+                    的等宽字形夹在中间，两种语言的语序差异由字典各自决定。 */}
                 <span aria-live="polite">
-                  显示 <strong className="font-semibold text-neutral-800 tabular-nums">{paginatedMods.length}</strong> /{' '}
-                  <span className="tabular-nums">{filteredMods.length}</span> 个已验证模组
+                  {t('catalog.showingBefore')}
+                  <strong className="font-semibold text-neutral-800 tabular-nums">{paginatedMods.length}</strong>
+                  {t('catalog.showingMiddle')}
+                  <span className="tabular-nums">{filteredMods.length}</span>
+                  {t('catalog.showingAfter')}
                 </span>
                 <button
                   onClick={() => void handleReloadCatalog()}
@@ -365,7 +396,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   className="flex items-center gap-1 rounded px-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 active:bg-neutral-200 transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
                   <RefreshCw className={`w-3 h-3 ${catalogRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
-                  刷新
+                  {t('catalog.refresh')}
                 </button>
               </div>
 
@@ -383,10 +414,10 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                     {/* Zero-Pill Header: Natural unboxed metadata with dot separators */}
                     <div className="flex items-center gap-1.5 text-[11px] text-neutral-500">
                       <span className="font-medium text-emerald-700">
-                        {isSpritepack ? 'Spritepack 服饰' : 'Submod 模组'}
+                        {isSpritepack ? t('catalog.kindSpritepack') : t('catalog.kindSubmod')}
                       </span>
                       <span aria-hidden="true">·</span>
-                      <span>作者: {mod.author.display_name}</span>
+                      <span>{t('catalog.author', { name: mod.author.display_name })}</span>
                       <span aria-hidden="true">·</span>
                       <span className="font-mono tabular-nums">MAS {mod.mas_version_range}</span>
                     </div>
@@ -401,7 +432,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
                     {/* Summary */}
                     <p className="text-xs text-neutral-600 line-clamp-2 leading-relaxed">
-                      {mod.summary}
+                      {resolve(mod.summary)}
                     </p>
 
                     <DeprecationNotice deprecated={latestVer?.deprecated} reason={latestVer?.deprecation_reason} />
@@ -410,7 +441,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                     <div className="flex flex-wrap items-center gap-1 text-[11px] text-neutral-400 pt-1">
                       {mod.tags.map((tag, idx) => (
                         <span key={tag} className="flex items-center">
-                          <span>#{tag}</span>
+                          <span>{t('catalog.tagPrefix', { name: resolveTagName(tag, tagNames, lang) })}</span>
                           {idx < mod.tags.length - 1 && <span className="mx-1 text-neutral-300">·</span>}
                         </span>
                       ))}
@@ -421,7 +452,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   <div className="pt-4 mt-4 border-t border-neutral-100 flex items-center justify-between text-xs">
                     <div className="text-[11px] text-neutral-500 flex items-center gap-1 font-mono">
                       {!isSpritepack && latestVer?.version && <><span>{formatVersionLabel(latestVer.version)}</span><span className="text-neutral-300">/</span></>}
-                      <span className="tabular-nums inline-flex items-center gap-1" title="下载次数">
+                      <span className="tabular-nums inline-flex items-center gap-1" title={t('catalog.downloadsTitle')}>
                         <Download className="w-3 h-3" aria-hidden="true" />
                         <span>{mod.downloads_count.toLocaleString()}</span>
                       </span>
@@ -432,7 +463,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                         onClick={() => onSelectMod(mod.id)}
                         className="text-xs text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 active:bg-neutral-200 font-medium px-2 py-1 rounded transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                       >
-                        详情
+                        {t('catalog.detail')}
                       </button>
                       <button
                         onClick={() => {
@@ -445,7 +476,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                         className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 active:bg-emerald-200 rounded border border-emerald-200 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        下载
+                        {t('catalog.download')}
                       </button>
                     </div>
                   </div>
@@ -462,9 +493,9 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                       onClick={loadMore}
                       className="px-5 py-2 text-xs font-medium text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 hover:border-neutral-300 active:bg-neutral-100 rounded-md transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                     >
-                      加载更多模组 (游标分页)
+                      {t('catalog.loadMore')}
                     </button>
-                    <p className="mt-2 text-[11px] text-neutral-400">继续向下滚动会自动加载下一页</p>
+                    <p className="mt-2 text-[11px] text-neutral-400">{t('catalog.loadMoreHint')}</p>
                   </>
                 )}
               </div>
@@ -505,7 +536,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           setCursorPage(1);
         }}
         loading={tagCatalogLoading}
-        error={tagCatalogError}
+        error={tagCatalogError ? t(tagCatalogError) : null}
       />
     </div>
   );

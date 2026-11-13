@@ -12,6 +12,7 @@ import {
 import { AppUpdateState } from '../types/client';
 import { m } from './Motion';
 import { overlayVariants } from '../../../../ui/motion-presets';
+import { useI18n } from '../i18n';
 
 interface AppUpdateModalProps {
   isOpen: boolean;
@@ -36,6 +37,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   onOpenSettings,
   isAndroid = false,
 }) => {
+  const { t } = useI18n();
   if (!isOpen) return null;
 
   const isDownloading = updateState.status === 'downloading' || updateState.status === 'verifying';
@@ -52,9 +54,11 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
   const deliveryLabel =
     updateState.delivery_source === 'cloudreve'
-      ? `下载源: Cloudreve 节点${updateState.delivery_node_id ? ` ${updateState.delivery_node_id}` : ''}`
+      ? t('appUpdate.sourceCloudreve', {
+          node: updateState.delivery_node_id ? ` ${updateState.delivery_node_id}` : '',
+        })
       : updateState.delivery_source === 'github'
-        ? '下载源: GitHub Releases'
+        ? t('appUpdate.sourceGithub')
         : undefined;
 
   return (
@@ -65,9 +69,9 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
           <div className="flex items-center gap-2.5">
             <Sparkles className="w-5 h-5 text-emerald-400" />
             <div>
-              <h2 className="text-sm font-semibold text-white">RezeHub 软件自更新</h2>
+              <h2 className="text-sm font-semibold text-white">{t('appUpdate.title')}</h2>
               <p className="text-xs text-neutral-400">
-                当前版本: v{updateState.current_version}
+                {t('appUpdate.currentVersion', { version: updateState.current_version })}
               </p>
             </div>
           </div>
@@ -87,10 +91,10 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <div>
                 <div className="font-semibold text-emerald-300">
-                  发现新版本 v{updateState.latest_version}
+                  {t('appUpdate.newVersion', { version: updateState.latest_version ?? '' })}
                 </div>
                 <div className="text-neutral-400 mt-1">
-                  文件大小: {formatBytes(updateState.total_bytes)}
+                  {t('appUpdate.fileSize', { size: formatBytes(updateState.total_bytes) })}
                 </div>
                 {deliveryLabel && (
                   <div className="text-neutral-500 mt-1">{deliveryLabel}</div>
@@ -102,7 +106,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
           {isDownloading && (
             <div className="space-y-2 p-3 bg-neutral-950/40 border border-neutral-800 rounded-lg">
               <div className="flex items-center justify-between text-neutral-300 font-medium">
-                <span>{updateState.status === 'verifying' ? '正在校验完整性 (SHA-256)...' : '正在下载新版本...'}</span>
+                <span>{updateState.status === 'verifying' ? t('appUpdate.verifying') : t('appUpdate.downloading')}</span>
                 <span className="font-mono">{Math.round(updateState.download_progress * 100)}%</span>
               </div>
               <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden">
@@ -125,11 +129,11 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
             <div className="p-3 bg-emerald-950/30 border border-emerald-800/50 rounded-lg flex items-start gap-3">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <div>
-                <div className="font-semibold text-emerald-300">新版本准备就绪</div>
+                <div className="font-semibold text-emerald-300">{t('appUpdate.readyTitle')}</div>
                 <div className="text-neutral-400 mt-1">
                   {isAndroid
-                    ? 'APK 已通过校验并暂存，点击下方按钮唤起系统安装器确认更新。'
-                    : '已完成 SHA-256 完整性校验，点击“立即替换并重启”将由独立更新器完成无损替换与备份保护。'}
+                    ? t('appUpdate.readyAndroid')
+                    : t('appUpdate.readyDesktop')}
                 </div>
               </div>
             </div>
@@ -138,8 +142,8 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
           {isInstalling && (
             <div role="status" className="p-3 bg-neutral-950/40 border border-neutral-800 rounded-lg text-neutral-300">
               {updateState.status === 'awaiting_user'
-                ? '系统安装器已打开，请在系统界面确认更新。'
-                : '正在启动更新器，请稍候。应用将在更新后重新启动。'}
+                ? t('appUpdate.installerOpened')
+                : t('appUpdate.startingInstaller')}
             </div>
           )}
 
@@ -147,7 +151,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
             <div className="p-3 bg-rose-950/30 border border-rose-800/50 rounded-lg flex items-start gap-3">
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
               <div>
-                <div className="font-semibold text-rose-300">更新失败</div>
+                <div className="font-semibold text-rose-300">{t('appUpdate.failedTitle')}</div>
                 <div className="text-rose-400/80 mt-1 font-mono">{updateState.error}</div>
               </div>
             </div>
@@ -155,14 +159,14 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
           {updateState.status === 'idle' && (
             <div className="text-center py-6 text-neutral-400">
-              <p>当前已是最新版本或尚未检查更新。</p>
+              <p>{t('appUpdate.upToDate')}</p>
             </div>
           )}
 
           {/* Release Notes */}
           {updateState.release_notes && (
             <div className="space-y-1.5">
-              <div className="font-medium text-neutral-300">更新日志 (Release Notes):</div>
+              <div className="font-medium text-neutral-300">{t('appUpdate.releaseNotes')}</div>
               <div className="p-3 bg-neutral-950/60 border border-neutral-800 rounded-lg max-h-40 overflow-y-auto text-neutral-300 text-[11px] whitespace-pre-wrap font-mono">
                 {updateState.release_notes}
               </div>
@@ -174,14 +178,14 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
             <div className="p-2.5 bg-amber-950/20 border border-amber-800/40 rounded-lg flex items-center justify-between text-amber-300/90 text-[11px]">
               <span className="flex items-center gap-1.5">
                 <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
-                <span>需要允许此应用安装未知应用权限</span>
+                <span>{t('appUpdate.unknownSources')}</span>
               </span>
               {onOpenSettings && (
                 <button
                   onClick={onOpenSettings}
                   className="px-2 py-1 bg-amber-900/40 hover:bg-amber-900/60 border border-amber-700/50 rounded text-amber-200 transition-colors"
                 >
-                  去授权
+                  {t('appUpdate.grantPermission')}
                 </button>
               )}
             </div>
@@ -195,14 +199,14 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
               onClick={onCancelUpdate}
               className="px-3 py-1.5 rounded-lg border border-neutral-700 text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors text-xs font-medium"
             >
-              取消下载
+              {t('appUpdate.cancelDownload')}
             </button>
           ) : isInstalling ? (
             <button
               disabled
               className="px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-400 text-xs font-medium cursor-wait"
             >
-              {updateState.status === 'awaiting_user' ? '等待系统安装确认' : '正在启动更新…'}
+              {updateState.status === 'awaiting_user' ? t('appUpdate.awaitingConfirm') : t('appUpdate.startingUpdate')}
             </button>
           ) : isReady ? (
             <button
@@ -210,7 +214,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
               className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors text-xs font-medium flex items-center gap-1.5 shadow-sm"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>{isAndroid ? '启动系统安装' : '立即替换并重启'}</span>
+              <span>{isAndroid ? t('appUpdate.startSystemInstall') : t('appUpdate.replaceAndRestart')}</span>
             </button>
           ) : isAvailable ? (
             <button
@@ -218,7 +222,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
               className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors text-xs font-medium flex items-center gap-1.5 shadow-sm"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>下载更新</span>
+              <span>{t('appUpdate.download')}</span>
             </button>
           ) : (
             <button
@@ -227,7 +231,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
               className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white transition-colors text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isChecking ? 'animate-spin text-emerald-400' : ''}`} />
-              <span>{isChecking ? '正在检查...' : '检查更新'}</span>
+              <span>{isChecking ? t('appUpdate.checking') : t('appUpdate.checkButton')}</span>
             </button>
           )}
 
@@ -235,7 +239,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
             onClick={onClose}
             className="px-3 py-1.5 rounded-lg border border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/40 transition-colors text-xs"
           >
-            关闭
+            {t('common.close')}
           </button>
         </div>
       </div>

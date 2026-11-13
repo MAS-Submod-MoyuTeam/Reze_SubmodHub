@@ -20,7 +20,7 @@ const mockInstallation: Installation = {
 const mockMod: ModSummary = {
   id: 'catalog_mod_1',
   title: 'Monika AI Voice',
-  summary: 'A submod for Monika voice synthesis',
+  summary: { zh: 'A submod for Monika voice synthesis' },
   author: { id: 'usr_1', display_name: 'Reze' },
   category: 'submod',
   tags: ['语音'],

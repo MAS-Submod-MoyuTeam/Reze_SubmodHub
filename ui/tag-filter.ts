@@ -7,7 +7,11 @@
  * 与排除的直觉相反。
  *
  * 这里只做纯数据转换，不碰 React，也不认识目录顺序——目录顺序由各端渲染时决定。
+ * 需要给用户看的那两句话（描述摘要、三态说明）由调用方传入 `t`，本模块不内置文案。
  */
+
+import { resolveTagName, type TagGroup } from './tags-api';
+import type { LocalizedText } from './localized-text';
 
 /** 一个标签在筛选里的状态。`off` 不作为记录出现，省掉无意义的历史。 */
 export type TagFilterState = 'include' | 'exclude';
@@ -79,13 +83,15 @@ export function matchesTagFilter(tags: readonly string[], states: TagFilterState
 /**
  * 筛选说明：`包含 #A #B · 排除 #C`。
  * 有筛选时各端用它做可访问名与错误空状态的说明；没有筛选时返回空串。
+ *
+ * `t` 由调用方传入：这里是纯模块，不 import 任何一端的 i18n。
  */
-export function describeTagFilter(states: TagFilterStates): string {
+export function describeTagFilter(states: TagFilterStates, t: (key: string, vars?: Record<string, string | number>) => string): string {
   const parts: string[] = [];
   const include = includedTags(states);
   const exclude = excludedTags(states);
-  if (include.length > 0) parts.push(`包含 ${include.map((name) => `#${name}`).join(' ')}`);
-  if (exclude.length > 0) parts.push(`排除 ${exclude.map((name) => `#${name}`).join(' ')}`);
+  if (include.length > 0) parts.push(t('tagFilter.include', { tags: include.map((name) => `#${name}`).join(' ') }));
+  if (exclude.length > 0) parts.push(t('tagFilter.exclude', { tags: exclude.map((name) => `#${name}`).join(' ') }));
   return parts.join(' · ');
 }
 
@@ -99,9 +105,12 @@ export function describeTagFilter(states: TagFilterStates): string {
 
 /** 一个可被选中、并可能带一句说明的标签。 */
 export interface TagFilterEntry {
+  /** 存储名：筛选状态只用它，显示名另算。 */
   name: string;
-  /** 管理员写的描述；没有就是空串，调用方不该渲染空行。 */
-  description: string;
+  /** 管理员写的显示名（多语言）；没有译文时显示 `name`。 */
+  displayName?: LocalizedText;
+  /** 管理员写的描述（多语言）；没有就是空值，调用方不该渲染空行。 */
+  description?: LocalizedText;
 }
 
 export interface TagFilterRow {
@@ -114,18 +123,15 @@ export interface TagFilterRow {
 }
 
 export function buildTagFilterRows(
-  groups: readonly {
-    name: string;
-    description?: string;
-    children?: readonly { name: string; description?: string }[];
-  }[],
+  groups: readonly TagGroup[],
   usedTags: readonly string[],
 ): TagFilterRow[] {
   const rows: TagFilterRow[] = groups.map((group) => ({
-    main: { name: group.name, description: group.description ?? '' },
+    main: { name: group.name, displayName: group.displayName, description: group.description },
     children: (group.children ?? []).map((child) => ({
       name: child.name,
-      description: child.description ?? '',
+      displayName: child.displayName,
+      description: child.description,
     })),
     stale: false,
   }));
@@ -138,7 +144,7 @@ export function buildTagFilterRows(
   for (const tag of usedTags) {
     if (known.has(tag) || seen.has(tag)) continue;
     seen.add(tag);
-    rows.push({ main: { name: tag, description: '' }, children: [], stale: true });
+    rows.push({ main: { name: tag }, children: [], stale: true });
   }
   return rows;
 }
@@ -173,4 +179,33 @@ export function rowActiveCount(row: TagFilterRow, states: TagFilterStates): numb
   if (states[row.main.name] !== undefined) count += 1;
   for (const child of row.children) if (states[child.name] !== undefined) count += 1;
   return count;
+}
+
+/** 目录里每一项的「显示名 → 显示名」表，供筛选说明等只需要名字的地方使用。 */
+export function tagFilterDisplayNames(rows: readonly TagFilterRow[]): Map<string, LocalizedText> {
+  const names = new Map<string, LocalizedText>();
+  for (const row of rows) {
+    if (row.main.displayName) names.set(row.main.name, row.main.displayName);
+    for (const child of row.children) {
+      if (child.displayName) names.set(child.name, child.displayName);
+    }
+  }
+  return names;
+}
+
+/** 把一条筛选状态渲染成给人看的一句话（名字走显示名，状态走 t）。 */
+export function describeTagFilterLocalized(
+  rows: readonly TagFilterRow[],
+  states: TagFilterStates,
+  lang: string,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
+  const displayNames = tagFilterDisplayNames(rows);
+  const render = (names: readonly string[]) => names.map((name) => `#${resolveTagName(name, displayNames, lang)}`).join(' ');
+  const parts: string[] = [];
+  const include = includedTags(states);
+  const exclude = excludedTags(states);
+  if (include.length > 0) parts.push(t('tagFilter.include', { tags: render(include) }));
+  if (exclude.length > 0) parts.push(t('tagFilter.exclude', { tags: render(exclude) }));
+  return parts.join(' · ');
 }

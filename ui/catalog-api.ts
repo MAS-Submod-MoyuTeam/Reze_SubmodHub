@@ -1,11 +1,14 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { localizedTextOf, type LocalizedText } from './localized-text';
 
 export interface CatalogMod {
   id: string;
   title: string;
-  summary?: string;
-  description?: string;
+  // 简介与描述按语言存放：{ zh: '…', en: '…' }。缺译文时由 resolveLocalized
+  // 回退到中文；还没有英文的模组不该在英文界面里变成空白卡片。
+  summary?: LocalizedText;
+  description?: LocalizedText;
   author?: { id: string; display_name: string };
   category?: 'submod' | 'spritepack';
   tags?: string[];
@@ -55,6 +58,12 @@ export interface CatalogVersion {
 export interface CatalogEntry {
   mod: CatalogMod;
   version: CatalogVersion;
+}
+
+/** 把目录里的一页原始 JSON 收敛成可渲染的形状：本地化文本归一，其余原样。 */
+export function normalizeCatalogMod(raw: unknown): CatalogMod {
+  const mod = (raw ?? {}) as CatalogMod & { summary?: unknown; description?: unknown };
+  return { ...mod, summary: localizedTextOf(mod.summary), description: localizedTextOf(mod.description) };
 }
 
 export interface ArchiveDescriptor {
@@ -194,7 +203,7 @@ export async function fetchPublishedCatalog(base = '/api/v1', fetcher: typeof fe
   return Promise.all(mods.map(async (mod) => {
     if (!mod.id || !mod.latest_version_id) throw new Error('invalid_catalog_response');
     const version = await fetchModVersion(mod.id, mod.latest_version_id, base, fetcher);
-    return { mod, version };
+    return { mod: normalizeCatalogMod(mod), version };
   }));
 }
 

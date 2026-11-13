@@ -16,7 +16,7 @@ function makeMockUnmanagedItem(override?: Partial<InstalledItem>): InstalledItem
     mod_id: 'local:TestSubmod',
     title: 'Test Submod',
     author_name: 'Test Author',
-    summary: '检测到 MAS 本地子模组',
+    summary: { zh: '检测到 MAS 本地子模组' },
     category: 'submod',
     sha256: 'hash123',
     installed_version: '1.2.0',

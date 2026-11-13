@@ -137,7 +137,7 @@ func TestGitHubReleaseSourceE2EWorkflow(t *testing.T) {
 	// 1. Author creates GitHub Releases mod draft
 	createPayload := `{
 		"title": "E2E GitHub Mod",
-		"summary": "Testing full sync workflow",
+		"summary": {"zh": "Testing full sync workflow"},
 		"category": "submod",
 		"source_type": "github_releases",
 		"github_owner": "myorg",

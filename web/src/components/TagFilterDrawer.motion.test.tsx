@@ -19,7 +19,7 @@ import type { TagFilterRow, TagFilterStates } from '../../../ui/tag-filter';
 MotionGlobalConfig.skipAnimations = true;
 
 const rows: TagFilterRow[] = [
-  { main: { name: '工具', description: '自动修复与诊断类模组' }, children: [], stale: false },
+  { main: { name: '工具', description: { zh: '自动修复与诊断类模组' } }, children: [], stale: false },
 ];
 const states: TagFilterStates = {};
 

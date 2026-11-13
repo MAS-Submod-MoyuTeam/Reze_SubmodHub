@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { clampLoadedPage, hasMoreSubmods, loadFooterLabel, visibleSubmodCount } from './catalogPaging';
+import { translate } from '../i18n/translate';
 
 const PAGE = 6;
 
@@ -43,14 +44,22 @@ test('clampLoadedPage：空结果与非法页数回到首页', () => {
   assert.equal(clampLoadedPage(0, PAGE, 14), 1, '页数下限为 1');
 });
 
+// 页脚文案现在由字典提供，测试直接用中文 t() 校验渲染结果。
+const tZh = (key: string, vars?: Record<string, string | number>) => translate('zh', key, vars);
+
 test('loadFooterLabel：全部渲染后只报总数', () => {
-  assert.equal(loadFooterLabel(14, 14, '子模组'), '共 14 个子模组');
-  assert.equal(loadFooterLabel(0, 0, '子模组'), '共 0 个子模组', '无命中时列表区自己说明，页脚只报总数');
-  assert.equal(loadFooterLabel(2, 2, '子模组'), '共 2 个子模组');
+  assert.equal(loadFooterLabel(14, 14, tZh), '共 14 个子模组');
+  assert.equal(loadFooterLabel(0, 0, tZh), '共 0 个子模组', '无命中时列表区自己说明，页脚只报总数');
+  assert.equal(loadFooterLabel(2, 2, tZh), '共 2 个子模组');
 });
 
 test('loadFooterLabel：仍有未渲染条目时提示滚动，不谎称正在加载', () => {
-  const label = loadFooterLabel(6, 14, '子模组');
+  const label = loadFooterLabel(6, 14, tZh);
   assert.equal(label, '已渲染 6 / 共 14 个子模组，滚动查看更多');
   assert.doesNotMatch(label, /正在加载/, '全部条目早已在内存里，没有东西在加载');
+});
+
+test('loadFooterLabel：英文界面用英文页脚', () => {
+  const tEn = (key: string, vars?: Record<string, string | number>) => translate('en', key, vars);
+  assert.equal(loadFooterLabel(3, 3, tEn), '3 submods');
 });

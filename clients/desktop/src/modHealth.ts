@@ -15,6 +15,8 @@ export interface UpdateComparisonInput {
   latestVersion?: string;
 }
 
+// 占位版本来自本地扫描结果，这些字符串是数据（不是界面文案），所以中英文都列上：
+// 扫描器写入的中文占位与历史数据里的英文占位都要被识别成「没有版本」。
 const PLACEHOLDER_VERSIONS = new Set(['', '未收纳', '未声明', 'unknown', 'n/a', 'null']);
 
 function isPlaceholderVersion(value: string): boolean {
@@ -88,32 +90,32 @@ export interface IntegritySummary {
   tone: 'info' | 'warn';
 }
 
-export function summarizeIntegrity(totals: IntegrityTotals): IntegritySummary {
+export function summarizeIntegrity(totals: IntegrityTotals, t: (key: string, vars?: Record<string, string | number>) => string): IntegritySummary {
   if (totals.modCount === 0) {
-    return { text: '完整性校验未执行：当前没有可校验的已安装模组。', tone: 'warn' };
+    return { text: t('modHealth.notRun'), tone: 'warn' };
   }
 
   const details: string[] = [];
   if (totals.checkedFiles > 0) {
     details.push(
       totals.driftedFiles > 0
-        ? `已安装文件 ${totals.checkedFiles} 个，其中 ${totals.driftedFiles} 个哈希与账本不一致`
-        : `已安装文件 ${totals.checkedFiles} 个，全部与账本一致`
+        ? t('modHealth.checkedWithDrift', { count: totals.checkedFiles, drifted: totals.driftedFiles })
+        : t('modHealth.checkedIntact', { count: totals.checkedFiles })
     );
   } else {
-    details.push('没有任何已安装文件可供比对');
+    details.push(t('modHealth.nothingToCompare'));
   }
   if (totals.overriddenFiles > 0) {
-    details.push(`${totals.overriddenFiles} 个文件被其他模组覆盖（分层结果，非漂移）`);
+    details.push(t('modHealth.overridden', { count: totals.overriddenFiles }));
   }
   if (totals.unmanagedFiles > 0) {
-    details.push(`${totals.unmanagedFiles} 个散落文件没有安装账本，未参与比对`);
+    details.push(t('modHealth.unmanaged', { count: totals.unmanagedFiles }));
   }
   if (totals.unreadableMods.length > 0) {
-    details.push(`${totals.unreadableMods.length} 个模组读取清单失败`);
+    details.push(t('modHealth.unreadable', { count: totals.unreadableMods.length }));
   }
 
   const tone: IntegritySummary['tone'] =
     totals.driftedFiles > 0 || totals.unreadableMods.length > 0 || totals.checkedFiles === 0 ? 'warn' : 'info';
-  return { text: `完整性校验完成：${details.join('；')}。`, tone };
+  return { text: t('modHealth.done', { details: details.join(t('modHealth.separator')) }), tone };
 }

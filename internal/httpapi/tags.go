@@ -16,20 +16,29 @@ import (
 // so a mod's flat Tags list is unambiguous as long as names are unique inside
 // the whole catalog (enforced by normalizeTagCatalog).
 //
-// Every tag carries its own Description: the admin writes it once and the same
-// sentence explains the tag in the author picker and in the catalog filter, so
-// a name like "杂项" is not the only thing a chooser has to go on.
+// Name is the canonical, untranslated storage key — it is what mod.Tags holds
+// and what tagCatalogNames prunes against — while DisplayName is the localized
+// label a chooser actually reads. Leaving the localized name empty is normal:
+// readers then fall back to zh and finally to Name itself, so a brand-new tag
+// never renders as blank.
+//
+// Every tag also carries its own Description: the admin writes it once and the
+// same sentence explains the tag in the author picker and in the catalog
+// filter, so a name like "杂项" is not the only thing a chooser has to go on.
 type TagGroup struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description,omitempty"`
-	Children    []TagChild `json:"children,omitempty"`
+	Name        string        `json:"name"`
+	DisplayName LocalizedText `json:"display_name,omitempty"`
+	Description LocalizedText `json:"description,omitempty"`
+	Children    []TagChild    `json:"children,omitempty"`
 }
 
-// TagChild is a child tag. It is a full tag (name + description) rather than a
-// bare string so a sub-tag can explain itself exactly like its parent.
+// TagChild is a child tag. It is a full tag (name + localized display name and
+// description) rather than a bare string so a sub-tag can explain itself
+// exactly like its parent.
 type TagChild struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+	Name        string        `json:"name"`
+	DisplayName LocalizedText `json:"display_name,omitempty"`
+	Description LocalizedText `json:"description,omitempty"`
 }
 
 // Names returns the child tag names, which is what the flat mod storage and the
@@ -66,20 +75,25 @@ const tagCatalogMigrationHint = " (a stored catalog that still lists tag childre
 
 // defaultTagCatalog seeds a fresh deployment (and any snapshot written before
 // the catalog existed). Children are added by the admin page.
+//
+// Display names are seeded because this is the only place that knows what the
+// Chinese labels mean: an English reader of a fresh deployment should still see
+// "Tools", not "工具". Name stays the Chinese word, which is what existing mods
+// already stored in their Tags.
 func defaultTagCatalog() []TagGroup {
 	return []TagGroup{
-		{Name: "工具"},
-		{Name: "话题"},
-		{Name: "功能"},
-		{Name: "UI"},
-		{Name: "音乐"},
-		{Name: "背景"},
-		{Name: "杂项"},
-		{Name: "小游戏"},
-		{Name: "窗口反应"},
-		{Name: "整活"},
-		{Name: "浪漫"},
-		{Name: "ai"},
+		{Name: "工具", DisplayName: LocalizedText{"zh": "工具", "en": "Tools"}},
+		{Name: "话题", DisplayName: LocalizedText{"zh": "话题", "en": "Topics"}},
+		{Name: "功能", DisplayName: LocalizedText{"zh": "功能", "en": "Features"}},
+		{Name: "UI", DisplayName: LocalizedText{"zh": "UI", "en": "UI"}},
+		{Name: "音乐", DisplayName: LocalizedText{"zh": "音乐", "en": "Music"}},
+		{Name: "背景", DisplayName: LocalizedText{"zh": "背景", "en": "Backgrounds"}},
+		{Name: "杂项", DisplayName: LocalizedText{"zh": "杂项", "en": "Misc"}},
+		{Name: "小游戏", DisplayName: LocalizedText{"zh": "小游戏", "en": "Minigames"}},
+		{Name: "窗口反应", DisplayName: LocalizedText{"zh": "窗口反应", "en": "Window Reactions"}},
+		{Name: "整活", DisplayName: LocalizedText{"zh": "整活", "en": "Fun & Memes"}},
+		{Name: "浪漫", DisplayName: LocalizedText{"zh": "浪漫", "en": "Romance"}},
+		{Name: "ai", DisplayName: LocalizedText{"zh": "AI", "en": "AI"}},
 	}
 }
 
@@ -107,12 +121,27 @@ func writeTagError(w http.ResponseWriter, err error) {
 	writeError(w, 400, "validation_failed", err.Error())
 }
 
+// cloneTagCatalog deep-copies the catalog, including the localized maps: a map
+// is a reference, so sharing one between the store and a response would let a
+// caller's mutation reach persisted settings.
 func cloneTagCatalog(groups []TagGroup) []TagGroup {
 	out := make([]TagGroup, len(groups))
 	for i, group := range groups {
-		out[i] = TagGroup{Name: group.Name, Description: group.Description}
+		out[i] = TagGroup{
+			Name:        group.Name,
+			DisplayName: group.DisplayName.clone(),
+			Description: group.Description.clone(),
+		}
 		if len(group.Children) > 0 {
-			out[i].Children = append([]TagChild(nil), group.Children...)
+			children := make([]TagChild, len(group.Children))
+			for j, child := range group.Children {
+				children[j] = TagChild{
+					Name:        child.Name,
+					DisplayName: child.DisplayName.clone(),
+					Description: child.Description.clone(),
+				}
+			}
+			out[i].Children = children
 		}
 	}
 	return out
@@ -206,20 +235,19 @@ func normalizeTagName(raw string) (string, error) {
 	return name, nil
 }
 
+// normalizeTagDisplayName trims a localized label. It may be empty: the reader
+// then falls back to zh and finally to the canonical Name, so an untranslated
+// tag still has a label. The same length budget as the name applies per
+// language, since it is rendered in the same chip.
+func normalizeTagDisplayName(raw LocalizedText) (LocalizedText, error) {
+	return normalizeLocalizedRunes("invalid_tag_catalog", "标签显示名", raw, maxTagNameRunes)
+}
+
 // normalizeTagDescription trims the explanation and enforces the one-line
-// budget. An empty description is allowed: tags whose name already says it all
-// do not need filler text.
-func normalizeTagDescription(raw string) (string, error) {
-	description := strings.TrimSpace(raw)
-	if utf8.RuneCountInString(description) > maxTagDescriptionRunes {
-		return "", violation("invalid_tag_catalog", "标签描述最多 %d 个字符", maxTagDescriptionRunes)
-	}
-	for _, r := range description {
-		if unicode.IsControl(r) {
-			return "", violation("invalid_tag_catalog", "标签描述不能包含换行等控制字符")
-		}
-	}
-	return description, nil
+// budget per language entry. An empty description is allowed: tags whose name
+// already says it all do not need filler text.
+func normalizeTagDescription(raw LocalizedText) (LocalizedText, error) {
+	return normalizeLocalizedRunes("invalid_tag_catalog", "标签描述", raw, maxTagDescriptionRunes)
 }
 
 // normalizeTagCatalog validates an admin edit and returns the canonical form:
@@ -243,6 +271,10 @@ func normalizeTagCatalog(input []TagGroup) ([]TagGroup, error) {
 			return nil, violation("invalid_tag_catalog", "标签名 %q 重复", name)
 		}
 		seen[name] = true
+		displayName, err := normalizeTagDisplayName(group.DisplayName)
+		if err != nil {
+			return nil, err
+		}
 		description, err := normalizeTagDescription(group.Description)
 		if err != nil {
 			return nil, err
@@ -250,9 +282,13 @@ func normalizeTagCatalog(input []TagGroup) ([]TagGroup, error) {
 		if len(group.Children) > maxTagChildren {
 			return nil, violation("invalid_tag_catalog", "主标签 %q 下的子标签最多 %d 个", name, maxTagChildren)
 		}
-		normalized := TagGroup{Name: name, Description: description}
+		normalized := TagGroup{Name: name, DisplayName: displayName, Description: description}
 		for _, raw := range group.Children {
 			child, err := normalizeTagName(raw.Name)
+			if err != nil {
+				return nil, err
+			}
+			childDisplayName, err := normalizeTagDisplayName(raw.DisplayName)
 			if err != nil {
 				return nil, err
 			}
@@ -267,7 +303,7 @@ func normalizeTagCatalog(input []TagGroup) ([]TagGroup, error) {
 				return nil, violation("invalid_tag_catalog", "标签名 %q 重复", child)
 			}
 			seen[child] = true
-			normalized.Children = append(normalized.Children, TagChild{Name: child, Description: childDescription})
+			normalized.Children = append(normalized.Children, TagChild{Name: child, DisplayName: childDisplayName, Description: childDescription})
 		}
 		out = append(out, normalized)
 	}
@@ -287,6 +323,49 @@ func tagCatalogNames(catalog []TagGroup) map[string]bool {
 	return names
 }
 
+// pruneModTagsForCatalogLocked removes every tag the given catalog no longer
+// defines from the stored mods, keeping the "a mod only carries catalog tags"
+// invariant in the same save as the catalog write. It returns the previous tag
+// lists keyed by mod index so a failed save can restore them.
+// Callers must hold s.mu for writing.
+func (s *Store) pruneModTagsForCatalogLocked(catalog []TagGroup) map[int][]string {
+	allowed := tagCatalogNames(catalog)
+	pruned := make(map[int][]string)
+	for i := range s.Catalog.Mods {
+		tags := s.Catalog.Mods[i].Tags
+		kept := make([]string, 0, len(tags))
+		for _, tag := range tags {
+			if allowed[tag] {
+				kept = append(kept, tag)
+			}
+		}
+		if len(kept) == len(tags) {
+			continue
+		}
+		pruned[i] = tags
+		s.Catalog.Mods[i].Tags = kept
+	}
+	return pruned
+}
+
+// localizedEqual compares two localized values key by key: maps are reference
+// types, so == would compare identity and every re-save would look like a change.
+func localizedEqual(a, b LocalizedText) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for lang, text := range a {
+		if b[lang] != text {
+			return false
+		}
+	}
+	return true
+}
+
+func tagChildEqual(a, b TagChild) bool {
+	return a.Name == b.Name && localizedEqual(a.DisplayName, b.DisplayName) && localizedEqual(a.Description, b.Description)
+}
+
 // tagCatalogEqual decides whether an edit actually changed the catalog, so the
 // audit trail does not claim a change for a no-op save.
 func tagCatalogEqual(a, b []TagGroup) bool {
@@ -294,13 +373,18 @@ func tagCatalogEqual(a, b []TagGroup) bool {
 		return false
 	}
 	for i := range a {
-		// Descriptions are part of the catalog: editing one changes what every
-		// chooser reads, so it has to count as a change.
-		if a[i].Name != b[i].Name || a[i].Description != b[i].Description {
+		// Descriptions and display names are part of the catalog: editing one
+		// changes what every chooser reads, so it has to count as a change.
+		if a[i].Name != b[i].Name || !localizedEqual(a[i].DisplayName, b[i].DisplayName) || !localizedEqual(a[i].Description, b[i].Description) {
 			return false
 		}
-		if !slices.Equal(a[i].Children, b[i].Children) {
+		if len(a[i].Children) != len(b[i].Children) {
 			return false
+		}
+		for j := range a[i].Children {
+			if !tagChildEqual(a[i].Children[j], b[i].Children[j]) {
+				return false
+			}
 		}
 	}
 	return true
@@ -309,6 +393,11 @@ func tagCatalogEqual(a, b []TagGroup) bool {
 // publicTagCatalog exposes the catalog to anonymous clients so the author picker
 // and the catalog filters share one source of truth. Revision lets a client
 // notice that the admin changed the catalog.
+//
+// The localized objects are always sent whole: the client owns the language
+// choice and may render two languages side by side. ?lang= (or Accept-Language)
+// only adds the language this request resolved to and a convenience label per
+// tag, so a thin client does not have to re-implement the fallback rules.
 func (s *Store) publicTagCatalog(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, 405, "method_not_allowed", "method not allowed")
@@ -321,5 +410,67 @@ func (s *Store) publicTagCatalog(w http.ResponseWriter, r *http.Request) {
 	// The catalog changes when an admin saves it; a cached copy would keep the
 	// author picker and the catalog filters on a retired tag list.
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]any{"groups": groups, "revision": revision})
+	lang := resolveLanguage(r)
+	writeJSON(w, 200, map[string]any{"groups": publicTagGroups(groups, lang), "revision": revision, "lang": lang})
+}
+
+// publicTagWire is one catalog entry as a client reads it: the full localized
+// objects plus labels resolved for the requested language.
+type publicTagWire struct {
+	Name            string               `json:"name"`
+	DisplayName     LocalizedText        `json:"display_name,omitempty"`
+	Description     LocalizedText        `json:"description,omitempty"`
+	Label           string               `json:"label"`
+	DescriptionText string               `json:"description_text,omitempty"`
+	Children        []publicChildTagWire `json:"children,omitempty"`
+}
+
+type publicChildTagWire struct {
+	Name            string        `json:"name"`
+	DisplayName     LocalizedText `json:"display_name,omitempty"`
+	Description     LocalizedText `json:"description,omitempty"`
+	Label           string        `json:"label"`
+	DescriptionText string        `json:"description_text,omitempty"`
+}
+
+// tagLabel resolves a tag's visible label: the requested language, then zh, then
+// the canonical Name. Name is never empty, so the label always renders.
+// tagLabel resolves the label a reader sees for a tag.
+//
+// Only the requested language's own translation counts; there is no fallback to
+// another language. The canonical Name is also the Chinese label, so a tag that
+// only carries an English name still reads correctly in Chinese instead of
+// flipping to English. A tag with no translations at all reads as its Name.
+func tagLabel(name string, display LocalizedText, lang string) string {
+	if lang == "" {
+		return name
+	}
+	if label := strings.TrimSpace(display[lang]); label != "" {
+		return label
+	}
+	return name
+}
+
+func publicTagGroups(groups []TagGroup, lang string) []publicTagWire {
+	out := make([]publicTagWire, len(groups))
+	for i, group := range groups {
+		wire := publicTagWire{
+			Name:            group.Name,
+			DisplayName:     group.DisplayName,
+			Description:     group.Description,
+			Label:           tagLabel(group.Name, group.DisplayName, lang),
+			DescriptionText: group.Description.For(lang),
+		}
+		for _, child := range group.Children {
+			wire.Children = append(wire.Children, publicChildTagWire{
+				Name:            child.Name,
+				DisplayName:     child.DisplayName,
+				Description:     child.Description,
+				Label:           tagLabel(child.Name, child.DisplayName, lang),
+				DescriptionText: child.Description.For(lang),
+			})
+		}
+		out[i] = wire
+	}
+	return out
 }

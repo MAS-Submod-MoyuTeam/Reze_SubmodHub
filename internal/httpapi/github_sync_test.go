@@ -226,7 +226,7 @@ func TestGitHubSyncSuccessAndIdempotency(t *testing.T) {
 			{
 				ID:               "mod_1",
 				Title:            "Demo Mod",
-				Summary:          "Summary",
+				Summary:          LocalizedText{"zh": "Summary"},
 				Category:         "submod",
 				Author:           Author{ID: "author_1", DisplayName: "Author One"},
 				SourceType:       "github_releases",
@@ -503,7 +503,7 @@ func TestGitHubSyncPublishedVersionNotOverwritten(t *testing.T) {
 			{
 				ID:               "mod_1",
 				Title:            "Demo Mod",
-				Summary:          "Summary",
+				Summary:          LocalizedText{"zh": "Summary"},
 				Category:         "submod",
 				Author:           Author{ID: "author_1", DisplayName: "Author One"},
 				SourceType:       "github_releases",
@@ -578,7 +578,7 @@ func TestGitHubSyncDownloadFailureCleansUp(t *testing.T) {
 			{
 				ID:               "mod_1",
 				Title:            "Demo Mod",
-				Summary:          "Summary",
+				Summary:          LocalizedText{"zh": "Summary"},
 				Category:         "submod",
 				Author:           Author{ID: "author_1", DisplayName: "Author One"},
 				SourceType:       "github_releases",
@@ -657,7 +657,7 @@ func TestGitHubSyncEmptyReleasesSavesETag(t *testing.T) {
 			{
 				ID:          "mod_empty",
 				Title:       "Empty Repo Mod",
-				Summary:     "Summary",
+				Summary:     LocalizedText{"zh": "Summary"},
 				Category:    "submod",
 				Author:      Author{ID: "author_1", DisplayName: "Author One"},
 				SourceType:  "github_releases",
@@ -722,7 +722,7 @@ func TestGitHubSyncRateLimitBackoff(t *testing.T) {
 			{
 				ID:          "mod_ratelimit",
 				Title:       "Ratelimit Mod",
-				Summary:     "Summary",
+				Summary:     LocalizedText{"zh": "Summary"},
 				Category:    "submod",
 				Author:      Author{ID: "author_1", DisplayName: "Author One"},
 				SourceType:  "github_releases",
@@ -812,7 +812,7 @@ func TestGitHubSyncRejectsOversizedAssetWithoutDownloading(t *testing.T) {
 		switch r.URL.Path {
 		case "/repos/octocat/huge/releases":
 			fmt.Fprintf(w, `[{"id":501,"tag_name":"v1.0.0","assets":[{"id":502,"name":"huge.zip","size":%d,"browser_download_url":%q}]}]`,
-				int64(maxArchiveSize)+1, ghServer.URL+"/download/huge.zip")
+				int64(defaultMaxArchiveSize)+1, ghServer.URL+"/download/huge.zip")
 		case "/download/huge.zip":
 			downloads++
 		default:
@@ -853,7 +853,7 @@ func TestGitHubSyncRejectsOversizedAssetWithoutDownloading(t *testing.T) {
 	if len(failures) != 1 || failures[0].Kind != releaseFailureTooLarge {
 		t.Fatalf("expected one recorded too_large verdict, got %+v", failures)
 	}
-	if failures[0].LimitBytes != int64(maxArchiveSize) || failures[0].AssetSize != int64(maxArchiveSize)+1 {
+	if failures[0].LimitBytes != int64(defaultMaxArchiveSize) || failures[0].AssetSize != int64(defaultMaxArchiveSize)+1 {
 		t.Fatalf("record does not describe the rejected asset: %+v", failures[0])
 	}
 }

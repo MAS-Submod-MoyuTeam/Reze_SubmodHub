@@ -51,10 +51,11 @@ import {
 } from './types/client';
 
 import { AnimatePresence, m } from './components/Motion';
+import { useI18n } from './i18n';
 import { toastVariants } from '../../../ui/motion-presets';
 const UNVERIFIED_INSTALLATION: Installation = {
   id: 'unverified',
-  label: '尚未连接 MAS',
+  label: '',
   platform: 'windows',
   path_hint: '',
   permission_state: 'pending',
@@ -77,8 +78,6 @@ const MAS_GAME_PROCESS_DETECTED = false;
  * 切换实例会整体替换屏幕上的数据。覆盖层文字固定下来，让用户知道冻结期间在读哪个实例，
  * 而不是看到一次没有说明的卡顿。
  */
-const INSTANCE_SWITCH_DETAIL = '正在读取该实例的模组、精灵包与事务记录，请稍候。';
-
 /**
  * 冻结上限：实例级读取正常都在几百毫秒内结束。这个上限只在原生调用或未收纳模组的
  * 商店匹配请求卡死时兜底，让窗口退回各视图自己的加载/错误状态，而不是被永久冻结。
@@ -106,6 +105,10 @@ interface InstanceSwitchStatus {
 type ToastTone = 'info' | 'warn';
 
 export default function App() {
+  const { t, resolve } = useI18n();
+  // 实例切换的进度文案在两个入口共用，只在这里取一次。
+  const instanceSwitchDetail = t('app.instanceSwitchDetail');
+
   // Installations
   const [installations, setInstallations] = useState<Installation[]>([UNVERIFIED_INSTALLATION]);
   const [activeInstallationId, setActiveInstallationId] = useState<string>('unverified');
@@ -138,6 +141,7 @@ export default function App() {
       onSessionChange: (session) => setExecutionSession(session),
       onOperationsChange: (updater) => setOperations(updater),
       getOperation: (opId) => GetOperation(opId),
+      t,
     });
   }
 
@@ -250,7 +254,7 @@ export default function App() {
       setAppUpdateState((prev) => ({
         ...prev,
         status: 'failed',
-        error: err?.message || '检查更新失败',
+        error: err?.message || t('app.checkUpdateFailed'),
       }));
     }
   };
@@ -272,7 +276,7 @@ export default function App() {
       setAppUpdateState((prev) => ({
         ...prev,
         status: 'failed',
-        error: err?.message || '启动下载失败',
+        error: err?.message || t('app.startDownloadFailed'),
       }));
     }
   };
@@ -304,9 +308,9 @@ export default function App() {
       // The backend releases its claim on failure and remains authoritative.
       try {
         const state = await GetAppUpdateStatus();
-        setAppUpdateState((prev) => ({ ...prev, ...state, error: err?.message || '安装更新失败' }));
+        setAppUpdateState((prev) => ({ ...prev, ...state, error: err?.message || t('app.installUpdateFailed') }));
       } catch {
-        setAppUpdateState((prev) => ({ ...prev, status: 'ready', error: err?.message || '安装更新失败，请重试' }));
+        setAppUpdateState((prev) => ({ ...prev, status: 'ready', error: err?.message || t('app.installUpdateFailedRetry') }));
       }
     } finally {
       appUpdateInstallRef.current = false;
@@ -351,10 +355,10 @@ export default function App() {
     try {
       const res = await RequestAndroidStorageAccess();
       if (!res.opened) {
-        showToast('打开系统设置页失败，请手动在应用管理中授予文件权限');
+        showToast(t('app.openSettingsFailed'));
       }
     } catch (e) {
-      showToast(`打开设置页失败：${String(e)}`);
+      showToast(t('app.openSettingsFailedDetail', { error: String(e) }));
     }
   };
 
@@ -428,8 +432,8 @@ export default function App() {
       const base = `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/v1`;
       const entries = await fetchPublishedCatalog(base);
       const mapped: ModSummary[] = entries.map(({ mod, version }) => ({
-        id: mod.id, title: mod.title, summary: mod.summary || '', description: mod.description || mod.summary || '',
-        author: mod.author || { id: '', display_name: '未知作者' },
+        id: mod.id, title: mod.title, summary: mod.summary || {}, description: (mod.description && Object.keys(mod.description).length > 0 ? mod.description : mod.summary) || {},
+        author: mod.author || { id: '', display_name: t('app.unknownAuthor') },
         category: mod.category || 'submod', tags: mod.tags || [],
         supported_platforms: mod.supported_platforms || [], mas_version_range: mod.mas_version_range || '',
         recommended_priority: mod.recommended_priority || 0, latest_version_id: version.id,
@@ -445,7 +449,7 @@ export default function App() {
       // 保留上一次成功的数据，同时把失败暴露出来（页面级失败态 + 提示）。
       const detail = error instanceof Error ? error.message : 'unknown_error';
       setCatalogError(detail);
-      showToast(`目录加载失败：${detail}`, 'warn');
+      showToast(t('app.catalogLoadFailed', { detail }), 'warn');
       return null;
     } finally {
       setIsRefreshing(false);
@@ -467,9 +471,9 @@ export default function App() {
       const catalogMap = new Map(catalog.map((item) => [item.id, item]));
       const managed: InstalledItem[] = receipts.map((receipt) => {
         const catMod = catalogMap.get(receipt.mod_id);
-        const authorName = receipt.author || catMod?.author?.display_name || '未知作者';
+        const authorName = receipt.author || catMod?.author?.display_name || t('app.unknownAuthor');
         return {
-          mod_id: receipt.mod_id, installation_id: receipt.operation_id || receipt.mod_id, title: receipt.title, summary: '已通过 RezeHub 安装',
+          mod_id: receipt.mod_id, installation_id: receipt.operation_id || receipt.mod_id, title: receipt.title, summary: { zh: t('app.installedViaHub') },
           author_name: authorName, category: (receipt.category as any) || catMod?.category || 'submod', installed_version: receipt.version,
           installed_version_id: receipt.version_id, latest_version: catMod?.latest_version || receipt.version,
           latest_version_id: catMod?.latest_version_id || receipt.version_id,
@@ -492,11 +496,11 @@ export default function App() {
       // Do not filter out unmanaged items by directory name; the backend already excludes managed files individually.
       const unmanaged: InstalledItem[] = local.map((item) => ({
         mod_id: `local:${item.directory || item.id || 'scattered'}`,
-        title: item.name || item.directory || '散落脚本项',
-        summary: '检测到 MAS 本地子模组，尚未与 RezeHub 安装记录关联。',
-        author_name: item.author || '未知作者 (本地检测)', category: 'submod',
-        installed_version: item.version || '未声明', installed_version_id: '',
-        latest_version: '未收纳', latest_version_id: '', has_update: false,
+        title: item.name || item.directory || t('app.strayScript'),
+        summary: { zh: t('app.localSubmodDetected') },
+        author_name: item.author || t('app.unknownAuthorLocal'), category: 'submod',
+        installed_version: item.version || t('app.notDeclared'), installed_version_id: '',
+        latest_version: t('app.notAdopted'), latest_version_id: '', has_update: false,
         priority: 0, is_managed: false, files_count: (item.files || []).length,
         size_bytes: (item.files || []).reduce((sum, file) => sum + file.size, 0),
         installed_at: new Date().toISOString(), sha256: item.files?.[0]?.sha256 || '',
@@ -582,9 +586,9 @@ export default function App() {
       if (activeInstallationIdRef.current !== instId) return null;
       // 账本错误在错误码表里有专门的文案要求（给出路径、说明不可自愈），
       // 这里同时喂给内联错误态和 toast，避免两处显示不同的话术。
-      const msg = describeScanFailure(error instanceof Error ? error.message : String(error));
+      const msg = describeScanFailure(error instanceof Error ? error.message : String(error), t);
       if (loadCoordinatorRef.current.failModsScan(token, msg)) {
-        showToast(`本地子模组扫描失败：${msg}`, 'warn');
+        showToast(t('app.localScanFailed', { error: msg }), 'warn');
       }
       return null;
     } finally {
@@ -610,7 +614,7 @@ export default function App() {
       if (activeInstallationIdRef.current !== instId) return;
       const msg = error instanceof Error ? error.message : String(error);
       if (loadCoordinatorRef.current.failSpritepacksScan(token, msg)) {
-        showToast(`精灵包扫描失败：${msg}`);
+        showToast(t('app.spritepackScanFailed', { error: msg }));
       }
     } finally {
       updateCoordinatorUIState();
@@ -642,7 +646,7 @@ export default function App() {
       if (!operationsErrorShownRef.current) {
         operationsErrorShownRef.current = true;
         const detail = error instanceof Error ? error.message : String(error);
-        showToast(`事务列表读取失败：${detail}。当前显示的是上一次已知状态。`, 'warn');
+        showToast(t('app.operationsLoadFailed', { detail }), 'warn');
       }
     }
   };
@@ -678,7 +682,7 @@ export default function App() {
       permission_state: item.status.valid && item.status.game_exists ? 'authorized' : 'revoked',
       // 版本来自 game/masrun（MAS 启动时写入）；缺失通常表示还没运行过 MAS，
       // 读取失败时同样留空，两种情况都只能显示「未检测」。
-      mas_version: item.status.mas_version || '未检测',
+      mas_version: item.status.mas_version || t('app.notDetected'),
       is_valid: item.status.valid && item.status.game_exists,
       is_running: false,
       disk_available_bytes: item.status.available_bytes !== undefined ? item.status.available_bytes : null,
@@ -779,7 +783,7 @@ export default function App() {
       } catch {
         // Startup update discovery is optional; manual checks remain available.
       }
-    }).catch((error) => showToast(`启动初始化失败：${String(error)}`));
+    }).catch((error) => showToast(t('app.startupInitFailed', { error: String(error) })));
   }, []);
 
   useEffect(() => {
@@ -792,7 +796,7 @@ export default function App() {
         const catMod = catMap.get(item.mod_id);
         if (!catMod) return item;
         const author = catMod.author?.display_name;
-        if (author && (item.author_name === '未知作者' || item.author_name === '已签约作者' || item.author_name === '本地安装记录' || !item.author_name)) {
+        if (author && (item.author_name === t('app.unknownAuthor') || item.author_name === t('app.signedAuthor') || item.author_name === t('app.localInstallRecord') || !item.author_name)) {
           changed = true;
           return { ...item, author_name: author };
         }
@@ -829,7 +833,7 @@ export default function App() {
     }
     if (resolution.kind === 'missing') {
       deepLinkNoticeRef.current = null;
-      showToast(`链接指向的模组「${modID}」已不在当前目录中（可能已下架）。`, 'warn');
+      showToast(t('app.deepLinkModGone', { id: modID }), 'warn');
       return;
     }
     // 目录还没到：记住它，等目录到手再落地（冷启动时深链先到是常态）。
@@ -883,7 +887,7 @@ export default function App() {
     if (!isRefreshing && catalogError && deepLinkNoticeRef.current !== pendingDeepLinkModID) {
       deepLinkNoticeRef.current = pendingDeepLinkModID;
       showToast(
-        `目录没能加载出来（${catalogError}），暂时无法打开这个链接；刷新目录后会打开「${pendingDeepLinkModID}」。`,
+        t('app.deepLinkCatalogNotLoaded', { error: catalogError, id: pendingDeepLinkModID }),
         'warn',
       );
     }
@@ -934,7 +938,7 @@ export default function App() {
 
   const activeInstallation = installations.find((i) => i.id === activeInstallationId) || {
     ...UNVERIFIED_INSTALLATION,
-    label: '尚未选择 MAS',
+    label: t('app.noInstance'),
   };
 
   const unmanagedCount = installedMods.filter((m) => !m.is_managed).length;
@@ -962,9 +966,9 @@ export default function App() {
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      showToast(`${mod.title} 的 ZIP 已校验并交给浏览器保存。`);
+      showToast(t('app.zipSaved', { title: mod.title }));
     } catch (error) {
-      showToast(`下载未完成：${error instanceof Error ? error.message : 'unknown_error'}`);
+      showToast(t('app.downloadIncomplete', { error: error instanceof Error ? error.message : 'unknown_error' }));
     } finally {
       setIsDownloadingArchive(false);
       setArchiveProgress(null);
@@ -989,11 +993,11 @@ export default function App() {
     };
     try {
       if (!activeInstallation.is_valid || !targetInstId || targetInstId === 'unverified') {
-        showToast('请先验证 MAS 目录后再校验文件完整性。', 'warn');
+        showToast(t('app.verifyDirectoryFirst'), 'warn');
         return;
       }
       if (installedMods.length === 0) {
-        showToast(summarizeIntegrity(totals).text, 'warn');
+        showToast(summarizeIntegrity(totals, t).text, 'warn');
         return;
       }
       // 未收纳项的清单来自本地扫描：整轮校验只扫一次，所有散落项共用，避免 N 次全盘扫描。
@@ -1002,7 +1006,7 @@ export default function App() {
 
       for (const item of installedMods) {
         try {
-          const files = await loadInstalledFiles(item, { list: ListInstalledModFiles, scan });
+          const files = await loadInstalledFiles(item, { list: ListInstalledModFiles, scan }, t);
           if (item.is_managed) {
             // 只有已安装文件有账本可比对；非活动文件是被覆盖，不是漂移。
             totals.checkedFiles += files.filter((file) => file.status === 'intact' || file.status === 'modified').length;
@@ -1016,7 +1020,7 @@ export default function App() {
         }
       }
       if (activeInstallationIdRef.current !== targetInstId) return;
-      const summary = summarizeIntegrity(totals);
+      const summary = summarizeIntegrity(totals, t);
       showToast(summary.text, summary.tone);
     } finally {
       setIsVerifying(false);
@@ -1035,9 +1039,9 @@ export default function App() {
       return;
     }
     const targetInstId = activeInstallationIdRef.current;
-    if (!activeInstallation.is_valid || targetInstId === 'unverified') { showToast('请先验证 MAS 目录。'); return; }
+    if (!activeInstallation.is_valid || targetInstId === 'unverified') { showToast(t('app.verifyDirectoryBeforeInstall')); return; }
     if (installingRef.current || isDownloadingArchive) return;
-    if (isGameRunning) { showToast('请先退出 MAS 游戏再安装。'); return; }
+    if (isGameRunning) { showToast(t('app.exitGameBeforeInstall')); return; }
     installingRef.current = true;
     setInstallingModId(mod.id);
     setTransferTitle(mod.title);
@@ -1120,7 +1124,7 @@ export default function App() {
         installation_id: targetInstId,
         mod_id: mod.id,
         mod_title: mod.title,
-        author_name: mod.author?.display_name || "未知作者",
+        author_name: mod.author?.display_name || t('app.unknownAuthor'),
         category: mod.category,
         version_id: version.id,
         version_str: version.version,
@@ -1141,13 +1145,13 @@ export default function App() {
       if (activeInstallationIdRef.current === targetInstId) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         if (errorMsg.includes('sprite_version_changed')) {
-          showToast('精灵包版本已更新，已刷新模组目录，请重新选择套装。');
+          showToast(t('app.spritepackUpdated'));
           void loadCatalog();
         } else if (errorMsg.includes('archive_not_installable')) {
           // 归档里没有任何可安装路径：不是网络问题，重试也没用，必须说清原因。
-          showToast('安装失败：这份归档不含可安装的模组内容（可能是作者仓库的源码包，而不是发布包）。请换一个版本或联系作者重新发版。', 'warn');
+          showToast(t('app.archiveNotInstallable'), 'warn');
         } else {
-          showToast(`安装失败：${errorMsg}`);
+          showToast(t('app.installFailed', { error: errorMsg }));
         }
       }
     } finally {
@@ -1165,8 +1169,8 @@ export default function App() {
     if (!target) {
       showToast(
         catalogError
-          ? `目录未加载（${catalogError}），暂时无法打开「${title}」的详情。`
-          : `「${title}」已不在当前目录中（可能已下架），无法打开详情。`,
+          ? t('app.detailCatalogNotLoaded', { error: catalogError, title })
+          : t('app.detailModGone', { title }),
         'warn'
       );
       return;
@@ -1182,8 +1186,8 @@ export default function App() {
       // 区分「目录没加载」和「模组已下架」：前者是网络问题，不该说成业务结论。
       showToast(
         catalogError
-          ? `目录未加载（${catalogError}），暂时无法规划「${title}」的更新。`
-          : `「${title}」已不在当前目录中（可能已下架），无法规划更新。`,
+          ? t('app.updateCatalogNotLoaded', { error: catalogError, title })
+          : t('app.updateModGone', { title }),
         'warn'
       );
       return;
@@ -1193,7 +1197,7 @@ export default function App() {
   const handleStartUninstallPlan = async (item: InstalledItem) => {
     const targetInstId = activeInstallationIdRef.current;
     if (!activeInstallation.is_valid || !item.managed_operation_id || targetInstId === 'unverified') {
-      showToast('该模组没有可追溯的真实安装记录，或 MAS 目录尚未验证。');
+      showToast(t('app.noInstallRecord'));
       return;
     }
     if (installingRef.current) return;
@@ -1224,7 +1228,7 @@ export default function App() {
         installation_id: targetInstId,
         mod_id: item.mod_id,
         mod_title: item.title,
-        author_name: item.author_name || '未知作者',
+        author_name: item.author_name || t('app.unknownAuthor'),
         category: item.category,
         version_id: item.installed_version_id,
         version_str: item.installed_version,
@@ -1243,7 +1247,7 @@ export default function App() {
       setCurrentPlan(mapPlanPreview(preview, { ...uninstallPlan, warnings: [], backend_operation_id: (preview as any).operation_id || preview.plan_id }));
     } catch (error) {
       if (activeInstallationIdRef.current === targetInstId) {
-        showToast(`卸载预览失败：${String(error)}`);
+        showToast(t('app.uninstallPreviewFailed', { error: String(error) }));
       }
     } finally {
       installingRef.current = false;
@@ -1254,12 +1258,12 @@ export default function App() {
   const handleStartRepairPlan = async (item: InstalledItem) => {
     const targetInstId = activeInstallationIdRef.current;
     if (!activeInstallation.is_valid || targetInstId === 'unverified') {
-      showToast('请先验证 MAS 目录。');
+      showToast(t('app.verifyDirectoryBeforeInstall'));
       return;
     }
     const targetInstallationId = resolveModInstallationId(item);
     if (!item.is_managed || !targetInstallationId) {
-      showToast('缺少安装记录，无法自动修复。请重新扫描或人工处理。');
+      showToast(t('app.noRecordForRepair'));
       return;
     }
     if (installingRef.current) return;
@@ -1271,7 +1275,7 @@ export default function App() {
       if (pending) {
         await refreshOperations(targetInstId);
         setActiveTab('operations');
-        showToast('存在未完成事务，请先检查诊断并重新校验、安全回滚，再重新预览修复。');
+        showToast(t('app.pendingTransactionBeforeRepair'));
         return;
       }
       await SetMASRoot(activeInstallation.path_hint);
@@ -1285,7 +1289,7 @@ export default function App() {
         target_installation_id: preview.target_id || targetInstallationId,
         mod_id: item.mod_id,
         mod_title: item.title,
-        author_name: item.author_name || '未知作者',
+        author_name: item.author_name || t('app.unknownAuthor'),
         category: item.category,
         version_id: item.installed_version_id,
         version_str: item.installed_version,
@@ -1299,7 +1303,7 @@ export default function App() {
       }));
     } catch (error) {
       if (activeInstallationIdRef.current !== targetInstId) return;
-      showToast(`修复预览失败：${error instanceof Error ? error.message : String(error)}`);
+      showToast(t('app.repairPreviewFailed', { error: error instanceof Error ? error.message : String(error) }));
       await refreshOperations(targetInstId);
       setActiveTab('operations');
     } finally {
@@ -1313,21 +1317,21 @@ export default function App() {
     const coordinator = executionCoordinatorRef.current!;
     const targetInstId = plan.installation_id;
     if (targetInstId !== activeInstallationIdRef.current) {
-      showToast('实例已切换，请在当前实例上重新预览。');
+      showToast(t('app.instanceSwitched'));
       return;
     }
     if (isGameRunning) {
-      showToast('MAS 游戏正在运行，写操作已锁定，请退出游戏后重试。');
+      showToast(t('app.gameRunningLocked'));
       return;
     }
     setCurrentPlan(null);
 
-    const actionText = getPlanActionText(plan.kind);
+    const actionText = getPlanActionText(plan.kind, t);
 
     if (plan.kind === 'uninstall') {
       const installed = installedMods.find((item) => item.mod_id === plan.mod_id);
       if (!installed?.managed_operation_id) {
-        showToast('该模组没有可追溯的真实安装记录，无法执行自动卸载。');
+        showToast(t('app.noRecordForUninstall'));
         return;
       }
       const uninstallOperationId = plan.backend_operation_id || plan.plan_id;
@@ -1336,7 +1340,7 @@ export default function App() {
       try {
         const result = await ExecutePlan({ plan_id: plan.plan_id, confirmed: true });
         if (result.state !== 'committed') {
-          throw new Error(`${actionText}事务执行未正常提交，状态为: ${result.state || 'uncommitted'}`);
+          throw new Error(t('app.transactionNotCommitted', { action: actionText, state: result.state || 'uncommitted' }));
         }
         if (activeInstallationIdRef.current !== targetInstId) {
           coordinator.stopPolling();
@@ -1349,7 +1353,7 @@ export default function App() {
         await refreshOperations(targetInstId);
         setInstalledMods((prev) => prev.filter((item) => item.mod_id !== plan.mod_id));
         void scanLocalSubmods(targetInstId, { forced: true });
-        showToast(`${plan.mod_title} 已卸载，恢复原文件 ${plan.summary?.restores_original || 0} 个，下层文件 ${plan.summary?.restores_layer || 0} 个。`);
+        showToast(t('app.uninstalledSummary', { title: plan.mod_title, restores: plan.summary?.restores_original || 0, layers: plan.summary?.restores_layer || 0 }));
       } catch (error) {
         const errObj = error instanceof Error ? error : new Error(String(error));
         try {
@@ -1363,13 +1367,13 @@ export default function App() {
           if (finalSession?.operation.state === 'committed') {
             setInstalledMods((prev) => prev.filter((item) => item.mod_id !== plan.mod_id));
             void scanLocalSubmods(targetInstId, { forced: true });
-            showToast(`${plan.mod_title} 后端事务已提交，但通信响应异常：${errObj.message}`);
+            showToast(t('app.committedButBadResponse', { title: plan.mod_title, error: errObj.message }));
           } else if (finalSession?.operation.state === 'query_failed') {
-            showToast(`真实${actionText}状态未知（后端状态查询失败）：${errObj.message}`);
+            showToast(t('app.stateUnknown', { action: actionText, error: errObj.message }));
           } else if (finalSession?.operation.state === 'needs_manual_recovery') {
-            showToast(`真实${actionText}需要手动恢复：${describeExecutionError(errObj)}`);
+            showToast(t('app.needsManualRecovery', { action: actionText, error: describeExecutionError(errObj, t) }));
           } else {
-            showToast(`真实${actionText}失败：${describeExecutionError(errObj)}`);
+            showToast(t('app.actionFailed', { action: actionText, error: describeExecutionError(errObj, t) }));
           }
         }
       } finally {
@@ -1385,7 +1389,7 @@ export default function App() {
       try {
         const result = await ExecutePlan({ plan_id: plan.plan_id, confirmed: true });
         if (result.state !== 'committed') {
-          throw new Error(`${actionText}事务执行未正常提交，状态为: ${result.state || 'uncommitted'}`);
+          throw new Error(t('app.transactionNotCommitted', { action: actionText, state: result.state || 'uncommitted' }));
         }
         if (activeInstallationIdRef.current !== targetInstId) {
           coordinator.stopPolling();
@@ -1398,14 +1402,14 @@ export default function App() {
         await refreshOperations(targetInstId);
         void scanLocalSubmods(targetInstId, { forced: true });
         if (plan.kind === 'repair') {
-          showToast(`${plan.mod_title} 真实修复事务已提交，正在重新扫描。旧预览已废弃。`);
+          showToast(t('app.repairCommitted', { title: plan.mod_title }));
           return;
         }
         if (plan.kind === 'adopt') {
           // For adoption, immediately read back from persisted ledger state rather than optimistic assumption.
           // Version is kept unverified if no store evidence, and integrity is unknown.
           void scanLocalSubmods(targetInstId, { forced: true });
-          showToast(`已成功收纳 ${result.files} 个文件并纳入 Ledger。`);
+          showToast(t('app.adoptedFiles', { count: result.files }));
           return;
         }
         setInstalledMods((prev) => {
@@ -1413,7 +1417,7 @@ export default function App() {
           const authorName = plan.author_name
             || catalogMods.find((item) => item.id === plan.mod_id)?.author?.display_name
             || exists?.author_name
-            || '未知作者';
+            || t('app.unknownAuthor');
           const nextPriority = plan.priority ?? (exists?.priority ?? 0);
           if (exists) return prev.map((item) => item.mod_id === plan.mod_id ? {
             ...item, installed_version: plan.version_str, installed_version_id: plan.version_id,
@@ -1427,7 +1431,7 @@ export default function App() {
             selected_sprite_set_count: plan.selected_sprite_set_count,
           } : item);
           return [...prev, {
-            mod_id: plan.mod_id, title: plan.mod_title, summary: '已通过 RezeHub 验证安装',
+            mod_id: plan.mod_id, title: plan.mod_title, summary: { zh: t('app.verifiedViaHub') },
             author_name: authorName, category: plan.category || 'submod', installed_version: plan.version_str,
             installed_version_id: plan.version_id, latest_version: plan.version_str,
             latest_version_id: plan.version_id, has_update: false, priority: nextPriority, is_managed: true,
@@ -1438,7 +1442,7 @@ export default function App() {
             selected_sprite_set_count: plan.selected_sprite_set_count,
           }];
         });
-        showToast(`已通过 Wails Go 安装核心写入 ${result.files} 个文件。`);
+        showToast(t('app.wroteFiles', { count: result.files }));
         return;
       } catch (error) {
         const errObj = error instanceof Error ? error : new Error(String(error));
@@ -1452,13 +1456,13 @@ export default function App() {
           const finalSession = coordinator.getCurrentSession();
           if (finalSession?.operation.state === 'committed') {
             void scanLocalSubmods(targetInstId, { forced: true });
-            showToast(`${plan.mod_title} 后端事务已提交，但通信响应异常：${errObj.message}`);
+            showToast(t('app.committedButBadResponse', { title: plan.mod_title, error: errObj.message }));
           } else if (finalSession?.operation.state === 'query_failed') {
-            showToast(`真实${actionText}状态未知（后端状态查询失败）：${errObj.message}`);
+            showToast(t('app.stateUnknown', { action: actionText, error: errObj.message }));
           } else if (finalSession?.operation.state === 'needs_manual_recovery') {
-            showToast(`真实${actionText}需要手动恢复：${describeExecutionError(errObj)}`);
+            showToast(t('app.needsManualRecovery', { action: actionText, error: describeExecutionError(errObj, t) }));
           } else {
-            showToast(`真实${actionText}失败：${describeExecutionError(errObj)}`);
+            showToast(t('app.actionFailed', { action: actionText, error: describeExecutionError(errObj, t) }));
           }
         }
         return;
@@ -1467,21 +1471,21 @@ export default function App() {
       }
     }
 
-    showToast('执行计划缺少真实后端预览，请重新预览。');
+    showToast(t('app.missingPreview'));
   };
 
   // Handler: Recover / Safe Rollback Operation
   const handleRecoverOperation = async (opId: string) => {
     setRollbackInFlight((prev) => (prev.includes(opId) ? prev : [...prev, opId]));
-    showToast(`正在安全回滚操作 [${opId}]...`);
+    showToast(t('app.rollingBack', { id: opId }));
     try {
       await RollbackOperation(opId);
-      showToast(`操作 [${opId}] 已安全回滚`);
+      showToast(t('app.rolledBack', { id: opId }));
       await refreshOperations(activeInstallationIdRef.current);
       setCurrentPlan(null);
       void scanLocalSubmods(activeInstallationIdRef.current, { forced: true });
     } catch (err: any) {
-      showToast(`回滚失败：${err.message || String(err)}`);
+      showToast(t('app.rollbackFailed', { error: err.message || String(err) }));
       await refreshOperations(activeInstallationIdRef.current);
     } finally {
       setRollbackInFlight((prev) => prev.filter((id) => id !== opId));
@@ -1494,7 +1498,7 @@ export default function App() {
     if (!currentInstId || currentInstId === 'unverified') return;
     setAdoptTarget(null);
     try {
-      showToast(`正在生成收纳计划: "${adopted.title}"...`);
+      showToast(t('app.adoptPlanning', { title: adopted.title }));
       const filesToAdopt = chosenFiles && chosenFiles.length > 0 ? chosenFiles : (adopted.unmanaged_paths || []);
       const scanItemId = adopted.scan_item_id || adopted.submod_dir_name || (adopted.mod_id.startsWith('local:') ? adopted.mod_id.replace(/^local:/, '') : adopted.mod_id);
       const preview = await PreviewAdopt({
@@ -1511,7 +1515,7 @@ export default function App() {
       });
 
       if (preview.blockers && preview.blockers.length > 0) {
-        showToast(`收纳受阻：${preview.blockers.join('; ')}`);
+        showToast(t('app.adoptBlocked', { blockers: preview.blockers.join('; ') }));
         return;
       }
 
@@ -1524,7 +1528,7 @@ export default function App() {
         target_installation_id: preview.target_id || adopted.mod_id,
         mod_id: preview.target_id || adopted.mod_id,
         mod_title: preview.mod_title || adopted.title,
-        author_name: adopted.author_name || '本地导入',
+        author_name: adopted.author_name || t('app.localImport'),
         category: adopted.category || 'submod',
         version_id: adopted.installed_version_id || '',
         version_str: preview.version || adopted.installed_version || '1.0.0',
@@ -1538,7 +1542,7 @@ export default function App() {
           next_owner: a.target_source || preview.target_id || adopted.mod_id,
           previous_hash: a.current_hash,
           next_hash: a.current_hash,
-          reason: '将现有本地文件收纳并纳入 RezeHub Ledger 持久化管理',
+          reason: t('app.adoptReason'),
           backup_required: false,
         })),
         backups_required: 0,
@@ -1548,7 +1552,7 @@ export default function App() {
 
       setCurrentPlan(mappedPlan);
     } catch (err: any) {
-      showToast(`收纳计划生成失败：${err.message || String(err)}`);
+      showToast(t('app.adoptPlanFailed', { error: err.message || String(err) }));
     }
   };
 
@@ -1557,31 +1561,31 @@ export default function App() {
   const handleCheckAllUpdates = async () => {
     const targetInstId = activeInstallationIdRef.current;
     if (!activeInstallation.is_valid || !targetInstId || targetInstId === 'unverified') {
-      showToast('请先验证 MAS 目录后再比对更新。', 'warn');
+      showToast(t('app.verifyBeforeCompare'), 'warn');
       return;
     }
     // 顺序必须成立：目录没刷新成功就比对，结论会基于旧版本。
     const catalog = await handleRefreshCatalog();
     if (activeInstallationIdRef.current !== targetInstId) return;
     if (!catalog) {
-      showToast('目录刷新失败，更新比对未执行。', 'warn');
+      showToast(t('app.catalogRefreshFailedNoCompare'), 'warn');
       return;
     }
     if (catalog.length === 0) {
-      showToast('目录为空，没有可用来比对更新的版本。', 'warn');
+      showToast(t('app.catalogEmptyNoCompare'), 'warn');
       return;
     }
     const scanned = await scanLocalSubmods(targetInstId, { forced: true });
     if (activeInstallationIdRef.current !== targetInstId) return;
     if (!scanned) {
-      showToast('本地模组扫描未完成，更新比对已中止。', 'warn');
+      showToast(t('app.localScanIncomplete'), 'warn');
       return;
     }
     const updateCount = scanned.filter((item) => item.has_update).length;
     showToast(
       updateCount > 0
-        ? `已比对 ${scanned.length} 个本地模组：${updateCount} 个有比当前版本更新的发布版本，可在列表里直接规划更新。`
-        : `已比对 ${scanned.length} 个本地模组：没有比当前安装版本更新的发布版本。`
+        ? t('app.compareDoneWithUpdates', { count: scanned.length, updates: updateCount })
+        : t('app.compareDoneNoUpdates', { count: scanned.length })
     );
   };
 
@@ -1592,29 +1596,29 @@ export default function App() {
   // Handler: Add Custom Instance
   const handleAddCustomInstance = async (label: string, path: string) => {
     const added = await runInstanceSwitch(
-      { title: `正在添加实例「${label || path}」`, detail: INSTANCE_SWITCH_DETAIL },
+      { title: t('app.addingInstance', { name: label || path }), detail: instanceSwitchDetail },
       async () => (await AddMASInstance(label, path)) as MASInstancesState,
-      (detail) => `添加实例失败：${detail}`,
+      (detail) => t('app.addingInstanceFailed', { detail }),
     );
-    if (added) showToast('MAS 实例已添加并设为活动实例。');
+    if (added) showToast(t('app.instanceAdded'));
   };
 
   const handleSelectInstance = async (id: string) => {
     await runInstanceSwitch(
-      { title: `正在切换到「${instanceLabelFor(id)}」`, detail: INSTANCE_SWITCH_DETAIL },
+      { title: t('app.switchingInstance', { name: instanceLabelFor(id) }), detail: instanceSwitchDetail },
       async () => (await SelectMASInstance(id)) as MASInstancesState,
-      (detail) => `切换实例失败：${detail}`,
+      (detail) => t('app.switchInstanceFailed', { detail }),
     );
   };
 
   const handleRemoveInstance = async (id: string) => {
     await runInstanceSwitch(
       {
-        title: `正在移除实例「${instanceLabelFor(id)}」`,
-        detail: '正在重新确定活动实例并读取它的模组、精灵包与事务记录，请稍候。',
+        title: t('app.removingInstance', { name: instanceLabelFor(id) }),
+        detail: t('app.instanceSwitchDetailLong'),
       },
       async () => (await RemoveMASInstance(id)) as MASInstancesState,
-      (detail) => `移除实例失败：${detail}`,
+      (detail) => t('app.removeInstanceFailed', { detail }),
     );
   };
 
@@ -1622,15 +1626,15 @@ export default function App() {
     if (isLaunchingGame) return;
     // 按钮已置灰；这里再拦一次，覆盖键盘/程序化触发以及事务状态刚更新的那一帧。
     if (isTransactionActive) {
-      showToast('事务进行中，游戏启动已被阻止。请等待事务提交或回滚完成后再启动游戏。', 'warn');
+      showToast(t('app.launchBlockedByTransaction'), 'warn');
       return;
     }
     setIsLaunchingGame(true);
     try {
       await LaunchMASInstance(id);
-      showToast('游戏已启动。');
+      showToast(t('app.gameLaunched'));
     } catch (error) {
-      showToast(describeLaunchFailure(error), isTransactionInProgressError(error) ? 'warn' : 'info');
+      showToast(describeLaunchFailure(error, t), isTransactionInProgressError(error) ? 'warn' : 'info');
     } finally {
       setIsLaunchingGame(false);
     }
@@ -1638,7 +1642,7 @@ export default function App() {
 
   const handleRefreshInstances = async () => {
     try { refreshInstanceState(await ListMASInstances() as MASInstancesState); }
-    catch (error) { showToast(`重新检查失败：${String(error)}`); }
+    catch (error) { showToast(t('app.recheckFailed', { error: String(error) })); }
   };
 
   return (
@@ -1677,10 +1681,10 @@ export default function App() {
         )}
 
         {(isDownloadingArchive || installingModId !== null) && (
-          <div role="status" aria-label="下载进度" className="shrink-0 border-b border-neutral-800 bg-neutral-900 px-4 py-2 text-xs text-neutral-200">
+          <div role="status" aria-label={t('app.downloadProgress')} className="shrink-0 border-b border-neutral-800 bg-neutral-900 px-4 py-2 text-xs text-neutral-200">
             <div className="mb-1.5 flex items-center justify-between gap-3">
-              <span className="min-w-0 truncate">{archiveProgress?.stage === 'connecting' ? `正在连接 ${transferTitle}` : archiveProgress?.stage === 'downloading' ? `正在下载 ${transferTitle}` : archiveProgress?.stage === 'verifying' ? `正在校验 ${transferTitle}` : installStage === 'installing' ? `正在安装 ${transferTitle}` : `正在准备 ${transferTitle}`}</span>
-              <span className="shrink-0 font-mono tabular-nums text-neutral-300">{archiveProgress ? (archiveProgress.total > 0 ? `${transferPercent}% · ${formatTransferBytes(archiveProgress.received)} / ${formatTransferBytes(archiveProgress.total)}` : formatTransferBytes(archiveProgress.received)) : installStage === 'installing' ? '下载完成' : '等待响应'}</span>
+              <span className="min-w-0 truncate">{archiveProgress?.stage === 'connecting' ? t('app.transferConnecting', { title: transferTitle ?? '' }) : archiveProgress?.stage === 'downloading' ? t('app.transferDownloading', { title: transferTitle ?? '' }) : archiveProgress?.stage === 'verifying' ? t('app.transferVerifying', { title: transferTitle ?? '' }) : installStage === 'installing' ? t('app.transferInstalling', { title: transferTitle ?? '' }) : t('app.transferPreparing', { title: transferTitle ?? '' })}</span>
+              <span className="shrink-0 font-mono tabular-nums text-neutral-300">{archiveProgress ? (archiveProgress.total > 0 ? `${transferPercent}% · ${formatTransferBytes(archiveProgress.received)} / ${formatTransferBytes(archiveProgress.total)}` : formatTransferBytes(archiveProgress.received)) : installStage === 'installing' ? t('app.transferDownloadDone') : t('app.transferAwaiting')}</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded bg-neutral-700" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={archiveProgress && archiveProgress.total > 0 ? transferPercent : undefined}>
               <div className={`h-full bg-emerald-500 transition-[width] duration-150 ${archiveProgress && archiveProgress.total > 0 ? '' : 'animate-pulse'}`} style={{ width: archiveProgress && archiveProgress.total > 0 ? `${transferPercent}%` : installStage === 'installing' ? '100%' : '30%' }} />
@@ -1697,7 +1701,7 @@ export default function App() {
               if (isAllowedNavTab(tab)) {
                 setActiveTab(tab);
               } else {
-                showToast('本地恢复历史服务尚未接入。');
+                showToast(t('app.restoreServiceMissing'));
               }
             }}
             activeInstallation={activeInstallation}
@@ -1752,14 +1756,14 @@ export default function App() {
                   try {
                     const path = await CreateSpriteGift(file);
                     if (activeInstallationIdRef.current !== targetInstId) return '';
-                    return `礼物已创建：${path}`;
+                    return t('app.giftCreated', { path });
                   } catch (error) {
                     if (activeInstallationIdRef.current !== targetInstId) return '';
                     const message = String(error);
-                    if (message.includes('sprite_gift_already_exists')) return '礼物已存在，无需重复创建。';
-                    if (message.includes('spritepack_incomplete')) return '精灵包文件不完整，暂时无法创建礼物。';
-                    if (message.includes('spritepack_has_no_valid_giftname')) return '该精灵包没有可用的礼物名称。';
-                    return '礼物创建失败，请检查游戏目录权限后重试。';
+                    if (message.includes('sprite_gift_already_exists')) return t('app.giftExists');
+                    if (message.includes('spritepack_incomplete')) return t('app.spritepackIncomplete');
+                    if (message.includes('spritepack_has_no_valid_giftname')) return t('app.spritepackNoGiftname');
+                    return t('app.giftCreateFailed');
                   }
                 }}
                 onDeleteSpritepack={async (file) => {
@@ -1770,7 +1774,7 @@ export default function App() {
                       return;
                     }
                     void refreshSpritepacks(targetInstId, { forced: true });
-                    showToast(`已移出 ${result.files} 项，备份位于 ${result.backup}`);
+                    showToast(t('app.removedItems', { count: result.files, backup: result.backup }));
                   } catch (error) {
                     // 继续向上抛：失败原因由 InstalledView 的删除对话框就地显示，
                     // 收在这里会让对话框以为成功而关闭，只留一条被遮住的 toast。

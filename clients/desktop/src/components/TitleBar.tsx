@@ -15,6 +15,8 @@ import {
   Play,
 } from 'lucide-react';
 import { Installation } from '../types/client';
+import { LanguageSwitcher } from './LanguageSwitcher';
+import { useI18n } from '../i18n';
 
 interface TitleBarProps {
   installations: Installation[];
@@ -54,10 +56,11 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onOpenAppUpdate,
   hasAppUpdate = false,
 }) => {
+  const { t } = useI18n();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isMaximised, setIsMaximised] = useState(false);
   const activeInst = installations.find((i) => i.id === activeInstallationId) || {
-    label: '尚未选择 MAS', path_hint: '', is_valid: false, mas_version: '',
+    label: t('app.noInstance'), path_hint: '', is_valid: false, mas_version: '',
   };
 
   // Keep the maximise/restore icon in sync with native window state changes
@@ -115,12 +118,12 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const launchBlockedByTransaction = isTransactionActive;
   const launchDisabled = !activeInst.is_valid || isLaunchingGame || launchBlockedByTransaction;
   const launchTitle = !activeInst.is_valid
-    ? '请先选择有效的 MAS 实例'
+    ? t('titleBar.selectInstance')
     : launchBlockedByTransaction
-      ? '事务进行中：事务提交或回滚完成前不能启动游戏，避免与正在写入的文件冲突'
+      ? t('titleBar.launchBlockedBusy')
       : isLaunchingGame
-        ? '正在启动游戏…'
-        : `启动 ${activeInst.label} 的 DDLC.exe`;
+        ? t('titleBar.launching')
+        : t('titleBar.launchTarget', { name: activeInst.label });
 
   return (
     <header
@@ -136,6 +139,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <span className="font-semibold text-neutral-100 tracking-tight text-sm">
             RezeHub
           </span>
+          {/* 语言切换常驻标题栏：它是全局开关，不该藏在某个视图里。 */}
+          <LanguageSwitcher />
           {onOpenAppUpdate ? (
             <button
               type="button"
@@ -143,8 +148,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               className={`wails-no-drag flex items-center gap-1 text-[10px] font-mono transition-colors hover:text-neutral-200 ${
                 hasAppUpdate ? 'text-emerald-400 font-semibold' : 'text-neutral-500'
               } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
-              title={`点击检查更新 (当前 v${__APP_VERSION__})`}
-              aria-label={`检查应用更新，当前版本 v${__APP_VERSION__}`}
+              title={t('titleBar.checkUpdateTitle', { version: __APP_VERSION__ })}
+              aria-label={t('titleBar.checkUpdateAria', { version: __APP_VERSION__ })}
             >
               <span>v{__APP_VERSION__}</span>
               {hasAppUpdate && (
@@ -191,7 +196,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               />
               <div className="wails-no-drag absolute left-0 mt-1 w-80 max-w-[calc(100vw-1.5rem)] bg-neutral-900 border border-neutral-700 rounded-md shadow-xl py-1 z-50">
                 <div className="px-3 py-1.5 text-[11px] font-medium text-neutral-400 border-b border-neutral-800">
-                  选择或管理 MAS 游戏实例
+                  {t('titleBar.instancePickerHint')}
                 </div>
                 {installations.map((inst) => (
                   <button
@@ -229,7 +234,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                     className="w-full text-left px-2.5 py-1.5 text-xs text-emerald-400 hover:bg-neutral-800 rounded flex items-center gap-1.5 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                   >
                     <FolderGit2 className="w-3.5 h-3.5" />
-                    <span>添加或重新授权 MAS 游戏目录...</span>
+                    <span>{t('titleBar.addOrRegrant')}</span>
                   </button>
                 </div>
               </div>
@@ -248,14 +253,14 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             title={launchTitle}
             aria-label={
               isLaunchingGame
-                ? '启动中'
+                ? t('titleBar.launchingShort')
                 : launchBlockedByTransaction
-                  ? '启动游戏（事务进行中，暂不可用）'
-                  : '启动游戏'
+                  ? t('titleBar.launchUnavailable')
+                  : t('titleBar.launchGame')
             }
           >
             {launchBlockedByTransaction ? <Lock className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-            <span className="hidden sm:inline">{isLaunchingGame ? '启动中…' : '启动游戏'}</span>
+            <span className="hidden sm:inline">{isLaunchingGame ? t('titleBar.launchingEllipsis') : t('titleBar.launchGame')}</span>
           </button>
         )}
       </div>
@@ -267,27 +272,27 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           {!activeInst.is_valid && (
             <div className="flex items-center gap-1.5 text-amber-400 text-[11px]">
               <AlertTriangle className="w-3.5 h-3.5" />
-              <span>MAS 状态未验证</span>
+              <span>{t('titleBar.masUnverified')}</span>
             </div>
           )}
           {/* Transaction Guard — 灰掉的启动按钮在这里说明原因 */}
           {isTransactionActive && activeInst.is_valid && (
             <div
               className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-sky-950/70 border border-sky-800/80 text-sky-300"
-              title="事务进行中：事务提交或回滚完成前，游戏启动被锁定，避免与正在写入的文件冲突。"
+              title={t('titleBar.busyTooltip')}
             >
               <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" />
-              <span className="font-medium text-[11px]">事务进行中 (启动已锁定)</span>
+              <span className="font-medium text-[11px]">{t('titleBar.busyBadge')}</span>
             </div>
           )}
           {/* Game Process Guard */}
           {isGameRunning && (
             <div
               className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/70 border border-amber-800/80 text-amber-300"
-              title="MAS 正在运行：为防止 Ren'Py 运行时损坏，写操作被物理锁定。"
+              title={t('titleBar.runningTooltip')}
             >
               <Lock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-              <span className="font-medium text-[11px]">MAS 进程运行中 (写操作锁定)</span>
+              <span className="font-medium text-[11px]">{t('titleBar.runningBadge')}</span>
             </div>
           )}
         </div>
@@ -301,8 +306,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               type="button"
               onClick={handleMinimise}
               className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-              title="最小化"
-              aria-label="最小化"
+              title={t('titleBar.minimize')}
+              aria-label={t('titleBar.minimize')}
             >
               <Minus className="w-3.5 h-3.5" />
             </button>
@@ -310,8 +315,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               type="button"
               onClick={handleToggleMaximise}
               className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-              title={isMaximised ? '还原' : '最大化'}
-              aria-label={isMaximised ? '还原' : '最大化'}
+              title={isMaximised ? t('titleBar.restore') : t('titleBar.maximize')}
+              aria-label={isMaximised ? t('titleBar.restore') : t('titleBar.maximize')}
             >
               {isMaximised ? (
                 <Copy className="w-3.5 h-3.5 -scale-x-100" />
@@ -323,8 +328,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               type="button"
               onClick={handleClose}
               className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-white hover:bg-red-600 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-              title="关闭"
-              aria-label="关闭"
+              title={t('titleBar.close')}
+              aria-label={t('titleBar.close')}
             >
               <X className="w-3.5 h-3.5" />
             </button>

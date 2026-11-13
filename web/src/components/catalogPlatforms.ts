@@ -6,7 +6,7 @@
  * 这份清单，不该为了它把整个页面（含 AppContext）的依赖图拉进 Node 测试。
  */
 export const CATALOG_PLATFORM_FILTERS = [
-  { id: 'all', label: '全部' },
-  { id: 'windows', label: 'Windows' },
-  { id: 'android', label: 'Android' },
+  { id: 'all', labelKey: 'catalog.platformAll' },
+  { id: 'windows', labelKey: null, label: 'Windows' },
+  { id: 'android', labelKey: null, label: 'Android' },
 ] as const;

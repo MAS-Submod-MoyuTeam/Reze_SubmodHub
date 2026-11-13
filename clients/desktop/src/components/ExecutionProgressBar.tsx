@@ -11,6 +11,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import type { ExecutionSession } from '../types/client';
+import { useI18n } from '../i18n';
 
 interface ExecutionProgressBarProps {
   session: ExecutionSession;
@@ -25,6 +26,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
   onViewInOperations,
   onRecover,
 }) => {
+  const { t } = useI18n();
   const op = session.operation;
   const isFinished = session.is_finished;
   const state = op.state;
@@ -46,33 +48,46 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
   const isFailed = isNeedsManual || state === 'rolled_back' || isQueryFailed || (!!session.error && !isSuccess);
 
   // Compute title
-  let actionTitle = `正在执行${session.kind === 'uninstall' ? '卸载' : '安装'}：${session.mod_title}`;
+  // 卸载与安装是两条不同的动词路径，先取一次词再套模板，避免模板里再嵌三元。
+  const verb = session.kind === 'uninstall' ? t('progress.uninstallVerb') : t('progress.installVerb');
+  let actionTitle = t('progress.running', { action: verb, title: session.mod_title });
   if (isSuccess) {
-    actionTitle = `${session.kind === 'uninstall' ? '卸载' : '安装'}成功：${session.mod_title}`;
+    actionTitle = t('progress.succeeded', { action: verb, title: session.mod_title });
   } else if (isNeedsManual) {
-    actionTitle = `需人工恢复：${session.mod_title}`;
+    actionTitle = t('progress.needsManual', { title: session.mod_title });
   } else if (state === 'rolled_back') {
-    actionTitle = `操作已安全回滚：${session.mod_title}`;
+    actionTitle = t('progress.rolledBack', { title: session.mod_title });
   } else if (isQueryFailed) {
-    actionTitle = `状态未知（查询失败）：${session.mod_title}`;
+    actionTitle = t('progress.stateUnknown', { title: session.mod_title });
   } else if (session.error) {
-    actionTitle = `执行失败：${session.mod_title}`;
+    actionTitle = t('progress.failed', { title: session.mod_title });
   }
 
-  // Compute description text
-  let stageDescription = progress.stage;
+  // 阶段描述：后端只给稳定的阶段码（`progress.stage.*`），这里按当前语言翻译。
+  // 注意「还没开始」这个状态也靠 code 判断，而不是比较界面上显示的文字——
+  // 用文案当协议的话，一改文案逻辑就会静默失效。
+  let stageDescription: string;
   if (isSuccess && session.communication_error) {
-    stageDescription = `事务已提交，但客户端通信异常：${session.communication_error}`;
-  } else if (!stageDescription || stageDescription === '操作已初始化') {
+    stageDescription = t('progress.committedButCommsError', { error: session.communication_error });
+  } else if (!progress.stage || progress.stage === 'progress.stage.initialized') {
     if (phase === 'planned') {
-      stageDescription = '计划已确认，正在初始化写入事务...';
+      stageDescription = t('progress.stagePlanned');
     } else if (phase === 'prepared') {
-      stageDescription = `快照就绪 (${op.backup_id || 'snapshot'})，准备原子写入...`;
+      stageDescription = t('progress.stagePrepared', { snapshot: op.backup_id || 'snapshot' });
     } else if (phase === 'committing') {
-      stageDescription = '正在提交清单与持久化记录...';
+      stageDescription = t('progress.stageCommitting');
     } else if (isQueryFailed) {
-      stageDescription = '后端状态查询失败，无法确认事务是否已提交';
+      stageDescription = t('progress.stageQueryFailed');
+    } else {
+      stageDescription = t('progress.stageInitialized');
     }
+  } else {
+    // 后端给的阶段码直接查字典；万一是未知 code，translate 会回落成 code 本身，
+    // 至少不会显示成空白，也便于发现前后端版本不一致。
+    stageDescription = t(progress.stage, {
+      processed: progress.processed_files,
+      total: progress.total_files,
+    });
   }
 
   // Status icon
@@ -108,7 +123,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
   return (
     <div
       role="status"
-      aria-label="执行写入进度"
+      aria-label={t('progress.ariaLabel')}
       className="shrink-0 border-b border-neutral-800 bg-neutral-900/95 px-4 py-2.5 text-xs text-neutral-200 backdrop-blur-xs"
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1.5">
@@ -121,7 +136,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
           {op.backup_id && (
             <span
               className="hidden lg:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700/60 text-[10px] text-neutral-300 font-mono"
-              title={`对应保护快照标识: ${op.backup_id}`}
+              title={t('progress.snapshotTitle', { snapshot: op.backup_id })}
             >
               <FolderArchive className="w-3 h-3 text-neutral-400" />
               <span>{op.backup_id}</span>
@@ -130,9 +145,9 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
           {session.communication_error && (
             <span
               className="hidden lg:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-950/70 border border-amber-800/70 text-[10px] text-amber-300 font-sans"
-              title={`通信响应异常: ${session.communication_error}`}
+              title={t('progress.commsErrorTitle', { error: session.communication_error })}
             >
-              <span>通信异常 ({isSuccess ? '后端已提交' : '状态未知'})</span>
+              <span>{t('progress.commsErrorBadge', { state: isSuccess ? t('progress.committed') : t('progress.unknown') })}</span>
             </span>
           )}
         </div>
@@ -140,11 +155,11 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
         <div className="flex items-center gap-3 shrink-0 text-[11px] self-end sm:self-auto font-mono">
           {op.progress.total_files > 0 ? (
             <span className="tabular-nums text-neutral-300">
-              {percent}% · {op.progress.processed_files} / {op.progress.total_files} 文件
+              {t('progress.fileCounter', { percent, done: op.progress.processed_files, total: op.progress.total_files })}
             </span>
           ) : (
             <span className="text-neutral-400 font-sans">
-              {isSuccess ? '全部完成' : isQueryFailed ? '结果未知' : isFinished ? '事务终止' : '准备写入'}
+              {isSuccess ? t('progress.phaseDone') : isQueryFailed ? t('progress.phaseUnknown') : isFinished ? t('progress.phaseAborted') : t('progress.phasePreparing')}
             </span>
           )}
 
@@ -153,9 +168,9 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
             <button
               onClick={onViewInOperations}
               className="text-neutral-400 hover:text-neutral-200 transition-colors flex items-center gap-1 font-sans text-xs underline underline-offset-2 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-              title="前往本地操作日志查看详情与快照"
+              title={t('progress.viewLogTitle')}
             >
-              <span>查看日志</span>
+              <span>{t('progress.viewLog')}</span>
               <ArrowRight className="w-3 h-3" />
             </button>
           )}
@@ -165,10 +180,10 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
             <button
               onClick={() => onRecover(session.operation_id)}
               className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-neutral-950 font-sans font-semibold transition-colors flex items-center gap-1 text-[11px] active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-              title="重新校验并安全回滚"
+              title={t('progress.rollbackTitle')}
             >
               <RotateCcw className="w-3 h-3" />
-              <span>安全回滚</span>
+              <span>{t('progress.rollback')}</span>
             </button>
           )}
 
@@ -177,7 +192,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
             <button
               onClick={onDismiss}
               className="text-neutral-500 hover:text-neutral-300 transition-colors p-0.5 rounded active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-              title="关闭进度横条"
+              title={t('progress.closeTitle')}
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -204,7 +219,7 @@ export const ExecutionProgressBar: React.FC<ExecutionProgressBarProps> = ({
       {/* Mobile / Narrow screen stage & current file hint */}
       {op.progress.current_file && !isFinished && (
         <div className="mt-1 text-[10px] text-neutral-400 truncate font-mono">
-          写入中: {op.progress.current_file}
+          {t('progress.writing', { file: op.progress.current_file })}
         </div>
       )}
     </div>

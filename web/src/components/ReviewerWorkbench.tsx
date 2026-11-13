@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { apiBase } from '../apiBase';
 import { useApp } from '../context/AppContext';
+import { useI18n } from '../i18n';
 import { MarkdownText } from './MarkdownText';
 import { Pagination } from './Pagination';
 import { useReviewPage } from './useReviewPage';
 import { mapServerScanReport } from '../context/scanReport';
 import { assetPlatformLabel } from '../types/submodhub';
 import { formatVersionLabel } from './versionHistory';
+import { tabSegmentClass } from './selectionStyles';
 import { formatBytes } from './formatBytes';
 import { shortHash } from './clientDownload';
 import { reviewArchiveErrorText, triggerArchiveSave } from './reviewArchive';
@@ -31,6 +33,7 @@ import {
 } from 'lucide-react';
 
 export const ReviewerWorkbench: React.FC = () => {
+  const { t, resolve } = useI18n();
   const {
     currentUser,
     hasRole,
@@ -120,9 +123,9 @@ export const ReviewerWorkbench: React.FC = () => {
     try {
       const archive = await fetchReviewArchive(base, activeSubmissionId, archivePlatform);
       triggerArchiveSave(archive.blob, archive.filename);
-      showToast('success', `归档已下载并核对 SHA-256（${formatBytes(archive.size_bytes)}）：${archive.filename}`);
+      showToast('success', t('reviewer.downloadOk', { size: formatBytes(archive.size_bytes, t('common.unknown')), filename: archive.filename }));
     } catch (error) {
-      showToast('error', `归档下载失败：${reviewArchiveErrorText(error)}`);
+      showToast('error', t('reviewer.downloadFailed', { error: reviewArchiveErrorText(error) }));
     } finally {
       setArchiveDownloading(false);
     }
@@ -132,9 +135,9 @@ export const ReviewerWorkbench: React.FC = () => {
     return (
       <div className="max-w-4xl mx-auto px-4 py-16 text-center space-y-4">
         <ShieldAlert className="w-10 h-10 text-neutral-400 mx-auto" />
-        <h2 className="text-base font-bold text-neutral-800">未授权访问审核工作台</h2>
+        <h2 className="text-base font-bold text-neutral-800">{t('reviewer.notAuthorizedTitle')}</h2>
         <p className="text-xs text-neutral-500 max-w-md mx-auto">
-          审核工作台仅对管理员开放。
+          {t('reviewer.notAuthorizedBody')}
         </p>
       </div>
     );
@@ -145,7 +148,7 @@ export const ReviewerWorkbench: React.FC = () => {
     setDecisionSubmissionId(activeSubmissionId || '');
     setDecisionReason(
       mode === 'approve'
-        ? '已查阅 ZIP 静态检测报告，未发现需阻断发布的问题。'
+        ? t('reviewer.defaultApproveReason')
         : ''
     );
   };
@@ -188,13 +191,13 @@ export const ReviewerWorkbench: React.FC = () => {
           <div className="flex items-center gap-2 text-xs text-neutral-500">
             <span className="font-semibold text-neutral-900">{currentUser?.display_name}</span>
             <span>·</span>
-            <span>安全与规范审核组</span>
+            <span>{t('reviewer.heroBadge')}</span>
           </div>
           <h1 className="text-lg font-bold text-neutral-900 tracking-tight mt-0.5">
-            模组待审队列、代码安全检测与发布管理
+            {t('reviewer.heroBody')}
           </h1>
           <p className="text-xs text-neutral-500 mt-1">
-            审核批准后自动发布；公开版本只能下架，不能修改归档字节。
+            {t('reviewer.heroNote')}
           </p>
         </div>
 
@@ -202,23 +205,17 @@ export const ReviewerWorkbench: React.FC = () => {
         <div className="flex items-center bg-neutral-100 p-0.5 rounded text-xs font-medium">
           <button
             onClick={() => setActiveReviewTab('queue')}
-            className={`px-3 py-1.5 rounded transition-colors ${
-              activeReviewTab === 'queue'
-                ? 'bg-white text-neutral-900 shadow-xs'
-                : 'text-neutral-600 hover:bg-white/60 hover:text-neutral-900'
-            } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
+            aria-pressed={activeReviewTab === 'queue'}
+            className={`${tabSegmentClass(activeReviewTab === 'queue')} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
           >
-            待审队列 ({queue?.pending_count ?? '…'})
+            {t('reviewer.pendingQueue', { count: queue?.pending_count ?? '…' })}
           </button>
           <button
             onClick={() => setActiveReviewTab('audit')}
-            className={`px-3 py-1.5 rounded transition-colors ${
-              activeReviewTab === 'audit'
-                ? 'bg-white text-neutral-900 shadow-xs'
-                : 'text-neutral-600 hover:bg-white/60 hover:text-neutral-900'
-            } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
+            aria-pressed={activeReviewTab === 'audit'}
+            className={`${tabSegmentClass(activeReviewTab === 'audit')} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
           >
-            审核与下架审计流水{audit ? ` (${audit.total})` : ''}
+            {audit ? t('reviewer.auditTabWithTotal', { total: audit.total }) : t('reviewer.auditTab')}
           </button>
         </div>
       </div>
@@ -229,19 +226,19 @@ export const ReviewerWorkbench: React.FC = () => {
           <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
             <div>
               <h2 className="text-sm font-bold text-neutral-900">
-                审核、发布与角色变更审计日志 (GET /review/audit)
+                {t('reviewer.auditEndpoint')}
               </h2>
               <p className="text-xs text-neutral-500">
-                所有审核批准、驳回、不可变版本发布与下架操作均带有加密与操作者留痕
+                {t('reviewer.auditHint')}
               </p>
             </div>
             <span className="text-xs font-mono text-neutral-400">
-              共 {audit?.total ?? '…'} 条审计记录
+              {t('reviewer.auditCount', { total: audit?.total ?? '…' })}
             </span>
           </div>
 
-          {auditRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">正在加载审计流水…</p>}
-          {auditRequest.error && <p role="alert" className="text-xs text-rose-700">审计流水加载失败：{auditRequest.error} <button type="button" onClick={auditRequest.reload} className="rounded px-1 py-0.5 transition-colors underline hover:bg-neutral-100 active:bg-neutral-200 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">重试</button></p>}
+          {auditRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">{t('reviewer.auditLoading')}</p>}
+          {auditRequest.error && <p role="alert" className="text-xs text-rose-700">{t('reviewer.auditLoadFailed', { error: auditRequest.error })} <button type="button" onClick={auditRequest.reload} className="rounded px-1 py-0.5 transition-colors underline hover:bg-neutral-100 active:bg-neutral-200 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{t('common.retry')}</button></p>}
           <div className="divide-y divide-neutral-100">
             {audit?.items.map((log) => {
               const actionColors: Record<string, string> = {
@@ -276,16 +273,16 @@ export const ReviewerWorkbench: React.FC = () => {
 
                   <div className="flex items-center justify-between text-[11px] text-neutral-400">
                     <span>
-                      操作人: <strong className="text-neutral-700">{log.actor_name}</strong> ({log.actor_role})
+                      {t('reviewer.actor')}<strong className="text-neutral-700">{log.actor_name}</strong> ({log.actor_role})
                     </span>
-                    <span className="font-mono">审计 ID: {log.id}</span>
+                    <span className="font-mono">{t('reviewer.auditId', { id: log.id })}</span>
                   </div>
                 </div>
               );
             })}
           </div>
-          {audit && audit.total === 0 && <p className="py-8 text-center text-xs text-neutral-500">暂无审计记录</p>}
-          {audit && <Pagination label="审计流水" total={audit.total} page={audit.page} pageSize={auditPageSize} onPageChange={setAuditPage} onPageSizeChange={(size) => { setAuditPageSize(size); setAuditPage(1); }} />}
+          {audit && audit.total === 0 && <p className="py-8 text-center text-xs text-neutral-500">{t('reviewer.auditEmpty')}</p>}
+          {audit && <Pagination label={t('reviewer.auditPagerLabel')} total={audit.total} page={audit.page} pageSize={auditPageSize} onPageChange={setAuditPage} onPageSizeChange={(size) => { setAuditPageSize(size); setAuditPage(1); }} />}
         </div>
       ) : (
         /* Review Queue & Inspection Panel */
@@ -294,18 +291,18 @@ export const ReviewerWorkbench: React.FC = () => {
           <div className="bg-white border border-neutral-200 rounded-lg p-5 space-y-4 lg:col-span-1">
             <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
               <h2 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
-                审核与发布队列 ({queue?.total ?? '…'})
+                {t('reviewer.queueTitle', { total: queue?.total ?? '…' })}
               </h2>
             </div>
 
             {/* Filter Tabs */}
             <div className="flex flex-wrap gap-1 text-[11px]">
               {[
-                { id: 'all', label: '全部' },
-                { id: 'ready_for_review', label: '待处理' },
-                { id: 'approved', label: '已批准待发布' },
-                { id: 'rejected', label: '已驳回' },
-                { id: 'published', label: '已上线' },
+                { id: 'all', label: t('reviewer.filterAll') },
+                { id: 'ready_for_review', label: t('reviewer.filterPending') },
+                { id: 'approved', label: t('reviewer.filterApproved') },
+                { id: 'rejected', label: t('reviewer.filterRejected') },
+                { id: 'published', label: t('reviewer.filterPublished') },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -321,8 +318,8 @@ export const ReviewerWorkbench: React.FC = () => {
               ))}
             </div>
 
-            {queueRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">正在加载提交队列…</p>}
-            {queueRequest.error && <p role="alert" className="text-xs text-rose-700">提交队列加载失败：{queueRequest.error} <button type="button" onClick={queueRequest.reload} className="rounded px-1 py-0.5 transition-colors underline hover:bg-neutral-100 active:bg-neutral-200 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">重试</button></p>}
+            {queueRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">{t('reviewer.queueLoading')}</p>}
+            {queueRequest.error && <p role="alert" className="text-xs text-rose-700">{t('reviewer.queueLoadFailed', { error: queueRequest.error })} <button type="button" onClick={queueRequest.reload} className="rounded px-1 py-0.5 transition-colors underline hover:bg-neutral-100 active:bg-neutral-200 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{t('common.retry')}</button></p>}
             {/* Submissions items */}
             <div className="space-y-2">
               {queue?.items.map((sub) => {
@@ -342,11 +339,11 @@ export const ReviewerWorkbench: React.FC = () => {
                       <span className="font-semibold text-neutral-900 truncate max-w-[160px]">
                         {sub.mod_title}
                       </span>
-                      <span className="font-mono text-[11px] text-neutral-600">{sub.category === 'spritepack' ? '精灵包' : formatVersionLabel(sub.version_str)}</span>
+                      <span className="font-mono text-[11px] text-neutral-600">{sub.category === 'spritepack' ? t('reviewer.spritepack') : formatVersionLabel(sub.version_str)}</span>
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-neutral-500">
-                      <span>作者: {sub.author_name}</span>
+                      <span>{t('reviewer.authorLabel', { name: sub.author_name })}</span>
                       <span
                         className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
                           sub.state === 'ready_for_review'
@@ -367,8 +364,8 @@ export const ReviewerWorkbench: React.FC = () => {
                 );
               })}
             </div>
-            {queue && queue.total === 0 && <p className="py-8 text-center text-xs text-neutral-500">当前筛选下暂无提交</p>}
-            {queue && <Pagination label="提交队列" total={queue.total} page={queue.page} pageSize={queuePageSize} onPageChange={(page) => { setQueuePage(page); setSelectedSubId(''); }} onPageSizeChange={(size) => { setQueuePageSize(size); setQueuePage(1); setSelectedSubId(''); }} />}
+            {queue && queue.total === 0 && <p className="py-8 text-center text-xs text-neutral-500">{t('reviewer.queueEmpty')}</p>}
+            {queue && <Pagination label={t('reviewer.queuePagerLabel')} total={queue.total} page={queue.page} pageSize={queuePageSize} onPageChange={(page) => { setQueuePage(page); setSelectedSubId(''); }} onPageSizeChange={(size) => { setQueuePageSize(size); setQueuePage(1); setSelectedSubId(''); }} />}
           </div>
 
           {/* Right Column: Deep Inspection & Audit Actions */}
@@ -381,7 +378,7 @@ export const ReviewerWorkbench: React.FC = () => {
                     <div className="flex items-center gap-2 text-xs text-neutral-500 mb-1">
                       <span className="font-mono text-neutral-400">ID: {activeSubmission.id}</span>
                       <span>·</span>
-                      <span>提交人: {activeSubmission.author_name}</span>
+                      <span>{t('reviewer.submitter', { name: activeSubmission.author_name })}</span>
                       <span>·</span>
                       <span className="font-mono text-neutral-700">
                         {new Date(activeSubmission.created_at).toLocaleString()}
@@ -389,7 +386,7 @@ export const ReviewerWorkbench: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <h2 className="text-base font-bold text-neutral-900">
-                        {activeSubmission.mod_title} {activeSubmission.category === 'spritepack' ? '(精灵包)' : `(${formatVersionLabel(activeSubmission.version_str)})`}
+                        {activeSubmission.mod_title} {activeSubmission.category === 'spritepack' ? t('reviewer.spritepackParen') : `(${formatVersionLabel(activeSubmission.version_str)})`}
                       </h2>
                       <span
                         className={`text-xs font-mono px-2 py-0.5 rounded font-semibold ${
@@ -417,14 +414,14 @@ export const ReviewerWorkbench: React.FC = () => {
                           className="px-3 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 flex items-center gap-1.5 transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                         >
                           <XCircle className="w-3.5 h-3.5" />
-                          驳回申请 (Reject)
+                          {t('reviewer.reject')}
                         </button>
                         <button
                           onClick={() => handleOpenDecisionModal('approve')}
                           className="px-3.5 py-1.5 text-xs font-medium text-white bg-sky-700 hover:bg-sky-800 rounded flex items-center gap-1.5 transition-colors shadow-xs active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          批准并发布
+                          {t('reviewer.approve')}
                         </button>
                       </>
                     )}
@@ -432,24 +429,24 @@ export const ReviewerWorkbench: React.FC = () => {
                     {/* Legacy approvals created before automatic publication can still be released. */}
                     {activeSubmission.state === 'approved' && reviewDetail && (
                       <div className="flex items-center gap-2">
-                        <button onClick={handleConfirmPublish} disabled={actionPending} className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded flex items-center gap-1.5 transition-colors shadow-xs active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"><Sparkles className="w-3.5 h-3.5" />发布不可变版本</button>
+                        <button onClick={handleConfirmPublish} disabled={actionPending} className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded flex items-center gap-1.5 transition-colors shadow-xs active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"><Sparkles className="w-3.5 h-3.5" />{t('reviewer.publish')}</button>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {detailRequest.loading && <p role="status" className="text-xs text-neutral-500">正在加载提交详情…</p>}
-                {detailRequest.error && <p role="alert" className="text-xs text-rose-700">提交详情加载失败：{detailRequest.error} <button type="button" onClick={detailRequest.reload} className="rounded px-1 py-0.5 transition-colors underline hover:bg-neutral-100 active:bg-neutral-200 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">重试</button></p>}
+                {detailRequest.loading && <p role="status" className="text-xs text-neutral-500">{t('reviewer.detailLoading')}</p>}
+                {detailRequest.error && <p role="alert" className="text-xs text-rose-700">{t('reviewer.detailLoadFailed', { error: detailRequest.error })} <button type="button" onClick={detailRequest.reload} className="rounded px-1 py-0.5 transition-colors underline hover:bg-neutral-100 active:bg-neutral-200 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{t('common.retry')}</button></p>}
                 {/* Independent Audit & Immutable Note Banner */}
                 {reviewDetail && (
                   <div className="border border-sky-200 bg-sky-50/50 rounded-lg p-4 space-y-3 text-xs">
-                    <h3 className="font-bold text-sky-950">本次提交变更摘要</h3>
-                    <div><span className="font-semibold">模组简介：</span>{reviewDetail.mod?.summary || '未填写'}</div>
-                    <div><span className="font-semibold">版本说明：</span><MarkdownText value={reviewDetail.version?.release_notes || '未填写'} /></div>
-                    <div><span className="font-semibold">前置依赖：</span>{(reviewDetail.version?.dependencies as Array<{ mod_title?: string; mod_id?: string; version_range?: string }> | undefined)?.map((item) => `${item.mod_title || item.mod_id} ${item.version_range || '*'}`).join('、') || '无'}</div>
+                    <h3 className="font-bold text-sky-950">{t('reviewer.summaryTitle')}</h3>
+                    <div><span className="font-semibold">{t('reviewer.summaryMod')}</span>{resolve(reviewDetail.mod?.summary) || t('reviewer.noReason')}</div>
+                    <div><span className="font-semibold">{t('reviewer.summaryVersion')}</span><MarkdownText value={reviewDetail.version?.release_notes || t('reviewer.noReason')} /></div>
+                    <div><span className="font-semibold">{t('reviewer.summaryDeps')}</span>{(reviewDetail.version?.dependencies as Array<{ mod_title?: string; mod_id?: string; version_range?: string }> | undefined)?.map((item) => `${item.mod_title || item.mod_id} ${item.version_range || '*'}`).join(t('common.listSeparator')) || t('reviewer.none')}</div>
                     {shippedPlatforms?.length ? (
                       <div className="space-y-1">
-                        <div className="text-[11px] text-neutral-700">本版本为每个平台各提供一份归档，请逐个平台核对报告：</div>
+                        <div className="text-[11px] text-neutral-700">{t('reviewer.splitArchiveHint')}</div>
                         <div className="flex flex-wrap items-center gap-1.5">
                           {shippedPlatforms.map((asset) => (
                             <button
@@ -465,20 +462,20 @@ export const ReviewerWorkbench: React.FC = () => {
                         </div>
                         {shippedPlatforms.filter((asset) => asset.platform === chosenPlatform).map((asset) => (
                           <div key={asset.platform} className="grid grid-cols-2 gap-2 text-[11px] text-neutral-700">
-                            <span>归档大小：{asset.size_bytes || 0} bytes</span>
-                            <span className="font-mono break-all">SHA-256：{asset.sha256 || '-'}</span>
+                            <span>{t('reviewer.archiveSize', { size: `${asset.size_bytes || 0} bytes` })}</span>
+                            <span className="font-mono break-all">{t('reviewer.sha256', { hash: asset.sha256 || '-' })}</span>
                           </div>
                         ))}
                         {!selectedServerReport && (
                           <div role="alert" className="text-[11px] font-semibold text-rose-700">
-                            缺少 {assetPlatformLabel(chosenPlatform)} 的扫描报告，无法核对这个平台的文件变化。
+                            {t('reviewer.missingPlatformReport', { platform: assetPlatformLabel(chosenPlatform) })}
                           </div>
                         )}
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-700">
-                        <span>归档大小：{reviewDetail.version?.size_bytes || 0} bytes</span>
-                        <span className="font-mono">SHA-256：{reviewDetail.version?.sha256 || '-'}</span>
+                        <span>{t('reviewer.archiveSize', { size: `${reviewDetail.version?.size_bytes || 0} bytes` })}</span>
+                        <span className="font-mono">{t('reviewer.sha256', { hash: reviewDetail.version?.sha256 || '-' })}</span>
                       </div>
                     )}
                     {/* Inspecting the package itself, not just its file list, is the point
@@ -492,21 +489,21 @@ export const ReviewerWorkbench: React.FC = () => {
                       >
                         <Download className="w-3.5 h-3.5" />
                         {archiveDownloading
-                          ? '正在下载并校验…'
-                          : `下载${archivePlatform ? ` ${assetPlatformLabel(archivePlatform)} ` : ''}mod文件`}
+                          ? t('reviewer.downloadingArchive')
+                          : t('reviewer.downloadArchive', { platform: archivePlatform ? ` ${assetPlatformLabel(archivePlatform)} ` : ' ' })}
                       </button>
                       {!archiveReady && (
                         <span className="text-[11px] text-neutral-500">
                           {archivePlatform
-                            ? '服务端没有保留所选平台的归档字节，无法下载核对。'
-                            : '服务端没有保留这个版本的归档字节，无法下载核对。'}
+                            ? t('reviewer.archiveUnavailablePlatform')
+                            : t('reviewer.archiveUnavailable')}
                         </span>
                       )}
                     </div>
                     {selectedServerReport && (
-                      <div><span className="font-semibold">{shippedPlatforms?.length ? `${assetPlatformLabel(chosenPlatform)} 报告变化：` : '文件变化：'}</span>{selectedServerReport.files?.length || 0} 个文件；不支持路径 {selectedServerReport.unsupported?.length || 0} 个；冲突 {selectedServerReport.conflicts?.length || 0} 个</div>
+                      <div><span className="font-semibold">{shippedPlatforms?.length ? t('reviewer.reportChanges', { platform: assetPlatformLabel(chosenPlatform) }) : t('reviewer.fileChanges')}</span>{t('reviewer.reportCounts', { files: selectedServerReport.files?.length || 0, unsupported: selectedServerReport.unsupported?.length || 0, conflicts: selectedServerReport.conflicts?.length || 0 })}</div>
                     )}
-                    {selectedServerReport?.sprite_sets && <div className="space-y-1"><span className="font-semibold">精灵包套件：</span>{selectedServerReport.sprite_sets.length} 套<div className="max-h-36 overflow-auto border border-sky-200 bg-white rounded p-2">{selectedServerReport.sprite_sets.map((set) => <div key={set.id}>{set.name}：{set.items.map((item) => item.display_name).join('、')}</div>)}</div></div>}
+                    {selectedServerReport?.sprite_sets && <div className="space-y-1"><span className="font-semibold">{t('reviewer.spriteSets')}</span>{t('reviewer.spriteSetCount', { count: selectedServerReport.sprite_sets.length })}<div className="max-h-36 overflow-auto border border-sky-200 bg-white rounded p-2">{selectedServerReport.sprite_sets.map((set) => <div key={set.id}>{set.name}{t('common.colon')}{set.items.map((item) => item.display_name).join(t('common.listSeparator'))}</div>)}</div></div>}
                     {selectedServerReport?.files && selectedServerReport.files.length > 0 && (
                       <div className="max-h-40 overflow-auto border border-sky-200 bg-white rounded">
                         {selectedServerReport.files.map((file, index) => <div key={index} className="px-2 py-1 font-mono text-[10px] border-b border-neutral-100 last:border-0">{file.source || '-'} → {file.target || '-'} ({file.class || 'file'}, {file.size || 0} bytes)</div>)}
@@ -519,7 +516,7 @@ export const ReviewerWorkbench: React.FC = () => {
                 {activeReport && (
                   <div className="space-y-4">
                     <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
-                      深度静态分析结果 (Static Security Inspection)
+                      {t('reviewer.staticTitle')}
                     </h3>
 
                     {/* Blockers */}
@@ -527,7 +524,7 @@ export const ReviewerWorkbench: React.FC = () => {
                       <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-950 space-y-1.5">
                         <div className="font-semibold text-xs flex items-center gap-1.5">
                           <AlertTriangle className="w-4 h-4 text-rose-700" />
-                          检出高危阻断项 (Blockers):
+                          {t('reviewer.blockersTitle')}
                         </div>
                         <ul className="list-disc list-inside text-xs space-y-1">
                           {activeReport.blockers.map((b, i) => (
@@ -543,21 +540,21 @@ export const ReviewerWorkbench: React.FC = () => {
                       <div className="p-3 rounded border border-neutral-200 bg-neutral-50/50 space-y-1.5">
                         <div className="font-semibold text-neutral-900 flex items-center gap-1.5">
                           <FileCode className="w-4 h-4 text-neutral-600" />
-                          脚本与原生二进制检测
+                          {t('reviewer.binaryTitle')}
                         </div>
                         <p className="text-[11px] text-neutral-500">
                           {activeReport.resource_stats.binary_flag ? (
                             <span className="text-rose-700 font-semibold">
-                              ⚠️ 包含原生执行模块 (.dll / .so)，必须人工逆向审计！
+                              {t('reviewer.binaryFound')}
                             </span>
                           ) : (
                             <span className="text-emerald-700 font-medium">
-                              ✓ 纯 RenPy 脚本与静态资源，无原生二进制载荷。
+                              {t('reviewer.binaryClean')}
                             </span>
                           )}
                         </p>
                         <div className="text-[11px] text-neutral-400 font-mono">
-                          .rpy 文件数: {activeReport.resource_stats.scripts_count} · 总字节:{' '}
+                          {t('reviewer.scriptStats', { count: activeReport.resource_stats.scripts_count })}{' '}
                           {(activeReport.resource_stats.total_size_bytes / 1024).toFixed(1)} KB
                         </div>
                       </div>
@@ -568,23 +565,23 @@ export const ReviewerWorkbench: React.FC = () => {
                         <summary className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 cursor-pointer select-none list-none hover:bg-neutral-100/60 rounded [&::-webkit-details-marker]:hidden active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">
                           <span className="font-semibold text-neutral-900 flex items-center gap-1.5">
                             <Sparkles className="w-4 h-4 text-neutral-600" />
-                            Sprite 礼物名与注册冲突校验
+                            {t('reviewer.spriteCheckTitle')}
                           </span>
                           {reportConflictCount > 0 ? (
-                            <span className="text-[10px] text-rose-700 font-semibold">⚠️ 检出 {reportConflictCount} 项注册/覆盖冲突，见上方阻断项</span>
+                            <span className="text-[10px] text-rose-700 font-semibold">{t('reviewer.spriteConflicts', { count: reportConflictCount })}</span>
                           ) : (
-                            <span className="text-[10px] text-emerald-700">✓ 未检测到重复注册冲突</span>
+                            <span className="text-[10px] text-emerald-700">{t('reviewer.spriteNoConflict')}</span>
                           )}
                           <span className="ml-auto flex items-center gap-1 text-[11px] text-neutral-500">
-                            <span className="group-open:hidden">展开</span>
-                            <span className="hidden group-open:inline">收起</span>
+                            <span className="group-open:hidden">{t('common.expand')}</span>
+                            <span className="hidden group-open:inline">{t('common.collapse')}</span>
                             <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
                           </span>
                         </summary>
                         <div className="px-3 pb-3 space-y-1.5 border-t border-neutral-200/70 pt-2">
                           {activeReport.derived_gifts.length > 0 ? (
                             <div className="text-[11px] text-neutral-600 space-y-0.5">
-                              <div>登记衍生礼物:</div>
+                              <div>{t('reviewer.registeredGifts')}</div>
                               <div className="font-mono text-[10px] text-neutral-800 bg-white p-1 rounded border border-neutral-200">
                                 {activeReport.derived_gifts.join(', ')}
                               </div>
@@ -592,8 +589,8 @@ export const ReviewerWorkbench: React.FC = () => {
                           ) : (
                             <div className="text-[11px] text-neutral-500">
                               {reportConflictCount > 0
-                                ? `未登记 Spritepack 礼物，但检出 ${reportConflictCount} 项路径/注册冲突，见上方阻断项。`
-                                : '未登记 Spritepack 礼物，无覆盖冲突。'}
+                                ? t('reviewer.noGiftWithConflicts', { count: reportConflictCount })
+                                : t('reviewer.noGiftNoConflicts')}
                             </div>
                           )}
                         </div>
@@ -608,17 +605,17 @@ export const ReviewerWorkbench: React.FC = () => {
                       <summary className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 cursor-pointer select-none list-none hover:bg-neutral-50 [&::-webkit-details-marker]:hidden active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">
                         <span className="text-xs font-semibold text-neutral-800 flex items-center gap-1.5">
                           <FolderTree className="w-4 h-4 text-neutral-600" />
-                          完整包文件树与校验和 (Package File Tree)
+                          {t('reviewer.fileTreeTitle')}
                         </span>
                         <span className="text-[11px] text-neutral-500">
-                          共 {reportFiles.length} 个目标映射文件
+                          {t('reviewer.fileTreeCount', { count: reportFiles.length })}
                           {reportBinaryCount > 0 && (
-                            <span className="text-rose-700 font-semibold"> · {reportBinaryCount} 个原生二进制</span>
+                            <span className="text-rose-700 font-semibold"> · {t('reviewer.binaryCount', { count: reportBinaryCount })}</span>
                           )}
                         </span>
                         <span className="ml-auto flex items-center gap-1 text-[11px] text-neutral-500">
-                          <span className="group-open:hidden">展开逐文件哈希与诊断</span>
-                          <span className="hidden group-open:inline">收起</span>
+                          <span className="group-open:hidden">{t('reviewer.expandFileHashes')}</span>
+                          <span className="hidden group-open:inline">{t('common.collapse')}</span>
                           <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
                         </span>
                       </summary>
@@ -627,12 +624,12 @@ export const ReviewerWorkbench: React.FC = () => {
                         <table className="w-full text-left text-xs border-collapse">
                           <thead className="bg-neutral-50 border-b border-neutral-200 text-neutral-500">
                             <tr>
-                              <th className="py-2 px-3">归档内路径 (Source Path)</th>
-                              <th className="py-2 px-3">安装目标 (Target Path)</th>
-                              <th className="py-2 px-3">类型</th>
-                              <th className="py-2 px-3">大小</th>
+                              <th className="py-2 px-3">{t('reviewer.colSource')}</th>
+                              <th className="py-2 px-3">{t('reviewer.colTarget')}</th>
+                              <th className="py-2 px-3">{t('reviewer.colKind')}</th>
+                              <th className="py-2 px-3">{t('reviewer.colSize')}</th>
                               <th className="py-2 px-3">SHA-256</th>
-                              <th className="py-2 px-3">静态诊断</th>
+                              <th className="py-2 px-3">{t('reviewer.colDiagnosis')}</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-neutral-100">
@@ -669,7 +666,7 @@ export const ReviewerWorkbench: React.FC = () => {
                                       {file.warnings.join('; ')}
                                     </span>
                                   ) : (
-                                    <span className="text-emerald-700">安全合规</span>
+                                    <span className="text-emerald-700">{t('reviewer.safe')}</span>
                                   )}
                                 </td>
                               </tr>
@@ -683,7 +680,7 @@ export const ReviewerWorkbench: React.FC = () => {
               </>
             ) : (
               <div className="py-12 text-center text-xs text-neutral-400">
-                {queueRequest.loading ? '正在加载队列…' : queueRequest.error ? '队列加载失败，请重试' : '当前筛选下暂无提交'}
+                {queueRequest.loading ? t('reviewer.queueLoadingShort') : queueRequest.error ? t('reviewer.queueLoadFailedShort') : t('reviewer.queueEmpty')}
               </div>
             )}
           </div>
@@ -710,34 +707,34 @@ export const ReviewerWorkbench: React.FC = () => {
 
             <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-neutral-900">
-                {decisionModalMode === 'approve' ? '确认通过审核 (Approve)' : '驳回模组版本申请 (Reject)'}
+                {decisionModalMode === 'approve' ? t('reviewer.approveTitle') : t('reviewer.rejectTitle')}
               </h3>
               <button
                 disabled={actionPending} onClick={() => setDecisionModalMode(null)}
                 className="text-neutral-400 hover:text-neutral-600 text-xs active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
-                取消
+                {t('common.cancel')}
               </button>
             </div>
 
             <form onSubmit={handleConfirmDecision} className="p-5 space-y-4 text-xs">
               <p className="text-neutral-600 leading-relaxed">
                 {decisionModalMode === 'approve'
-                  ? '确认后将立即发布此版本，并按作者提交时的选择更新目录最新版本。'
-                  : '驳回后，作者将在工作台查阅此驳回理由，并可从该候选版本复制修订为新版本重新提交。'}
+                  ? t('reviewer.approveBody')
+                  : t('reviewer.rejectBody')}
               </p>
 
               <div>
                 <label className="block font-medium text-neutral-700 mb-1">
-                  审核决策理由 (Mandatory Audit Reason)
+                  {t('reviewer.reasonLabel')}
                 </label>
                 <textarea
                   rows={3}
                   required
                   placeholder={
                     decisionModalMode === 'approve'
-                      ? '填写合规检查结论与签名说明...'
-                      : '详细说明驳回原因，例如检测到未签名二进制、存在越界路径或Sprite注册重名...'
+                      ? t('reviewer.reasonPlaceholderApprove')
+                      : t('reviewer.reasonPlaceholderReject')
                   }
                   value={decisionReason}
                   onChange={(e) => setDecisionReason(e.target.value)}
@@ -751,7 +748,7 @@ export const ReviewerWorkbench: React.FC = () => {
                   onClick={() => setDecisionModalMode(null)}
                   className="px-3 py-1.5 text-neutral-600 hover:text-neutral-900 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit" disabled={actionPending}
@@ -761,7 +758,7 @@ export const ReviewerWorkbench: React.FC = () => {
                       : 'bg-rose-700 hover:bg-rose-800'
                   } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
                 >
-                  确认{decisionModalMode === 'approve' ? '批准' : '驳回并留痕'}
+                  {decisionModalMode === 'approve' ? t('reviewer.confirmApprove') : t('reviewer.confirmReject')}
                 </button>
               </div>
             </form>

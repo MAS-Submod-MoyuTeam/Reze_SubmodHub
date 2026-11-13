@@ -24,6 +24,8 @@ import { LoadingStatus, isActionBlocked } from '../installedLoading';
 
 import { m } from './Motion';
 import { overlayVariants } from '../../../../ui/motion-presets';
+import { useI18n } from '../i18n';
+import { darkSegmentClass } from './segmentStyles';
 interface InstalledViewProps {
   installedMods: InstalledItem[];
   spritepacks: Spritepack[];
@@ -89,6 +91,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
   isVerifying,
   initialSubTab = 'managed',
 }) => {
+  const { t } = useI18n();
   const [subTab, setSubTab] = useState<'managed' | 'unmanaged' | 'spritepacks'>(initialSubTab);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [spritepackToDelete, setSpritepackToDelete] = useState<Spritepack | null>(null);
@@ -101,13 +104,14 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
   const [spriteGroup, setSpriteGroup] = useState('');
 
   const safeSpritepacks = spritepacks || [];
-  const spriteGroups = [...new Set(safeSpritepacks.map((item) => item.group?.trim() || '未分类'))].sort((a, b) =>
+  const uncategorizedGroup = t('installedView.uncategorizedGroup');
+  const spriteGroups = [...new Set(safeSpritepacks.map((item) => item.group?.trim() || uncategorizedGroup))].sort((a, b) =>
     a.localeCompare(b, 'zh')
   );
   const selectedGroup = spriteGroups.includes(spriteGroup) ? spriteGroup : '';
   const spriteQuery = spriteSearch.trim().toLocaleLowerCase();
   const visibleSpritepacks = safeSpritepacks.filter((item) => {
-    const group = item.group?.trim() || '未分类';
+    const group = item.group?.trim() || uncategorizedGroup;
     return (
       (!selectedGroup || group === selectedGroup) &&
       (!spriteQuery ||
@@ -136,7 +140,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
     } catch (error) {
       // 删除失败时留着对话框并把原因写在这里：失败提示原本是应用底部的 toast，
       // 而对话框的层级比它高，用户只会看到按钮从「删除中…」变回「确认删除」。
-      setDeleteSpritepackError(`删除失败：${String(error)}`);
+      setDeleteSpritepackError(t('installedView.deleteFailed', { error: String(error) }));
     } finally {
       setDeletingFile(null);
     }
@@ -217,40 +221,28 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
               role="tab"
               aria-selected={subTab === 'managed'}
               onClick={() => setSubTab('managed')}
-              className={`px-3 py-1 font-medium rounded-md transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                subTab === 'managed'
-                  ? 'bg-neutral-800 text-white shadow-xs'
-                  : 'text-neutral-400 hover:text-neutral-200'
-              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
+              className={`${darkSegmentClass(subTab === 'managed', 'px-3 py-1 font-medium rounded-md flex items-center gap-1.5 shrink-0 cursor-pointer')} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
               <PackageCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>已安装模组 ({renderBadgeCount('managed')})</span>
+              <span>{t('installedView.tabManaged', { count: renderBadgeCount('managed') })}</span>
             </button>
             <button
               role="tab"
               aria-selected={subTab === 'unmanaged'}
               onClick={() => setSubTab('unmanaged')}
-              className={`px-3 py-1 font-medium rounded-md transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                subTab === 'unmanaged'
-                  ? 'bg-neutral-800 text-white shadow-xs'
-                  : 'text-neutral-400 hover:text-neutral-200'
-              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
+              className={`${darkSegmentClass(subTab === 'unmanaged', 'px-3 py-1 font-medium rounded-md flex items-center gap-1.5 shrink-0 cursor-pointer')} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
               <FileQuestion className="w-3.5 h-3.5 text-amber-400" />
-              <span>未收纳模组 ({renderBadgeCount('unmanaged')})</span>
+              <span>{t('installedView.tabUnmanaged', { count: renderBadgeCount('unmanaged') })}</span>
             </button>
             <button
               role="tab"
               aria-selected={subTab === 'spritepacks'}
               onClick={() => setSubTab('spritepacks')}
-              className={`px-3 py-1 font-medium rounded-md transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                subTab === 'spritepacks'
-                  ? 'bg-neutral-800 text-white'
-                  : 'text-neutral-400 hover:text-neutral-200'
-              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
+              className={`${darkSegmentClass(subTab === 'spritepacks', 'px-3 py-1 font-medium rounded-md flex items-center gap-1.5 shrink-0 cursor-pointer')} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400`}
             >
               <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
-              <span>已安装精灵包 ({renderBadgeCount('spritepacks')})</span>
+              <span>{t('installedView.tabSpritepacks', { count: renderBadgeCount('spritepacks') })}</span>
             </button>
           </div>
         </div>
@@ -262,10 +254,10 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
               onClick={onRefreshSpritepacks}
               disabled={!hasValidInstance || isSpritepacksInitialLoading || isSpritepacksRefreshing}
               className="px-3 py-1.5 rounded-lg bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-300 hover:text-white transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-              title="重新扫描已安装精灵包"
+              title={t('installedView.rescanSpritepacksTitle')}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSpritepacksRefreshing ? 'animate-spin motion-reduce:animate-none text-cyan-400' : 'text-neutral-400'}`} />
-              <span>{isSpritepacksRefreshing ? '正在刷新精灵包…' : '重新扫描精灵包'}</span>
+              <span>{isSpritepacksRefreshing ? t('installedView.refreshingSpritepacks') : t('installedView.rescanSpritepacks')}</span>
             </button>
           ) : (
             <>
@@ -273,28 +265,28 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 onClick={onRefreshInstalled}
                 disabled={!hasValidInstance || isModsInitialLoading || isModsRefreshing}
                 className="px-3 py-1.5 rounded-lg bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-300 hover:text-white transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                title="重新扫描已安装模组"
+                title={t('installedView.rescanModsTitle')}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isModsRefreshing ? 'animate-spin motion-reduce:animate-none text-emerald-400' : 'text-neutral-400'}`} />
-                <span>{isModsRefreshing ? '正在刷新模组…' : '重新扫描模组'}</span>
+                <span>{isModsRefreshing ? t('installedView.refreshingMods') : t('installedView.rescanMods')}</span>
               </button>
               <button
                 onClick={onVerifyIntegrity}
                 disabled={!hasValidInstance || isVerifying || isModsActionBlocked}
                 className="px-3 py-1.5 rounded-lg bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-300 hover:text-white transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法校验完整性' : '正在读取模组列表…') : undefined}
+                title={isModsActionBlocked ? (modsStatus === 'error' ? t('installedView.verifyDisabledScanError') : t('installedView.verifyDisabledLoading')) : undefined}
               >
                 <ShieldCheck className={`w-3.5 h-3.5 ${isVerifying ? 'animate-spin motion-reduce:animate-none text-emerald-400' : 'text-neutral-400'}`} />
-                <span>{isVerifying ? '全量比对哈希中...' : '校验文件完整性'}</span>
+                <span>{isVerifying ? t('installedView.verifying') : t('installedView.verifyIntegrity')}</span>
               </button>
               <button
                 onClick={onCheckAllUpdates}
                 disabled={!hasValidInstance || isModsActionBlocked}
                 className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-colors flex items-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法检查更新' : '正在读取模组列表…') : undefined}
+                title={isModsActionBlocked ? (modsStatus === 'error' ? t('installedView.updateCheckDisabledScanError') : t('installedView.readingModList')) : undefined}
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>检查所有模组更新</span>
+                <span>{t('installedView.checkAllUpdates')}</span>
               </button>
             </>
           )}
@@ -309,15 +301,15 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
             <div className="w-12 h-12 rounded-full bg-neutral-900 flex items-center justify-center border border-neutral-800">
               <AlertCircle className="w-6 h-6 text-amber-500" />
             </div>
-            <p className="text-sm font-medium text-neutral-300">尚未选择或配置有效的 MAS 实例</p>
-            <p className="text-xs text-neutral-500">请在顶部导航切换或前往设置配置有效的 MAS 游戏目录。</p>
+            <p className="text-sm font-medium text-neutral-300">{t('installedView.noInstanceTitle')}</p>
+            <p className="text-xs text-neutral-500">{t('installedView.noInstanceBody')}</p>
           </div>
         ) : isCurrentTabInitialLoading ? (
           /* SKELETON SCREEN FOR INITIAL LOAD */
           <div className="space-y-4" aria-live="polite">
             <div className="flex items-center gap-2 text-xs text-neutral-400 bg-neutral-900/40 p-2.5 rounded-lg border border-neutral-800/60">
               <RefreshCw className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none text-emerald-400 shrink-0" />
-              <span>{subTab === 'spritepacks' ? '正在读取已安装精灵包…' : '正在读取已安装模组…'}</span>
+              <span>{subTab === 'spritepacks' ? t('installedView.loadingSpritepacks') : t('installedView.loadingMods')}</span>
             </div>
 
             {subTab === 'spritepacks' ? (
@@ -355,16 +347,16 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
             </div>
             <div>
               <p className="text-sm font-medium text-neutral-200">
-                {subTab === 'spritepacks' ? '精灵包读取失败' : '已安装模组读取失败'}
+                {subTab === 'spritepacks' ? t('installedView.spritepacksLoadFailed') : t('installedView.modsLoadFailed')}
               </p>
-              <p className="text-xs text-neutral-400 mt-1 max-w-md break-all">{currentTabError || '未知错误'}</p>
+              <p className="text-xs text-neutral-400 mt-1 max-w-md break-all">{currentTabError || t('installedView.unknownError')}</p>
             </div>
             <button
               onClick={subTab === 'spritepacks' ? onRefreshSpritepacks : onRefreshInstalled}
               className="mt-2 px-3 py-1.5 text-xs font-medium rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white transition-colors cursor-pointer border border-neutral-700 flex items-center gap-1.5 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>重试读取</span>
+              <span>{t('installedView.retryLoad')}</span>
             </button>
           </div>
         ) : (
@@ -374,13 +366,13 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
               <div role="alert" className="mb-4 p-3 rounded-lg bg-amber-950/40 border border-amber-900/60 text-xs text-amber-200 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>刷新未成功，已保留上次读取的数据：{currentTabError}</span>
+                  <span>{t('installedView.refreshFailedKeepData', { error: currentTabError ?? '' })}</span>
                 </div>
                 <button
                   onClick={subTab === 'spritepacks' ? onRefreshSpritepacks : onRefreshInstalled}
                   className="px-2.5 py-1 rounded bg-neutral-900 hover:bg-neutral-800 text-amber-300 border border-amber-800/80 shrink-0 transition-colors cursor-pointer font-medium active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                 >
-                  重试
+                  {t('common.retry')}
                 </button>
               </div>
             )}
@@ -396,8 +388,8 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                         type="text"
                         value={spriteSearch}
                         onChange={(event) => setSpriteSearch(event.target.value)}
-                        placeholder="搜索精灵包名称、作者或文件名..."
-                        aria-label="搜索已安装精灵包"
+                        placeholder={t('installedView.spritepackSearchPlaceholder')}
+                        aria-label={t('installedView.spritepackSearchAria')}
                         className="w-full h-8 pl-9 pr-9 bg-neutral-900 border border-neutral-700/80 rounded-lg text-xs text-neutral-200 placeholder-neutral-500 focus:outline-hidden focus:border-neutral-500 transition-colors"
                       />
                       {spriteSearch && (
@@ -405,7 +397,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           type="button"
                           onClick={() => setSpriteSearch('')}
                           className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-neutral-500 transition-colors cursor-pointer active:brightness-95"
-                          title="清除搜索"
+                          title={t('installedView.clearSearch')}
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -417,12 +409,12 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                       <select
                         value={selectedGroup}
                         onChange={(event) => setSpriteGroup(event.target.value)}
-                        aria-label="按 group 分类筛选"
+                        aria-label={t('installedView.groupFilterAria')}
                         className="w-full h-8 pl-8 pr-8 truncate bg-neutral-900 border border-neutral-700/80 rounded-lg text-xs text-neutral-200 focus:outline-hidden focus:border-neutral-500 transition-colors appearance-none cursor-pointer"
                       >
-                        <option value="">全部分类 ({spritepacks.length})</option>
+                        <option value="">{t('installedView.allGroups', { count: spritepacks.length })}</option>
                         {spriteGroups.map((group) => {
-                          const count = spritepacks.filter((item) => (item.group?.trim() || '未分类') === group).length;
+                          const count = spritepacks.filter((item) => (item.group?.trim() || uncategorizedGroup) === group).length;
                           return (
                             <option key={group} value={group}>
                               {group} ({count})
@@ -436,7 +428,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
 
                   <div className="flex shrink-0 items-center gap-3 text-xs">
                     <span className="text-neutral-500 whitespace-nowrap font-mono tabular-nums">
-                      显示 <span className="font-medium text-neutral-200">{visibleSpritepacks.length}</span> / {spritepacks.length}
+                      {t('installedView.spritepackShown', { visible: visibleSpritepacks.length, total: spritepacks.length })}
                     </span>
                     {(spriteSearch || selectedGroup) && (
                       <button
@@ -447,7 +439,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                         }}
                         className="inline-flex h-8 items-center px-2 rounded-md text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-neutral-500 transition-colors cursor-pointer active:brightness-95"
                       >
-                        重置筛选
+                        {t('installedView.resetFilter')}
                       </button>
                     )}
                   </div>
@@ -460,8 +452,8 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                       <div className="w-12 h-12 rounded-full bg-neutral-900 flex items-center justify-center border border-neutral-800">
                         <ImageIcon className="w-6 h-6 text-neutral-500" />
                       </div>
-                      <p className="text-sm font-medium text-neutral-300">当前 MAS 实例未检测到精灵包</p>
-                      <p className="text-xs text-neutral-500">未扫描到 spritepacks JSON 配置文件。</p>
+                      <p className="text-sm font-medium text-neutral-300">{t('installedView.noSpritepacksTitle')}</p>
+                      <p className="text-xs text-neutral-500">{t('installedView.noSpritepacksBody')}</p>
                     </div>
                   )}
                   {spritepacks.length > 0 && visibleSpritepacks.length === 0 && (
@@ -469,8 +461,8 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                       <div className="w-12 h-12 rounded-full bg-neutral-900 flex items-center justify-center border border-neutral-800">
                         <Search className="w-6 h-6 text-neutral-500" />
                       </div>
-                      <p className="text-sm font-medium text-neutral-300">没有符合条件的精灵包</p>
-                      <p className="text-xs text-neutral-500">可尝试调整搜索关键词或重置分类筛选</p>
+                      <p className="text-sm font-medium text-neutral-300">{t('installedView.noMatchingSpritepacksTitle')}</p>
+                      <p className="text-xs text-neutral-500">{t('installedView.noMatchingSpritepacksBody')}</p>
                       <button
                         type="button"
                         onClick={() => {
@@ -479,7 +471,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                         }}
                         className="mt-2 px-3 py-1 text-xs rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                       >
-                        清除筛选条件
+                        {t('installedView.clearFilters')}
                       </button>
                     </div>
                   )}
@@ -499,7 +491,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                         ) : (
                           <div className="flex flex-col items-center justify-center gap-1 text-neutral-600">
                             <ImageIcon className="w-6 h-6" />
-                            <span className="text-[10px]">无预览</span>
+                            <span className="text-[10px]">{t('installedView.noPreview')}</span>
                           </div>
                         )}
                       </div>
@@ -510,16 +502,16 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                           </div>
                           <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
                             {item.group && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700/60 max-w-[130px] truncate" title={`分组: ${item.group}`}>
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700/60 max-w-[130px] truncate" title={t('installedView.groupTitle', { group: item.group })}>
                                 <FolderOpen className="w-3 h-3 text-neutral-400 shrink-0" />
                                 <span className="truncate">{item.group}</span>
                               </span>
                             )}
                             <span className="px-1.5 py-0.5 rounded bg-neutral-800/60 text-neutral-400 border border-neutral-700/40">
-                              {item.kind || '未知类型'}
+                              {item.kind || t('installedView.unknownKind')}
                             </span>
                             {item.author && (
-                              <span className="text-neutral-400 truncate max-w-[120px]" title={`作者: ${item.author}`}>
+                              <span className="text-neutral-400 truncate max-w-[120px]" title={t('installedView.authorTitle', { author: item.author })}>
                                 · {item.author}
                               </span>
                             )}
@@ -528,28 +520,28 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             {item.complete ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400">
                                 <CheckCircle2 className="w-3 h-3 shrink-0" />
-                                已完整安装
+                                {t('installedView.fullyInstalled')}
                               </span>
                             ) : (
                               <span
                                 className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-400"
-                                title={`缺失文件：\n${item.missing.join('、')}`}
+                                title={t('installedView.missingFilesTitle', { files: item.missing.join('、') })}
                               >
                                 <AlertTriangle className="w-3 h-3 shrink-0" />
-                                文件不完整 ({item.missing.length})
+                                {t('installedView.incompleteFiles', { count: item.missing.length })}
                               </span>
                             )}
                           </div>
                           {item.gift_unlocked === true && (
                             <span role="status" className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-300">
                               <CheckCircle2 className="w-3 h-3 shrink-0" />
-                              已赠送（已解锁）
+                              {t('installedView.giftUnlocked')}
                             </span>
                           )}
                           {item.gift_unlocked === false && (
                             <span role="status" className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-300">
                               <Gift className="w-3 h-3 shrink-0" />
-                              未赠送
+                              {t('installedView.giftLocked')}
                             </span>
                           )}
                         </div>
@@ -558,17 +550,17 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             disabled={isSpritepacksActionBlocked || !item.complete || !item.giftname || creatingGiftFile !== null || deletingFile === item.file}
                             onClick={() => { void createGift(item.file); }}
                             className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-medium disabled:bg-neutral-800 disabled:text-neutral-500 disabled:cursor-not-allowed transition-colors shadow-xs cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                            title={isSpritepacksActionBlocked ? (spritepacksStatus === 'error' ? '精灵包扫描失败，暂无法创建礼物' : '正在读取精灵包…') : (!item.giftname ? '此精灵包未声明礼物名称' : `在 characters 目录创建 ${item.giftname}.gift`)}
+                            title={isSpritepacksActionBlocked ? (spritepacksStatus === 'error' ? t('installedView.createGiftDisabledScanError') : t('installedView.readingSpritepacks')) : (!item.giftname ? t('installedView.createGiftNoName') : t('installedView.createGiftTitle', { giftname: item.giftname }))}
                           >
                             <Gift className="w-3.5 h-3.5" />
-                            <span>{creatingGiftFile === item.file ? '生成中…' : '创建礼物'}</span>
+                            <span>{creatingGiftFile === item.file ? t('installedView.creatingGift') : t('installedView.createGift')}</span>
                           </button>
                           <button
                             disabled={isSpritepacksActionBlocked || deletingFile !== null || creatingGiftFile !== null}
                             onClick={() => setSpritepackToDelete(item)}
                             className="p-1.5 rounded-md text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                            title={isSpritepacksActionBlocked ? (spritepacksStatus === 'error' ? '精灵包扫描失败，暂无法删除' : '正在读取精灵包…') : '删除精灵包并保留备份'}
-                            aria-label={`删除 ${item.name}`}
+                            title={isSpritepacksActionBlocked ? (spritepacksStatus === 'error' ? t('installedView.deleteSpritepackDisabledScanError') : t('installedView.readingSpritepacks')) : t('installedView.deleteSpritepackTitle')}
+                            aria-label={t('installedView.deleteSpritepackAria', { name: item.name })}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -592,7 +584,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 {managedMods.length === 0 ? (
                   <div className="p-8 text-center text-neutral-400">
                     <PackageCheck className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
-                    <p>当前 MAS 实例尚未安装任何模组。</p>
+                    <p>{t('installedView.noManagedMods')}</p>
                   </div>
                 ) : (
                   <>
@@ -601,13 +593,13 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                       <table className="w-full text-left text-xs font-sans">
                         <thead className="bg-neutral-950/80 text-neutral-400 text-[11px] border-b border-neutral-800 uppercase tracking-wider font-medium">
                           <tr>
-                            <th className="py-2.5 px-4">模组名称 / 作者</th>
-                            <th className="py-2.5 px-3">已装版本</th>
-                            <th className="py-2.5 px-3">最新版本</th>
-                            <th className="py-2.5 px-3">优先级</th>
-                            <th className="py-2.5 px-3">文件与占用</th>
-                            <th className="py-2.5 px-3">完整性</th>
-                            <th className="py-2.5 px-4 text-right">操作</th>
+                            <th className="py-2.5 px-4">{t('installedView.colModName')}</th>
+                            <th className="py-2.5 px-3">{t('installedView.colInstalledVersion')}</th>
+                            <th className="py-2.5 px-3">{t('installedView.colLatestVersion')}</th>
+                            <th className="py-2.5 px-3">{t('installedView.colPriority')}</th>
+                            <th className="py-2.5 px-3">{t('installedView.colFiles')}</th>
+                            <th className="py-2.5 px-3">{t('installedView.colIntegrity')}</th>
+                            <th className="py-2.5 px-4 text-right">{t('installedView.colActions')}</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-neutral-800/60">
@@ -619,7 +611,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                 <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 mt-0.5">
                                   <span>{item.author_name}</span>
                                   <span aria-hidden="true">·</span>
-                                  <span>{item.category === 'submod' ? '功能模组' : '外观包'}</span>
+                                  <span>{item.category === 'submod' ? t('installedView.categorySubmod') : t('installedView.categorySpritepack')}</span>
                                 </div>
                               </td>
 
@@ -634,7 +626,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                   <span className="text-amber-400 font-semibold flex items-center gap-1">
                                     <span>{item.latest_version}</span>
                                     <span className="text-[10px] px-1 py-0.2 bg-amber-950 border border-amber-800 rounded">
-                                      可更新
+                                      {t('installedView.updateAvailable')}
                                     </span>
                                   </span>
                                 ) : (
@@ -645,13 +637,13 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                               {/* Priority */}
                               <td className="py-3 px-3 font-mono text-neutral-300">
                                 <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-xs">
-                                  优先级 {item.priority}
+                                  {t('installedView.priorityValue', { priority: item.priority })}
                                 </span>
                               </td>
 
                               {/* File counts and size */}
                               <td className="py-3 px-3 font-mono text-neutral-400 text-[11px]">
-                                <div>{item.files_count} 个已安装文件</div>
+                                <div>{t('installedView.installedFileCount', { count: item.files_count })}</div>
                                 <div className="text-neutral-400 tabular-nums">{formatBytes(item.size_bytes)}</div>
                               </td>
 
@@ -660,15 +652,15 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                 {item.integrity_status === 'intact' ? (
                                   <span className="text-emerald-400 text-[11px] flex items-center gap-1 font-mono">
                                     <CheckCircle2 className="w-3.5 h-3.5" />
-                                    <span>未被改动</span>
+                                    <span>{t('installedView.integrityIntact')}</span>
                                   </span>
                                 ) : item.integrity_status === 'modified' ? (
                                   <span className="text-amber-400 text-[11px] flex items-center gap-1 font-mono">
                                     <AlertTriangle className="w-3.5 h-3.5" />
-                                    <span>检测到外部改动</span>
+                                    <span>{t('installedView.integrityModified')}</span>
                                   </span>
                                 ) : (
-                                  <span className="text-neutral-400 text-[11px]">待验证</span>
+                                  <span className="text-neutral-400 text-[11px]">{t('installedView.integrityPending')}</span>
                                 )}
                               </td>
 
@@ -680,9 +672,9 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                       disabled={isModsActionBlocked}
                                       onClick={() => onStartUpdatePlan(item.mod_id, item.title)}
                                       className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-400 hover:bg-amber-300 text-neutral-900 transition-colors shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                                      title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法规划更新' : '正在读取模组列表…') : undefined}
+                                      title={isModsActionBlocked ? (modsStatus === 'error' ? t('installedView.planUpdateDisabledScanError') : t('installedView.readingModList')) : undefined}
                                     >
-                                      规划更新
+                                      {t('installedView.planUpdate')}
                                     </button>
                                   )}
 
@@ -690,9 +682,9 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                     <button
                                       onClick={() => onOpenDetail(item.mod_id, item.title)}
                                       className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                                      title={`打开「${item.title}」详情`}
+                                      title={t('installedView.openDetailTitle', { title: item.title })}
                                     >
-                                      详情
+                                      {t('installedView.details')}
                                     </button>
                                   )}
 
@@ -700,27 +692,27 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                     disabled={isModsActionBlocked}
                                     onClick={() => onInspectFiles(item)}
                                     className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                                    title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法查看文件' : '正在读取模组列表…') : '查看该模组已安装文件的本地路径及哈希'}
+                                    title={isModsActionBlocked ? (modsStatus === 'error' ? t('installedView.inspectFilesDisabledScanError') : t('installedView.readingModList')) : t('installedView.inspectFilesTitle')}
                                   >
-                                    文件清单
+                                    {t('installedView.inspectFiles')}
                                   </button>
 
                                   <button
                                     disabled={isModsActionBlocked}
                                     onClick={() => onStartRepairPlan(item)}
                                     className="px-2 py-1 text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                                    title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法修复' : '正在读取模组列表…') : '预览从已校验的安装材料恢复文件；覆盖前备份，缺少材料时失败'}
+                                    title={isModsActionBlocked ? (modsStatus === 'error' ? t('installedView.repairDisabledScanError') : t('installedView.readingModList')) : t('installedView.repairTitle')}
                                   >
-                                    修复
+                                    {t('installedView.repair')}
                                   </button>
 
                                   <button
                                     disabled={isModsActionBlocked}
                                     onClick={() => onStartUninstallPlan(item)}
                                     className="px-2 py-1 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                                    title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法卸载' : '正在读取模组列表…') : '生成卸载计划，直接删除当前文件，不恢复安装前备份'}
+                                    title={isModsActionBlocked ? (modsStatus === 'error' ? t('installedView.uninstallDisabledScanError') : t('installedView.readingModList')) : t('installedView.uninstallTitle')}
                                   >
-                                    卸载
+                                    {t('installedView.uninstall')}
                                   </button>
                                 </div>
                               </td>
@@ -746,49 +738,49 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                               <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-400 mt-1">
                                 <span className="truncate max-w-[140px]">{item.author_name}</span>
                                 <span aria-hidden="true">·</span>
-                                <span>{item.category === 'submod' ? '功能模组' : '外观包'}</span>
+                                <span>{item.category === 'submod' ? t('installedView.categorySubmod') : t('installedView.categorySpritepack')}</span>
                               </div>
                             </div>
                             <span className="shrink-0 px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-xs font-mono text-neutral-300">
-                              优先级 {item.priority}
+                              {t('installedView.priorityValue', { priority: item.priority })}
                             </span>
                           </div>
 
                           {/* Middle: Versions, Files & Integrity */}
                           <div className="grid grid-cols-2 gap-2 p-2.5 bg-neutral-950/60 rounded-lg border border-neutral-800/80 text-[11px]">
                             <div className="space-y-0.5">
-                              <div className="text-neutral-500">版本状态</div>
-                              <div className="font-mono text-neutral-200">已装: {item.installed_version}</div>
+                              <div className="text-neutral-500">{t('installedView.versionStatus')}</div>
+                              <div className="font-mono text-neutral-200">{t('installedView.installedVersion', { version: item.installed_version })}</div>
                               {item.has_update ? (
                                 <div className="text-amber-400 font-semibold font-mono flex items-center gap-1">
-                                  <span>最新: {item.latest_version}</span>
+                                  <span>{t('installedView.latestVersion', { version: item.latest_version })}</span>
                                   <span className="text-[9px] px-1 bg-amber-950 border border-amber-800 rounded">
-                                    可更新
+                                    {t('installedView.updateAvailable')}
                                   </span>
                                 </div>
                               ) : (
-                                <div className="text-neutral-400 font-mono">最新: {item.latest_version}</div>
+                                <div className="text-neutral-400 font-mono">{t('installedView.latestVersion', { version: item.latest_version })}</div>
                               )}
                             </div>
 
                             <div className="space-y-0.5">
-                              <div className="text-neutral-500">文件与完整性</div>
+                              <div className="text-neutral-500">{t('installedView.filesAndIntegrity')}</div>
                               <div className="text-neutral-300 font-mono">
-                                {item.files_count} 个文件 · {formatBytes(item.size_bytes)}
+                                {t('installedView.filesAndSize', { count: item.files_count, size: formatBytes(item.size_bytes) })}
                               </div>
                               <div>
                                 {item.integrity_status === 'intact' ? (
                                   <span className="text-emerald-400 flex items-center gap-1 font-mono">
                                     <CheckCircle2 className="w-3 h-3 shrink-0" />
-                                    <span>未被改动</span>
+                                    <span>{t('installedView.integrityIntact')}</span>
                                   </span>
                                 ) : item.integrity_status === 'modified' ? (
                                   <span className="text-amber-400 flex items-center gap-1 font-mono">
                                     <AlertTriangle className="w-3 h-3 shrink-0" />
-                                    <span>外部改动</span>
+                                    <span>{t('installedView.integrityModifiedShort')}</span>
                                   </span>
                                 ) : (
-                                  <span className="text-neutral-400">待验证</span>
+                                  <span className="text-neutral-400">{t('installedView.integrityPending')}</span>
                                 )}
                               </div>
                             </div>
@@ -801,9 +793,9 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                                 disabled={isModsActionBlocked}
                                 onClick={() => onStartUpdatePlan(item.mod_id, item.title)}
                                 className="px-3 py-1.5 text-xs font-semibold rounded bg-amber-400 hover:bg-amber-300 text-neutral-900 transition-colors shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                                title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法规划更新' : '正在读取模组列表…') : undefined}
+                                title={isModsActionBlocked ? (modsStatus === 'error' ? t('installedView.planUpdateDisabledScanError') : t('installedView.readingModList')) : undefined}
                               >
-                                规划更新
+                                {t('installedView.planUpdate')}
                               </button>
                             )}
 
@@ -811,9 +803,9 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                               <button
                                 onClick={() => onOpenDetail(item.mod_id, item.title)}
                                 className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                                title={`打开「${item.title}」详情`}
+                                title={t('installedView.openDetailTitle', { title: item.title })}
                               >
-                                详情
+                                {t('installedView.details')}
                               </button>
                             )}
 
@@ -821,27 +813,27 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                               disabled={isModsActionBlocked}
                               onClick={() => onInspectFiles(item)}
                               className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                              title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法查看文件' : '正在读取模组列表…') : '查看该模组已安装文件的本地路径及哈希'}
+                              title={isModsActionBlocked ? (modsStatus === 'error' ? t('installedView.inspectFilesDisabledScanError') : t('installedView.readingModList')) : t('installedView.inspectFilesTitle')}
                             >
-                              文件清单
+                              {t('installedView.inspectFiles')}
                             </button>
 
                             <button
                               disabled={isModsActionBlocked}
                               onClick={() => onStartRepairPlan(item)}
                               className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                              title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法修复' : '正在读取模组列表…') : '预览从已校验的安装材料恢复文件；覆盖前备份，缺少材料时失败'}
+                              title={isModsActionBlocked ? (modsStatus === 'error' ? t('installedView.repairDisabledScanError') : t('installedView.readingModList')) : t('installedView.repairTitle')}
                             >
-                              修复
+                              {t('installedView.repair')}
                             </button>
 
                             <button
                               disabled={isModsActionBlocked}
                               onClick={() => onStartUninstallPlan(item)}
                               className="px-2.5 py-1.5 text-xs text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-900/60 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-rose-900/50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                              title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法卸载' : '正在读取模组列表…') : '生成卸载计划，直接删除当前文件，不恢复安装前备份'}
+                              title={isModsActionBlocked ? (modsStatus === 'error' ? t('installedView.uninstallDisabledScanError') : t('installedView.readingModList')) : t('installedView.uninstallTitle')}
                             >
-                              卸载
+                              {t('installedView.uninstall')}
                             </button>
                           </div>
                         </div>
@@ -859,13 +851,13 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800 text-xs space-y-2">
                   <div className="flex items-center gap-2 text-amber-400 font-semibold">
                     <Info className="w-4 h-4 shrink-0" />
-                    <span>RezeHub 契约保护机制：未收纳内容保护原则</span>
+                    <span>{t('installedView.contractBannerTitle')}</span>
                   </div>
                   <p className="text-neutral-300 leading-relaxed">
-                    未收纳模组在收纳前不支持直接删除。
+                    {t('installedView.contractBannerLine1')}
                   </p>
                   <p className="text-neutral-300 leading-relaxed">
-                    这些可能是你在使用 RezeHub 之前安装的子模组。RezeHub 无法安全删除这些文件，你可以手动删除这些文件，或者确认这些文件安全以后手动收纳文件作为子模组使用。
+                    {t('installedView.contractBannerLine2')}
                   </p>
                 </div>
 
@@ -873,7 +865,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 {unmanagedMods.length === 0 ? (
                   <div className="p-8 text-center text-neutral-400">
                     <FileQuestion className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
-                    <p>当前 MAS 实例未检测到未收纳的本地子模组。</p>
+                    <p>{t('installedView.noUnmanagedMods')}</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -885,44 +877,44 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="px-2 py-0.5 text-[10px] rounded bg-amber-950 text-amber-300 border border-amber-800 font-mono">
-                              未收纳项
+                              {t('installedView.unmanagedBadge')}
                             </span>
                             {item.managed_owners && item.managed_owners.length > 0 && (
                               <span className="px-2 py-0.5 text-[10px] rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono">
-                                所在目录已安装
+                                {t('installedView.ownerDirInstalled')}
                               </span>
                             )}
                             {item.match_status === 'matched' && (
                               <span className="px-2 py-0.5 text-[10px] rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono">
-                                商店可匹配: {item.match_candidates?.[0]?.title}
+                                {t('installedView.storeMatch', { title: item.match_candidates?.[0]?.title ?? '' })}
                               </span>
                             )}
                             {item.match_status === 'ambiguous' && (
                               <span className="px-2 py-0.5 text-[10px] rounded bg-purple-950 text-purple-300 border border-purple-800 font-mono">
-                                存在多项商店候选
+                                {t('installedView.multipleStoreCandidates')}
                               </span>
                             )}
                             <h4 className="font-semibold text-neutral-100 text-sm">{item.title}</h4>
                           </div>
                           <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                            {item.author_name} · 声明版本: {item.installed_version} · 文件数: {item.unmanaged_paths?.length || 0}
+                            {t('installedView.unmanagedMeta', { author: item.author_name, version: item.installed_version, count: item.unmanaged_paths?.length || 0 })}
                           </p>
                           {item.managed_owners && item.managed_owners.length > 0 && (
                             <p className="text-xs text-sky-300/90 mt-1 leading-relaxed">
-                              该目录属于已安装模组「{managedOwnerLabels(item)}」，下列 {item.unmanaged_paths?.length || 0} 个文件不在安装账本内。收纳只新增这些文件的归属，不会改动已安装文件。
+                              {t('installedView.ownerDirExplain', { owners: managedOwnerLabels(item), count: item.unmanaged_paths?.length || 0 })}
                             </p>
                           )}
 
                           <div className="mt-2 space-y-1 font-mono text-[11px] text-neutral-400 bg-neutral-950/60 p-2.5 rounded-lg border border-neutral-800/80">
                             <div className="flex items-center justify-between text-neutral-400">
-                              <span>检测到的本地路径 ({item.unmanaged_paths?.length || 0} 个文件):</span>
+                              <span>{t('installedView.detectedPaths', { count: item.unmanaged_paths?.length || 0 })}</span>
                               {(item.unmanaged_paths?.length || 0) > 3 && (
                                 <button
                                   type="button"
                                   onClick={() => onInspectFiles(item)}
                                   className="text-emerald-400 hover:text-emerald-300 cursor-pointer font-sans text-[11px] active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                                 >
-                                  查看完整清单 ({item.unmanaged_paths?.length})
+                                  {t('installedView.viewFullList', { count: item.unmanaged_paths?.length ?? 0 })}
                                 </button>
                               )}
                             </div>
@@ -933,7 +925,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             ))}
                             {(item.unmanaged_paths?.length || 0) > 3 && (
                               <div className="text-neutral-500 italic text-[10px]">
-                                ... 另有 {(item.unmanaged_paths?.length || 0) - 3} 个文件，可通过“查看所有文件”或点击上方查看完整清单
+                                {t('installedView.moreFilesHint', { count: (item.unmanaged_paths?.length || 0) - 3 })}
                               </div>
                             )}
                           </div>
@@ -944,18 +936,18 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                             disabled={isModsActionBlocked}
                             onClick={() => onInspectFiles(item)}
                             className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700/80 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                            title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法检查散列' : '正在读取模组列表…') : undefined}
+                            title={isModsActionBlocked ? (modsStatus === 'error' ? t('installedView.inspectFilesDisabledHashError') : t('installedView.readingModList')) : undefined}
                           >
-                            查看所有文件
+                            {t('installedView.viewAllFiles')}
                           </button>
                           <button
                             disabled={isModsActionBlocked}
                             onClick={() => onOpenAdoptModal(item)}
                             className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                            title={isModsActionBlocked ? (modsStatus === 'error' ? '模组扫描失败，暂无法收纳' : '正在读取模组列表…') : undefined}
+                            title={isModsActionBlocked ? (modsStatus === 'error' ? t('installedView.adoptDisabledScanError') : t('installedView.readingModList')) : undefined}
                           >
                             <ArrowUpRight className="w-3.5 h-3.5" />
-                            <span>收纳模组</span>
+                            <span>{t('installedView.adoptMod')}</span>
                           </button>
                         </div>
                       </div>
@@ -985,10 +977,10 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
             className="w-full max-w-md rounded-lg border border-neutral-700 bg-neutral-900 p-5 shadow-2xl"
           >
             <h2 id="spritepack-delete-title" className="text-base font-semibold text-neutral-100">
-              删除精灵包「{spritepackToDelete.name}」？
+              {t('installedView.deleteDialogTitle', { name: spritepackToDelete.name })}
             </h2>
             <p id="spritepack-delete-description" className="mt-2 text-sm leading-6 text-neutral-300">
-              该精灵包的 JSON 和未被其他精灵包引用的图片将从游戏中移走，并保存备份。礼物文件会保留。
+              {t('installedView.deleteDialogBody')}
             </p>
             {deleteSpritepackError && (
               <p role="alert" className="mt-3 rounded-md border border-rose-700/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200">
@@ -1003,7 +995,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 onClick={closeDeleteSpritepack}
                 className="rounded-md border border-neutral-700 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-800 disabled:opacity-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               >
-                取消
+                {t('common.cancel')}
               </button>
               <button
                 type="button"
@@ -1011,7 +1003,7 @@ export const InstalledView: React.FC<InstalledViewProps> = ({
                 onClick={() => { void confirmDeleteSpritepack(); }}
                 className="rounded-md bg-rose-700 px-3 py-2 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-60 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               >
-                {deletingFile === spritepackToDelete.file ? '删除中…' : '确认删除'}
+                {deletingFile === spritepackToDelete.file ? t('installedView.deleting') : t('installedView.confirmDelete')}
               </button>
             </div>
           </section>

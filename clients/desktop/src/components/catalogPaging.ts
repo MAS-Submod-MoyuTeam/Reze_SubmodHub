@@ -43,11 +43,13 @@ export function clampLoadedPage(page: number, pageSize: number, filteredCount: n
  * 没有可续的内容时只报总数；仍有未渲染条目时补一句操作提示，让用户知道剩下的是滚动出来的，
  * 而不是加载失败或过滤掉了。
  */
-export function loadFooterLabel(visibleCount: number, filteredCount: number, unit: string): string {
-  const total = `共 ${filteredCount} 个${unit}`;
-  if (!hasMoreSubmods(visibleCount, filteredCount)) return total;
-  return `已渲染 ${visibleCount} / ${total}，滚动查看更多`;
+export function loadFooterLabel(
+  visibleCount: number,
+  filteredCount: number,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
+  if (!hasMoreSubmods(visibleCount, filteredCount)) {
+    return t('catalogPaging.total', { count: filteredCount });
+  }
+  return t('catalogPaging.rendered', { visible: visibleCount, count: filteredCount });
 }
-
-/** 目录里的「子模组」含功能模组与外观礼包；统一用一个量词，避免同一条页脚混用两种单位。 */
-export const submodUnit = '子模组';

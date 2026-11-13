@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowUp, RefreshCw, Tag } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 interface Props {
   scrolled: boolean;
@@ -34,14 +35,18 @@ export const CatalogFloatingControls: React.FC<Props> = ({
   onReloadCatalog,
   catalogFailed,
 }) => {
+  const { t } = useI18n();
+  const tagLabel = activeTagCount > 0
+    ? t('tagFilter.buttonWithCount', { count: activeTagCount })
+    : t('tagFilter.title');
   return (
     <div className="flex flex-col items-end gap-3">
       {scrolled ? (
         <button
           type="button"
           onClick={onBackToTop}
-          aria-label="返回顶部"
-          title="返回顶部"
+          aria-label={t('catalog.backToTop')}
+          title={t('catalog.backToTop')}
           data-testid="catalog-back-to-top"
           className={`${BUTTON} cursor-pointer border-neutral-200 bg-white/95 text-neutral-600 hover:border-emerald-300 hover:text-emerald-700 active:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
         >
@@ -54,8 +59,8 @@ export const CatalogFloatingControls: React.FC<Props> = ({
         onClick={onToggleTagDrawer}
         aria-expanded={tagDrawerOpen}
         aria-haspopup="dialog"
-        aria-label={activeTagCount > 0 ? `标签筛选（已启用 ${activeTagCount} 个标签）` : '标签筛选'}
-        title={activeTagCount > 0 ? `标签筛选（已启用 ${activeTagCount} 个标签）` : '标签筛选'}
+        aria-label={tagLabel}
+        title={tagLabel}
         data-testid="catalog-tags"
         className={`${BUTTON} relative cursor-pointer ${
           tagDrawerOpen || activeTagCount > 0
@@ -80,8 +85,8 @@ export const CatalogFloatingControls: React.FC<Props> = ({
           onClick={onReloadCatalog}
           disabled={catalogRefreshing}
           aria-busy={catalogRefreshing}
-          aria-label="刷新模组目录"
-          title={catalogRefreshing ? '正在刷新模组目录…' : '刷新模组目录'}
+          aria-label={t('catalog.refreshCatalog')}
+          title={catalogRefreshing ? t('catalog.refreshingCatalog') : t('catalog.refreshCatalog')}
           data-testid="catalog-refresh"
           className={`${BUTTON} ${
             catalogRefreshing

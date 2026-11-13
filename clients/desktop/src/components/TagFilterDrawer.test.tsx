@@ -1,9 +1,13 @@
-import { act } from 'react';
+import React, { act } from 'react';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CatalogView } from './CatalogView';
 import type { Installation, ModSummary } from '../types/client';
 import { FakeIntersectionObserver, mountTestDom } from './testDom';
+import { translate } from '../i18n/translate';
+
+// 断言用的中文一律从字典取，文案改动只动字典，不改测试。
+const tZh = (key: string, vars?: Record<string, string | number>) => translate('zh', key, vars);
 import { TagFilterDrawer } from './TagFilterDrawer';
 import type { TagFilterRow, TagFilterStates } from '../../../../ui/tag-filter';
 
@@ -29,7 +33,7 @@ function makeMod(index: number, overrides: Partial<ModSummary> = {}): ModSummary
   return {
     id: `catalog_mod_${index}`,
     title: `Submod ${index}`,
-    summary: `summary ${index}`,
+    summary: { zh: `summary ${index}` },
     author: { id: 'usr_1', display_name: 'Reze' },
     category: 'submod',
     tags: ['语音'],
@@ -103,14 +107,14 @@ function mount() {
 
 const drawerRows: TagFilterRow[] = [
   {
-    main: { name: '工具', description: '自动修复与诊断类模组' },
+    main: { name: '工具', description: { zh: '自动修复与诊断类模组' } },
     children: [
-      { name: '绘图', description: '生成与编辑图片' },
-      { name: '脚本', description: '' },
+      { name: '绘图', description: { zh: '生成与编辑图片' } },
+      { name: '脚本', description: { zh: '' } },
     ],
     stale: false,
   },
-  { main: { name: '音乐', description: '播放与切换背景音乐' }, children: [], stale: false },
+  { main: { name: '音乐', description: { zh: '播放与切换背景音乐' } }, children: [], stale: false },
 ];
 
 /** 直接挂抽屉本身：目录层级来自 props，不需要先跑一遍目录页。 */
@@ -235,7 +239,7 @@ test('两个包含标签必须同时满足', async () => {
     await view.click(view.chip('剧情'), '#剧情');
     assert.deepEqual(view.cardTitles(), ['Submod 1'], 'AND：两条包含标签都要在');
     assert.equal(view.badge()!.textContent, '2');
-    assert.match(view.text(), /包含 #语音 #剧情/);
+    assert.match(view.text(), new RegExp(tZh('tagFilter.include', { tags: '#语音 #剧情' })));
   } finally {
     await view.close();
   }
@@ -249,10 +253,10 @@ test('标签筛到空结果时说明原因，并给出只清标签的入口', as
     await view.click(view.chip('语音'), '#语音');
     await view.click(view.chip('语音'), '#语音'); // 排除：唯一一条被排掉
 
-    assert.match(view.text(), /未找到符合条件的模组/);
+    assert.match(view.text(), new RegExp(tZh('catalog.emptyTitle')));
     const reason = view.ctx.document.querySelector('[data-testid="catalog-tag-filter-reason"]');
     assert.ok(reason, '空结果必须说明标签筛选是原因');
-    assert.match(reason!.textContent ?? '', /排除 #语音/);
+    assert.match(reason!.textContent ?? '', new RegExp(tZh('tagFilter.exclude', { tags: '#语音' })));
 
     const clearOnly = view.ctx.document.querySelector('[data-testid="catalog-clear-tags"]') as HTMLButtonElement | null;
     assert.ok(clearOnly, '必须能只清标签，而不牵连搜索与分类');
@@ -270,14 +274,14 @@ test('抽屉的「清除全部」在有筛选时才可点', async () => {
     await view.render([makeMod(1)]);
     await view.click(view.tagsButton(), '标签筛选');
     const clearAll = Array.from(view.ctx.document.querySelectorAll('button')).find(
-      (node) => (node.textContent ?? '').trim() === '清除全部',
+      (node) => (node.textContent ?? '').trim() === tZh('tagFilter.clearAll'),
     ) as HTMLButtonElement | undefined;
     assert.ok(clearAll, '抽屉里必须有清除全部');
     assert.equal(clearAll!.disabled, true, '没有筛选时不该给出一个无效的清空动作');
 
     await view.click(view.chip('语音'), '#语音');
     const afterSelect = Array.from(view.ctx.document.querySelectorAll('button')).find(
-      (node) => (node.textContent ?? '').trim() === '清除全部',
+      (node) => (node.textContent ?? '').trim() === tZh('tagFilter.clearAll'),
     ) as HTMLButtonElement;
     assert.equal(afterSelect.disabled, false);
     await view.click(afterSelect, '清除全部');
@@ -292,13 +296,19 @@ test('抽屉按目录层级折叠：主标签带描述，子标签展开后才�
   const view = mountDrawerOnly();
   try {
     const main = view.tag('工具')!;
-    assert.match(main.textContent || '', /#工具/);
+    assert.ok((main.textContent || '').includes(tZh('tagFilter.label', { name: '工具' })));
     assert.match(main.textContent || '', /自动修复与诊断类模组/, '描述必须显示在标签名下');
-    assert.match(main.getAttribute('aria-label') || '', /工具：自动修复与诊断类模组/);
+    assert.equal(
+      main.getAttribute('aria-label'),
+      tZh('tagFilter.ariaLabelPlain', { name: '工具', description: '自动修复与诊断类模组' }),
+    );
     assert.equal(view.children('工具'), null, '子标签默认折叠');
-    assert.match(view.toggle('工具')!.getAttribute('aria-label') || '', /展开 工具 的子标签（2 个）/);
+    assert.equal(
+      view.toggle('工具')!.getAttribute('aria-label'),
+      tZh('tagFilter.expandChildren', { name: '工具', count: 2 }),
+    );
 
-    await view.click(view.toggle('工具'), '展开 工具');
+    await view.click(view.toggle('工具'), tZh('tagFilter.expandChildren', { name: '工具', count: 2 }));
     assert.ok(view.children('工具'));
     assert.match(view.tag('绘图')!.textContent || '', /生成与编辑图片/);
     assert.deepEqual(view.toggles, [], '折叠不能改变筛选状态');
@@ -328,7 +338,7 @@ test('抽屉给 Android 状态栏与手势条留出安全区，关闭键不会�
     assert.match(className, /env\(safe-area-inset-right/, '横屏刘海在右侧时关闭键同样不能贴边');
 
     // 关闭键要在面板里面，跟着面板一起让开，而不是挂在整个视口上。
-    const close = view.ctx.document.querySelector('button[aria-label="关闭标签筛选"]:not([tabindex="-1"])');
+    const close = view.ctx.document.querySelector('button[aria-label="' + tZh('tagFilter.close') + '"]:not([tabindex="-1"])');
     assert.ok(close, '抽屉必须有关闭键');
     assert.ok(panel!.contains(close), '关闭键属于面板内容');
   } finally {
@@ -343,7 +353,7 @@ test('抽屉的遮罩与面板由 motion 接管，关闭后不留下幽灵遮罩
     await view.click(view.tagsButton(), '标签筛选');
     const panel = view.ctx.document.querySelector('[data-testid="tag-filter-panel"]') as HTMLElement;
     assert.ok(panel, '打开后必须渲染面板');
-    const overlay = view.ctx.document.querySelector('[aria-label="关闭标签筛选"]') as HTMLElement;
+    const overlay = view.ctx.document.querySelector('[aria-label="' + tZh('tagFilter.close') + '"]') as HTMLElement;
     // motion 会接管这两个元素并写入内联 style；jsdom 没有 WAAPI，
     // 进入动画不会推进到终态，所以只断言「确实挂上了」，位移与透明度由真实浏览器验收。
     assert.ok(panel.getAttribute('style'), '面板必须由 motion 接管');

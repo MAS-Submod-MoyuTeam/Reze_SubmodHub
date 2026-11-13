@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShoppingBag, PackageCheck, Layers, ListTodo, Settings2 } from 'lucide-react';
 import type { ActiveTab } from './Sidebar';
+import { useI18n } from '../i18n';
 
 export interface MobileNavBarProps {
   activeTab: ActiveTab;
@@ -15,32 +16,33 @@ export const MobileNavBar: React.FC<MobileNavBarProps> = ({
   updatesCount = 0,
   activeOperationsCount = 0,
 }) => {
+  const { t } = useI18n();
   const tabs: Array<{ id: ActiveTab; label: string; icon: React.ReactNode; badge?: number }> = [
     {
       id: 'catalog',
-      label: '商店',
+      label: t('nav.catalog'),
       icon: <ShoppingBag className="w-5 h-5" />,
     },
     {
       id: 'installed',
-      label: '已安装',
+      label: t('nav.installed'),
       icon: <PackageCheck className="w-5 h-5" />,
       badge: updatesCount > 0 ? updatesCount : undefined,
     },
     {
       id: 'priority',
-      label: '优先级',
+      label: t('nav.priority'),
       icon: <Layers className="w-5 h-5" />,
     },
     {
       id: 'operations',
-      label: '任务',
+      label: t('nav.operations'),
       icon: <ListTodo className="w-5 h-5" />,
       badge: activeOperationsCount > 0 ? activeOperationsCount : undefined,
     },
     {
       id: 'instances',
-      label: '实例',
+      label: t('nav.instances'),
       icon: <Settings2 className="w-5 h-5" />,
     },
   ];

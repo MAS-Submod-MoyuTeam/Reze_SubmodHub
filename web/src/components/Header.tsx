@@ -1,6 +1,8 @@
 import React from 'react';
 import { useApp, NavTab } from '../context/AppContext';
 import { User as UserIcon, Shield, Download } from 'lucide-react';
+import { useI18n } from '../i18n';
+import { LanguageSwitcher } from './LanguageSwitcher';
 
 interface HeaderProps {
   onOpenLoginModal: () => void;
@@ -14,33 +16,34 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal, onOpenClientDo
     currentUser,
     logout,
   } = useApp();
+  const { t } = useI18n();
 
   // 发布入口对所有已登录用户开放；审核和管理入口仅对管理员开放。
   // 这里不要再依赖旧的 author/reviewer 角色，否则普通登录用户无法提交模组。
   const navLinks: { id: NavTab; label: string }[] = [
-    { id: 'catalog', label: '模组目录' },
-    ...(currentUser ? [{ id: 'author' as NavTab, label: '发布' }] : []),
+    { id: 'catalog', label: t('header.catalog') },
+    ...(currentUser ? [{ id: 'author' as NavTab, label: t('header.author') }] : []),
     ...(currentUser?.roles.includes('admin')
       ? [
-          { id: 'reviewer' as NavTab, label: '审核' },
-          { id: 'admin' as NavTab, label: '设置' },
+          { id: 'reviewer' as NavTab, label: t('header.reviewer') },
+          { id: 'admin' as NavTab, label: t('header.admin') },
         ]
       : []),
   ];
 
   const currentPersonaLabel = !currentUser
-    ? '访客 (未登录)'
+    ? t('header.persona.guest')
     : currentUser.roles.includes('admin')
-    ? '管理员 (Admin)'
+    ? t('header.persona.admin')
     : currentUser.roles.includes('reviewer')
-    ? '审核员 (Reviewer)'
+    ? t('header.persona.reviewer')
     : currentUser.roles.includes('author')
-    ? '作者 (Author)'
-    : '普通用户';
+    ? t('header.persona.author')
+    : t('header.persona.user');
 
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-neutral-200 pt-[env(safe-area-inset-top,0px)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
         {/* Zone 1: Single text element wordmark */}
         <div className="flex items-baseline gap-2 shrink-0">
           <button
@@ -51,7 +54,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal, onOpenClientDo
           </button>
           <span
             className="hidden sm:inline text-[10px] font-mono text-neutral-400"
-            title={`当前版本 v${__APP_VERSION__}`}
+            title={t('header.appVersionTitle', { version: __APP_VERSION__ })}
           >
             v{__APP_VERSION__}
           </span>
@@ -87,17 +90,24 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal, onOpenClientDo
             <Shield className="w-3.5 h-3.5" />{currentPersonaLabel}
           </span>
 
+          {/* 语言切换常驻在顶栏：它必须随时可见（含窄屏），不能藏进菜单。
+              下拉框本身宽度固定，窄屏也不需要换成别的形态。 */}
+          <LanguageSwitcher />
+
           {/* Client download: secondary action, always available to visitors */}
           <button
             onClick={onOpenClientDownload}
-            aria-label="下载客户端"
-            title="下载 Windows / Android 客户端"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-800 bg-white border border-neutral-200 hover:bg-neutral-50 hover:border-neutral-300 active:bg-neutral-100 rounded transition-colors whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+            aria-label={t('header.downloadClient')}
+            title={t('header.downloadClientTitle')}
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-800 bg-white border border-neutral-200 hover:bg-neutral-50 hover:border-neutral-300 active:bg-neutral-100 rounded transition-colors whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <Download className="w-3.5 h-3.5 text-neutral-500" />
-            {/* 窄屏用短标签，避免只剩一个无人认识的图标 */}
-            <span className="sm:hidden">下载</span>
-            <span className="hidden sm:inline">下载客户端</span>
+            {/* 窄屏用短标签，避免只剩一个无人认识的图标。
+                两段标签必须**互斥**：`sm:hidden` 与 `hidden sm:inline` 同时命中时
+                会一起显示成 "GetGet client"，所以这里给宽屏版本加 `max-sm:hidden`，
+                让窄屏/宽屏各只出现一个。 */}
+            <span className="hidden max-sm:inline">{t('header.downloadClientShort')}</span>
+            <span className="max-sm:hidden">{t('header.downloadClient')}</span>
           </button>
 
           {/* Account Button */}
@@ -114,7 +124,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLoginModal, onOpenClientDo
               onClick={onOpenLoginModal}
               className="px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 active:bg-neutral-950 rounded transition-colors whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
             >
-              登录
+              {t('header.login')}
             </button>
           )}
         </div>

@@ -13,7 +13,7 @@ function makeMockInstalledItem(override?: Partial<InstalledItem>): InstalledItem
     mod_id: 'submod_mobile_1',
     title: 'Mobile Test Submod',
     author_name: 'Reze Dev',
-    summary: 'A submod for testing mobile card rendering',
+    summary: { zh: 'A submod for testing mobile card rendering' },
     category: 'submod',
     sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
     installed_version: '1.2.0',
@@ -213,7 +213,7 @@ test('CatalogView: responsive secondary filter groups platform, compatibility, a
   const mockMod: ModSummary = {
     id: 'catalog_mod_1',
     title: 'Monika AI Voice',
-    summary: 'A submod for Monika voice synthesis',
+    summary: { zh: 'A submod for Monika voice synthesis' },
     author: { id: 'usr_1', display_name: 'Reze' },
     category: 'submod',
     tags: ['语音', 'AI'],

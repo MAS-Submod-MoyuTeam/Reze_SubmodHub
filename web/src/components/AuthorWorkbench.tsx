@@ -28,6 +28,8 @@ import { localPlatformDeclaration, missingPlatformArchives, toggleLocalPlatform,
 import { clearModImages, fetchModImages, platformScanReportId, reorderModImages, uploadModImages } from '../../../ui/submission-api';
 import { fetchTagCatalog, type TagGroup } from '../../../ui/tags-api';
 import { TagPicker } from './TagPicker';
+import { useI18n, LANG_SHORT_LABELS, SUPPORTED_LANGS, type Lang, type LocalizedText } from '../i18n';
+import { withLocalizedValue } from '../../../ui/localized-text';
 import { isValidTagSelection, orderByCatalog } from './tagSelection';
 import {
   Plus,
@@ -54,8 +56,10 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, m } from './Motion';
 import { overlayVariants, panelVariants } from '../../../ui/motion-presets';
+import { tabSegmentClass, valueSegmentClass } from './selectionStyles';
 
 export const AuthorWorkbench: React.FC = () => {
+  const { t, resolve, lang } = useI18n();
   const workspace = useAuthorWorkspace();
   const { workbenchView, setWorkbenchView, userMods, activeMod, activeModVersions, authorSubmissions, setSelectedModId, modRequest, versionRequest, historyRequest } = workspace;
   const {
@@ -99,9 +103,11 @@ export const AuthorWorkbench: React.FC = () => {
   const [isNewModModalOpen, setIsNewModModalOpen] = useState(false);
   const [editingModId, setEditingModId] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
-  const [newSummary, setNewSummary] = useState('');
+  // 简介与详细简介都是多语言文本：草稿里存 {语言: 文本}，编辑时只改当前语言。
+  const [newSummary, setNewSummary] = useState<LocalizedText>({});
+  const [summaryLang, setSummaryLang] = useState<Lang>(lang);
   const [newAuthorDisplayName, setNewAuthorDisplayName] = useState('');
-  const [newDescription, setNewDescription] = useState('');
+  const [newDescription, setNewDescription] = useState<LocalizedText>({});
   const [newCategory, setNewCategory] = useState<ModCategory>('submod');
   const [newMasRange, setNewMasRange] = useState('>=0.12.14');
   const [newPriority, setNewPriority] = useState(20);
@@ -125,9 +131,11 @@ export const AuthorWorkbench: React.FC = () => {
   const [newGitHubSourceCode, setNewGitHubSourceCode] = useState(false);
   // 分平台抓取：打开后每个平台各自用一条正则匹配同一次 Release 的资产，
   // 全平台共用正则不再参与匹配；关闭时保持原来的“一个文件覆盖全平台”。
-  // 「发版通知」模式：作者在仓库放一个 GitHub Action，发 Release 时由它带着
-  // 下面的文件名正则通知站内。正则随文件一起走，所以这里派生的是「将要写进
-  // 那个文件的内容」，与提交给服务端的规则是同一份事实。
+  // 「发版通知」是默认选中的发现方式：作者在仓库放一个 GitHub Action，发 Release
+  // 时由它带着下面的文件名正则通知站内。正则随文件一起走，所以这里派生的是
+  // 「将要写进那个文件的内容」，与提交给服务端的规则是同一份事实。
+  // 站内按需抓取始终在跑（见 GITHUB_SYNC_MAX_AGE），关掉这个开关只是不生成 Action，
+  // 所以「默认」只能落在这里，不能落在按需抓取上。
   const [newGitHubAction, setNewGitHubAction] = useState(true);
   const [newGitHubSplitPlatforms, setNewGitHubSplitPlatforms] = useState(false);
   const [newPlatformRules, setNewPlatformRules] = useState<Record<AssetPlatform, { regex: string; sourceCode: boolean }>>({
@@ -186,7 +194,7 @@ export const AuthorWorkbench: React.FC = () => {
         setTagGroups(catalog.groups);
       })
       .catch(() => {
-        if (!cancelled) setTagCatalogError('标签目录读取失败，请稍后重试');
+        if (!cancelled) setTagCatalogError(t('tagCatalog.loadFailed'));
       })
       .finally(() => {
         if (!cancelled) setTagCatalogLoading(false);
@@ -254,7 +262,7 @@ export const AuthorWorkbench: React.FC = () => {
     // 本站上传的发布平台就是作者勾选的那几个：目录据此展示模组，留空等于
     // 什么都不发布，所以先拦下来而不是让服务端收到一个空集合。
     if (newSourceType === 'local' && newPlatforms.length === 0) {
-      showToast('error', '至少勾选一个发布平台（Windows 或 Android）。');
+      showToast('error', t('author.platformRequired'));
       return;
     }
 
@@ -268,18 +276,18 @@ export const AuthorWorkbench: React.FC = () => {
         platformRules: newGitHubSplitPlatforms ? platformRulePayload : [],
       });
       if (!sourceValidation.valid) {
-        showToast('error', sourceValidation.error || 'GitHub 源配置不合法');
+        showToast('error', sourceValidation.error || t('author.sourceInvalid'));
         return;
       }
     }
 
     if (tagGroups.length === 0) {
-      showToast('error', '标签目录未就绪，请关闭弹窗后重试。');
+      showToast('error', t('author.tagCatalogNotReady'));
       return;
     }
     const tags = orderByCatalog(tagGroups, newTags);
     if (!isValidTagSelection(tags)) {
-      showToast('error', '至少选择一个标签。');
+      showToast('error', t('tagPicker.atLeastOne'));
       return;
     }
 
@@ -316,16 +324,16 @@ export const AuthorWorkbench: React.FC = () => {
             return decodeURIComponent(url?.split('/').pop() || '');
           }).filter((filename) => currentByFilename.has(filename));
           if (orderedFilenames.length === current.length) await reorderModImages(base, editingModId, orderedFilenames);
-          showToast('success', `已追加 ${orderedFiles.length} 张详情图。`);
+          showToast('success', t('author.imagesAppended', { count: orderedFiles.length }));
         }
         else if (clearExistingDetailImages) {
-          try { await clearModImages(base, editingModId); showToast('success', '模组详情图已清空。'); } catch (error) { showToast('error', `清空详情图失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
+          try { await clearModImages(base, editingModId); showToast('success', t('author.imagesCleared')); } catch (error) { showToast('error', t('author.imagesClearFailed', { error: error instanceof Error ? error.message : 'unknown_error' })); }
         } else if (detailImageOrderDirty) {
           try {
             const filenames = detailImageOrder.map((url) => decodeURIComponent(url.split('/').pop() || ''));
             await reorderModImages(base, editingModId, filenames);
-            showToast('success', '模组详情图顺序已保存。');
-          } catch (error) { showToast('error', `详情图排序保存失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
+            showToast('success', t('author.imagesOrderSaved'));
+          } catch (error) { showToast('error', t('author.imagesOrderFailed', { error: error instanceof Error ? error.message : 'unknown_error' })); }
         }
         setIsNewModModalOpen(false);
         setEditingModId(null);
@@ -362,8 +370,8 @@ export const AuthorWorkbench: React.FC = () => {
       setSelectedModId(createdId);
       setIsNewModModalOpen(false);
       setNewTitle('');
-      setNewSummary('');
-      setNewDescription('');
+      setNewSummary({});
+      setNewDescription({});
       setEditingModId(null);
       setPendingDetailImages([]);
       setPendingDetailImageKeys([]);
@@ -377,9 +385,9 @@ export const AuthorWorkbench: React.FC = () => {
   const openModEditor = (mod: ModSummary) => {
     setEditingModId(mod.id);
     setNewTitle(mod.title);
-    setNewSummary(mod.summary);
+    setNewSummary({ ...(mod.summary ?? {}) });
     setNewAuthorDisplayName(mod.author.display_name || '');
-    setNewDescription(mod.description || '');
+    setNewDescription({ ...(mod.description ?? {}) });
     setNewCategory(mod.category);
     setNewMasRange(mod.mas_version_range);
     setNewPriority(mod.recommended_priority);
@@ -418,9 +426,9 @@ export const AuthorWorkbench: React.FC = () => {
   const openNewModEditor = () => {
     setEditingModId(null);
     setNewTitle('');
-    setNewSummary('');
+    setNewSummary({});
     setNewAuthorDisplayName('');
-    setNewDescription('');
+    setNewDescription({});
     setNewCategory('submod');
     setNewMasRange('>=0.12.14');
     setNewPriority(20);
@@ -519,7 +527,7 @@ export const AuthorWorkbench: React.FC = () => {
     e.preventDefault();
     if (!githubReleaseUrl.trim()) return;
 
-    showToast('info', '正在解析 GitHub Release Asset 并拉取归档 (POST /author/github-imports)...');
+    showToast('info', t('author.importingRelease'));
 
     setTimeout(async () => {
       // 导入草稿同样只能带目录内的标签：这里用目录首个主标签兜底，
@@ -529,18 +537,18 @@ export const AuthorWorkbench: React.FC = () => {
         : await fetchTagCatalog(tagCatalogBase).then((catalog) => catalog.groups).catch(() => [] as TagGroup[]);
       const seedTag = groups[0]?.name;
       if (!seedTag) {
-        showToast('error', '标签目录未就绪，无法创建导入草稿。');
+        showToast('error', t('author.importNoCatalog'));
         return;
       }
       const newModId = await createModDraft({
         title: 'GitHub Imported Submod',
-        summary: `导入自 ${githubReleaseUrl}，自动转换至候选版本并触发扫描。`,
+        summary: { zh: t('author.importSummary', { url: githubReleaseUrl }) },
         category: 'submod',
         tags: [seedTag],
       });
       setSelectedModId(newModId);
       if (!newModId) return;
-      const vId = await createCandidateVersion(newModId, '1.0.0-gh', '从 GitHub Release 资产导入。');
+      const vId = await createCandidateVersion(newModId, '1.0.0-gh', t('author.importNotes'));
       if (vId) await uploadArchiveAndScan(vId, { name: 'github_release_asset.zip', size: 3600000 });
       setIsGithubImportOpen(false);
       setGithubReleaseUrl('');
@@ -551,9 +559,9 @@ export const AuthorWorkbench: React.FC = () => {
     return (
       <div className="max-w-4xl mx-auto px-4 py-16 text-center space-y-4">
         <AlertCircle className="w-10 h-10 text-neutral-400 mx-auto" />
-        <h2 className="text-base font-bold text-neutral-800">未授权访问作者工作台</h2>
+        <h2 className="text-base font-bold text-neutral-800">{t('author.notAuthorizedTitle')}</h2>
         <p className="text-xs text-neutral-500 max-w-md mx-auto">
-          作者工作台需要先登录。
+          {t('author.notAuthorizedBody')}
         </p>
       </div>
     );
@@ -583,13 +591,13 @@ export const AuthorWorkbench: React.FC = () => {
           <div className="flex items-center gap-2 text-xs text-neutral-500">
             <span className="font-semibold text-neutral-900">{currentUser?.display_name}</span>
             <span>·</span>
-            <span>作者专属工作区</span>
+            <span>{t('author.heroBadge')}</span>
           </div>
           <h1 className="text-lg font-bold text-neutral-900 tracking-tight mt-0.5">
-            模组创作、ZIP 上传与扫描报告管理
+            {t('author.heroTitle')}
           </h1>
           <p className="text-xs text-neutral-500 mt-1">
-            支持旧式 ZIP 静态解构、安全与冲突检测、不可变版本发布提交
+            {t('author.heroBody')}
           </p>
         </div>
 
@@ -598,21 +606,17 @@ export const AuthorWorkbench: React.FC = () => {
           <div className="flex items-center bg-neutral-100 p-0.5 rounded text-xs font-medium mr-2">
             <button
               onClick={() => setWorkbenchView('mods')}
-              className={`px-3 py-1.5 rounded transition-colors ${
-                workbenchView === 'mods' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:bg-white/60 hover:text-neutral-900'
-              } active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
+              aria-pressed={workbenchView === 'mods'}
+              className={`${tabSegmentClass(workbenchView === 'mods')} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
             >
-              模组与候选版本
+              {t('author.viewMods')}
             </button>
             <button
               onClick={() => setWorkbenchView('submissions')}
-              className={`px-3 py-1.5 rounded transition-colors ${
-                workbenchView === 'submissions'
-                  ? 'bg-white text-neutral-900 shadow-xs'
-                  : 'text-neutral-600'
-              }`}
+              aria-pressed={workbenchView === 'submissions'}
+              className={`${tabSegmentClass(workbenchView === 'submissions')} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
             >
-              提交历史与修订{historyRequest.data ? ` (${historyRequest.data.total})` : ''}
+              {historyRequest.data ? t('author.viewHistoryWithTotal', { total: historyRequest.data.total }) : t('author.viewHistory')}
             </button>
           </div>
 
@@ -621,7 +625,7 @@ export const AuthorWorkbench: React.FC = () => {
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded transition-colors shadow-xs active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
           >
             <Plus className="w-3.5 h-3.5" />
-            新建模组草稿
+            {t('author.viewNewDraft')}
           </button>
         </div>
       </div>
@@ -631,19 +635,19 @@ export const AuthorWorkbench: React.FC = () => {
         <div className="bg-white border border-neutral-200 rounded-lg p-6 space-y-4">
           <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
             <div>
-              <h2 className="text-sm font-bold text-neutral-900">版本审核提交历史与驳回修订</h2>
-              <p className="text-xs text-neutral-500">查看各版本的审核流转状态与驳回理由。</p>
+              <h2 className="text-sm font-bold text-neutral-900">{t('author.historyTitle')}</h2>
+              <p className="text-xs text-neutral-500">{t('author.historySubtitle')}</p>
             </div>
             <span className="text-xs font-mono text-neutral-400">
-              共 {historyRequest.data?.total ?? '…'} 条记录
+              {t('author.historyCount', { total: historyRequest.data?.total ?? '…' })}
             </span>
           </div>
 
-          <div className="flex flex-wrap gap-1 text-xs">{[{id:'all',label:'全部'},{id:'ready_for_review',label:'待审核'},{id:'published',label:'已发布'},{id:'rejected',label:'已驳回'}].map((filter) => <button key={filter.id} onClick={() => workspace.changeHistoryState(filter.id)} className={`min-h-8 rounded px-3 transition-colors ${workspace.historyState === filter.id ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}>{filter.label}</button>)}</div>
-          {historyRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">正在加载提交历史…</p>}
-          {historyRequest.error && <p role="alert" className="text-xs text-rose-700">提交历史加载失败：{historyRequest.error} <button onClick={historyRequest.reload} className="underline">重试</button></p>}
+          <div className="flex flex-wrap gap-1 text-xs">{[{id:'all',label:t('author.filterAll')},{id:'ready_for_review',label:t('author.filterPending')},{id:'published',label:t('author.filterPublished')},{id:'rejected',label:t('author.filterRejected')}].map((filter) => <button key={filter.id} onClick={() => workspace.changeHistoryState(filter.id)} className={`min-h-8 rounded px-3 transition-colors ${workspace.historyState === filter.id ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'} active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}>{filter.label}</button>)}</div>
+          {historyRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">{t('author.historyLoading')}</p>}
+          {historyRequest.error && <p role="alert" className="text-xs text-rose-700">{t('author.historyLoadFailed', { error: historyRequest.error })} <button onClick={historyRequest.reload} className="underline">{t('common.retry')}</button></p>}
           {historyRequest.data && (authorSubmissions.length === 0 ? (
-            <div className="py-12 text-center text-xs text-neutral-400">暂无提交审核记录</div>
+            <div className="py-12 text-center text-xs text-neutral-400">{t('author.historyEmpty')}</div>
           ) : (
             <div className="divide-y divide-neutral-100">
               {authorSubmissions.map((sub) => {
@@ -659,7 +663,7 @@ export const AuthorWorkbench: React.FC = () => {
                         <span className="font-semibold text-neutral-900 text-xs">
                           {sub.mod_title}
                         </span>
-                        <span className="font-mono text-xs text-neutral-600">{sub.category === 'spritepack' ? '精灵包' : formatVersionLabel(sub.version_str)}</span>
+                        <span className="font-mono text-xs text-neutral-600">{sub.category === 'spritepack' ? t('author.spritepack') : formatVersionLabel(sub.version_str)}</span>
                         <span
                           className={`text-[11px] font-mono px-2 py-0.5 rounded ${
                             isPublished
@@ -672,16 +676,16 @@ export const AuthorWorkbench: React.FC = () => {
                           }`}
                         >
                           {isPublished
-                            ? '已发布 (不可变)'
+                            ? t('author.statePublished')
                             : isApproved
-                            ? '已批准待发布'
+                            ? t('author.stateApproved')
                             : isRejected
-                            ? '已驳回 (需修订)'
-                            : '待审队列中 (ready_for_review)'}
+                            ? t('author.stateRejected')
+                            : t('author.statePending')}
                         </span>
                       </div>
                       <span className="text-[11px] text-neutral-400 font-mono">
-                        提交于 {new Date(sub.submitted_at).toLocaleString()}
+                        {t('author.submittedAt', { time: new Date(sub.submitted_at).toLocaleString() })}
                       </span>
                     </div>
 
@@ -696,10 +700,10 @@ export const AuthorWorkbench: React.FC = () => {
                       >
                         <div className="flex items-center justify-between font-semibold mb-1">
                           <span>
-                            {isRejected ? '审核员驳回理由与修改意见:' : '审核员审批通过记录:'}
+                            {isRejected ? t('author.rejectReasonLabel') : t('author.approveRecordLabel')}
                           </span>
                           <span className="text-[11px] text-neutral-500 font-normal">
-                            审核人: {sub.reviewer_name || '核心审核组'}
+                            {t('author.reviewer', { name: sub.reviewer_name || t('author.coreTeam') })}
                           </span>
                         </div>
                         <p>{sub.decision_reason}</p>
@@ -707,7 +711,7 @@ export const AuthorWorkbench: React.FC = () => {
                         {isRejected && subVer?.state === 'rejected' && (
                           <div className="pt-2 mt-2 border-t border-rose-200/80 flex items-center justify-between">
                             <span className="text-[11px] text-rose-700">
-                              修改版本资料并重新上传 ZIP 后，可再次提交审核。
+                              {t('author.reviseHint')}
                             </span>
                             <button
                               onClick={() => {
@@ -717,7 +721,7 @@ export const AuthorWorkbench: React.FC = () => {
                               }}
                               className="px-3 py-1 text-xs font-medium text-white bg-rose-700 hover:bg-rose-800 rounded transition-colors flex items-center gap-1 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                             >
-                              编辑被驳回版本
+                              {t('author.editRejectedVersion')}
                             </button>
                           </div>
                         )}
@@ -732,7 +736,7 @@ export const AuthorWorkbench: React.FC = () => {
                           className="text-emerald-700 hover:underline flex items-center gap-1 font-medium active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                         >
                           <FileCheck className="w-3.5 h-3.5" />
-                          查看关联的静态扫描报告
+                          {t('author.viewScanReport')}
                         </button>
                       </div>
                     )}
@@ -741,7 +745,7 @@ export const AuthorWorkbench: React.FC = () => {
               })}
             </div>
           ))}
-          {historyRequest.data && <Pagination label="作者提交历史" total={historyRequest.data.total} page={historyRequest.data.page} pageSize={workspace.historyPageSize} onPageChange={workspace.changeHistoryPage} onPageSizeChange={workspace.changeHistoryPageSize} />}
+          {historyRequest.data && <Pagination label={t('author.historyPagerLabel')} total={historyRequest.data.total} page={historyRequest.data.page} pageSize={workspace.historyPageSize} onPageChange={workspace.changeHistoryPage} onPageSizeChange={workspace.changeHistoryPageSize} />}
         </div>
       ) : (
         /* Mods & Candidate Versions Management View */
@@ -750,18 +754,18 @@ export const AuthorWorkbench: React.FC = () => {
           <div className="bg-white border border-neutral-200 rounded-lg p-5 space-y-4 lg:col-span-1">
             <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
               <h2 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
-                我的模组列表 ({modRequest.data?.total ?? '…'})
+                {t('author.modListTitle', { total: modRequest.data?.total ?? '…' })}
               </h2>
               <button
                 onClick={openNewModEditor}
                 className="text-xs text-emerald-700 hover:underline font-medium active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
-                + 新建草稿
+                + {t('author.newDraft')}
               </button>
             </div>
 
-            {modRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">正在加载我的模组…</p>}
-            {modRequest.error && <p role="alert" className="text-xs text-rose-700">模组列表加载失败：{modRequest.error} <button onClick={modRequest.reload} className="underline">重试</button></p>}
+            {modRequest.loading && <p role="status" className="py-8 text-center text-xs text-neutral-500">{t('author.modsLoading')}</p>}
+            {modRequest.error && <p role="alert" className="text-xs text-rose-700">{t('author.modsLoadFailed', { error: modRequest.error })} <button onClick={modRequest.reload} className="underline">{t('common.retry')}</button></p>}
             <div className="space-y-1.5">
               {userMods.map((m) => {
                 const isSelected = m.id === activeMod?.id;
@@ -783,10 +787,10 @@ export const AuthorWorkbench: React.FC = () => {
                         {m.category === 'spritepack' ? 'Spritepack' : 'Submod'}
                       </span>
                     </div>
-                    <p className="text-[11px] text-neutral-500 line-clamp-1">{m.summary}</p>
+                    <p className="text-[11px] text-neutral-500 line-clamp-1">{resolve(m.summary)}</p>
                     <div className="flex items-center justify-between pt-1 text-[10px] text-neutral-400">
                       <span>MAS {m.mas_version_range}</span>
-                      <span>{m.is_published ? '已公开' : '草稿开发中'}</span>
+                      <span>{m.is_published ? t('author.modPublished') : t('author.modDraft')}</span>
                     </div>
                   </button>
                 );
@@ -794,7 +798,7 @@ export const AuthorWorkbench: React.FC = () => {
             </div>
             {modRequest.data && (
               <WindowPager
-                label="我的模组"
+                label={t('author.modPagerLabel')}
                 total={modRequest.data.total}
                 start={modRequest.data.start}
                 shown={userMods.length}
@@ -818,18 +822,18 @@ export const AuthorWorkbench: React.FC = () => {
                       <span>·</span>
                       <span className="font-medium text-emerald-700">{activeMod.category}</span>
                       <span>·</span>
-                      <span>优先级权重: {activeMod.recommended_priority}</span>
+                      <span>{t('author.priority', { value: activeMod.recommended_priority })}</span>
                       <span>·</span>
-                      <span>发布平台: {uploadPlatforms(activeMod.supported_platforms).map(assetPlatformLabel).join(' / ')}</span>
+                      <span>{t('author.platforms', { list: uploadPlatforms(activeMod.supported_platforms).map(assetPlatformLabel).join(' / ') })}</span>
                     </div>
                     <h2 className="text-base font-bold text-neutral-900">{activeMod.title}</h2>
-                    <p className="text-xs text-neutral-600 mt-1">{activeMod.summary}</p>
+                    <p className="text-xs text-neutral-600 mt-1">{resolve(activeMod.summary)}</p>
                     {activeMod.source_type === 'github_releases' && (
                       <div className="mt-2.5 p-2.5 bg-neutral-50 border border-neutral-200 rounded text-xs space-y-1">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-neutral-500 flex items-center gap-1">
                             <Github className="w-3.5 h-3.5" />
-                            GitHub 源:
+                            {t('author.githubSource')}
                           </span>
                           <a
                             href={getGitHubRepoUrl(activeMod.github_owner, activeMod.github_repo)}
@@ -841,31 +845,31 @@ export const AuthorWorkbench: React.FC = () => {
                           </a>
                         </div>
                         <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-600">
-                          <span>版本发现: <span>站内按需抓取 + 发版通知</span></span>
-                          <span>最近同步: {formatLastSyncTime(activeMod.github_last_sync_at)}</span>
+                          <span>{t('author.versionDiscovery')}<span>{t('author.versionDiscoveryValue')}</span></span>
+                          <span>{t('author.lastSync', { time: formatLastSyncTime(activeMod.github_last_sync_at) })}</span>
                         </div>
                         <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-600">
                           <span>
-                            资产匹配:{' '}
+                            {t('author.assetMatch')}{' '}
                             {activeMod.github_platform_assets && activeMod.github_platform_assets.length > 0 ? (
                               <span className="space-x-2">
                                 {activeMod.github_platform_assets.map((rule) => (
                                   <span key={rule.platform}>
-                                    {assetPlatformLabel(rule.platform)} <code className="text-neutral-800">{rule.regex || (rule.source_code ? '源码包' : '未配置')}</code>
+                                    {assetPlatformLabel(rule.platform)} <code className="text-neutral-800">{rule.regex || (rule.source_code ? t('author.sourceCodePackage') : t('author.notConfigured'))}</code>
                                   </span>
                                 ))}
                               </span>
                             ) : (
-                              <code className="text-neutral-800">{activeMod.github_asset_regex || '无（仅源码包）'}</code>
+                              <code className="text-neutral-800">{activeMod.github_asset_regex || t('author.noAssetRegex')}</code>
                             )}
                           </span>
                         </div>
                         <div className="text-[11px] text-amber-800 bg-amber-50 p-1.5 rounded border border-amber-200">
-                          距上次检查超过 {refreshWindowText} 才会自动回源；仓库里放了发版通知 Action 时，发布 Release 会立刻触发检查。
+                          {t('author.syncWindowNote', { window: refreshWindowText })}
                         </div>
 {activeMod.github_last_sync_error && (
                           <div className="text-[11px] text-rose-600 bg-rose-50 p-1.5 rounded border border-rose-200 mt-1">
-                            同步状态: {activeMod.github_last_sync_error}
+                            {t('author.syncStatus', { detail: activeMod.github_last_sync_error })}
                           </div>
                         )}
                       </div>
@@ -878,9 +882,9 @@ export const AuthorWorkbench: React.FC = () => {
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-700 border border-neutral-300 hover:bg-neutral-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                     >
                       <Pencil className="w-3.5 h-3.5" />
-                      编辑模组
+                      {t('author.editMod')}
                     </button>
-                    {activeMod.is_published ? <button type="button" onClick={() => { if (window.confirm('确认下架这个模组？版本、归档和详情图会保留。')) void unpublishMod(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"><EyeOff className="w-3.5 h-3.5" />下架模组</button> : canDeleteActiveModDraft && <button type="button" onClick={() => { if (window.confirm('确认删除草稿模组？候选版本、扫描记录和详情图会一并删除。')) void deleteModDraft(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-700 border border-rose-200 hover:bg-rose-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">删除草稿模组</button>}
+                    {activeMod.is_published ? <button type="button" onClick={() => { if (window.confirm(t('author.confirmUnpublishMod'))) void unpublishMod(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 hover:bg-amber-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"><EyeOff className="w-3.5 h-3.5" />{t('author.unpublishMod')}</button> : canDeleteActiveModDraft && <button type="button" onClick={() => { if (window.confirm(t('author.confirmDeleteMod'))) void deleteModDraft(activeMod.id); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-700 border border-rose-200 hover:bg-rose-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{t('author.deleteModDraft')}</button>}
                     {activeMod.source_type === 'github_releases' ? (
                       <>
                       <button
@@ -893,9 +897,9 @@ export const AuthorWorkbench: React.FC = () => {
                             if (!snippet) return;
                             try {
                               await navigator.clipboard.writeText(snippet.content);
-                              showToast('success', `已复制发布通知文件，请粘贴到仓库的 ${snippet.path}`);
+                              showToast('success', t('author.workflowCopied', { path: snippet.path }));
                             } catch {
-                              showToast('error', '无法写入剪贴板，请手动复制');
+                              showToast('error', t('author.clipboardFailed'));
                             }
                           } finally {
                             setIsCopyingWorkflow(false);
@@ -904,7 +908,7 @@ export const AuthorWorkbench: React.FC = () => {
                         className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-700 border border-neutral-300 hover:bg-neutral-50 disabled:opacity-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                       >
                         <Copy className="w-3.5 h-3.5" />
-                        {isCopyingWorkflow ? '获取中...' : '复制发布通知文件'}
+                        {isCopyingWorkflow ? t('author.fetching') : t('author.copyWorkflow')}
                       </button>
                       <button
                         type="button"
@@ -920,7 +924,7 @@ export const AuthorWorkbench: React.FC = () => {
                         className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                       >
                         <RefreshCw className={`w-3.5 h-3.5 ${isSyncingReleases ? 'animate-spin' : ''}`} />
-                        {isSyncingReleases ? '正在同步...' : '立即同步 Releases'}
+                        {isSyncingReleases ? t('author.syncing') : t('author.syncNow')}
                       </button>
                       </>
                     ) : (
@@ -930,7 +934,7 @@ export const AuthorWorkbench: React.FC = () => {
                           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                         >
                           <Plus className="w-3.5 h-3.5" />
-                          创建候选版本
+                          {t('author.createVersion')}
                         </button>
                       )
                     )}
@@ -957,7 +961,7 @@ export const AuthorWorkbench: React.FC = () => {
                       archiveInputRef.current?.click();
                     }}
                     onRetry={versionRequest.reload}
-                    onDeleteVersion={(versionId) => { if (window.confirm('确认删除此草稿包？')) void deleteVersion(versionId); }}
+                    onDeleteVersion={(versionId) => { if (window.confirm(t('author.confirmDeleteDraftVersion'))) void deleteVersion(versionId); }}
                     onSubmitReview={(versionId) => {
                       setSubmittingVersionId(versionId);
                       void submitVersionForReview(versionId, true).finally(() => setSubmittingVersionId(null));
@@ -969,21 +973,21 @@ export const AuthorWorkbench: React.FC = () => {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
-                      候选与发布版本列表 ({versionRequest.data?.total ?? '…'})
+                      {t('author.versionListTitle', { total: versionRequest.data?.total ?? '…' })}
                     </h3>
                     <span className="text-[11px] text-neutral-400">
-                      上传 ZIP 归档后将自动触发静态解析流水线
+                      {t('author.versionListHint')}
                     </span>
                   </div>
 
-                  {versionRequest.loading ? <p role="status" className="text-xs text-neutral-500">正在加载版本…</p> : versionRequest.error ? <p role="alert" className="text-xs text-rose-700">版本加载失败：{versionRequest.error} <button onClick={versionRequest.reload} className="underline">重试</button></p> : activeModVersions.length === 0 ? (
+                  {versionRequest.loading ? <p role="status" className="text-xs text-neutral-500">{t('author.versionsLoading')}</p> : versionRequest.error ? <p role="alert" className="text-xs text-rose-700">{t('author.versionsLoadFailed', { error: versionRequest.error })} <button onClick={versionRequest.reload} className="underline">{t('common.retry')}</button></p> : activeModVersions.length === 0 ? (
                     <div className="py-8 text-center border border-dashed border-neutral-200 rounded-lg space-y-2">
-                      <p className="text-xs text-neutral-500">当前模组尚无任何候选版本。</p>
+                      <p className="text-xs text-neutral-500">{t('author.versionsEmpty')}</p>
                       <button
                         onClick={() => openVersionForm()}
                         className="text-xs text-emerald-700 hover:underline font-medium"
                       >
-                        立即创建第一个版本 (如 1.0.0)
+                        {t('author.createFirstVersion')}
                       </button>
                     </div>
                   ) : (
@@ -1009,7 +1013,7 @@ export const AuthorWorkbench: React.FC = () => {
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-sm text-neutral-900 font-mono">
-                                  {v.version ? formatVersionLabel(v.version) : '版本待识别'}
+                                  {v.version ? formatVersionLabel(v.version) : t('author.versionPending')}
                                 </span>
                                 <span
                                   className={`text-[11px] font-mono px-2 py-0.5 rounded ${
@@ -1022,72 +1026,72 @@ export const AuthorWorkbench: React.FC = () => {
                                       : 'bg-neutral-100 text-neutral-700'
                                   }`}
                                 >
-                                  状态: {v.state}
+                                  {t('author.versionState', { state: v.state })}
                                 </span>
                                 {v.is_immutable && (
                                   <span className="text-[10px] text-neutral-400 font-mono">
-                                    [不可变归档]
+                                    {t('author.immutableArchive')}
                                   </span>
                                 )}
                               </div>
 
                               {!isPublished && (
-                                <button onClick={() => { if (window.confirm('确认删除此版本？该操作不可恢复。')) void deleteVersion(v.id); }} className="px-2.5 py-1.5 text-xs text-rose-700 border border-rose-200 rounded hover:bg-rose-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{isDraft ? '删除草稿' : '删除旧版本'}</button>
+                                <button onClick={() => { if (window.confirm(t('author.confirmDeleteVersion'))) void deleteVersion(v.id); }} className="px-2.5 py-1.5 text-xs text-rose-700 border border-rose-200 rounded hover:bg-rose-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{isDraft ? t('author.deleteDraft') : t('author.deleteOldVersion')}</button>
                               )}
                               {isPublished && (
                                 <>
                                   {activeMod?.latest_version_id === v.id ? (
-                                    <span className="text-[11px] text-emerald-700">目录最新版本</span>
+                                    <span className="text-[11px] text-emerald-700">{t('author.catalogLatest')}</span>
                                   ) : (
-                                    <button onClick={() => void setLatestPublishedVersion(v.id)} className="px-2.5 py-1.5 text-xs text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">设为最新版本</button>
+                                    <button onClick={() => void setLatestPublishedVersion(v.id)} className="px-2.5 py-1.5 text-xs text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{t('author.setLatest')}</button>
                                   )}
-                                  <button onClick={() => { const reason = window.prompt('请输入下架理由'); if (reason?.trim()) void unpublishVersion(v.id, reason); }} className="px-2.5 py-1.5 text-xs text-amber-700 border border-amber-200 rounded hover:bg-amber-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">下架版本</button>
+                                  <button onClick={() => { const reason = window.prompt(t('author.promptUnpublishReason')); if (reason?.trim()) void unpublishVersion(v.id, reason); }} className="px-2.5 py-1.5 text-xs text-amber-700 border border-amber-200 rounded hover:bg-amber-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{t('author.unpublishVersion')}</button>
                                 </>
                               )}
                               {!v.deprecated && v.state !== 'draft' && (
-                                <button onClick={() => { const reason = window.prompt('请输入不推荐使用的原因'); if (reason?.trim()) void markVersionDeprecated(v.id, reason); }} className="px-2.5 py-1.5 text-xs text-orange-700 border border-orange-200 rounded hover:bg-orange-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">标记不推荐</button>
+                                <button onClick={() => { const reason = window.prompt(t('author.promptDeprecateReason')); if (reason?.trim()) void markVersionDeprecated(v.id, reason); }} className="px-2.5 py-1.5 text-xs text-orange-700 border border-orange-200 rounded hover:bg-orange-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{t('author.markDeprecated')}</button>
                               )}
                               {v.deprecated && (
-                                <button onClick={() => { if (window.confirm('取消不推荐标记并清除原因？')) void clearVersionDeprecation(v.id); }} className="px-2.5 py-1.5 text-xs text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-50">取消不推荐</button>
+                                <button onClick={() => { if (window.confirm(t('author.confirmClearDeprecation'))) void clearVersionDeprecation(v.id); }} className="px-2.5 py-1.5 text-xs text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-50">{t('author.clearDeprecation')}</button>
                               )}
                               {canEditVersion(v.state) && (
-                                <button onClick={() => openVersionForm(v)} className="px-2.5 py-1.5 text-xs text-sky-700 border border-sky-200 rounded hover:bg-sky-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{isDraft ? '编辑草稿' : '编辑版本'}</button>
+                                <button onClick={() => openVersionForm(v)} className="px-2.5 py-1.5 text-xs text-sky-700 border border-sky-200 rounded hover:bg-sky-50 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{isDraft ? t('author.editDraft') : t('author.editVersion')}</button>
                               )}
 
                               <span className="text-[11px] text-neutral-400 font-mono">
-                                创建于: {formatVersionCreatedAt(v.created_at)}
+                                {t('author.createdAt', { time: formatVersionCreatedAt(v.created_at, t('common.notRecorded')) })}
                               </span>
                             </div>
 
                               {/* Release Notes */}
-                            <MarkdownText value={v.release_notes || '暂无发布说明'} className="text-xs text-neutral-600 bg-white p-2.5 rounded border border-neutral-200/80" />
+                            <MarkdownText value={v.release_notes || t('author.noReleaseNotes')} className="text-xs text-neutral-600 bg-white p-2.5 rounded border border-neutral-200/80" />
 
                             <DeprecationNotice deprecated={v.deprecated} reason={v.deprecation_reason} />
 
                             {v.dependencies.length > 0 && (
                               <div className="space-y-2 text-xs">
-                                <div className="font-medium text-neutral-700">依赖模组</div>
-                                <div className="text-[11px] text-neutral-500">版本范围可留空；例如 &gt;1.0.0（即 1.0.0&lt;X）或 1.0.0&lt;X&lt;2.0.0</div>
+                                <div className="font-medium text-neutral-700">{t('author.dependencies')}</div>
+                                <div className="text-[11px] text-neutral-500">{t('author.rangeHint')}{t('author.rangeExample')}</div>
                                 {v.dependencies.map((dep, index) => (
                                   <div key={`${dep.mod_id}-${index}`} className="flex flex-wrap items-center gap-2">
                                     {isUploaded ? (
                                       <>
                                         <DependencyNamePicker
-                                          label={`${dep.mod_title || dep.mod_id} 对应站内模组`}
+                                          label={t('author.depLinkLabel', { name: dep.mod_title || dep.mod_id })}
                                           value={dep.linked_mod_id ? (mods.find((candidate) => candidate.id === dep.linked_mod_id)?.title || dep.mod_title || dep.mod_id) : (dep.mod_title || dep.mod_id)}
                                           options={mods.filter((candidate) => candidate.is_published && candidate.id !== v.mod_id)}
                                           onCommit={(name) => void editVersion(v.id, v.version, v.release_notes, v.dependencies.map((item, position) => position === index ? mapDependencyInput(item, name, mods, v.mod_id) : item))}
                                           onSelect={(mod) => void editVersion(v.id, v.version, v.release_notes, v.dependencies.map((item, position) => position === index ? mapDependencySelection(item, mod) : item))}
                                         />
                                         <input
-                                          aria-label={`${dep.mod_title || dep.mod_id} 依赖版本范围（可空）`}
+                                          aria-label={t('author.depRangeAria', { name: dep.mod_title || dep.mod_id })}
                                           value={dep.version_range ?? ''}
                                           onChange={(event) => void editVersion(v.id, v.version, v.release_notes, v.dependencies.map((item, position) => position === index ? mapDependencyRangeInput(item, event.target.value) : item))}
-                                          placeholder="版本范围（可空）"
+                                          placeholder={t('author.rangePlaceholder')}
                                           className="w-44 max-w-full border border-neutral-300 bg-white rounded px-2 py-1.5 font-mono"
                                         />
                                       </>
-                                    ) : <span className="text-neutral-600">{dep.mod_title || dep.mod_id} · {dep.version_range || '不限版本'} · {dep.linked_mod_id ? `已关联：${mods.find((candidate) => candidate.id === dep.linked_mod_id)?.title || dep.linked_mod_id}` : '未关联站内模组'}</span>}
+                                    ) : <span className="text-neutral-600">{dep.mod_title || dep.mod_id} · {dep.version_range || t('author.anyVersion')} · {dep.linked_mod_id ? t('author.linkedTo', { title: mods.find((candidate) => candidate.id === dep.linked_mod_id)?.title || dep.linked_mod_id }) : t('author.notLinked')}</span>}
                                   </div>
                                 ))}
                               </div>
@@ -1096,10 +1100,10 @@ export const AuthorWorkbench: React.FC = () => {
                               {isUploaded && !v.version && (
                                 <div className="flex flex-wrap items-end gap-2 text-xs">
                                   <label className="flex-1 min-w-48 text-neutral-700">
-                                    <span className="block mb-1">未识别到唯一版本标识，请手动填写</span>
-                                    <input value={manualVersions[v.id] || ''} onChange={(event) => setManualVersions((prev) => ({ ...prev, [v.id]: event.target.value }))} placeholder="例如 1.27.1" className="w-full px-2.5 py-1.5 rounded border border-neutral-300 bg-white font-mono" />
+                                    <span className="block mb-1">{t('author.manualVersionHint')}</span>
+                                    <input value={manualVersions[v.id] || ''} onChange={(event) => setManualVersions((prev) => ({ ...prev, [v.id]: event.target.value }))} placeholder={t('author.manualVersionPlaceholder')} className="w-full px-2.5 py-1.5 rounded border border-neutral-300 bg-white font-mono" />
                                   </label>
-                                  <button disabled={!manualVersions[v.id]?.trim()} onClick={() => void editVersion(v.id, manualVersions[v.id].trim(), v.release_notes)} className="px-3 py-1.5 rounded bg-neutral-900 text-white transition-colors hover:bg-neutral-800 disabled:opacity-40 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">保存版本标识</button>
+                                  <button disabled={!manualVersions[v.id]?.trim()} onClick={() => void editVersion(v.id, manualVersions[v.id].trim(), v.release_notes)} className="px-3 py-1.5 rounded bg-neutral-900 text-white transition-colors hover:bg-neutral-800 disabled:opacity-40 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{t('author.saveVersionId')}</button>
                                 </div>
                               )}
 
@@ -1109,10 +1113,10 @@ export const AuthorWorkbench: React.FC = () => {
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-1.5 font-medium text-neutral-800">
                                     <FileCheck className="w-4 h-4 text-neutral-600" />
-                                    <span>ZIP 静态检测报告: {report.files.length} 个文件</span>
+                                    <span>{t('author.scanReportFiles', { count: report.files.length })}</span>
                                     {report.resource_stats.binary_flag && (
                                       <span className="text-[10px] text-amber-800 font-semibold">
-                                        检出二进制，仅提示
+                                        {t('author.binaryHint')}
                                       </span>
                                     )}
                                   </div>
@@ -1120,19 +1124,19 @@ export const AuthorWorkbench: React.FC = () => {
                                     onClick={() => setInspectingReportId(report.id)}
                                     className="text-xs text-emerald-700 hover:underline font-medium"
                                   >
-                                    查阅完整报告与文件树 →
+                                    {t('author.viewFullReport')}
                                   </button>
                                 </div>
 
                                 {report.resource_stats.binary_flag && (
-                                  <p className="text-[11px] text-amber-900">检测到二进制文件。请查阅文件路径与 SHA-256；这不是恶意代码判定，也不会单独阻止提交审核。</p>
+                                  <p className="text-[11px] text-amber-900">{t('author.binaryNote')}</p>
                                 )}
 
                                 {report.blockers.length > 0 && (
                                   <div className="p-2 bg-rose-50 rounded border border-rose-200 text-rose-800 text-[11px] space-y-1">
                                     <div className="font-semibold flex items-center gap-1">
                                       <AlertCircle className="w-3.5 h-3.5" />
-                                      存在 {report.blockers.length} 项阻断错误 (禁止提交审核):
+                                      {t('author.blockersFound', { count: report.blockers.length })}
                                     </div>
                                     <ul className="list-disc list-inside space-y-0.5">
                                       {report.blockers.map((b, idx) => (
@@ -1165,10 +1169,10 @@ export const AuthorWorkbench: React.FC = () => {
                                 <div className="flex items-center gap-2">
                                 {missingPlatforms.length > 0 && (
                                   <span className="text-[11px] text-amber-700">
-                                    还需上传 {missingPlatforms.map(assetPlatformLabel).join('、')} 归档（目录已声明这些平台）
+                                    {t('author.missingPlatforms', { list: missingPlatforms.map(assetPlatformLabel).join(t('common.listSeparator')) })}
                                   </span>
                                 )}
-                                <label className="flex items-center gap-1.5 text-[11px] text-neutral-600"><input type="checkbox" checked={latestOnPublish[v.id] ?? true} onChange={(event) => setLatestOnPublish((prev) => ({ ...prev, [v.id]: event.target.checked }))} />发布后设为最新版本</label>
+                                <label className="flex items-center gap-1.5 text-[11px] text-neutral-600"><input type="checkbox" checked={latestOnPublish[v.id] ?? true} onChange={(event) => setLatestOnPublish((prev) => ({ ...prev, [v.id]: event.target.checked }))} />{t('author.setLatestOnPublish')}</label>
                                 <button
                                   disabled={Boolean(hasBlockers) || !v.version || submittingVersionId === v.id || missingPlatforms.length > 0}
                                   onClick={async () => {
@@ -1182,7 +1186,7 @@ export const AuthorWorkbench: React.FC = () => {
                                   }`}
                                 >
                                   <Send className="w-3.5 h-3.5" />
-                                  提交审核 (POST /submit)
+                                  {t('author.submitReview')}
                                 </button>
                                 </div>
                               )}
@@ -1190,7 +1194,7 @@ export const AuthorWorkbench: React.FC = () => {
                               {isUnderReview && (
                                 <span className="text-xs text-amber-700 flex items-center gap-1">
                                   <Clock className="w-3.5 h-3.5" />
-                                  审核中，等待审核员决策
+                                  {t('author.inReview')}
                                 </span>
                               )}
                             </div>
@@ -1199,13 +1203,13 @@ export const AuthorWorkbench: React.FC = () => {
                       })}
                     </div>
                   )}
-                  {versionRequest.data && <Pagination label="候选与发布版本" total={versionRequest.data.total} page={versionRequest.data.page} pageSize={workspace.versionPageSize} onPageChange={workspace.changeVersionPage} onPageSizeChange={workspace.changeVersionPageSize} />}
+                  {versionRequest.data && <Pagination label={t('author.versionPagerLabel')} total={versionRequest.data.total} page={versionRequest.data.page} pageSize={workspace.versionPageSize} onPageChange={workspace.changeVersionPage} onPageSizeChange={workspace.changeVersionPageSize} />}
                 </div>
                 )}
               </>
             ) : (
               <div className="py-12 text-center text-neutral-400 text-xs">
-                请先在左侧选择或新建一个模组草稿。
+                {t('author.selectModFirst')}
               </div>
             )}
           </div>
@@ -1232,10 +1236,10 @@ export const AuthorWorkbench: React.FC = () => {
             <Upload className="w-8 h-8 text-emerald-700 mx-auto animate-bounce" />
             <div>
               <h3 className="text-sm font-semibold text-neutral-900">
-                正在上传 ZIP 归档并执行静态安全扫描
+                {t('author.uploadingScan')}
               </h3>
               <p className="text-xs text-neutral-500 mt-1">
-                解构目录树、计算 SHA-256、检查 Ren'Py 脚本语法与 Sprite 锚点...
+                {t('author.uploadingScanHint')}
               </p>
             </div>
             <div className="w-full bg-neutral-100 rounded-full h-2 overflow-hidden">
@@ -1245,7 +1249,7 @@ export const AuthorWorkbench: React.FC = () => {
               />
             </div>
             <div className="text-[11px] font-mono text-neutral-400">
-              Idempotency-Key 校验通过 · {uploadProgress}%
+              {t('author.idempotencyOk', { percent: uploadProgress })}
             </div>
           </m.div>
         </m.div>
@@ -1274,10 +1278,10 @@ export const AuthorWorkbench: React.FC = () => {
                 <FileCheck className="w-5 h-5 text-neutral-700" />
                 <div>
                   <h3 className="text-sm font-bold text-neutral-900">
-                    ZIP 逐文件静态检测报告
+                    {t('author.zipReportTitle')}
                   </h3>
                   <div className="text-[11px] text-neutral-500 font-mono">
-                    ID: {inspectingReport.id} · 扫描状态: {inspectingReport.status}
+                    {t('author.scanReportMeta', { id: inspectingReport.id, status: inspectingReport.status })}
                   </div>
                 </div>
               </div>
@@ -1285,7 +1289,7 @@ export const AuthorWorkbench: React.FC = () => {
                 onClick={() => setInspectingReportId(null)}
                 className="text-neutral-400 hover:text-neutral-700 text-xs px-2 py-1 rounded active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
-                关闭
+                {t('author.close')}
               </button>
             </div>
 
@@ -1295,7 +1299,7 @@ export const AuthorWorkbench: React.FC = () => {
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-900 space-y-1.5">
                   <div className="font-semibold flex items-center gap-1.5">
                     <AlertCircle className="w-4 h-4 text-rose-700" />
-                    静态检测阻断原因 (Blockers - 禁止提交上线):
+                    {t('author.reportBlockersTitle')}
                   </div>
                   <ul className="list-disc list-inside space-y-1 text-xs">
                     {inspectingReport.blockers.map((b, i) => (
@@ -1309,7 +1313,7 @@ export const AuthorWorkbench: React.FC = () => {
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 space-y-1">
                   <div className="font-semibold flex items-center gap-1.5">
                     <AlertTriangle className="w-4 h-4 text-amber-700" />
-                    合规性警告提示 (Warnings - 审核员将重点关注):
+                    {t('author.reportWarningsTitle')}
                   </div>
                   <ul className="list-disc list-inside space-y-0.5 text-xs">
                     {inspectingReport.warnings.map((w, i) => (
@@ -1320,12 +1324,12 @@ export const AuthorWorkbench: React.FC = () => {
               )}
 
               {inspectingReport.resource_stats.binary_flag && (
-                <p className="text-amber-900 bg-amber-50 border border-amber-200 rounded p-3">二进制文件仅作静态提示，未自动阻断；此报告不判定文件是否恶意。</p>
+                <p className="text-amber-900 bg-amber-50 border border-amber-200 rounded p-3">{t('author.reportBinaryNote')}</p>
               )}
 
               {inspectingReport.unsupported_paths.length > 0 && (
                 <div className="p-3 bg-neutral-50 border border-neutral-200 rounded space-y-1">
-                  <div className="font-semibold">未映射到 MAS 安装路径的归档文件</div>
+                  <div className="font-semibold">{t('author.unmappedTitle')}</div>
                   <ul className="list-disc list-inside font-mono break-all">
                     {inspectingReport.unsupported_paths.map((path) => <li key={path}>{path}</li>)}
                   </ul>
@@ -1336,12 +1340,12 @@ export const AuthorWorkbench: React.FC = () => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h4 className="font-bold text-neutral-900 uppercase tracking-wider text-xs">
-                    静态 Submod 注册标识 (Registrations)
+                    {t('author.registrationsTitle')}
                   </h4>
                 </div>
                 <div className="border border-neutral-200 rounded divide-y divide-neutral-100">
                   {inspectingReport.registrations.length === 0 ? (
-                    <div className="p-3 text-neutral-500">未检测到Submod注册声明。</div>
+                    <div className="p-3 text-neutral-500">{t('author.registrationsEmpty')}</div>
                   ) : inspectingReport.registrations.map((reg) => (
                     <div
                       key={reg.submod_id}
@@ -1350,8 +1354,8 @@ export const AuthorWorkbench: React.FC = () => {
                       <div>
                         <div className="font-semibold text-neutral-900">{reg.name}</div>
                         <div className="text-[11px] text-neutral-500 font-mono">
-                          ID: {reg.submod_id} · 版本: {reg.version} · 作者: {reg.author}
-                          {reg.source_path && <><br />来源文件: {reg.source_path}</>}
+                          {t('author.registrationMeta', { id: reg.submod_id, version: reg.version, author: reg.author })}
+                          {reg.source_path && <><br />{t('author.registrationSource', { path: reg.source_path })}</>}
                         </div>
                       </div>
                       <span
@@ -1361,7 +1365,7 @@ export const AuthorWorkbench: React.FC = () => {
                             : 'bg-rose-100 text-rose-900 border border-rose-300'
                         }`}
                       >
-                        解析置信度: {reg.confidence.toUpperCase()}
+                        {t('author.confidence', { value: reg.confidence.toUpperCase() })}
                       </span>
                     </div>
                   ))}
@@ -1375,12 +1379,12 @@ export const AuthorWorkbench: React.FC = () => {
                     <span className="text-xs font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-1.5">
                       <ChevronRight className="w-3.5 h-3.5 text-neutral-500 group-open:hidden" />
                       <ChevronDown className="w-3.5 h-3.5 text-neutral-500 hidden group-open:block" />
-                      Spritepack 衍生礼物登记 (.gift 解析)
+                      {t('author.giftsTitle')}
                     </span>
-                    <span className="text-[11px] text-neutral-500">共 {inspectingReport.sprite_identities.length} 项</span>
+                    <span className="text-[11px] text-neutral-500">{t('author.giftCount', { count: inspectingReport.sprite_identities.length })}</span>
                     <span className="ml-auto text-[11px] text-neutral-500">
-                      <span className="group-open:hidden">展开</span>
-                      <span className="hidden group-open:inline">收起</span>
+                      <span className="group-open:hidden">{t('common.expand')}</span>
+                      <span className="hidden group-open:inline">{t('common.collapse')}</span>
                     </span>
                   </summary>
                   <div className="border-t border-neutral-200 divide-y divide-neutral-100">
@@ -1393,7 +1397,7 @@ export const AuthorWorkbench: React.FC = () => {
                           {item.giftname}.gift
                         </div>
                         <div className="text-[11px] text-neutral-500">
-                          类别: {item.category}
+                          {t('author.giftCategory', { category: item.category })}
                         </div>
                       </div>
                     ))}
@@ -1407,22 +1411,22 @@ export const AuthorWorkbench: React.FC = () => {
                   <span className="text-xs font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-1.5">
                     <ChevronRight className="w-3.5 h-3.5 text-neutral-500 group-open:hidden" />
                     <ChevronDown className="w-3.5 h-3.5 text-neutral-500 hidden group-open:block" />
-                    逐文件清单与校验和 (Files Tree)
+                    {t('author.fileTreeTitle')}
                   </span>
-                  <span className="text-[11px] text-neutral-500">共 {inspectingReport.files.length} 个文件</span>
+                  <span className="text-[11px] text-neutral-500">{t('author.fileCount', { count: inspectingReport.files.length })}</span>
                   <span className="ml-auto text-[11px] text-neutral-500">
-                    <span className="group-open:hidden">展开</span>
-                    <span className="hidden group-open:inline">收起</span>
+                    <span className="group-open:hidden">{t('common.expand')}</span>
+                    <span className="hidden group-open:inline">{t('common.collapse')}</span>
                   </span>
                 </summary>
                 <div className="border-t border-neutral-200 overflow-x-auto">
                   <table className="w-full min-w-[680px] text-left text-xs border-collapse">
                     <thead className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-medium">
                       <tr>
-                        <th className="py-2 px-3">路径与文件类别</th>
-                        <th className="py-2 px-3">大小</th>
-                        <th className="py-2 px-3">SHA-256 校验和</th>
-                        <th className="py-2 px-3">警告</th>
+                        <th className="py-2 px-3">{t('author.colPath')}</th>
+                        <th className="py-2 px-3">{t('author.colSize')}</th>
+                        <th className="py-2 px-3">{t('author.colSha')}</th>
+                        <th className="py-2 px-3">{t('author.colWarnings')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
@@ -1433,7 +1437,7 @@ export const AuthorWorkbench: React.FC = () => {
                               {f.source_path}
                             </div>
                             <div className="text-[10px] text-neutral-400 capitalize">
-                              种类: {f.kind}
+                              {t('author.fileKind', { kind: f.kind })}
                             </div>
                           </td>
                           <td className="py-2 px-3 font-mono tabular-nums text-neutral-600 text-[11px]">
@@ -1448,7 +1452,7 @@ export const AuthorWorkbench: React.FC = () => {
                                 {f.warnings.join('; ')}
                               </span>
                             ) : (
-                              <span className="text-neutral-500">无逐文件提示</span>
+                              <span className="text-neutral-500">{t('author.noFileWarnings')}</span>
                             )}
                           </td>
                         </tr>
@@ -1464,7 +1468,7 @@ export const AuthorWorkbench: React.FC = () => {
                 onClick={() => setInspectingReportId(null)}
                 className="px-4 py-1.5 text-xs font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
               >
-                完成查看
+                {t('author.done')}
               </button>
             </div>
           </m.div>
@@ -1490,12 +1494,12 @@ export const AuthorWorkbench: React.FC = () => {
             className="bg-white rounded-lg border border-neutral-200 shadow-xl max-w-5xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden"
           >
             <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between shrink-0">
-              <h3 className="text-sm font-semibold text-neutral-900">{editingModId ? '编辑模组元数据' : '新建模组草稿'}</h3>
+              <h3 className="text-sm font-semibold text-neutral-900">{editingModId ? t('author.editModTitle') : t('author.newModTitle')}</h3>
               <button
                 onClick={() => { setIsNewModModalOpen(false); setEditingModId(null); }}
                 className="text-neutral-400 hover:text-neutral-600 text-xs"
               >
-                取消
+                {t('common.cancel')}
               </button>
             </div>
 
@@ -1504,27 +1508,21 @@ export const AuthorWorkbench: React.FC = () => {
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <div className="min-w-0 space-y-4">
               <div>
-                <label className="block font-medium text-neutral-700 mb-1">内容与版本来源 (Source)</label>
+                <label className="block font-medium text-neutral-700 mb-1">{t('author.sourceLabel')}</label>
                 <div className="grid grid-cols-2 gap-2 p-1 bg-neutral-100 rounded border border-neutral-200">
                   <button
                     type="button"
+                    aria-pressed={newSourceType === 'local'}
                     onClick={() => setNewSourceType('local')}
-                    className={`py-1.5 text-xs font-medium rounded transition-colors ${
-                      newSourceType === 'local'
-                        ? 'bg-white text-neutral-900 shadow-xs border border-neutral-200/60'
-                        : 'text-neutral-500 hover:text-neutral-800'
-                    }`}
+                    className={valueSegmentClass(newSourceType === 'local')}
                   >
-                    本站上传 (本地候选版本)
+                    {t('author.sourceLocal')}
                   </button>
                   <button
                     type="button"
+                    aria-pressed={newSourceType === 'github_releases'}
                     onClick={() => setNewSourceType('github_releases')}
-                    className={`py-1.5 text-xs font-medium rounded transition-colors ${
-                      newSourceType === 'github_releases'
-                        ? 'bg-white text-neutral-900 shadow-xs border border-neutral-200/60'
-                        : 'text-neutral-500 hover:text-neutral-800'
-                    }`}
+                    className={valueSegmentClass(newSourceType === 'github_releases')}
                   >
                     GitHub Releases
                   </button>
@@ -1535,7 +1533,7 @@ export const AuthorWorkbench: React.FC = () => {
                   GitHub 源由分平台规则派生，所以这里只对本地源出现。 */}
               {newSourceType === 'local' && (
                 <div>
-                  <label className="block font-medium text-neutral-700 mb-1">发布平台</label>
+                  <label className="block font-medium text-neutral-700 mb-1">{t('author.platformLabel')}</label>
                   <div className="grid grid-cols-2 gap-2 p-1 bg-neutral-100 rounded border border-neutral-200">
                     {ASSET_PLATFORMS.map((platform) => {
                       const selected = newPlatforms.includes(platform);
@@ -1545,11 +1543,7 @@ export const AuthorWorkbench: React.FC = () => {
                           type="button"
                           aria-pressed={selected}
                           onClick={() => setNewPlatforms((current) => toggleLocalPlatform(current, platform))}
-                          className={`py-1.5 text-xs font-medium rounded transition-colors ${
-                            selected
-                              ? 'bg-white text-neutral-900 shadow-xs border border-neutral-200/60'
-                              : 'text-neutral-500 hover:text-neutral-800'
-                          }`}
+                          className={valueSegmentClass(selected)}
                         >
                           {assetPlatformLabel(platform)}
                         </button>
@@ -1557,10 +1551,10 @@ export const AuthorWorkbench: React.FC = () => {
                     })}
                   </div>
                   <p className="mt-1 text-[11px] text-neutral-500">
-                    只有勾选的平台会出现在目录里。每个版本可以上传一个全平台共用的包，也可以按平台分别上传。
+                    {t('author.platformHint')}
                   </p>
                   {newPlatforms.length === 0 && (
-                    <p className="mt-1 text-[11px] text-rose-700">至少勾选一个发布平台。</p>
+                    <p className="mt-1 text-[11px] text-rose-700">{t('author.platformRequiredHint')}</p>
                   )}
                 </div>
               )}
@@ -1569,22 +1563,22 @@ export const AuthorWorkbench: React.FC = () => {
                 <div className="rounded border border-emerald-200 bg-emerald-50/40 p-3 space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block font-medium text-neutral-700 mb-1">GitHub 组织/用户 (Owner) *</label>
+                      <label className="block font-medium text-neutral-700 mb-1">{t('author.ownerLabel')}</label>
                       <input
                         type="text"
                         required={newSourceType === 'github_releases'}
-                        placeholder="例如: Monika-After-Story"
+                        placeholder={t('author.ownerPlaceholder')}
                         value={newGitHubOwner}
                         onChange={(e) => setNewGitHubOwner(e.target.value)}
                         className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600 bg-white font-mono"
                       />
                     </div>
                     <div>
-                      <label className="block font-medium text-neutral-700 mb-1">GitHub 仓库名 (Repo) *</label>
+                      <label className="block font-medium text-neutral-700 mb-1">{t('author.repoLabel')}</label>
                       <input
                         type="text"
                         required={newSourceType === 'github_releases'}
-                        placeholder="例如: MonikaModDev"
+                        placeholder={t('author.repoPlaceholder')}
                         value={newGitHubRepo}
                         onChange={(e) => setNewGitHubRepo(e.target.value)}
                         className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600 bg-white font-mono"
@@ -1593,31 +1587,23 @@ export const AuthorWorkbench: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block font-medium text-neutral-700 mb-1">版本发现方式</label>
+                    <label className="block font-medium text-neutral-700 mb-1">{t('author.discoveryLabel')}</label>
                     <div className="grid grid-cols-2 gap-2 p-1 bg-white rounded border border-neutral-200">
                       <button
                         type="button"
                         aria-pressed={!newGitHubAction}
                         onClick={() => setNewGitHubAction(false)}
-                        className={`py-1.5 text-xs font-medium rounded transition-colors ${
-                          !newGitHubAction
-                            ? 'bg-neutral-900 text-white'
-                            : 'text-neutral-500 hover:text-neutral-800'
-                        }`}
+                        className={valueSegmentClass(!newGitHubAction)}
                       >
-                        站内按需抓取（默认）
+                        {t('author.discoveryOnDemand')}
                       </button>
                       <button
                         type="button"
                         aria-pressed={newGitHubAction}
                         onClick={() => setNewGitHubAction(true)}
-                        className={`py-1.5 text-xs font-medium rounded transition-colors ${
-                          newGitHubAction
-                            ? 'bg-emerald-700 text-white'
-                            : 'text-neutral-500 hover:text-neutral-800'
-                        }`}
+                        className={valueSegmentClass(newGitHubAction)}
                       >
-                        发版通知（推荐）
+                        {t('author.discoveryWorkflow')}
                       </button>
                     </div>
                   </div>
@@ -1629,25 +1615,24 @@ export const AuthorWorkbench: React.FC = () => {
                   >
                     {newGitHubAction ? (
                       <>
-                        <p className="text-emerald-800">好处：发 Release 后几秒内站内就会检查，不用等后台轮询。</p>
-                        <p className="text-amber-800">代价：要在仓库里放一个 GitHub Action 文件；改了文件名规则要同步改它。</p>
+                        <p className="text-emerald-800">{t('author.workflowBenefit')}</p>
+                        <p className="text-amber-800">{t('author.workflowCost')}</p>
                         <div className="mt-2 pt-2 border-t border-emerald-200 space-y-1.5">
-                          <p className="text-neutral-800 font-medium">第 1 步：确认文件名规则</p>
+                          <p className="text-neutral-800 font-medium">{t('author.step1Title')}</p>
                           <p className="text-neutral-600">
-                            上面的正则决定哪个 Release 附件算这个模组的包。生成的 Action 会把它们一起发过来，
-                            所以这里填错，通知也就认不出新版本。
+                            {t('author.step1Body')}
                           </p>
                           {newGitHubSplitPlatforms ? (
                             <ul className="list-disc pl-4 text-neutral-600">
-                              <li>Windows：<code className="bg-neutral-100 px-1 rounded">{newPlatformRules.windows.regex.trim() || '未填写'}</code></li>
-                              <li>Android：<code className="bg-neutral-100 px-1 rounded">{newPlatformRules.android.regex.trim() || '未填写'}</code></li>
+                              <li>{t('author.step1Windows')}<code className="bg-neutral-100 px-1 rounded">{newPlatformRules.windows.regex.trim() || t('author.notFilled')}</code></li>
+                              <li>{t('author.step1Android')}<code className="bg-neutral-100 px-1 rounded">{newPlatformRules.android.regex.trim() || t('author.notFilled')}</code></li>
                             </ul>
                           ) : (
                             <p className="text-neutral-600">
-                              全平台共用一个文件：<code className="bg-neutral-100 px-1 rounded">{newGitHubAssetRegex.trim() || '未填写'}</code>
+                              {t('author.step1Shared')}<code className="bg-neutral-100 px-1 rounded">{newGitHubAssetRegex.trim() || t('author.notFilled')}</code>
                             </p>
                           )}
-                          <p className="text-neutral-800 font-medium pt-1">第 2 步：把这个文件放进仓库</p>
+                          <p className="text-neutral-800 font-medium pt-1">{t('author.step2Title')}</p>
                           <div className="flex flex-wrap items-center gap-2">
                             <button
                               type="button"
@@ -1659,9 +1644,9 @@ export const AuthorWorkbench: React.FC = () => {
                                   if (!snippet) return;
                                   try {
                                     await navigator.clipboard.writeText(snippet.content);
-                                    showToast('success', `已复制发布通知文件，请粘贴到仓库的 ${snippet.path}`);
+                                    showToast('success', t('author.workflowCopied', { path: snippet.path }));
                                   } catch {
-                                    showToast('error', '无法写入剪贴板，请手动复制');
+                                    showToast('error', t('author.clipboardFailed'));
                                   }
                                 } finally {
                                   setIsCopyingWorkflow(false);
@@ -1670,52 +1655,44 @@ export const AuthorWorkbench: React.FC = () => {
                               className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 rounded transition-colors active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
                             >
                               <Copy className="w-3 h-3" />
-                              {isCopyingWorkflow ? '获取中...' : '复制 GitHub Action 文件'}
+                              {isCopyingWorkflow ? t('author.fetching') : t('author.copyAction')}
                             </button>
                             <span className="text-neutral-500 font-mono text-[10px]">{WORKFLOW_FILE_PATH}</span>
                           </div>
                           {!workflowRulesReady && (
-                            <p className="text-amber-800">先填写文件名正则，生成的 Action 才有内容可发。</p>
+                            <p className="text-amber-800">{t('author.regexFirst')}</p>
                           )}
                           <p className="text-neutral-500">
-                            文件不含密钥，只声明这个仓库的包名规则；RezeHub 按仓库绑定识别是哪个模组。
+                            {t('author.workflowNote')}
                           </p>
                         </div>
                       </>
                     ) : (
                       <>
-                        <p className="text-neutral-800">好处：{onDemandTradeoff.benefit}</p>
-                        <p className="text-amber-800">代价：{onDemandTradeoff.cost}</p>
+                        <p className="text-neutral-800">{t('author.benefit')}{onDemandTradeoff.benefit}</p>
+                        <p className="text-amber-800">{t('author.cost')}{onDemandTradeoff.cost}</p>
                       </>
                     )}
                   </div>
 
                   <div>
-                    <label className="block font-medium text-neutral-700 mb-1">资产分发方式</label>
+                    <label className="block font-medium text-neutral-700 mb-1">{t('author.distributionLabel')}</label>
                     <div className="grid grid-cols-2 gap-2 p-1 bg-white rounded border border-neutral-200">
                       <button
                         type="button"
                         aria-pressed={!newGitHubSplitPlatforms}
                         onClick={() => setNewGitHubSplitPlatforms(false)}
-                        className={`py-1.5 text-xs font-medium rounded transition-colors ${
-                          !newGitHubSplitPlatforms
-                            ? 'bg-neutral-900 text-white'
-                            : 'text-neutral-500 hover:text-neutral-800'
-                        }`}
+                        className={valueSegmentClass(!newGitHubSplitPlatforms)}
                       >
-                        全平台共用一个文件（默认）
+                        {t('author.distributionShared')}
                       </button>
                       <button
                         type="button"
                         aria-pressed={newGitHubSplitPlatforms}
                         onClick={() => setNewGitHubSplitPlatforms(true)}
-                        className={`py-1.5 text-xs font-medium rounded transition-colors ${
-                          newGitHubSplitPlatforms
-                            ? 'bg-emerald-700 text-white'
-                            : 'text-neutral-500 hover:text-neutral-800'
-                        }`}
+                        className={valueSegmentClass(newGitHubSplitPlatforms)}
                       >
-                        Windows / Android 分别匹配
+                        {t('author.distributionSplit')}
                       </button>
                     </div>
                   </div>
@@ -1723,8 +1700,8 @@ export const AuthorWorkbench: React.FC = () => {
                   {newGitHubSplitPlatforms ? (
                     <>
                       <div className="rounded border border-emerald-300 bg-white p-2.5 text-[11px] space-y-1">
-                        <p className="text-emerald-800">好处：{splitPlatformTradeoff.benefit}</p>
-                        <p className="text-amber-800">代价：{splitPlatformTradeoff.cost}</p>
+                        <p className="text-emerald-800">{t('author.benefit')}{splitPlatformTradeoff.benefit}</p>
+                        <p className="text-amber-800">{t('author.cost')}{splitPlatformTradeoff.cost}</p>
                       </div>
                       {ASSET_PLATFORMS.map((platform) => {
                         const label = assetPlatformLabel(platform);
@@ -1735,17 +1712,17 @@ export const AuthorWorkbench: React.FC = () => {
                           <div key={platform} className="rounded border border-neutral-200 bg-white p-2.5 space-y-1.5">
                             <div className="flex items-center justify-between">
                               <label className="block font-medium text-neutral-700">
-                                {label} 资产文件名正则 (RE2)
+                                {t('author.ruleRegexLabel', { label })}
                               </label>
                               <span className={`text-[11px] ${
                                 !configured ? 'text-neutral-500' : ruleCheck.valid ? 'text-emerald-700' : 'text-rose-700'
                               }`}>
-                                {!configured ? '留空则不发布该平台' : ruleCheck.valid ? '可用于匹配' : ruleCheck.error}
+                                {!configured ? t('author.ruleEmpty') : ruleCheck.valid ? t('author.ruleValid') : ruleCheck.error}
                               </span>
                             </div>
                             <input
                               type="text"
-                              placeholder={platform === 'windows' ? '例如: MyMod-windows\\.zip$' : '例如: MyMod-android\\.zip$'}
+                              placeholder={platform === 'windows' ? t('author.ruleWindowsPlaceholder') : t('author.ruleAndroidPlaceholder')}
                               value={rule.regex}
                               onChange={(e) => setNewPlatformRules((prev) => ({ ...prev, [platform]: { ...prev[platform], regex: e.target.value } }))}
                               className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600 bg-white font-mono"
@@ -1759,7 +1736,7 @@ export const AuthorWorkbench: React.FC = () => {
                                 className="mt-0.5 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
                               />
                               <label htmlFor={`gh_platform_source_code_${platform}`} className="text-[11px] text-neutral-600 cursor-pointer">
-                                {label} 无匹配时使用源码包 ZIP
+                                {t('author.ruleSourceFallback', { label })}
                               </label>
                             </div>
                           </div>
@@ -1767,27 +1744,27 @@ export const AuthorWorkbench: React.FC = () => {
                       })}
                       <p className={`text-[11px] ${configuredSplitPlatforms.length > 0 ? 'text-neutral-600' : 'text-rose-700'}`}>
                         {configuredSplitPlatforms.length > 0
-                          ? `当前支持 ${configuredSplitPlatforms.map((platform) => assetPlatformLabel(platform)).join('、')} 平台。`
-                          : '至少为 Windows 或 Android 其中一个平台填写规则。'}
+                          ? t('author.splitSupported', { list: configuredSplitPlatforms.map((platform) => assetPlatformLabel(platform)).join(t('common.listSeparator')) })
+                          : t('author.splitNeedsOne')}
                       </p>
                       <p className="text-[11px] text-neutral-500">
-                        只填一个平台就只支持这个平台；留空表示该平台不发布。已配置的平台必须都在同一次 Release 里出现，缺任一平台时这次 Release 会被整条跳过，不会只发布一半。
+                        {t('author.splitExplain')}
                       </p>
                     </>
                   ) : (
                     <>
                   <div>
-                    <label className="block font-medium text-neutral-700 mb-1">Release 资产文件名正则 (RE2)</label>
+                    <label className="block font-medium text-neutral-700 mb-1">{t('author.assetRegexLabel')}</label>
 
                     <input
                       type="text"
-                      placeholder="例如: ^MyMod[-_]v?\d+\.\d+\.\d+.*\.zip$"
+                      placeholder={t('author.assetRegexPlaceholder')}
                       value={newGitHubAssetRegex}
                       onChange={(e) => setNewGitHubAssetRegex(e.target.value)}
                       className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600 bg-white font-mono"
                     />
                     <p className="mt-1 text-[11px] text-neutral-500">
-                      匹配 Release 资产文件名，仅匹配 .zip 文件才允许下载。示例: <code className="bg-neutral-100 px-1 py-0.5 rounded">^MyMod.*\.zip$</code>
+                      {t('author.assetRegexHint')}<code className="bg-neutral-100 px-1 py-0.5 rounded">^MyMod.*\.zip$</code>
                     </p>
                   </div>
 
@@ -1800,14 +1777,14 @@ export const AuthorWorkbench: React.FC = () => {
                       className="mt-0.5 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
                     />
                     <label htmlFor="gh_source_code_fallback" className="text-xs text-neutral-700 cursor-pointer">
-                      无匹配时使用 Release source code ZIP
+                      {t('author.assetSourceFallback')}
                       <span className="block text-[11px] text-neutral-500">
-                        若资产正则未匹配到任何 .zip 资产，自动回退使用 GitHub Release 的源码包 (zipball)。
+                        {t('author.assetSourceFallbackHint')}
                       </span>
                     </label>
                   </div>
                   <p className="text-[11px] text-neutral-500">
-                    共用文件对所有平台等价，目录会同时向 Windows 与 Android 展示该模组。要只发布其中一个平台，请改用上面的分平台模式并留空另一个平台。
+                    {t('author.sharedNote')}
                   </p>
                     </>
                   )}
@@ -1815,11 +1792,11 @@ export const AuthorWorkbench: React.FC = () => {
               )}
 
               <div>
-                <label className="block font-medium text-neutral-700 mb-1">模组标题 (Title)</label>
+                <label className="block font-medium text-neutral-700 mb-1">{t('author.titleLabel')}</label>
                 <input
                   type="text"
                   required
-                  placeholder="例如: Monika Cozy Winter Dates"
+                  placeholder={t('author.titlePlaceholder')}
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600"
@@ -1827,55 +1804,72 @@ export const AuthorWorkbench: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-medium text-neutral-700 mb-1">
-                  一句话简介 (Summary)
-                </label>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="block font-medium text-neutral-700">{t('author.summaryLabel')}</label>
+                  {/* 简介是多语言文本：只渲染当前语言的输入框，另一个语言的译文留在草稿里。 */}
+                  <div role="group" className="flex items-center rounded bg-neutral-100 p-0.5 text-[10px] font-medium">
+                    {SUPPORTED_LANGS.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        aria-pressed={summaryLang === option}
+                        onClick={() => setSummaryLang(option)}
+                        className={`${valueSegmentClass(summaryLang === option, 'px-1.5 py-0.5 rounded')} focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600`}
+                      >
+                        {LANG_SHORT_LABELS[option]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <textarea
                   rows={2}
                   required
-                  placeholder="简要概括该模组为玩家带来的全新体验与内容..."
-                  value={newSummary}
-                  onChange={(e) => setNewSummary(e.target.value)}
+                  placeholder={t('author.summaryPlaceholder')}
+                  value={newSummary[summaryLang] ?? ''}
+                  onChange={(e) => setNewSummary((current) => withLocalizedValue(current, summaryLang, e.target.value))}
                   className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600"
                 />
+                {summaryLang === 'en' ? (
+                  <p className="mt-1 text-[11px] text-neutral-400">{t('author.englishOptional')}</p>
+                ) : null}
               </div>
 
               <div>
                 <label className="block font-medium text-neutral-700 mb-1">
-                  详细简介 (Markdown，可选)
+                  {t('author.descriptionLabel', { lang: LANG_SHORT_LABELS[summaryLang] })}
                 </label>
                 <textarea
                   rows={6}
-                  placeholder={'## 模组介绍\n\n支持 Markdown，可填写功能、安装说明和兼容性信息。'}
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
+                  placeholder={t('author.descriptionPlaceholder')}
+                  value={newDescription[summaryLang] ?? ''}
+                  onChange={(e) => setNewDescription((current) => withLocalizedValue(current, summaryLang, e.target.value))}
                   className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600 font-mono"
                 />
                 <p className="mt-1 text-[11px] text-neutral-400">
-                  将在模组详情页渲染；留空时使用一句话简介。
+                  {t('author.descriptionHint')}
                 </p>
               </div>
 
               <div>
-                <label className="block font-medium text-neutral-700 mb-1">作者显示名（可选）</label>
+                <label className="block font-medium text-neutral-700 mb-1">{t('author.authorNameLabel')}</label>
                 <input
                   type="text"
                   value={newAuthorDisplayName}
                   onChange={(e) => setNewAuthorDisplayName(e.target.value)}
-                  placeholder="留空则使用上传者账号名称"
+                  placeholder={t('author.authorNamePlaceholder')}
                   className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600"
                 />
-                <p className="mt-1 text-[11px] text-neutral-400">仅修改目录中的作者显示，不改变上传者权限。</p>
+                <p className="mt-1 text-[11px] text-neutral-400">{t('author.authorNameHint')}</p>
               </div>
                   </div>
 
                   <div className="min-w-0 space-y-4">
 
               <div className="rounded border border-neutral-200 bg-neutral-50 p-3 space-y-2">
-                <label className="block font-medium text-neutral-700">模组详情图（可选，最多 8 张）</label>
-                {detailImageItems.length > 0 && !clearExistingDetailImages && <div className="grid grid-cols-4 gap-2">{detailImageItems.map((item, index) => <div key={item.key} draggable onDragStart={() => setDraggedDetailImage(index)} onDragEnd={() => setDraggedDetailImage(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (draggedDetailImage !== null) moveDetailImage(draggedDetailImage, index); setDraggedDetailImage(null); }} className={`cursor-grab rounded border bg-white p-1 active:cursor-grabbing ${draggedDetailImage === index ? 'border-emerald-500 opacity-60' : item.pending ? 'border-amber-300' : 'border-neutral-200'}`} title="拖动以调整顺序"><div className="relative"><img src={item.url} alt={`${item.pending ? '待上传' : '已有'}详情图 ${index + 1}`} className="h-16 w-full rounded object-cover" /><button type="button" aria-label={`删除详情图 ${index + 1}`} onClick={(event) => { event.stopPropagation(); removeDetailImage(item.key); }} className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-xs text-white hover:bg-rose-600">×</button></div><span className="block text-center text-[10px] text-neutral-400">#{index + 1}{item.pending ? ' · 待上传' : ''}</span></div>)}</div>}
-                {detailImageItems.length > 1 && !clearExistingDetailImages && <p className="text-[11px] text-neutral-500">拖动图片调整展示顺序，保存模组后生效。</p>}
-                {editingModId && existingDetailImages.length > 0 && <button type="button" onClick={() => setClearExistingDetailImages((value) => !value)} className="text-[11px] text-rose-700 hover:underline">{clearExistingDetailImages ? '保留现有详情图' : '清空现有详情图'}</button>}
+                <label className="block font-medium text-neutral-700">{t('author.imagesLabel')}</label>
+                {detailImageItems.length > 0 && !clearExistingDetailImages && <div className="grid grid-cols-4 gap-2">{detailImageItems.map((item, index) => <div key={item.key} draggable onDragStart={() => setDraggedDetailImage(index)} onDragEnd={() => setDraggedDetailImage(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (draggedDetailImage !== null) moveDetailImage(draggedDetailImage, index); setDraggedDetailImage(null); }} className={`cursor-grab rounded border bg-white p-1 active:cursor-grabbing ${draggedDetailImage === index ? 'border-emerald-500 opacity-60' : item.pending ? 'border-amber-300' : 'border-neutral-200'}`} title={t('author.imageDragTitle')}><div className="relative"><img src={item.url} alt={item.pending ? t('author.imageAltPending', { index: index + 1 }) : t('author.imageAltExisting', { index: index + 1 })} className="h-16 w-full rounded object-cover" /><button type="button" aria-label={t('author.imageRemoveAria', { index: index + 1 })} onClick={(event) => { event.stopPropagation(); removeDetailImage(item.key); }} className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-xs text-white hover:bg-rose-600">×</button></div><span className="block text-center text-[10px] text-neutral-400">#{index + 1}{item.pending ? t('author.imagePendingTag') : ''}</span></div>)}</div>}
+                {detailImageItems.length > 1 && !clearExistingDetailImages && <p className="text-[11px] text-neutral-500">{t('author.imagesDragHint')}</p>}
+                {editingModId && existingDetailImages.length > 0 && <button type="button" onClick={() => setClearExistingDetailImages((value) => !value)} className="text-[11px] text-rose-700 hover:underline">{clearExistingDetailImages ? t('author.keepImages') : t('author.clearImages')}</button>}
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp,image/gif"
@@ -1892,26 +1886,26 @@ export const AuthorWorkbench: React.FC = () => {
                   }}
                   className="block w-full text-xs text-neutral-600 file:mr-2 file:rounded file:border-0 file:bg-neutral-900 file:px-2.5 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-neutral-800"
                 />
-                <p className="text-[11px] text-neutral-500">支持 PNG、JPEG、WebP、GIF；单张最多 10 MB。选择新图片会追加到现有详情图，最多 8 张。</p>
-                {pendingDetailImages.length > 0 && <p className="text-[11px] text-emerald-700">已追加 {pendingDetailImages.length} 张待上传图片，可先拖动调整完整顺序。</p>}
+                <p className="text-[11px] text-neutral-500">{t('author.imagesHint')}</p>
+                {pendingDetailImages.length > 0 && <p className="text-[11px] text-emerald-700">{t('author.imagesPending', { count: pendingDetailImages.length })}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-medium text-neutral-700 mb-1">分类 (Category)</label>
+                  <label className="block font-medium text-neutral-700 mb-1">{t('author.categoryLabel')}</label>
                   <select
                     value={newCategory}
                     onChange={(e) => setNewCategory(e.target.value as ModCategory)}
                     className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600 bg-white"
                   >
-                    <option value="submod">Submod (功能扩展/剧本模组)</option>
-                    <option value="spritepack">Spritepack (服饰/发带/配件)</option>
+                    <option value="submod">{t('author.categorySubmod')}</option>
+                    <option value="spritepack">{t('author.categorySpritepack')}</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="block font-medium text-neutral-700 mb-1">
-                    MAS 兼容范围
+                    {t('author.masRangeLabel')}
                   </label>
                   <input
                     type="text"
@@ -1926,7 +1920,7 @@ export const AuthorWorkbench: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-medium text-neutral-700 mb-1">
-                    推荐优先级 (0-100)
+                    {t('author.priorityLabel')}
                   </label>
                   <input
                     type="number"
@@ -1960,15 +1954,15 @@ export const AuthorWorkbench: React.FC = () => {
                   onClick={() => { setIsNewModModalOpen(false); setEditingModId(null); }}
                   className="px-3 py-1.5 text-neutral-600 hover:text-neutral-900"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={!isValidTagSelection(newTags)}
-                  title={isValidTagSelection(newTags) ? undefined : '至少选择一个标签'}
+                  title={isValidTagSelection(newTags) ? undefined : t('tagPicker.atLeastOne')}
                   className="px-4 py-1.5 text-white bg-emerald-700 hover:bg-emerald-800 rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {editingModId ? '保存修改' : '保存草稿'}
+                  {editingModId ? t('author.saveChanges') : t('author.saveDraft')}
                 </button>
               </div>
             </form>
@@ -1996,28 +1990,28 @@ export const AuthorWorkbench: React.FC = () => {
           >
             <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-neutral-900">
-                {versionFormTarget === 'new' ? '创建候选版本' : '编辑候选版本'}
+                {versionFormTarget === 'new' ? t('author.createVersion') : t('author.editVersionTitle')}
               </h3>
               <button
                 onClick={() => setVersionFormTarget(null)}
                 className="text-neutral-400 hover:text-neutral-600 text-xs"
               >
-                取消
+                {t('common.cancel')}
               </button>
             </div>
 
             <form onSubmit={handleCreateVersionSubmit} className="p-5 space-y-4 text-xs overflow-y-auto">
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="font-medium text-neutral-700">前置子模组依赖</span>
-                  <button type="button" onClick={() => setNewDependencies((previous) => [...previous, { mod_id: '', mod_title: '', version_range: '', required: true }])} className="inline-flex items-center gap-1 text-emerald-700 hover:underline"><Plus className="h-3.5 w-3.5" />添加依赖</button>
+                  <span className="font-medium text-neutral-700">{t('author.depsTitle')}</span>
+                  <button type="button" onClick={() => setNewDependencies((previous) => [...previous, { mod_id: '', mod_title: '', version_range: '', required: true }])} className="inline-flex items-center gap-1 text-emerald-700 hover:underline"><Plus className="h-3.5 w-3.5" />{t('author.addDependency')}</button>
                 </div>
-                <div className="mb-2 text-[11px] text-neutral-500">版本范围可留空；例如 &gt;1.0.0（即 1.0.0&lt;X）或 1.0.0&lt;X&lt;2.0.0</div>
+                <div className="mb-2 text-[11px] text-neutral-500">{t('author.rangeHint')}{t('author.rangeExample')}</div>
                 <div className="space-y-2">
                   {newDependencies.map((dependency, index) => (
                     <div key={index} className="flex flex-wrap items-center gap-2">
                       <DependencyNamePicker
-                        label={`依赖模组 ${index + 1}`}
+                        label={t('author.depIndexLabel', { index: index + 1 })}
                         value={dependency.linked_mod_id ? (mods.find((mod) => mod.id === dependency.linked_mod_id)?.title || dependency.mod_title || dependency.mod_id) : (dependency.mod_title || dependency.mod_id)}
                         options={mods.filter((mod) => mod.is_published && mod.id !== activeMod?.id)}
                         onInput={(name) => setNewDependencies((previous) => previous.map((item, position) => position === index ? mapDependencyInput(item, name, mods, activeMod?.id || '') : item))}
@@ -2025,24 +2019,24 @@ export const AuthorWorkbench: React.FC = () => {
                         onSelect={(mod) => setNewDependencies((previous) => previous.map((item, position) => position === index ? mapDependencySelection(item, mod, false) : item))}
                       />
                       <input
-                        aria-label={`依赖模组 ${index + 1} 的版本范围（可空）`}
+                        aria-label={t('author.depIndexRangeAria', { index: index + 1 })}
                         value={dependency.version_range}
                         onChange={(event) => setNewDependencies((previous) => previous.map((item, position) => position === index ? mapDependencyRangeInput(item, event.target.value) : item))}
-                        placeholder="版本范围（可空）"
+                        placeholder={t('author.rangePlaceholder')}
                         className="min-w-44 flex-1 rounded border border-neutral-300 bg-white px-2 py-1.5 font-mono"
                       />
-                      <button type="button" title="移除依赖" aria-label={`移除依赖 ${index + 1}`} onClick={() => setNewDependencies((previous) => previous.filter((_, position) => position !== index))} className="p-1.5 text-neutral-500 hover:text-rose-700"><X className="h-4 w-4" /></button>
+                      <button type="button" title={t('author.removeDependency')} aria-label={t('author.removeDependencyIndex', { index: index + 1 })} onClick={() => setNewDependencies((previous) => previous.filter((_, position) => position !== index))} className="p-1.5 text-neutral-500 hover:text-rose-700"><X className="h-4 w-4" /></button>
                     </div>
                   ))}
                 </div>
               </div>
               <div>
                 <label className="block font-medium text-neutral-700 mb-1">
-                  版本标识 (Version String)
+                  {t('author.versionStringLabel')}
                 </label>
                 <input
                   type="text"
-                  placeholder="例如: 1.3.0 或 1.3.0-rc1"
+                  placeholder={t('author.versionStringPlaceholder')}
                   value={newVerString}
                   onChange={(e) => setNewVerString(e.target.value)}
                   className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600 font-mono"
@@ -2051,11 +2045,11 @@ export const AuthorWorkbench: React.FC = () => {
 
               <div>
                 <label className="block font-medium text-neutral-700 mb-1">
-                  发行说明 (Markdown，可选)
+                  {t('author.releaseNotesLabel')}
                 </label>
                 <textarea
                   rows={3}
-                  placeholder={'## 更新内容\n- **新增**功能\n- 修复问题'}
+                  placeholder={t('author.releaseNotesPlaceholder')}
                   value={newReleaseNotes}
                   onChange={(e) => setNewReleaseNotes(e.target.value)}
                   className="w-full text-xs px-2.5 py-1.5 rounded border border-neutral-300 focus:outline-none focus:border-emerald-600"
@@ -2068,13 +2062,13 @@ export const AuthorWorkbench: React.FC = () => {
                   onClick={() => setVersionFormTarget(null)}
                   className="px-3 py-1.5 text-neutral-600 hover:text-neutral-900"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-1.5 text-white bg-neutral-900 hover:bg-neutral-800 rounded font-medium transition-colors"
                 >
-                  {versionFormTarget === 'new' ? '确认建立候选版本' : '保存版本资料'}
+                  {versionFormTarget === 'new' ? t('author.confirmCreateVersion') : t('author.saveVersion')}
                 </button>
               </div>
             </form>
@@ -2104,26 +2098,25 @@ export const AuthorWorkbench: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Github className="w-4 h-4 text-neutral-900" />
                 <h3 className="text-sm font-semibold text-neutral-900">
-                  GitHub Releases 自动化草稿导入
+                  {t('author.importTitle')}
                 </h3>
               </div>
               <button
                 onClick={() => setIsGithubImportOpen(false)}
                 className="text-neutral-400 hover:text-neutral-600 text-xs"
               >
-                取消
+                {t('common.cancel')}
               </button>
             </div>
 
             <form onSubmit={handleGithubImport} className="p-5 space-y-4 text-xs">
               <p className="text-neutral-600 leading-relaxed">
-                按照契约要求（Section 3），系统支持将 GitHub Release URL
-                或资产直接导入为草稿，并走完全相同的静态安全扫描与规范审核流程。
+                {t('author.importBody')}
               </p>
 
               <div>
                 <label className="block font-medium text-neutral-700 mb-1">
-                  GitHub Release 资产地址 (URL)
+                  {t('author.importUrlLabel')}
                 </label>
                 <input
                   type="url"
@@ -2141,13 +2134,13 @@ export const AuthorWorkbench: React.FC = () => {
                   onClick={() => setIsGithubImportOpen(false)}
                   className="px-3 py-1.5 text-neutral-600 hover:text-neutral-900"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-1.5 text-white bg-neutral-900 hover:bg-neutral-800 rounded font-medium transition-colors"
                 >
-                  开始解析导入
+                  {t('author.importStart')}
                 </button>
               </div>
             </form>

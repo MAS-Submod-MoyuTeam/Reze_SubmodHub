@@ -12,16 +12,18 @@ import type { TagGroup } from '../../../ui/tags-api';
  * 以及子标签默认折叠、没有子标签的主标签不给折叠按钮。
  */
 
+// 标签的名称与描述都是「语言 → 文本」对象；这里只给中文，回退链会显示它。
 const groups: TagGroup[] = [
   {
     name: '工具',
-    description: '自动修复与诊断类模组',
+    displayName: { en: 'Tools' },
+    description: { zh: '自动修复与诊断类模组' },
     children: [
-      { name: '绘图', description: '生成与编辑图片' },
+      { name: '绘图', description: { zh: '生成与编辑图片' } },
       { name: '脚本' },
     ],
   },
-  { name: '音乐', description: '播放与切换背景音乐' },
+  { name: '音乐', description: { zh: '播放与切换背景音乐' } },
 ];
 
 async function mountPicker(props: Partial<React.ComponentProps<typeof TagPicker>> = {}) {

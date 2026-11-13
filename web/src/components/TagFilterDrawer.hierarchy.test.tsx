@@ -14,15 +14,15 @@ import type { TagFilterRow, TagFilterStates } from '../../../ui/tag-filter';
 
 const rows: TagFilterRow[] = [
   {
-    main: { name: '工具', description: '自动修复与诊断类模组' },
+    main: { name: '工具', description: { zh: '自动修复与诊断类模组' } },
     children: [
-      { name: '绘图', description: '生成与编辑图片' },
-      { name: '脚本', description: '' },
+      { name: '绘图', description: { zh: '生成与编辑图片' } },
+      { name: '脚本', description: { zh: '' } },
     ],
     stale: false,
   },
-  { main: { name: '音乐', description: '播放与切换背景音乐' }, children: [], stale: false },
-  { main: { name: '遗留标签', description: '' }, children: [], stale: true },
+  { main: { name: '音乐', description: { zh: '播放与切换背景音乐' } }, children: [], stale: false },
+  { main: { name: '遗留标签', description: { zh: '' } }, children: [], stale: true },
 ];
 
 async function mountDrawer(options: { states?: TagFilterStates } = {}) {

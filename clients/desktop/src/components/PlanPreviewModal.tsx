@@ -13,6 +13,7 @@ import {
 import { Plan, Installation } from '../types/client';
 import { m } from './Motion';
 import { overlayVariants } from '../../../../ui/motion-presets';
+import { useI18n } from '../i18n';
 
 interface PlanPreviewModalProps {
   plan: Plan | null;
@@ -31,6 +32,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
   onApplyPlan,
   onOpenRecovery,
 }) => {
+  const { t } = useI18n();
   const [timeLeft, setTimeLeft] = useState(300); // 5 minutes validity countdown
   const [overwriteConfirmed, setOverwriteConfirmed] = useState(false);
   const [uninstallConfirmed, setUninstallConfirmed] = useState(false);
@@ -105,31 +107,31 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
       case 'CREATE':
         return (
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 font-mono">
-            新建 (CREATE)
+            {t('planPreview.actionCreate')}
           </span>
         );
       case 'OVERWRITE':
         return (
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/60 font-mono">
-            覆盖 (OVERWRITE)
+            {t('planPreview.actionOverwrite')}
           </span>
         );
       case 'REMOVE':
         return (
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800/60 font-mono">
-            移除 (REMOVE)
+            {t('planPreview.actionRemove')}
           </span>
         );
       case 'RESTORE':
         return (
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-800/60 font-mono">
-            还原 (RESTORE)
+            {t('planPreview.actionRestore')}
           </span>
         );
       case 'METADATA_ONLY':
         return (
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700 font-mono">
-            仅移归属 (METADATA)
+            {t('planPreview.actionMetadata')}
           </span>
         );
       default:
@@ -145,26 +147,18 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800/80 uppercase shrink-0">
-                {plan.kind === 'install'
-                  ? '安装计划预览'
-                  : plan.kind === 'update'
-                  ? '升级更新计划预览'
-                  : plan.kind === 'uninstall'
-                  ? '卸载计划预览'
-                  : plan.kind === 'adopt'
-                  ? '收纳计划预览'
-                  : '修复计划预览'}
+                {t(`planPreview.kind.${plan.kind}`, {})}
               </span>
               <h2 className="text-sm sm:text-base font-bold text-neutral-100 break-words">
                 {plan.mod_title} <span className="font-mono text-emerald-400">{plan.version_str}</span>
               </h2>
             </div>
             <div className="flex items-center gap-2 text-xs text-neutral-400 mt-1 font-mono flex-wrap">
-              <span className="break-all">规划单据 ID: {plan.plan_id}</span>
+              <span className="break-all">{t('planPreview.planID', { id: plan.plan_id })}</span>
               <span aria-hidden="true" className="hidden sm:inline">·</span>
               <span className={`flex items-center gap-1 ${isExpired ? 'text-rose-400 font-bold' : 'text-amber-400'}`}>
                 <Clock className="w-3.5 h-3.5 shrink-0" />
-                <span>{isExpired ? '计划已过期，请重新预览' : `剩余: ${formatSeconds(timeLeft)}`}</span>
+                <span>{isExpired ? t('planPreview.expired') : t('planPreview.timeLeft', { time: formatSeconds(timeLeft) })}</span>
               </span>
             </div>
           </div>
@@ -172,7 +166,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
           <button
             onClick={onClose}
             className="p-1.5 sm:p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors shrink-0"
-            title="关闭预览"
+            title={t('planPreview.closeTitle')}
           >
             <X className="w-5 h-5" />
           </button>
@@ -181,32 +175,32 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
         {/* Storage and Target Summary */}
         <div className="px-4 py-2.5 bg-neutral-950/80 border-b border-neutral-800/80 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs shrink-0">
           <div>
-            <span className="text-neutral-400 block text-[11px]">目标 MAS 安装目录</span>
+            <span className="text-neutral-400 block text-[11px]">{t('planPreview.targetDir')}</span>
             <span className="text-neutral-200 font-medium truncate block" title={activeInstallation.path_hint}>
               {activeInstallation.label}
             </span>
           </div>
 
           <div>
-            <span className="text-neutral-400 block text-[11px]">所需解压存储空间</span>
+            <span className="text-neutral-400 block text-[11px]">{t('planPreview.bytesRequired')}</span>
             <span className="font-mono text-neutral-200 tabular-nums">
               {formatBytes(plan.bytes_required)}
             </span>
           </div>
 
           <div>
-            <span className="text-neutral-400 block text-[11px]">需前置备份的原文件</span>
+            <span className="text-neutral-400 block text-[11px]">{t('planPreview.backupsRequired')}</span>
             <span className="font-mono text-neutral-200 tabular-nums">
-              {plan.backups_required} 个文件（写入前自动暂存快照）
+              {t('planPreview.backupsValue', { count: plan.backups_required })}
             </span>
           </div>
 
           <div>
-            <span className="text-neutral-400 block text-[11px]">可用磁盘剩余空间</span>
+            <span className="text-neutral-400 block text-[11px]">{t('planPreview.diskFree')}</span>
             <span className="font-mono text-emerald-400 tabular-nums">
               {activeInstallation.disk_available_bytes != null
                 ? `${(activeInstallation.disk_available_bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
-                : '未知'}
+                : t('planPreview.unknown')}
             </span>
           </div>
         </div>
@@ -214,11 +208,11 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
         {/* Plan Summary Counters */}
         {plan.summary && (
           <div className="px-4 py-2 bg-neutral-950/90 border-b border-neutral-800/80 flex flex-wrap items-center gap-4 text-xs font-mono">
-            <span className="text-sky-300">恢复原文件: {plan.summary.restores_original}</span>
-            <span className="text-emerald-300">恢复活动模组: {plan.summary.restores_layer}</span>
-            <span className="text-neutral-400">仅调整归属: {plan.summary.metadata_only}</span>
-            <span className="text-rose-300">删除模组新增: {plan.summary.deletes_added}</span>
-            <span className="text-amber-300">新建写入: {plan.summary.writes_new}</span>
+            <span className="text-sky-300">{t('planPreview.restoresOriginal', { count: plan.summary.restores_original })}</span>
+            <span className="text-emerald-300">{t('planPreview.restoresLayer', { count: plan.summary.restores_layer })}</span>
+            <span className="text-neutral-400">{t('planPreview.metadataOnly', { count: plan.summary.metadata_only })}</span>
+            <span className="text-rose-300">{t('planPreview.deletesAdded', { count: plan.summary.deletes_added })}</span>
+            <span className="text-amber-300">{t('planPreview.writesNew', { count: plan.summary.writes_new })}</span>
           </div>
         )}
 
@@ -231,11 +225,12 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               <Lock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
               <div>
                 <div className="font-semibold text-amber-300">
-                  阻断警告: Monika After Story 游戏正在运行中 [game_running]
+                  {t('planPreview.gameRunningTitle')}
                 </div>
                 <div className="mt-1 leading-relaxed text-amber-200/90">
-                  Ren&apos;Py 引擎在游戏启动期间会保持对 <code>game/</code> 目录下 .rpy 和 .rpyc 脚本的锁定。
-                  为防止运行时读写损坏或存档异常，<strong>必须先完全关闭 MAS 游戏进程</strong>，才能执行写入操作。
+                  {t('planPreview.gameRunningBody1')} <code>game/</code>{' '}
+                  {t('planPreview.gameRunningBody2')} <strong>{t('planPreview.gameRunningBodyStrong')}</strong>
+                  {t('planPreview.gameRunningBody3')}
                 </div>
               </div>
             </div>
@@ -247,15 +242,15 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <div className="font-semibold text-rose-300">
-                  {hasExternalChange ? '外部修改或删除阻断 [external_change]' : '阻断警告: 事务校验阻断 [plan_blocked]'}
+                  {hasExternalChange ? t('planPreview.externalChangeTitle') : t('planPreview.planBlockedTitle')}
                 </div>
                 <div className="mt-1 space-y-1 font-mono">
                   {plan.blockers?.map((blk, idx) => (
                     <div key={idx} className="text-rose-200/90">• {blk}</div>
                   ))}
-                  {hasExternalChange && <p>先检查未完成事务；有未完成事务时先备份冲突文件、人工解决漂移，再重新校验并安全回滚。没有未完成事务时使用已安装模组的修复预览，不必回滚已提交安装。处理后废弃此计划并重新预览。</p>}
+                  {hasExternalChange && <p>{t('planPreview.externalChangeHint')}</p>}
                 </div>
-                {hasExternalChange && onOpenRecovery && <button type="button" onClick={onOpenRecovery} className="mt-2 px-3 py-2 rounded bg-rose-900">检查未完成事务与恢复操作</button>}
+                {hasExternalChange && onOpenRecovery && <button type="button" onClick={onOpenRecovery} className="mt-2 px-3 py-2 rounded bg-rose-900">{t('planPreview.checkUnfinished')}</button>}
               </div>
             </div>
           )}
@@ -266,12 +261,12 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <div className="font-semibold text-rose-300">
-                  阻断警告: 依赖前置库缺失或版本不兼容 [dependency_missing]
+                  {t('planPreview.dependencyMissingTitle')}
                 </div>
                 <div className="mt-1 space-y-1 font-mono">
                   {plan.dependency_blockers.map((blk) => (
                     <div key={blk.mod_id} className="text-rose-200/90">
-                      • 缺少前置依赖: <strong>{blk.mod_title}</strong> (要求版本: {blk.required_range})。{blk.reason}
+                      • {t('planPreview.dependencyMissingItem', { title: blk.mod_title, range: blk.required_range })} {blk.reason}
                     </div>
                   ))}
                 </div>
@@ -285,12 +280,12 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <div className="font-semibold text-rose-300">
-                  阻断警告: 发现语义命名冲突 [semantic_conflict]
+                  {t('planPreview.semanticConflictTitle')}
                 </div>
                 <div className="mt-1 space-y-1 font-mono">
                   {plan.semantic_blockers.map((sc, idx) => (
                     <div key={idx} className="text-rose-200/90">
-                      • 冲突标识: <code>{sc.identifier}</code> 与已安装的 <strong>{sc.conflicting_with}</strong> 重复。{sc.details}
+                      • {t('planPreview.semanticConflictA')} <code>{sc.identifier}</code> {t('planPreview.semanticConflictB')} <strong>{sc.conflicting_with}</strong> {t('planPreview.semanticConflictC')} {sc.details}
                     </div>
                   ))}
                 </div>
@@ -305,37 +300,37 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               <div className="flex-1 space-y-1.5">
                 <div className="font-semibold text-emerald-300">
                   {plan.kind === 'uninstall'
-                    ? '精灵包服饰套装卸载摘要'
-                    : '精灵包服饰套装部分安装摘要'}
+                    ? t('planPreview.uninstallSummaryTitle')
+                    : t('planPreview.partialInstallSummaryTitle')}
                 </div>
                 <div className="text-neutral-300 leading-relaxed">
                   {plan.kind === 'uninstall' ? (
                     <>
-                      将卸载所有外观套装集合（共{' '}
+                      {t('planPreview.uninstallSummaryA')}{' '}
                       <span className="font-semibold text-rose-400">
                         {spriteCtx?.unknown_legacy_selection
-                          ? '未知数量（旧安装记录）'
+                          ? t('planPreview.unknownLegacyCount')
                           : (spriteCtx?.removed_ids?.length ?? spriteCtx?.baseline_ids?.length ?? 0)}
                       </span>{' '}
-                      个套装），预计应用{' '}
+                      {t('planPreview.uninstallSummaryB')}{' '}
                       <span className="font-semibold text-neutral-100">{plan.changes.length}</span>{' '}
-                      个文件变更。
+                      {t('planPreview.summaryFileChanges')}
                     </>
                   ) : (
                     <>
-                      最终保留{' '}
+                      {t('planPreview.partialSummaryA')}{' '}
                       <span className="font-semibold text-emerald-400">
                         {plan.selected_sprite_set_count ?? plan.sprite_set_ids?.length ?? 0}
                       </span>{' '}
-                      个外观套装集合，预计应用{' '}
+                      {t('planPreview.partialSummaryB')}{' '}
                       <span className="font-semibold text-neutral-100">{plan.changes.length}</span>{' '}
-                      个文件变更。
+                      {t('planPreview.summaryFileChanges')}
                     </>
                   )}
                 </div>
                 {plan.sprite_set_ids && plan.sprite_set_ids.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] pt-1">
-                    <span className="text-neutral-400">保留/新增集合 ID:</span>
+                    <span className="text-neutral-400">{t('planPreview.keptSetIds')}</span>
                     {plan.sprite_set_ids.map((id) => (
                       <span key={id} className="px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-200 border border-emerald-700/60">
                         {id}
@@ -346,7 +341,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                 {spriteCtx?.removed_ids && spriteCtx.removed_ids.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] pt-1">
                     <span className="text-rose-400">
-                      {plan.kind === 'uninstall' ? '将卸载的集合 ID:' : '将卸载旧集合 ID:'}
+                      {plan.kind === 'uninstall' ? t('planPreview.removedSetIds') : t('planPreview.removedOldSetIds')}
                     </span>
                     {spriteCtx.removed_ids.map((id) => (
                       <span key={id} className="px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800/80">
@@ -357,7 +352,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                 )}
                 {spriteCtx?.unavailable_installed_ids && spriteCtx.unavailable_installed_ids.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] pt-1">
-                    <span className="text-amber-400">版本缺失集合 (将移除):</span>
+                    <span className="text-amber-400">{t('planPreview.unavailableSetIds')}</span>
                     {spriteCtx.unavailable_installed_ids.map((id) => (
                       <span key={id} className="px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/80">
                         {id}
@@ -367,11 +362,11 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                 )}
                 {plan.sprite_selection_hash && (
                   <div className="text-[11px] font-mono text-neutral-400">
-                    选择指纹: <span className="text-neutral-300">{plan.sprite_selection_hash.slice(0, 16)}...</span>
+                    {t('planPreview.selectionHash')}: <span className="text-neutral-300">{plan.sprite_selection_hash.slice(0, 16)}...</span>
                   </div>
                 )}
                 <div className="text-[11px] text-neutral-400 leading-normal pt-1">
-                  说明：卸载表示移除本模组拥有的相关文件层；共享文件可能仍被其他选中集合或模组使用，物理文件是否删除/恢复以真实后端计划为准。
+                  {t('planPreview.spritepackNote')}
                 </div>
               </div>
             </div>
@@ -385,11 +380,11 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                 <span>
                   {spriteCtx?.unknown_legacy_selection
                     ? (plan.kind === 'uninstall'
-                        ? '检测到旧安装记录无法验证，卸载将清理本模组相关的所有安装文件。'
-                        : '检测到旧安装记录无法验证，应用后将替换并卸载未保留的原有套装。')
+                        ? t('planPreview.legacyUninstallHint')
+                        : t('planPreview.legacyPartialHint'))
                     : (plan.kind === 'uninstall'
-                        ? `本操作将完整卸载已安装的全部 ${spriteCtx?.removed_ids?.length || 0} 个外观套装。`
-                        : `本操作将卸载 ${[...(spriteCtx?.removed_ids || []), ...(spriteCtx?.unavailable_installed_ids || [])].length} 个未保留的已安装外观套装。`)}
+                        ? t('planPreview.fullUninstallHint', { count: spriteCtx?.removed_ids?.length || 0 })
+                        : t('planPreview.partialUninstallHint', { count: [...(spriteCtx?.removed_ids || []), ...(spriteCtx?.unavailable_installed_ids || [])].length }))}
                 </span>
               </div>
               <label className="flex items-center gap-2 cursor-pointer font-medium select-none text-rose-300 bg-rose-900/40 px-2.5 py-1 rounded border border-rose-700/60 hover:bg-rose-900/60 transition-colors">
@@ -402,9 +397,9 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                 <span>
                   {plan.kind === 'uninstall'
                     ? (spriteCtx?.unknown_legacy_selection
-                        ? '我确认卸载此旧版本精灵包并清理相关文件'
-                        : '我确认卸载此精灵包及所有已安装套装')
-                    : '我确认应用后将卸载未保留的已安装套装'}
+                        ? t('planPreview.confirmLegacyUninstall')
+                        : t('planPreview.confirmFullUninstall'))
+                    : t('planPreview.confirmPartialUninstall')}
                 </span>
               </label>
             </div>
@@ -415,7 +410,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
             <div className="p-3 rounded-lg bg-amber-950/60 border border-amber-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-amber-200">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                <span>本操作将覆盖部分已有文件或游戏原文件，请知悉并明确确认。</span>
+                <span>{t('planPreview.overwriteHint')}</span>
               </div>
               <label className="flex items-center gap-2 cursor-pointer font-medium select-none text-amber-300 bg-amber-900/40 px-2.5 py-1.5 rounded border border-amber-700/60 hover:bg-amber-900/60 transition-colors shrink-0 self-start sm:self-center">
                 <input
@@ -424,7 +419,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                   onChange={(e) => setOverwriteConfirmed(e.target.checked)}
                   className="rounded text-amber-500 focus:ring-amber-500 bg-neutral-900 border-neutral-700"
                 />
-                <span>我确认覆盖已有文件</span>
+                <span>{t('planPreview.confirmOverwrite')}</span>
               </label>
             </div>
           )}
@@ -437,16 +432,16 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                 <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <div className="font-semibold text-amber-300">
-                    归档中有路径未被识别为 MAS 安装路径 [package_unsupported]
+                    {t('planPreview.unsupportedTitle')}
                   </div>
                   <div className="font-mono text-amber-200/90 space-y-1">
                     {unsupportedRisks.map((r, idx) => <div key={idx}>• {r.description}</div>)}
                   </div>
                   <p className="text-amber-200/80 leading-relaxed">
-                    这些条目不会被写入游戏目录。若它们看起来是模组本体（例如整包只有
-                    <code className="mx-1">mod/</code>、
+                    {t('planPreview.unsupportedBodyA')}
+                    <code className="mx-1">mod/</code>
                     <code className="mx-1">src/</code>
-                    这类目录），说明这份归档不是可安装的子模组包，请联系作者重新发版。
+                    {t('planPreview.unsupportedBodyB')}
                   </p>
                 </div>
               </div>
@@ -457,7 +452,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                   onChange={(e) => setUnsupportedConfirmed(e.target.checked)}
                   className="rounded text-amber-500 focus:ring-amber-500 bg-neutral-900 border-neutral-700"
                 />
-                <span>我已了解这些路径不会被安装</span>
+                <span>{t('planPreview.confirmUnsupported')}</span>
               </label>
             </div>
           )}
@@ -469,14 +464,13 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               <AlertTriangle className="w-5 h-5 text-neutral-400 shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <div className="font-semibold text-neutral-200">
-                  精灵包内的 .gift 解锁文件已忽略 [package_ignored_gifts]
+                  {t('planPreview.ignoredGiftsTitle')}
                 </div>
                 <div className="font-mono text-neutral-400 space-y-1">
                   {ignoredGiftRisks.map((r, idx) => <div key={idx}>• {r.description}</div>)}
                 </div>
                 <p className="text-neutral-400 leading-relaxed">
-                  这些文件是精灵的“已拥有”标记，安装它们会让所有玩家的物品被预先解锁，
-                  因此不会写入游戏目录。需要时请在游戏内通过精灵自己的赠礼流程取得。
+                  {t('planPreview.ignoredGiftsBody')}
                 </p>
               </div>
             </div>
@@ -486,7 +480,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
           {canConfirm && (
             <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/60 flex items-center gap-2.5 text-xs text-emerald-300">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>所有安全校验与依赖检查均已通过。计划将在用户点击“确认执行”后以原子写入流水线执行。</span>
+              <span>{t('planPreview.allChecksPassed')}</span>
             </div>
           )}
 
@@ -496,12 +490,10 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               <FileCheck className="w-5 h-5 text-neutral-400 shrink-0 mt-0.5" />
               <div className="flex-1 space-y-1.5">
                 <div className="font-semibold text-neutral-300">
-                  不登记进账本的引擎编译产物 ({plan.derived_paths.length} 个文件)
+                  {t('planPreview.derivedTitle', { count: plan.derived_paths.length })}
                 </div>
                 <p className="text-neutral-400 leading-relaxed">
-                  这些文件由 Ren&apos;Py 从本次收纳的脚本编译生成，不是模组自带内容。
-                  账本只登记脚本，编译产物留给引擎在下次启动时重建，
-                  因此重编译不会被当成文件漂移。
+                  {t('planPreview.derivedBody')}
                 </p>
                 <ul className="font-mono text-[11px] text-neutral-400 space-y-0.5 max-h-24 overflow-y-auto">
                   {plan.derived_paths.map((path) => (
@@ -518,13 +510,10 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               <FileCheck className="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />
               <div className="flex-1 space-y-1.5">
                 <div className="font-semibold text-sky-300">
-                  Ren&apos;Py 编译残留清理 ({plan.cleanup_paths.length} 个文件)
+                  {t('planPreview.cleanupTitle', { count: plan.cleanup_paths.length })}
                 </div>
                 <p className="text-neutral-300 leading-relaxed">
-                  这些文件由 Ren&apos;Py / Python 从模组源码自动生成。源码被删除或覆盖后若继续保留，
-                  引擎可能仍加载旧脚本（没有对应 .rpy 的 .rpyc 也会被加载），因此随本次计划一并删除；
-                  游戏下次启动时会按需重新编译。若任一缓存无法删除（例如被占用或只读），
-                  本次操作会整体回滚，不会留下半完成状态，修复后即可重试。
+                  {t('planPreview.cleanupBody')}
                 </p>
                 <ul className="font-mono text-[11px] text-neutral-300 space-y-0.5 max-h-32 overflow-y-auto">
                   {plan.cleanup_paths.map((path) => (
@@ -538,9 +527,9 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
           {/* Detailed File Changes List */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-neutral-300">
-              <span className="font-semibold">计划修改文件清单 ({plan.changes.length} 项变更)</span>
+              <span className="font-semibold">{t('planPreview.changeListTitle', { count: plan.changes.length })}</span>
               <span className="text-neutral-400 text-[11px]">
-                所有受影响的原文件将在写入前生成校验快照
+                {t('planPreview.changeListHint')}
               </span>
             </div>
 
@@ -548,11 +537,11 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               <table className="w-full text-left min-w-[560px]">
                 <thead className="bg-neutral-950 text-neutral-400 text-[11px] border-b border-neutral-800">
                   <tr>
-                    <th className="py-2 px-3">动作</th>
-                    <th className="py-2 px-3">目标相对路径</th>
-                    <th className="py-2 px-3">原所有者 → 新生效者</th>
-                    <th className="py-2 px-3">安全快照</th>
-                    <th className="py-2 px-3">原因说明</th>
+                    <th className="py-2 px-3">{t('planPreview.colAction')}</th>
+                    <th className="py-2 px-3">{t('planPreview.colPath')}</th>
+                    <th className="py-2 px-3">{t('planPreview.colOwner')}</th>
+                    <th className="py-2 px-3">{t('planPreview.colBackup')}</th>
+                    <th className="py-2 px-3">{t('planPreview.colReason')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800/60 bg-neutral-900/40">
@@ -565,16 +554,16 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
                         {c.target_path}
                       </td>
                       <td className="py-2 px-3 text-neutral-400 text-[11px] whitespace-nowrap">
-                        {c.previous_owner || '(无)'} <ArrowRight className="w-2.5 h-2.5 inline mx-0.5" /> {c.next_owner || '(移除)'}
+                        {c.previous_owner || t('planPreview.ownerNone')} <ArrowRight className="w-2.5 h-2.5 inline mx-0.5" /> {c.next_owner || t('planPreview.ownerRemoved')}
                       </td>
                       <td className="py-2 px-3 whitespace-nowrap">
                         {c.backup_required ? (
                           <span className="text-emerald-400 text-[11px] flex items-center gap-1">
                             <FileCheck className="w-3.5 h-3.5" />
-                            <span>将备份原件</span>
+                            <span>{t('planPreview.backupNeeded')}</span>
                           </span>
                         ) : (
-                          <span className="text-neutral-400 text-[11px]">无需备份</span>
+                          <span className="text-neutral-400 text-[11px]">{t('planPreview.backupNotNeeded')}</span>
                         )}
                       </td>
                       <td className="py-2 px-3 text-neutral-400 text-[11px] truncate max-w-[160px]" title={c.reason}>
@@ -594,28 +583,28 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
             {!canConfirm ? (
               <span className="text-rose-400 font-medium">
                 {isGameRunning
-                  ? '写入受阻：MAS 进程正在运行，请退出游戏后解除锁定'
+                  ? t('planPreview.blockedGameRunning')
                   : isInvalidRoot
-                  ? '写入受阻：MAS 根目录无效或缺少写入权限'
+                  ? t('planPreview.blockedInvalidRoot')
                   : isInsufficientSpace
-                  ? '写入受阻：磁盘可用空间不足以容纳安装包'
+                  ? t('planPreview.blockedNoSpace')
                   : hasBackendBlockers
-                  ? `写入受阻：后端校验阻断 (${plan.blockers?.join('; ')})`
+                  ? t('planPreview.blockedBackend', { blockers: plan.blockers?.join('; ') ?? '' })
                   : isExpired
-                  ? '计划已过期，请关闭重新预览'
+                  ? t('planPreview.blockedExpired')
                   : hasOverwrites && !overwriteConfirmed
-                  ? '写入受阻：请勾选确认覆盖已有文件'
+                  ? t('planPreview.blockedOverwrite')
                   : hasUnsupported && !unsupportedConfirmed
-                  ? '写入受阻：请勾选确认未识别路径不会被安装'
+                  ? t('planPreview.blockedUnsupported')
                   : hasUninstallRemovals && !uninstallConfirmed
                   ? (plan.kind === 'uninstall'
-                      ? '写入受阻：请勾选确认卸载已安装套装'
-                      : '写入受阻：请勾选确认卸载未保留的已安装套装')
-                  : '写入受阻：存在阻断项或未解决的依赖/语义冲突'}
+                      ? t('planPreview.blockedUninstall')
+                      : t('planPreview.blockedPartialUninstall'))
+                  : t('planPreview.blockedOther')}
               </span>
             ) : (
               <span className="text-emerald-400 font-medium">
-                规划校验完毕，准备写入 MAS 目录
+                {t('planPreview.readyToWrite')}
               </span>
             )}
           </div>
@@ -625,7 +614,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               onClick={onClose}
               className="min-h-[44px] sm:min-h-0 px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700/80 rounded-lg transition-colors flex items-center justify-center cursor-pointer text-center"
             >
-              放弃并取消
+              {t('planPreview.discard')}
             </button>
             <button
               onClick={() => {
@@ -641,7 +630,7 @@ export const PlanPreviewModal: React.FC<PlanPreviewModalProps> = ({
               }`}
             >
               {!canConfirm && isGameRunning && <Lock className="w-3.5 h-3.5 shrink-0" />}
-              <span className="truncate">确认执行写入 (ApplyPlan)</span>
+              <span className="truncate">{t('planPreview.applyPlan')}</span>
             </button>
           </div>
         </div>

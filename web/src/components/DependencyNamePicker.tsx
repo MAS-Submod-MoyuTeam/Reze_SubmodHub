@@ -1,17 +1,21 @@
 import React, { useEffect, useId, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { ModSummary } from '../types/submodhub';
+import type { ModSummary } from '../types/submodhub';
+import { useI18n } from '../i18n';
 
 interface Props {
   value: string;
   options: ModSummary[];
+  /** 控件的无障碍名称；调用方已经翻译好。 */
   label: string;
   onInput?: (value: string) => void;
   onCommit: (value: string) => void;
   onSelect: (mod: ModSummary) => void;
 }
 
+/** 依赖名输入 + 站内模组建议列表；只挑名称，不改依赖自身的版本区间。 */
 export const DependencyNamePicker: React.FC<Props> = ({ value, options, label, onInput, onCommit, onSelect }) => {
+  const { t } = useI18n();
   const [input, setInput] = useState(value);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -67,13 +71,13 @@ export const DependencyNamePicker: React.FC<Props> = ({ value, options, label, o
               select(matches[activeIndex]);
             }
           }}
-          placeholder="输入依赖名称或选择站内模组"
+          placeholder={t('dependency.placeholder')}
           className="w-full min-w-0 px-2 py-1.5 text-xs outline-none"
         />
         <button
           type="button"
-          title="选择站内模组"
-          aria-label="选择站内模组"
+          title={t('dependency.pick')}
+          aria-label={t('dependency.pick')}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setOpen((current) => !current)}
           className="shrink-0 border-l border-neutral-200 px-2 text-neutral-600 hover:bg-neutral-100 active:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
@@ -96,7 +100,7 @@ export const DependencyNamePicker: React.FC<Props> = ({ value, options, label, o
               <span className="block font-medium text-neutral-900">{mod.title}</span>
               <span className="block font-mono text-[10px] text-neutral-500">{mod.id}</span>
             </button>
-          )) : <div className="px-3 py-2 text-xs text-neutral-500">无站内匹配；可直接使用输入的名称</div>}
+          )) : <div className="px-3 py-2 text-xs text-neutral-500">{t('dependency.empty')}</div>}
         </div>
       )}
     </div>

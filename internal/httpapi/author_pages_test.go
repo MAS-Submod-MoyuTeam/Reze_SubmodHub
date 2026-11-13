@@ -360,7 +360,7 @@ func TestAuthorModDraftStampsCreatedAt(t *testing.T) {
 	}
 	token := strings.Repeat("a", 64)
 	handler := authorSession(t, s, token, "author")
-	req, _ := http.NewRequest(http.MethodPost, "/api/v1/author/mods", bytes.NewBufferString(`{"title":"Dated","summary":"s","category":"submod","tags":["工具"]}`))
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/author/mods", bytes.NewBufferString(`{"title":"Dated","summary":{"zh":"s"},"category":"submod","tags":["工具"]}`))
 	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)

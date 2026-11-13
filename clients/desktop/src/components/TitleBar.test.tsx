@@ -180,10 +180,14 @@ test('TitleBar: the running-game lock badge is a passive warning, not a simulato
   const html = renderToStaticMarkup(<TitleBar {...titleBarProps()} isGameRunning />);
 
   assert.match(html, /MAS 进程运行中 \(写操作锁定\)/);
-  // The scenario simulator is gone: the badge must not advertise a
-  // click-to-simulate affordance, nor look clickable.
+  // 场景模拟器已经删掉了：徽章既不该宣传「点击可模拟」，也不该看起来可点。
+  // 断言只针对徽章自身的片段——整页 grep 会误伤顶栏里本来就该可交互的控件
+  // （语言下拉框、启动按钮等），那些带 cursor-pointer 是正常的。
   assert.doesNotMatch(html, /点击可模拟/);
-  assert.doesNotMatch(html, /cursor-pointer/);
+  const at = html.indexOf('MAS 进程运行中');
+  const badge = html.slice(Math.max(0, at - 600), at + 40);
+  assert.doesNotMatch(badge, /cursor-pointer/, '锁定徽章不该带可点击光标');
+  assert.doesNotMatch(badge, /<button/, '锁定徽章不该是可点击按钮');
 });
 
 test('TitleBar DOM: every wails-no-drag region defers to the native hit test', async () => {

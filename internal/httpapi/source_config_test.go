@@ -13,7 +13,7 @@ func TestSourceConfigLegacyJSONDecodesAsLocal(t *testing.T) {
 	legacyJSON := `{
 		"id": "mod_legacy",
 		"title": "Legacy Mod",
-		"summary": "Summary",
+		"summary": {"zh": "Summary"},
 		"author": {"id": "author1", "display_name": "Author 1"},
 		"category": "submod"
 	}`
@@ -39,17 +39,17 @@ func TestSourceConfigCreateAndValidateGitHubSource(t *testing.T) {
 	// 1. Invalid combinations: github_releases with invalid regex
 	invalidPayloads := []string{
 		// Invalid regex syntax
-		`{"title":"T","summary":"S","category":"submod","source_type":"github_releases","github_owner":"octocat","github_repo":"hello","github_asset_regex":"[unclosed"}`,
+		`{"title":"T","summary":{"zh":"S"},"category":"submod","source_type":"github_releases","github_owner":"octocat","github_repo":"hello","github_asset_regex":"[unclosed"}`,
 		// Missing repo
-		`{"title":"T","summary":"S","category":"submod","source_type":"github_releases","github_owner":"octocat","github_repo":"","github_asset_regex":".*\\.zip"}`,
+		`{"title":"T","summary":{"zh":"S"},"category":"submod","source_type":"github_releases","github_owner":"octocat","github_repo":"","github_asset_regex":".*\\.zip"}`,
 		// Missing owner
-		`{"title":"T","summary":"S","category":"submod","source_type":"github_releases","github_owner":"","github_repo":"hello","github_asset_regex":".*\\.zip"}`,
+		`{"title":"T","summary":{"zh":"S"},"category":"submod","source_type":"github_releases","github_owner":"","github_repo":"hello","github_asset_regex":".*\\.zip"}`,
 		// Invalid owner with path traversal/slash
-		`{"title":"T","summary":"S","category":"submod","source_type":"github_releases","github_owner":"octo/cat","github_repo":"hello","github_asset_regex":".*\\.zip"}`,
+		`{"title":"T","summary":{"zh":"S"},"category":"submod","source_type":"github_releases","github_owner":"octo/cat","github_repo":"hello","github_asset_regex":".*\\.zip"}`,
 		// Unknown source_type
-		`{"title":"T","summary":"S","category":"submod","source_type":"gitlab","github_owner":"octocat","github_repo":"hello"}`,
+		`{"title":"T","summary":{"zh":"S"},"category":"submod","source_type":"gitlab","github_owner":"octocat","github_repo":"hello"}`,
 		// Neither asset regex nor source code fallback enabled
-		`{"title":"T","summary":"S","category":"submod","source_type":"github_releases","github_owner":"octocat","github_repo":"hello","github_asset_regex":"","github_source_code":false}`,
+		`{"title":"T","summary":{"zh":"S"},"category":"submod","source_type":"github_releases","github_owner":"octocat","github_repo":"hello","github_asset_regex":"","github_source_code":false}`,
 	}
 
 	for i, payload := range invalidPayloads {
@@ -75,7 +75,7 @@ func TestSourceConfigCreateAndValidateGitHubSource(t *testing.T) {
 	// 2. Valid GitHub configuration
 	validPayload := `{
 		"title": "GitHub Mod",
-		"summary": "Summary",
+		"summary": {"zh": "Summary"},
 		"category": "submod",
 		"source_type": "github_releases",
 		"github_owner": "octocat",
@@ -110,7 +110,7 @@ func TestSourceConfigCreateAndValidateGitHubSource(t *testing.T) {
 	}
 
 	// 3. Update mod with invalid regex via PATCH should fail
-	patchInvalid := `{"title":"GitHub Mod","summary":"S","category":"submod","tags":["工具"],"github_asset_regex":"[broken-regex"}`
+	patchInvalid := `{"title":"GitHub Mod","summary":{"zh":"S"},"category":"submod","tags":["工具"],"github_asset_regex":"[broken-regex"}`
 	reqPatchInvalid, _ := http.NewRequest(http.MethodPatch, server.URL+"/api/v1/author/mods/"+created.ID, bytes.NewBufferString(patchInvalid))
 	reqPatchInvalid.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
 	resPatchInvalid, err := server.Client().Do(reqPatchInvalid)
@@ -123,7 +123,7 @@ func TestSourceConfigCreateAndValidateGitHubSource(t *testing.T) {
 	resPatchInvalid.Body.Close()
 
 	// 4. Update mod to local via PATCH
-	patchLocal := `{"title":"GitHub Mod","summary":"S","category":"submod","tags":["工具"],"source_type":"local"}`
+	patchLocal := `{"title":"GitHub Mod","summary":{"zh":"S"},"category":"submod","tags":["工具"],"source_type":"local"}`
 	reqPatchLocal, _ := http.NewRequest(http.MethodPatch, server.URL+"/api/v1/author/mods/"+created.ID, bytes.NewBufferString(patchLocal))
 	reqPatchLocal.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
 	resPatchLocal, err := server.Client().Do(reqPatchLocal)
@@ -148,7 +148,7 @@ func TestSourceConfigPublicSanitization(t *testing.T) {
 			{
 				ID:                  "m1",
 				Title:               "Public Mod",
-				Summary:             "Summary",
+				Summary:             LocalizedText{"zh": "Summary"},
 				Category:            "submod",
 				Author:              Author{ID: "author1", DisplayName: "Author One"},
 				LatestVersionID:     "v1",

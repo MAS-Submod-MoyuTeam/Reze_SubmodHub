@@ -15,6 +15,14 @@ export interface User {
 
 export type ModCategory = 'submod' | 'spritepack';
 
+/**
+ * 多语言文本：语言 → 文本。
+ *
+ * 模组的简介与描述按语言存放，缺译文时由 `useI18n().resolve()` 回退到中文。
+ * 允许出现 `zh` / `en` 之外的键：服务端可能已经存了别的语种。
+ */
+export type LocalizedText = Record<string, string | undefined>;
+
 export type ModSourceType = 'local' | 'github_releases';
 
 export type Platform = 'windows' | 'android' | 'linux' | 'macos';
@@ -53,9 +61,10 @@ export interface PlatformAsset {
 
 export interface ModSummary {
   id: string; // e.g. "mod_extra_everything"
+  /** 标题是唯一显示身份，不翻译；简介与描述按语言存放。 */
   title: string;
-  summary: string;
-  description: string;
+  summary: LocalizedText;
+  description: LocalizedText;
   author: {
     id: string;
     display_name: string;

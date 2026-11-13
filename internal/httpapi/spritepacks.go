@@ -70,7 +70,7 @@ func (s *Store) spritepackResource(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 404, "not_found", "archive was not found")
 			return
 		}
-		report, err = packagezip.ScanSpriteArchive(file, info.Size(), packagezip.Limits{})
+		report, err = packagezip.ScanSpriteArchive(file, info.Size(), archiveScanLimits(s.archiveLimit()))
 		_ = file.Close()
 		if err != nil {
 			writeError(w, 422, "invalid_spritepack", err.Error())

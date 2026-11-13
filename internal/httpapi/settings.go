@@ -172,28 +172,13 @@ func (s *Store) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		// tags that no longer exist are removed in the same transaction, and the
 		// previous values are kept so a failed save can restore them.
 		tagsChanged := false
-		prunedMods := 0
 		prunedTags := make(map[int][]string)
 		if payload.TagCatalog != nil {
 			tagsChanged = !tagCatalogEqual(prev.TagCatalog, tagCatalog)
-			allowed := tagCatalogNames(tagCatalog)
 			s.Catalog.Settings.TagCatalog = tagCatalog
-			for i := range s.Catalog.Mods {
-				tags := s.Catalog.Mods[i].Tags
-				kept := make([]string, 0, len(tags))
-				for _, tag := range tags {
-					if allowed[tag] {
-						kept = append(kept, tag)
-					}
-				}
-				if len(kept) == len(tags) {
-					continue
-				}
-				prunedTags[i] = tags
-				s.Catalog.Mods[i].Tags = kept
-				prunedMods++
-			}
+			prunedTags = s.pruneModTagsForCatalogLocked(tagCatalog)
 		}
+		prunedMods := len(prunedTags)
 		restorePruned := func() {
 			for index, tags := range prunedTags {
 				s.Catalog.Mods[index].Tags = tags

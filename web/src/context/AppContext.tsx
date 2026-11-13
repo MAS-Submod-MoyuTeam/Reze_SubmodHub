@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useI18n } from '../i18n';
 import { apiBase } from '../apiBase';
+import type { LocalizedText } from '../../../ui/localized-text';
 
 import {
   User,
@@ -134,6 +136,8 @@ export interface AppContextType {
 export const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // 操作反馈要跟随界面语言：这里取到的 `t` 供下面所有 toast 使用。
+  const { t } = useI18n();
   // Navigation
   const [activeTab, setActiveTab] = useState<NavTab>('catalog');
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
@@ -169,8 +173,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const base = apiBase();
     const entries = await fetchPublishedCatalog(base);
     const publishedMods: ModSummary[] = entries.map(({ mod, version }) => ({
-      id: mod.id, title: mod.title, summary: mod.summary || '', description: mod.description || mod.summary || '',
-      author: mod.author || { id: '', display_name: '未知作者' }, category: mod.category || 'submod',
+      id: mod.id, title: mod.title, summary: mod.summary || {}, description: mod.description && Object.keys(mod.description).length > 0 ? mod.description : (mod.summary || {}),
+      author: mod.author || { id: '', display_name: t('toast.unknownAuthor') }, category: mod.category || 'submod',
       tags: mod.tags || [], supported_platforms: mod.supported_platforms || [], mas_version_range: mod.mas_version_range || '',
       recommended_priority: mod.recommended_priority || 0, latest_version_id: version.id, downloads_count: mod.downloads_count || 0,
       client_reported_downloads: mod.client_reported_downloads || 0, download_attempts: mod.download_attempts || 0,
@@ -263,7 +267,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch (error) {
         const detail = error instanceof Error ? error.message : 'unknown_error';
         setCatalogError(detail);
-        showToast('error', `目录加载失败：${detail}`);
+        showToast('error', t('toast.catalogLoadFailed', { error: detail }));
       } finally {
         setCatalogLoading(false);
         setCatalogRefreshing(false);
@@ -294,10 +298,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const session = await loginFlarumRequest(username, password, base);
       applySession(session);
-      showToast('success', '已登录 Flarum 会话。');
+      showToast('success', t('toast.loginOk'));
       return true;
     } catch (error) {
-      showToast('error', `登录失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+      showToast('error', t('toast.loginFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
       return false;
     }
   }, [applySession, showToast]);
@@ -305,8 +309,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const logout = useCallback(() => {
     const base = apiBase();
     logoutRequest(csrfToken, base)
-      .then(() => { applySession({ user: null, roles: [], csrf_token: '' }); showToast('info', '已退出会话。'); })
-      .catch((error) => showToast('error', `退出失败：${error instanceof Error ? error.message : 'unknown_error'}`));
+      .then(() => { applySession({ user: null, roles: [], csrf_token: '' }); showToast('info', t('toast.logoutOk')); })
+      .catch((error) => showToast('error', t('toast.logoutFailed', { error: error instanceof Error ? error.message : 'unknown_error' })));
   }, [applySession, csrfToken, showToast]);
 
   const getModWithVersions = useCallback(
@@ -333,15 +337,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const createModDraft = useCallback(
     async (data: Partial<ModSummary>): Promise<string> => {
       if (!currentUser) {
-        showToast('error', '请先登录后创建模组草稿。', 'unauthenticated');
+        showToast('error', t('toast.loginRequired'), 'unauthenticated');
         return '';
       }
       const newId = 'mod_' + (data.title?.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20) || 'draft_' + Date.now());
       const newMod: ModSummary = {
         id: newId,
-        title: data.title || '未命名模组草稿',
-        summary: data.summary || '暂无简介描述',
-        description: data.description || data.summary || '## 模组概述\n欢迎使用本模组。',
+        title: data.title || t('toast.untitledDraft'),
+        // 新建草稿只写中文：英文留给作者在编辑器里补，留空时英文读者看到中文原文。
+        summary: (data.summary as LocalizedText | undefined) || { zh: t('toast.noSummary') },
+        description: (data.description as LocalizedText | undefined) || (data.summary as LocalizedText | undefined) || { zh: '## 模组概述\n欢迎使用本模组。' },
         author: {
           id: currentUser.id,
           display_name: currentUser.display_name,
@@ -399,10 +404,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           github_platform_assets: remote.github_platform_assets,
         };
         setMods((prev) => [persisted, ...prev]);
-        showToast('success', `成功创建模组草稿 [${newMod.title}]`);
+        showToast('success', t('toast.draftCreated', { title: newMod.title }));
         return remote.id;
       } catch (error) {
-        showToast('error', `草稿未保存到服务端：${error instanceof Error ? error.message : 'unknown_error'}`);
+        showToast('error', t('toast.draftSaveFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
         return '';
       }
     },
@@ -448,10 +453,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           github_platform_assets: remote.github_platform_assets ?? data.github_platform_assets,
           updated_at: new Date().toISOString(),
         } : mod));
-        showToast('success', '模组元数据已保存。');
+        showToast('success', t('toast.metaSaved'));
         return true;
       } catch (error) {
-        showToast('error', `模组元数据保存失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+        showToast('error', t('toast.metaSaveFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
         return false;
       }
     },
@@ -464,10 +469,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const remote = await createAuthorVersion(base, modId, version, releaseNotes, dependencies);
         setVersions((prev) => [{ id: remote.id, mod_id: remote.mod_id, version: remote.version, state: remote.state as ModVersion['state'], size_bytes: remote.size_bytes, sha256: remote.sha256, release_notes: remote.release_notes, dependencies: remote.dependencies as ModVersion['dependencies'], created_at: remote.created_at || '', is_immutable: false }, ...prev]);
-        showToast('success', `候选版本草稿已建立，等待上传 ZIP 归档。`);
+        showToast('success', t('toast.versionDraftCreated'));
         return remote.id;
       } catch (error) {
-        showToast('error', `候选版本未保存到服务端：${error instanceof Error ? error.message : 'unknown_error'}`);
+        showToast('error', t('toast.versionDraftSaveFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
         return '';
       }
     },
@@ -500,10 +505,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             scan_report_id: result.scan_report ? reportId : v.scan_report_id,
           } : v));
           const label = platform ? ` · ${assetPlatformLabel(platform)}` : '';
-          showToast('success', result.version ? `ZIP 扫描完成${label}，版本标识：${result.version}` : `ZIP 扫描完成${label}；提交审核前请填写版本标识。`);
+          showToast('success', result.version
+            ? t('toast.scanDone', { label, version: result.version })
+            : t('toast.scanDoneNoVersion', { label }));
           return reportId;
         } catch (error) {
-          showToast('error', `ZIP 上传失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+          showToast('error', t('toast.zipUploadFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
           throw error;
         }
       }
@@ -604,7 +611,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         )
       );
 
-      showToast('success', `ZIP 归档上传成功并已完成静态扫描报告生成 (SHA-256: ${randomHex.slice(0, 12)}...)`);
+      showToast('success', t('toast.archiveUploaded', { hash: randomHex.slice(0, 12) }));
       return reportId;
     },
     [currentUser, showToast]
@@ -614,10 +621,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const base = apiBase();
       await uploadModImages(base, modId, files);
-      showToast('success', `已上传 ${files.length} 张详情图。`);
+      showToast('success', t('toast.imagesUploaded', { count: files.length }));
       return true;
     } catch (error) {
-      showToast('error', `详情图上传失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+      showToast('error', t('toast.imagesUploadFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
       return false;
     }
   }, [showToast]);
@@ -630,11 +637,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const report = v.scan_report_id ? scanReports[v.scan_report_id] : null;
       if (!report) {
-        showToast('error', '请先上传 ZIP 并完成扫描，再提交审核。', 'archive_required');
+        showToast('error', t('toast.archiveRequired'), 'archive_required');
         return false;
       }
       if (report && report.blockers.length > 0) {
-        showToast('error', `无法提交审核：存在 ${report.blockers.length} 个扫描阻断项，请先修正问题包。`, 'validation_failed');
+        showToast('error', t('toast.submitBlocked', { count: report.blockers.length }), 'validation_failed');
         return false;
       }
 
@@ -642,10 +649,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const remote = await submitAuthorVersion(base, versionId, markLatest);
         setVersions((prev) => prev.map((item) => item.id === versionId ? { ...item, state: remote.state as ModVersion['state'] } : item));
-        showToast('success', `候选版本 ${v.version} 已提交服务端审核队列。`);
+        showToast('success', t('toast.submitted', { version: v.version }));
         return true;
       } catch (error) {
-        showToast('error', `提交审核失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+        showToast('error', t('toast.submitFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
         return false;
       }
     },
@@ -655,7 +662,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Review pages own their remote lists; only update known author/catalog entries here.
   const performReview = useCallback(async (submissionId: string, action: 'approve' | 'reject' | 'publish', reason = ''): Promise<boolean> => {
     if (!currentUser?.roles.includes('admin')) {
-      showToast('error', '缺少管理员权限。', 'forbidden');
+      showToast('error', t('toast.forbidden'), 'forbidden');
       return false;
     }
     const base = apiBase();
@@ -668,10 +675,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         is_immutable: remote.state === 'published' || remote.state === 'approved',
       } : item));
       if (remote.state === 'published') await reloadCatalog();
-      showToast('success', action === 'reject' ? '已驳回申请，审核理由已保存。' : '审核通过，版本已发布。');
+      showToast('success', action === 'reject' ? t('toast.reviewRejected') : t('toast.reviewPublished'));
       return true;
     } catch (error) {
-      showToast('error', `审核操作失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+      showToast('error', t('toast.reviewFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
       return false;
     }
   }, [currentUser, showToast, reloadCatalog]);
@@ -682,17 +689,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Admin Actions
   const unpublishVersion = useCallback(
     async (versionId: string, reason: string): Promise<void> => {
-      if (!currentUser) { showToast('error', '请先登录。', 'unauthenticated'); return; }
+      if (!currentUser) { showToast('error', t('toast.signInFirst'), 'unauthenticated'); return; }
       if (!reason.trim()) {
-        showToast('error', '下架操作必须记录审计理由。', 'validation_failed');
+        showToast('error', t('toast.reasonRequired'), 'validation_failed');
         return;
       }
 
       const base = apiBase();
-      try { await unpublishVersionRequest(base, versionId, reason); } catch (error) { showToast('error', `下架失败：${error instanceof Error ? error.message : 'unknown_error'}`); return; }
+      try { await unpublishVersionRequest(base, versionId, reason); } catch (error) { showToast('error', t('toast.unpublishFailed', { error: error instanceof Error ? error.message : 'unknown_error' })); return; }
       setVersions((prev) => prev.map((v) => v.id === versionId ? { ...v, state: 'unpublished', unpublish_reason: reason } : v));
 
-      showToast('warning', `该版本已被安全下架（不可变归档字节保留在后端，公开目录已隐藏）。`);
+      showToast('warning', t('toast.unpublished'));
     },
     [currentUser, showToast]
   );
@@ -702,16 +709,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const remote = await markPublishedVersionLatest(base, versionId);
       setMods((prev) => prev.map((mod) => mod.id === remote.id ? { ...mod, latest_version_id: versionId } : mod));
-      showToast('success', '目录最新版本已更新。');
+      showToast('success', t('toast.latestUpdated'));
     } catch (error) {
-      showToast('error', `设置最新版本失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+      showToast('error', t('toast.latestUpdateFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
     }
   }, [showToast]);
 
   const deleteVersion = useCallback(async (versionId: string): Promise<void> => {
     const base = apiBase();
-    try { await deleteAuthorVersion(base, versionId); setVersions((prev) => prev.filter((v) => v.id !== versionId)); showToast('success', '版本已删除。'); }
-    catch (error) { showToast('error', `删除版本失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
+    try { await deleteAuthorVersion(base, versionId); setVersions((prev) => prev.filter((v) => v.id !== versionId)); showToast('success', t('toast.versionDeleted')); }
+    catch (error) { showToast('error', t('toast.versionDeleteFailed', { error: error instanceof Error ? error.message : 'unknown_error' })); }
   }, [showToast]);
 
   const unpublishMod = useCallback(async (modId: string): Promise<boolean> => {
@@ -719,18 +726,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       await unpublishAuthorModRequest(base, modId);
       setMods((prev) => prev.map((mod) => mod.id === modId ? { ...mod, is_published: false } : mod));
-      showToast('success', '模组已从公开目录下架；版本、归档和详情图均已保留。');
+      showToast('success', t('toast.modUnpublished'));
       return true;
     } catch (error) {
-      showToast('error', `模组下架失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+      showToast('error', t('toast.modUnpublishFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
       return false;
     }
   }, [showToast]);
 
   const deleteModDraft = useCallback(async (modId: string): Promise<void> => {
     const base = apiBase();
-    try { await deleteAuthorModRequest(base, modId); setMods((prev) => prev.filter((mod) => mod.id !== modId)); setVersions((prev) => prev.filter((version) => version.mod_id !== modId)); showToast('success', '草稿模组及其候选内容已删除。'); }
-    catch (error) { showToast('error', `删除草稿模组失败：${error instanceof Error ? error.message : 'unknown_error'}`); }
+    try { await deleteAuthorModRequest(base, modId); setMods((prev) => prev.filter((mod) => mod.id !== modId)); setVersions((prev) => prev.filter((version) => version.mod_id !== modId)); showToast('success', t('toast.modDeleted')); }
+    catch (error) { showToast('error', t('toast.modDeleteFailed', { error: error instanceof Error ? error.message : 'unknown_error' })); }
   }, [showToast]);
 
   const markVersionDeprecated = useCallback(async (versionId: string, reason: string): Promise<void> => {
@@ -740,9 +747,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setVersions((prev) => prev.map((version) => version.id === versionId ? {
         ...version, deprecated: remote.deprecated, deprecation_reason: remote.deprecation_reason,
       } : version));
-      showToast('warning', '已标记为不推荐使用。');
+      showToast('warning', t('toast.deprecatedMarked'));
     } catch (error) {
-      showToast('error', `标记失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+      showToast('error', t('toast.deprecatedMarkFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
     }
   }, [showToast]);
 
@@ -753,16 +760,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setVersions((prev) => prev.map((version) => version.id === versionId ? {
         ...version, deprecated: false, deprecation_reason: '',
       } : version));
-      showToast('success', '已取消不推荐标记。');
+      showToast('success', t('toast.deprecatedCleared'));
     } catch (error) {
-      showToast('error', `取消标记失败：${error instanceof Error ? error.message : 'unknown_error'}`);
+      showToast('error', t('toast.deprecatedClearFailed', { error: error instanceof Error ? error.message : 'unknown_error' }));
     }
   }, [showToast]);
 
   const editVersion = useCallback(async (versionId: string, version: string, releaseNotes: string, dependencies?: ModVersion['dependencies']): Promise<boolean> => {
     const base = apiBase();
-    try { const remote = await editAuthorVersion(base, versionId, version, releaseNotes, dependencies ?? versions.find((item) => item.id === versionId)?.dependencies ?? []); setVersions((prev) => prev.map((v) => v.id === versionId ? { ...v, version: remote.version, release_notes: remote.release_notes, dependencies: remote.dependencies as ModVersion['dependencies'] } : v)); showToast('success', '版本资料已更新；被驳回版本需重新上传 ZIP 后才能提交审核。'); return true; }
-    catch (error) { showToast('error', `编辑版本失败：${error instanceof Error ? error.message : 'unknown_error'}`); return false; }
+    try { const remote = await editAuthorVersion(base, versionId, version, releaseNotes, dependencies ?? versions.find((item) => item.id === versionId)?.dependencies ?? []); setVersions((prev) => prev.map((v) => v.id === versionId ? { ...v, version: remote.version, release_notes: remote.release_notes, dependencies: remote.dependencies as ModVersion['dependencies'] } : v)); showToast('success', t('toast.versionEdited')); return true; }
+    catch (error) { showToast('error', t('toast.versionEditFailed', { error: error instanceof Error ? error.message : 'unknown_error' })); return false; }
   }, [showToast, versions]);
 
   const syncModReleases = useCallback(
@@ -771,15 +778,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const summary = await syncAuthorModGitHub(base, modId);
         if (summary.failed > 0 && summary.created === 0) {
-          showToast('error', `GitHub 同步失败: ${summary.last_error || '未知错误'}`);
+          showToast('error', t('toast.githubSyncFailed', { error: summary.last_error || t('toast.unknownError') }));
         } else if (summary.created > 0) {
-          showToast('success', `GitHub Releases 同步成功，新增 ${summary.created} 个版本`);
+          showToast('success', t('toast.githubSyncCreated', { count: summary.created }));
         } else {
-          showToast('info', 'GitHub Releases 同步完成，无新版本');
+          showToast('info', t('toast.githubSyncNoChange'));
         }
         return summary;
       } catch (err) {
-        showToast('error', `GitHub 同步异常: ${err instanceof Error ? err.message : '未知错误'}`);
+        showToast('error', t('toast.githubSyncError', { error: err instanceof Error ? err.message : t('toast.unknownError') }));
         return null;
       }
     },
@@ -792,7 +799,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         return await fetchAuthorModWorkflow(base, modId);
       } catch (err) {
-        showToast('error', `获取通知文件失败: ${err instanceof Error ? err.message : '未知错误'}`);
+        showToast('error', t('toast.notifyFileFailed', { error: err instanceof Error ? err.message : t('toast.unknownError') }));
         return null;
       }
     },
@@ -806,7 +813,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       return await fetchAuthorWorkflowTemplate(base, rules ?? {});
     } catch (err) {
-      showToast('error', `获取通知文件失败: ${err instanceof Error ? err.message : '未知错误'}`);
+      showToast('error', t('toast.notifyFileFailed', { error: err instanceof Error ? err.message : t('toast.unknownError') }));
       return null;
     }
   }, [showToast]);
