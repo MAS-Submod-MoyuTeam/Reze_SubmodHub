@@ -242,17 +242,29 @@ export const AuthorWorkbench: React.FC = () => {
     declaredPlatforms: newPlatforms,
   });
 
-  // 生成 Action 文件时要写进去的正则。与提交给服务端的是同一组值，否则作者
+  // 生成 Action 文件时要写进去的规则。与提交给服务端的是同一组值，否则作者
   // 复制到的文件会与服务端保存的规则不一致，通知就会认错包。
+  // 源码包兜底也在这份规则里：没有任何文件名正则可写时，它就是文件里唯一能
+  // 说明「这个仓库的包从哪来」的内容，缺了它文件会在源码包模式下变成空对象。
   const actionRules = {
     shared: newGitHubSplitPlatforms ? '' : newGitHubAssetRegex.trim(),
     windows: newGitHubSplitPlatforms ? newPlatformRules.windows.regex.trim() : '',
     android: newGitHubSplitPlatforms ? newPlatformRules.android.regex.trim() : '',
+    shared_source_code: !newGitHubSplitPlatforms && newGitHubSourceCode,
+    windows_source_code: newGitHubSplitPlatforms && newPlatformRules.windows.sourceCode,
+    android_source_code: newGitHubSplitPlatforms && newPlatformRules.android.sourceCode,
   };
-  // 一条正则都没有时生成的文件毫无意义，按钮据此禁用而不是发一个空规则出去。
+  // 一条规则都没有（既没正则、也没勾源码包兜底）时生成的文件毫无意义，按钮据此
+  // 禁用而不是发一个空规则出去。源码包模式没有文件名可填，但通知照样成立。
   const workflowRulesReady = newGitHubSplitPlatforms
-    ? Boolean(actionRules.windows || actionRules.android)
-    : Boolean(actionRules.shared);
+    ? configuredSplitPlatforms.length > 0
+    : Boolean(actionRules.shared || actionRules.shared_source_code);
+  // 第 1 步的说明按「有没有文件名正则」切换：源码包模式下没有正则可确认。
+  const workflowHasPattern = Boolean(actionRules.shared || actionRules.windows || actionRules.android);
+  // 第 1 步逐条展示「这条规则匹配什么」：有正则展示正则，没有正则但有源码包
+  // 兜底就写源码包，两者都没有才是未填写。
+  const workflowMatcherLabel = (regex: string, sourceCode: boolean) =>
+    regex.trim() || (sourceCode ? t('author.sourceCodePackage') : t('author.notFilled'));
 
 
   const handleCreateDraftSubmit = async (e: React.FormEvent) => {
@@ -1618,18 +1630,18 @@ export const AuthorWorkbench: React.FC = () => {
                         <p className="text-emerald-800">{t('author.workflowBenefit')}</p>
                         <p className="text-amber-800">{t('author.workflowCost')}</p>
                         <div className="mt-2 pt-2 border-t border-emerald-200 space-y-1.5">
-                          <p className="text-neutral-800 font-medium">{t('author.step1Title')}</p>
+                          <p className="text-neutral-800 font-medium">{workflowHasPattern ? t('author.step1Title') : t('author.step1TitleSource')}</p>
                           <p className="text-neutral-600">
-                            {t('author.step1Body')}
+                            {workflowHasPattern ? t('author.step1Body') : t('author.step1BodySource')}
                           </p>
                           {newGitHubSplitPlatforms ? (
                             <ul className="list-disc pl-4 text-neutral-600">
-                              <li>{t('author.step1Windows')}<code className="bg-neutral-100 px-1 rounded">{newPlatformRules.windows.regex.trim() || t('author.notFilled')}</code></li>
-                              <li>{t('author.step1Android')}<code className="bg-neutral-100 px-1 rounded">{newPlatformRules.android.regex.trim() || t('author.notFilled')}</code></li>
+                              <li>{t('author.step1Windows')}<code className="bg-neutral-100 px-1 rounded">{workflowMatcherLabel(newPlatformRules.windows.regex, newPlatformRules.windows.sourceCode)}</code></li>
+                              <li>{t('author.step1Android')}<code className="bg-neutral-100 px-1 rounded">{workflowMatcherLabel(newPlatformRules.android.regex, newPlatformRules.android.sourceCode)}</code></li>
                             </ul>
                           ) : (
                             <p className="text-neutral-600">
-                              {t('author.step1Shared')}<code className="bg-neutral-100 px-1 rounded">{newGitHubAssetRegex.trim() || t('author.notFilled')}</code>
+                              {t('author.step1Shared')}<code className="bg-neutral-100 px-1 rounded">{workflowMatcherLabel(newGitHubAssetRegex, newGitHubSourceCode)}</code>
                             </p>
                           )}
                           <p className="text-neutral-800 font-medium pt-1">{t('author.step2Title')}</p>

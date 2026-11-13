@@ -341,3 +341,27 @@ test('omits blank regexes so the template query stays clean', async () => {
   await fetchAuthorWorkflowTemplate('/api/v1', { shared: '   ', windows: '' }, fetcher);
 });
 
+// 源码包模式没有正则，唯一的规则就是兜底标记：它必须随模板请求一起发出去，
+// 否则服务端生成的文件会是一个空规则对象，通知也就看不出包从哪来。
+test('sends the source-archive fallback flags with the template query', async () => {
+  const fetcher = (async (input: RequestInfo | URL) => {
+    assert.equal(
+      String(input),
+      '/api/v1/author/workflow-template?shared_source_code=1&windows_source_code=1'
+    );
+    return Response.json({
+      path: '.github/workflows/rezehub-notify.yml',
+      rules: { shared_source_code: true, windows_source_code: true },
+      content: 'name: Notify RezeHub',
+      notify_url: 'https://hub.example/api/v1/github-release-notify',
+    });
+  }) as typeof fetch;
+  const template = await fetchAuthorWorkflowTemplate(
+    '/api/v1',
+    { shared_source_code: true, windows_source_code: true },
+    fetcher
+  );
+  assert.equal(template.rules.shared_source_code, true);
+  assert.equal(template.rules.windows_source_code, true);
+});
+

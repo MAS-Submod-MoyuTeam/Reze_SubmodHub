@@ -289,3 +289,132 @@ func TestAuthorWorkflowKeepsBackslashesJSONSafe(t *testing.T) {
 		t.Fatalf("pattern round-trip lost information: got %q want %q", decoded.Shared, pattern)
 	}
 }
+
+// A source-only mod has no asset name to embed, but the notification is still
+// the only push signal it can get: the file must be offered and must say that
+// the Release source archive is the package instead of describing patterns the
+// author never entered.
+func TestAuthorWorkflowAdaptsToSourceOnlyMod(t *testing.T) {
+	store, err := NewStore(t.TempDir(), Catalog{Mods: []Mod{{
+		ID: "mod_source", Title: "Source", Category: "submod",
+		Author: Author{ID: "author_1"}, SourceType: "github_releases",
+		GitHubOwner: "reze", GitHubRepo: "source",
+		GitHubSourceCode: true,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("a", 64)
+	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "author_1"}, Expires: time.Now().Add(time.Hour)}
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/author/mods/mod_source/github-workflow", nil)
+	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
+	res, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for a source-only mod, got %d", res.StatusCode)
+	}
+	var payload struct {
+		Content string                `json:"content"`
+		Rules   workflowPlatformRules `json:"rules"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Rules.Shared != "" || !payload.Rules.SharedSourceCode {
+		t.Fatalf("source-only rules not reported: %+v", payload.Rules)
+	}
+	if !strings.Contains(payload.Content, `"shared_source_code":true`) {
+		t.Fatalf("workflow does not embed the source-archive fallback:\n%s", payload.Content)
+	}
+	if !strings.Contains(payload.Content, "source archive") {
+		t.Fatalf("workflow never mentions the source archive:\n%s", payload.Content)
+	}
+	if strings.Contains(payload.Content, "The PC/Android patterns below") {
+		t.Fatalf("source-only workflow still claims the author configured patterns:\n%s", payload.Content)
+	}
+}
+
+// Split delivery applies the fallback per platform, so the flag has to be
+// carried per platform as well.
+func TestAuthorWorkflowReportsPerPlatformSourceArchive(t *testing.T) {
+	store, err := NewStore(t.TempDir(), Catalog{Mods: []Mod{{
+		ID: "mod_split_source", Title: "Split source", Category: "submod",
+		Author: Author{ID: "author_1"}, SourceType: "github_releases",
+		GitHubOwner: "reze", GitHubRepo: "split-source",
+		GitHubPlatformAssets: []GitHubPlatformRule{
+			{Platform: "windows", Regex: `MyMod-windows\.zip$`},
+			{Platform: "android", SourceCode: true},
+		},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("a", 64)
+	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "author_1"}, Expires: time.Now().Add(time.Hour)}
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/author/mods/mod_split_source/github-workflow", nil)
+	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
+	res, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var payload struct {
+		Content string                `json:"content"`
+		Rules   workflowPlatformRules `json:"rules"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Rules.WindowsSourceCode || !payload.Rules.AndroidSourceCode {
+		t.Fatalf("per-platform source fallback not reported: %+v", payload.Rules)
+	}
+	if !strings.Contains(payload.Content, `"android_source_code":true`) {
+		t.Fatalf("workflow does not embed the android fallback:\n%s", payload.Content)
+	}
+}
+
+// The draft form has no stored mod, so it must be able to describe a
+// source-archive fallback through the template parameters.
+func TestAuthorWorkflowTemplateAcceptsSourceCodeFlags(t *testing.T) {
+	store, err := NewStore(t.TempDir(), Catalog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("a", 64)
+	store.sessions[sessionKey(token)] = authSession{User: authUser{ID: "author_1"}, Expires: time.Now().Add(time.Hour)}
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/author/workflow-template?shared_source_code=1", nil)
+	req.AddCookie(&http.Cookie{Name: "submodhub_session", Value: token})
+	res, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+	var payload struct {
+		Content string                `json:"content"`
+		Rules   workflowPlatformRules `json:"rules"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Rules.SharedSourceCode {
+		t.Fatalf("template ignored the source-code flag: %+v", payload.Rules)
+	}
+	if !strings.Contains(payload.Content, `"shared_source_code":true`) {
+		t.Fatalf("template does not embed the source-code flag:\n%s", payload.Content)
+	}
+}

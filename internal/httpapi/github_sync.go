@@ -718,8 +718,11 @@ func (s *Store) githubReleaseNotify(w http.ResponseWriter, r *http.Request) {
 }
 
 // validateWorkflowRuleSet rejects patterns the hub cannot compile. The empty set
-// is valid: it means the workflow predates rule delivery, and the mod's stored
-// configuration decides what to publish.
+// is valid: it means either the workflow predates rule delivery or the mod
+// publishes the Release source archive and has no file name to match, and in
+// both cases the mod's stored configuration decides what to publish. The
+// *_source_code flags need no validation: they only record which scopes allow
+// that fallback.
 func validateWorkflowRuleSet(rules workflowPlatformRules) error {
 	for name, pattern := range map[string]string{
 		"shared":  rules.Shared,

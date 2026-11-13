@@ -179,6 +179,15 @@ export type GitHubWorkflowRules = {
   shared?: string;
   windows?: string;
   android?: string;
+  /**
+   * A scope that may publish the Release source archive (zipball) instead of an
+   * uploaded asset. A repository that only ships source has no file name to
+   * match, so these flags are the only record of what makes a release
+   * publishable; the generated workflow carries them next to the patterns.
+   */
+  shared_source_code?: boolean;
+  windows_source_code?: boolean;
+  android_source_code?: boolean;
 };
 
 export type GitHubWorkflowTemplate = {
@@ -201,6 +210,11 @@ export async function fetchAuthorWorkflowTemplate(
   for (const key of ['shared', 'windows', 'android'] as const) {
     const value = rules[key]?.trim();
     if (value) params.set(key, value);
+  }
+  // The flags are sent as "1" because the template route reads them from the
+  // query string; a source-only repository has no pattern to send instead.
+  for (const key of ['shared_source_code', 'windows_source_code', 'android_source_code'] as const) {
+    if (rules[key]) params.set(key, '1');
   }
   const query = params.toString();
   const path = `/author/workflow-template${query ? `?${query}` : ''}`;

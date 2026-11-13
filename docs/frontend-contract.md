@@ -229,7 +229,7 @@ journal 事务阶段为 `planned -> prepared -> applying -> committing -> commit
 - `github_last_sync_at`: 最近一次同步时间（仅作者工作台与管理端可见，公开目录自动脱敏）。
 - `github_last_sync_error`: 最近一次同步非致命错误描述（仅作者工作台与管理端可见）。
 - `github_last_release_id`: 最近处理的 GitHub Release ID（仅作者工作台与管理端可见）。
-- `github_release_failures`: 已记录为“重试也没有意义”的 Release 资产数组 `[{ release_id, tag, asset_id, asset_name, asset_size, kind, limit_bytes?, reason, recorded_at }]`，`kind` 为 `too_large`（声明大小超过上限，未下载）或 `rejected`（字节无法存储或扫描）。命中记录的 Release 在同步时不再下载，仍以失败条目显示在同步结果中；强制同步会忽略该记录。公开目录自动脱敏。
+- `github_release_failures`: 已记录为“重试也没有意义”的 Release 资产数组 `[{ release_id, tag, asset_id, asset_name, asset_size, kind, limit_bytes?, reason, recorded_at }]`，`kind` 为 `too_large`（声明大小超过上限，未下载）或 `rejected`（字节无法存储或扫描）。命中记录的 Release 在同步时不再下载，仍以失败条目显示在同步结果中；强制同步会忽略该记录。同一模组攒到 2 条 `rejected` 后自动同步只对「更新的 Release」或「换过资产的 Release」再试，从未尝试过的历史版本跳过（`automatic sync paused` 条目），直到作者更新为止。公开目录自动脱敏。
 - `github_platform_assets`: 可选的分平台资产规则数组 `[{ "platform": "windows" | "android", "regex": "...", "source_code": false }]`。**非空时分平台分发**：每个平台用自己的 RE2 正则匹配同一次 Release 里的资产，`github_asset_regex` 与 `github_source_code` 不再参与匹配。空数组/省略即回到「全平台共用同一个文件」的现行为，因此该字段可以显式传 `[]` 表示“关掉分平台”。非空时该模组的同步不复用 Release 列表 ETag（见下文「下载与描述符」末条）。
 
 ### 分平台资产（GitHub Releases）
@@ -300,16 +300,16 @@ journal 事务阶段为 `planned -> prepared -> applying -> committing -> commit
 ### 版本发现方式（前端必读）
 `GET /api/v1/mods/{id}` 与作者工作台列表加载会在胶水层按 `GITHUB_SYNC_MAX_AGE`（默认 60 分钟）异步触发一次回源（每页最多 3 个模组、同一模组单飞），页面响应不被阻塞；后台巡检每分钟把过期模组补一遍。
 
-作者在“编辑模组”的 GitHub 分段中必须能选择两种发现方式，并**如实展示代价**：
-- **站内按需抓取（默认）**：无需任何额外文件；更新最多延迟约 `GITHUB_SYNC_MAX_AGE`，有人打开该模组时立即补抓，无人访问时由后台巡检兜底。
-- **发版通知（推荐）**：作者把生成好的 `.github/workflows/rezehub-notify.yml` 放进仓库，Release 发布后几秒内即触发检查。这只是仓库侧的 Action，**不是站内设置**，没有对应字段需要提交；正则随生成的文件一起走。
+作者在“新建模组 / 编辑模组”的 GitHub 分段中必须能选择两种发现方式，默认选中**发版通知**，并**如实展示代价**：
+- **站内按需抓取**：无需任何额外文件；更新最多延迟约 `GITHUB_SYNC_MAX_AGE`，有人打开该模组时立即补抓，无人访问时由后台巡检兜底。它始终在后台运行，取消选中「发版通知」只是不再生成 Action 文件，不是关掉它。
+- **发版通知（推荐，默认）**：作者把生成好的 `.github/workflows/rezehub-notify.yml` 放进仓库，Release 发布后几秒内即触发检查。这只是仓库侧的 Action，**不是站内设置**，没有对应字段需要提交；正则随生成的文件一起走。源码包分配模式（无文件名正则、只开 `source_code` 兜底）同样必须能生成并复制这份文件：规则里带 `shared_source_code` / `windows_source_code` / `android_source_code` 标记，正文换成源码包说明。
 
 另有每 6 小时一次的版本自查：读取仓库已发布 Release 中版本最高的 tag，只有高于站内版本才触发同步，因此不装 Action 也不会漏更新。
 
 相关接口：
-- `GET /api/v1/author/mods/{id}/github-workflow`：返回该模组的发布通知工作流（作者或管理员）。响应 `{ mod_id, path, owner, repo, rules, content, notify_url }`。
-- `GET /api/v1/author/workflow-template?shared=&windows=&android=`：草稿表单用，尚未创建模组时按传入正则生成同一份文件，响应 `{ path, rules, content, notify_url }`。需登录。
-- `POST /api/v1/github-release-notify`：仓库 Action 调用，**无需鉴权**。载荷 `{ owner, repo, version, rules? }`。未绑定返回 404（与写错仓库名一致，不能用来探测）；正则不合法返回 400 `invalid_rules`；成功返回 202 `{ matched_mods, status: "stale" }`。它只把模组标记为过期，不下载任何文件。
+- `GET /api/v1/author/mods/{id}/github-workflow`：返回该模组的发布通知工作流（作者或管理员）。响应 `{ mod_id, path, owner, repo, rules, content, notify_url }`；`rules` 为 `{ shared, windows, android, shared_source_code, windows_source_code, android_source_code }`，正则与源码包标记都按模组当前配置派生。
+- `GET /api/v1/author/workflow-template?shared=&windows=&android=&shared_source_code=&windows_source_code=&android_source_code=`：草稿表单用，尚未创建模组时按传入规则生成同一份文件，响应 `{ path, rules, content, notify_url }`。正则留空时可用 `*_source_code=1` 表达源码包兜底。需登录。
+- `POST /api/v1/github-release-notify`：仓库 Action 调用，**无需鉴权**。载荷 `{ owner, repo, version, rules? }`，`rules` 可以是只含 `*_source_code` 标记、没有正则的对象（源码包模式的正常形状），也可以是 `{}`。未绑定返回 404（与写错仓库名一致，不能用来探测）；正则不合法返回 400 `invalid_rules`；成功返回 202 `{ matched_mods, status: "stale" }`。它只把模组标记为过期，不下载任何文件。
 
 ### 源策略（公开）
 `GET /api/v1/source-policy` 返回当前生效的刷新窗口，供作者端文案引用**实际值**而不是硬编码默认值：

@@ -101,6 +101,24 @@ func TestGitHubReleaseNotifyMarksBoundModStale(t *testing.T) {
 	}
 }
 
+// A workflow generated for a source-only repository carries no patterns, only
+// the fallback flag. That is a complete rule set for this endpoint: rejecting it
+// would make the notification unusable exactly where no asset name exists.
+func TestGitHubReleaseNotifyAcceptsSourceArchiveRules(t *testing.T) {
+	store := notifyStore(t)
+	server := httptest.NewServer(NewStoreHandler(store))
+	defer server.Close()
+
+	res := postNotify(t, server, `{"owner":"reze","repo":"reze_submodhub","version":"v2.0.0","rules":{"shared_source_code":true}}`)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", res.StatusCode)
+	}
+	if snapshot := lookupMod(store, "mod_bound"); snapshot == nil || snapshot.GitHubLastSyncAt != nil {
+		t.Fatal("a source-only notification must still mark the mod stale")
+	}
+}
+
 // An unbound repository must be indistinguishable from a typo: same status, no
 // catalog detail in the response, and no state change.
 func TestGitHubReleaseNotifyDropsUnboundRepository(t *testing.T) {
