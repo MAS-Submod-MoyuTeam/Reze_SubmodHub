@@ -257,6 +257,12 @@ func (s *Store) siteSettingsLocked() siteSettingsResponse {
 	if len(plain) >= 4 {
 		resp.GitHubTokenHint = plain[len(plain)-4:]
 	}
+	// A token that cannot be decrypted reports no usage: counting it as "0
+	// requests" would claim something the server cannot know.
+	if plain == "" {
+		return resp
+	}
+	resp.GitHubTokenUsage = s.githubUsage.view(plain)
 	return resp
 }
 
@@ -394,6 +400,10 @@ type siteSettingsResponse struct {
 	GitHubTokenConfigured bool   `json:"github_token_configured"`
 	GitHubTokenEncrypted  bool   `json:"github_token_encrypted"`
 	GitHubTokenHint       string `json:"github_token_hint,omitempty"`
+	// GitHubTokenUsage reports what the installed token has spent. It is
+	// present only while a token is installed, because anonymous traffic spends
+	// the shared IP bucket rather than a token's quota.
+	GitHubTokenUsage *githubTokenUsage `json:"github_token_usage,omitempty"`
 	// GitHubSyncMaxAge is the staleness window actually in effect, so the page
 	// never has to guess what an empty stored value means.
 	GitHubSyncMaxAge       string `json:"github_sync_max_age"`

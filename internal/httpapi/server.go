@@ -444,11 +444,15 @@ type Store struct {
 	// runtime value while that override is active.
 	GitHubSyncMaxAgeOverride *time.Duration
 	gitHubBackoffUntil       time.Time
-	simultaneousSyncs        map[string]bool
-	syncStopChan             chan struct{}
-	syncDoneChan             chan struct{}
-	syncCloseOnce            sync.Once
-	downloadSem              chan struct{}
+	// githubUsage counts the API requests this process sent with the installed
+	// token so the settings page can report that token's hourly usage. The zero
+	// value is ready to use.
+	githubUsage       githubUsageTracker
+	simultaneousSyncs map[string]bool
+	syncStopChan      chan struct{}
+	syncDoneChan      chan struct{}
+	syncCloseOnce     sync.Once
+	downloadSem       chan struct{}
 	// AppReleaseRepoOwner/Name override the published app repository. They are
 	// read-only after construction and exist so tests can point at a fake
 	// GitHub; production uses internal/version's release coordinates.

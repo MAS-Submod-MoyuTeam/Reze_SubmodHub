@@ -347,6 +347,11 @@ journal 事务阶段为 `planned -> prepared -> applying -> committing -> commit
 ### 管理端 GitHub API 令牌
 `GET /api/v1/admin/settings` 返回 `github_proxy_template`、`github_token_configured`、`github_token_encrypted`、`github_token_hint`（末四位）、`github_sync_max_age`（当前生效的检查更新窗口）、`tag_catalog`（当前生效的标签目录）、`master_key_configured`、`revision`，**永不回显令牌本身**。`PATCH` 可带 `github_sync_max_age`（Go duration；空串恢复默认 60 分钟，`0` 关闭自动刷新）。
 
+装了令牌时响应额外带 `github_token_usage`（没有令牌时整个字段缺失，因为匿名请求花的是共享 IP 配额，不属于任何一把令牌）：
+
+- `requests_last_hour`：本服务近 60 分钟发给 GitHub API 的请求数，滚动窗口，含 GitHub 不收费的 304 条件请求；进程重启或更换令牌后从 0 重新开始。
+- `rate_limit`：GitHub 在最近一次响应里回报的官方配额（`limit`、`used`、可选 `reset_at`、`observed_at`）。它包含其他共用同一把令牌的服务，但只在回源之后才更新；代理摘掉 `X-Ratelimit-*` 响应头、或令牌刚换上还没发过请求时，该字段缺失，此时前端应显示「等待下一次回源」而不是 0。
+
 `PATCH /api/v1/admin/settings` 接受 `{ github_proxy_template?, github_token?, github_sync_max_age?, tag_catalog?, revision }`：
 - `tag_catalog` 整份替换标签目录，格式同 `GET /api/v1/tags` 的 `groups`（子标签是 `{name,description}` 对象，不是裸字符串）；服务端 trim、去重并按规则校验（空目录、超长、跨层级重名、`,#`、控制字符、描述超长均返回 400 `invalid_tag_catalog`），保存后同步清理模组上已不存在的标签。只改描述也算一次目录变更（审计 `tags_changed`）。
 - `github_sync_max_age` 为 Go duration；空串恢复默认 60 分钟，`0` 关闭自动刷新。

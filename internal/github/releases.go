@@ -171,6 +171,43 @@ type Release struct {
 	Assets      []Asset    `json:"assets"`
 }
 
+// RateLimitSnapshot is the quota state GitHub reported on one response for the
+// token that authenticated it. Used is derived from limit and remaining because
+// those two headers are the pair every rate-limited resource returns; reading a
+// third header would give the same number a second owner.
+type RateLimitSnapshot struct {
+	Limit   int
+	Used    int
+	ResetAt time.Time
+}
+
+// APIRequestObservation describes one authenticated API request a Client sent.
+// It exists so a caller can report quota usage without ever handling the token
+// again, and without inspecting responses itself.
+type APIRequestObservation struct {
+	Endpoint string
+	Status   int
+	// RateLimit is nil when the response carried no quota headers, which happens
+	// behind a relay proxy that does not forward them. Callers must keep their
+	// previous observation instead of reporting a zeroed bucket.
+	RateLimit *RateLimitSnapshot
+	At        time.Time
+}
+
+// parseRateLimitSnapshot reads the quota headers of an API response.
+func parseRateLimitSnapshot(res *http.Response) *RateLimitSnapshot {
+	limit, limitErr := strconv.Atoi(strings.TrimSpace(res.Header.Get("X-Ratelimit-Limit")))
+	remaining, remainingErr := strconv.Atoi(strings.TrimSpace(res.Header.Get("X-Ratelimit-Remaining")))
+	if limitErr != nil || remainingErr != nil || limit <= 0 || remaining < 0 || remaining > limit {
+		return nil
+	}
+	snapshot := &RateLimitSnapshot{Limit: limit, Used: limit - remaining}
+	if sec, err := strconv.ParseInt(strings.TrimSpace(res.Header.Get("X-Ratelimit-Reset")), 10, 64); err == nil && sec > 0 {
+		snapshot.ResetAt = time.Unix(sec, 0).UTC()
+	}
+	return snapshot
+}
+
 type Client struct {
 	baseURL                string
 	httpClient             *http.Client
@@ -178,6 +215,7 @@ type Client struct {
 	proxyTemplate          string
 	token                  string
 	allowInsecureTestHosts bool
+	observer               func(APIRequestObservation)
 }
 
 type Option func(*Client)
@@ -222,6 +260,15 @@ func WithAllowInsecureTestHosts(allow bool) Option {
 func WithToken(token string) Option {
 	return func(c *Client) {
 		c.token = strings.TrimSpace(token)
+	}
+}
+
+// WithRequestObserver reports every authenticated API request this client sends.
+// Only requests that actually carried the token are reported, so the observer
+// counts quota-relevant traffic and never sees asset-download traffic.
+func WithRequestObserver(observer func(APIRequestObservation)) Option {
+	return func(c *Client) {
+		c.observer = observer
 	}
 }
 
@@ -270,6 +317,22 @@ func isRedirectStatus(status int) bool {
 		status == http.StatusSeeOther ||
 		status == http.StatusTemporaryRedirect ||
 		status == http.StatusPermanentRedirect
+}
+
+// observe reports one final (non-redirect) response to the request observer.
+// Only requests that carried the token are reported: asset downloads and
+// anonymous traffic do not spend the token's quota, so counting them would
+// misdescribe what the settings page shows.
+func (c *Client) observe(endpoint string, res *http.Response) {
+	if c.observer == nil || c.token == "" || !strings.HasPrefix(endpoint, c.baseURL) {
+		return
+	}
+	c.observer(APIRequestObservation{
+		Endpoint:  endpoint,
+		Status:    res.StatusCode,
+		RateLimit: parseRateLimitSnapshot(res),
+		At:        time.Now().UTC(),
+	})
 }
 
 func (c *Client) executeStreamRequest(ctx context.Context, targetURL string, headers map[string]string) (*http.Response, error) {
@@ -328,6 +391,10 @@ func (c *Client) executeStreamRequest(ctx context.Context, targetURL string, hea
 			currURL = nextURL
 			continue
 		}
+
+		// Report the final response before it is classified: a 401/403/404 is
+		// still a request GitHub may have charged to the token.
+		c.observe(currURL, res)
 
 		if res.StatusCode < 200 || res.StatusCode >= 300 {
 			defer res.Body.Close()
@@ -414,6 +481,8 @@ func (c *Client) executeRequest(ctx context.Context, targetURL string, headers m
 			currURL = nextURL
 			continue
 		}
+
+		c.observe(currURL, res)
 
 		return res, nil
 	}

@@ -18,10 +18,11 @@ import {
   Timer,
 } from 'lucide-react';
 import { getFlarumUserRoles, readSession, setFlarumUserRoles } from '../../../ui/auth-api';
-import { fetchSettings, testGitHubProxy, updateSettings, type ProxyTestResponse, type SiteSettings } from '../../../ui/settings-api';
+import { fetchSettings, testGitHubProxy, updateSettings, type GitHubTokenUsage, type ProxyTestResponse, type SiteSettings } from '../../../ui/settings-api';
 import type { TagGroup } from '../../../ui/tags-api';
 import { useApp } from '../context/AppContext';
 import { DownloadNodeSettings } from './DownloadNodeSettings';
+import { GitHubTokenUsageRow } from './GitHubTokenUsageRow';
 import { SettingsTransferCard } from './SettingsTransferCard';
 import { TagCatalogSettings } from './TagCatalogSettings';
 import { useI18n } from '../i18n';
@@ -55,6 +56,9 @@ export const AdminPanel: React.FC = () => {
   const [tokenConfigured, setTokenConfigured] = useState(false);
   const [tokenEncrypted, setTokenEncrypted] = useState(false);
   const [tokenHint, setTokenHint] = useState('');
+  // What the installed token has spent. Absent until the server has a token to
+  // report on, so the usage row renders only when this is set.
+  const [tokenUsage, setTokenUsage] = useState<GitHubTokenUsage | null>(null);
   const [masterKeyConfigured, setMasterKeyConfigured] = useState(false);
   const [savingToken, setSavingToken] = useState(false);
   const [tokenConflictError, setTokenConflictError] = useState(false);
@@ -90,6 +94,7 @@ export const AdminPanel: React.FC = () => {
       setTokenConfigured(Boolean(data.github_token_configured));
       setTokenEncrypted(Boolean(data.github_token_encrypted));
       setTokenHint(data.github_token_hint || '');
+      setTokenUsage(data.github_token_usage ?? null);
       setMasterKeyConfigured(Boolean(data.master_key_configured));
       setSyncMaxAge(data.github_sync_max_age || '');
       setSavedSyncMaxAge(data.github_sync_max_age || '');
@@ -191,6 +196,7 @@ export const AdminPanel: React.FC = () => {
     setTokenConfigured(Boolean(updated.github_token_configured));
     setTokenEncrypted(Boolean(updated.github_token_encrypted));
     setTokenHint(updated.github_token_hint || '');
+    setTokenUsage(updated.github_token_usage ?? null);
     setMasterKeyConfigured(Boolean(updated.master_key_configured));
     setSyncMaxAge(updated.github_sync_max_age || '');
     setSavedSyncMaxAge(updated.github_sync_max_age || '');
@@ -216,6 +222,7 @@ export const AdminPanel: React.FC = () => {
       setTokenConfigured(Boolean(updated.github_token_configured));
       setTokenEncrypted(Boolean(updated.github_token_encrypted));
       setTokenHint(updated.github_token_hint || '');
+      setTokenUsage(updated.github_token_usage ?? null);
       setMasterKeyConfigured(Boolean(updated.master_key_configured));
       setRevision(updated.revision);
       setTokenInput('');
@@ -661,6 +668,7 @@ export const AdminPanel: React.FC = () => {
                       )}
                     </span>
                   </div>
+                  {tokenConfigured && tokenUsage && <GitHubTokenUsageRow usage={tokenUsage} />}
                   {tokenConfigured && !tokenEncrypted && (
                     <div className="flex items-start gap-1.5 pt-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />

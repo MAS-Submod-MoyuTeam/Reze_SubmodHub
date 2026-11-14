@@ -36,6 +36,32 @@ export async function testDownloadNode(id: string, revision: number, csrf: strin
  return handleResponse<DownloadNodeTestResult>(await fetcher(`${nodeURL(base,id)}/test`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({revision})}));
 }
 
+/**
+ * GitHub 自己在这一小时内计入该令牌的用量，取自最近一次 API 响应的配额头。
+ *
+ * 与 `requests_last_hour` 是两回事：这里也包含其他共用同一把令牌的服务，
+ * 而且不含 GitHub 不收费的条件请求（304）。代理摘掉配额头时整个字段缺失。
+ */
+export interface GitHubTokenRateLimit {
+  /** 该令牌每小时上限（配置令牌后为 5000）。 */
+  limit: number;
+  /** 本小时窗口内已计入的请求数。 */
+  used: number;
+  /** 配额窗口重置时间；GitHub 未返回重置头时缺失。 */
+  reset_at?: string;
+  /** 这份数字来自哪一次响应，用来判断它是否已经过时。 */
+  observed_at: string;
+}
+
+export interface GitHubTokenUsage {
+  /**
+   * 本服务近 60 分钟发给 GitHub API 的请求数（含 304 条件请求）。
+   * 进程重启或更换令牌后从 0 重新开始。
+   */
+  requests_last_hour: number;
+  rate_limit?: GitHubTokenRateLimit | null;
+}
+
 export interface SiteSettings {
   github_proxy_template: string;
   /** 是否已保存 GitHub API 令牌；响应永远不回显令牌本身。 */
@@ -44,6 +70,11 @@ export interface SiteSettings {
   github_token_encrypted: boolean;
   /** 已保存令牌的末四位，便于确认当前装的是哪一把。 */
   github_token_hint?: string;
+  /**
+   * 当前令牌的用量。只有装了令牌才有这个字段：匿名请求花的是共享 IP 配额，
+   * 不属于任何一把令牌。
+   */
+  github_token_usage?: GitHubTokenUsage | null;
   /** 实际生效的刷新窗口（Go duration，如 "4h30m0s"）；"0s" 表示已关闭自动刷新。 */
   github_sync_max_age: string;
   /** True when the deployment environment pins the refresh window. */

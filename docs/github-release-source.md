@@ -186,6 +186,7 @@ SubmodHub 仅允许下载 `.zip` 格式的 Release 资产文件，非 `.zip` 文
 - **自动解析重置时间**：当触发 GitHub API 速率限制（HTTP 403 / 429）时，系统自动解析响应头中的 `X-Ratelimit-Reset`（Unix 时间戳）或 `Retry-After`（秒数/标准时间格式）。若未提供具体头部，系统采用默认 15 分钟退避间隔。
 - **保护性退避锁定**：退避期内，模组与后台全局同步器记录 `github_backoff_until` 截止时间。在截止时间到来前，系统定时轮询与手动同步将自动跳过外部网络请求，并在模组状态记录 `github_last_sync_error: github api rate limit backoff active until <UTC时间> (remaining: <剩余时间>)`，彻底防止短时间内连续空耗 IP 配额。更新代理或令牌会立即清空所有退避状态，因为配额桶已经换了。
 - **自动恢复**：退避时间过后，下一次同步请求恢复正常执行，成功后自动清除退避状态。
+- **设置页直接看用量**：令牌卡片会显示两个数字——「近 1 小时请求」是本进程近 60 分钟发出的 API 请求数（滚动窗口，含不收费的 304；重启或换令牌后归零），「官方配额已用 N / 5000」来自最近一次响应里的 `X-Ratelimit-Limit` / `X-Ratelimit-Remaining`（也包含共用同一把令牌的其他服务，且只在回源后更新）。两者口径不同，不要相互校正；代理摘掉配额响应头时只显示「等待下一次回源」。
 
 ### 切换回 Local 源与回滚演练
 - 作者或管理员可在模组编辑窗口将来源切回 **本站上传 (local)**，或调用 `PATCH /api/v1/author/mods/{id}/source` 设置 `{"source_type":"local"}`。

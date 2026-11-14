@@ -30,10 +30,19 @@ func (s *Store) githubSettings() (proxyTemplate, token string) {
 // getGitHubClientWithProxy builds a client for the given proxy and the token
 // stored in settings. Injected test clients keep their base URL and transport;
 // only the token is layered on top.
+//
+// Every client built here reports its authenticated API requests back to the
+// usage tracker, so the settings page can show what the token has spent. Clients
+// that carry no token stay anonymous and spend the shared IP bucket instead, so
+// they report nothing.
 func (s *Store) getGitHubClientWithProxy(proxyTemplate, token string) *github.Client {
 	s.mu.RLock()
 	injected := s.GitHubClient
 	s.mu.RUnlock()
+
+	observe := github.WithRequestObserver(func(obs github.APIRequestObservation) {
+		s.githubUsage.observe(token, obs)
+	})
 
 	if injected != nil {
 		if proxyTemplate != "" || token != "" {
@@ -42,6 +51,7 @@ func (s *Store) getGitHubClientWithProxy(proxyTemplate, token string) *github.Cl
 				github.WithProxyTemplate(proxyTemplate),
 				github.WithToken(token),
 				github.WithAllowInsecureTestHosts(injected.AllowInsecureTestHosts()),
+				observe,
 			)
 		}
 		return injected
@@ -50,6 +60,7 @@ func (s *Store) getGitHubClientWithProxy(proxyTemplate, token string) *github.Cl
 	return github.NewClient(
 		github.WithProxyTemplate(proxyTemplate),
 		github.WithToken(token),
+		observe,
 	)
 }
 
